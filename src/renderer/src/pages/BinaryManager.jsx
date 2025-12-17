@@ -19,6 +19,7 @@ import {
 import clsx from 'clsx';
 
 const PHP_VERSIONS = ['8.3', '8.2', '8.1', '8.0', '7.4'];
+const NODE_VERSIONS = ['22', '20', '18'];
 
 function BinaryManager() {
   const [installed, setInstalled] = useState({
@@ -29,6 +30,8 @@ function BinaryManager() {
     phpmyadmin: false,
     nginx: false,
     apache: false,
+    nodejs: {},
+    composer: false,
   });
   const [downloadUrls, setDownloadUrls] = useState({});
   const [downloading, setDownloading] = useState({});
@@ -131,11 +134,28 @@ function BinaryManager() {
         case 'apache':
           await window.devbox?.binaries.downloadApache();
           break;
+        case 'composer':
+          await window.devbox?.binaries.downloadComposer();
+          break;
       }
     } catch (error) {
       console.error(`Error downloading ${service}:`, error);
       setProgress((prev) => ({ ...prev, [service]: { status: 'error', error: error.message } }));
       setDownloading((prev) => ({ ...prev, [service]: false }));
+    }
+  };
+
+  const handleDownloadNodejs = async (version) => {
+    const id = `nodejs-${version}`;
+    setDownloading((prev) => ({ ...prev, [id]: true }));
+    setProgress((prev) => ({ ...prev, [id]: { status: 'starting', progress: 0 } }));
+
+    try {
+      await window.devbox?.binaries.downloadNodejs(version);
+    } catch (error) {
+      console.error(`Error downloading Node.js ${version}:`, error);
+      setProgress((prev) => ({ ...prev, [id]: { status: 'error', error: error.message } }));
+      setDownloading((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -619,6 +639,185 @@ function BinaryManager() {
         </div>
       </div>
 
+      {/* Node.js Versions */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+          <span className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+            <span className="text-lg">⬢</span>
+          </span>
+          Node.js
+          <span className="text-xs font-normal text-gray-500 ml-2">
+            (For npm/Vite/Frontend builds)
+          </span>
+        </h2>
+        <div className="grid gap-3">
+          {NODE_VERSIONS.map((version) => {
+            const id = `nodejs-${version}`;
+            const isInstalled = installed.nodejs?.[version];
+            const isDownloading = downloading[id];
+            const url = downloadUrls.nodejs?.[version]?.url;
+
+            return (
+              <div
+                key={version}
+                className="card p-4 flex items-center justify-between"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className={clsx(
+                      'w-12 h-12 rounded-lg flex items-center justify-center text-xl',
+                      isInstalled
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                        : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
+                    )}
+                  >
+                    ⬢
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-gray-900 dark:text-white">
+                      Node.js {version}
+                      {version === '22' && (
+                        <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
+                          Current
+                        </span>
+                      )}
+                      {version === '20' && (
+                        <span className="ml-2 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
+                          LTS
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {isInstalled ? 'Installed' : 'Not installed'} • ~35 MB • Includes npm & npx
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {isDownloading ? (
+                    getProgressDisplay(id)
+                  ) : isInstalled ? (
+                    <>
+                      <span className="badge-success flex items-center gap-1">
+                        <Check className="w-3 h-3" />
+                        Installed
+                      </span>
+                      <button
+                        onClick={() => handleRemove('nodejs', version)}
+                        className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        title="Remove"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {url && (
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-icon text-gray-400 hover:text-gray-600"
+                          title="View download source"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      )}
+                      <button
+                        onClick={() => handleDownloadNodejs(version)}
+                        className="btn-primary"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Composer */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+          <span className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+            <span className="text-lg">🎼</span>
+          </span>
+          Composer
+          <span className="text-xs font-normal text-gray-500 ml-2">
+            (PHP dependency manager)
+          </span>
+        </h2>
+        <div className="grid gap-3">
+          <div className="card p-4 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div
+                className={clsx(
+                  'w-12 h-12 rounded-lg flex items-center justify-center text-xl',
+                  installed.composer
+                    ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
+                )}
+              >
+                🎼
+              </div>
+              <div>
+                <h3 className="font-medium text-gray-900 dark:text-white">
+                  Composer 2.x
+                  <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full">
+                    Latest
+                  </span>
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {installed.composer ? 'Installed' : 'Not installed'} • ~2.5 MB • Requires PHP to be installed
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {downloading.composer ? (
+                getProgressDisplay('composer')
+              ) : installed.composer ? (
+                <>
+                  <span className="badge-success flex items-center gap-1">
+                    <Check className="w-3 h-3" />
+                    Installed
+                  </span>
+                  <button
+                    onClick={() => handleRemove('composer')}
+                    className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    title="Remove"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <a
+                    href="https://getcomposer.org"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-icon text-gray-400 hover:text-gray-600"
+                    title="View download source"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                  <button
+                    onClick={() => handleDownloadService('composer')}
+                    className="btn-primary"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Quick Download All */}
       <div className="mt-8 p-6 card bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border-blue-200 dark:border-blue-800">
         <div className="flex items-center justify-between">
@@ -627,7 +826,7 @@ function BinaryManager() {
               Download Full Stack Environment
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Download PHP 8.3, {webServerType === 'nginx' ? 'Nginx' : 'Apache'}, MySQL, Redis, Mailpit, and phpMyAdmin
+              Download PHP 8.3, {webServerType === 'nginx' ? 'Nginx' : 'Apache'}, MySQL, Redis, Mailpit, phpMyAdmin, Node.js 20, and Composer
             </p>
           </div>
           <button
@@ -639,6 +838,8 @@ function BinaryManager() {
               if (!installed.redis) handleDownloadService('redis');
               if (!installed.mailpit) handleDownloadService('mailpit');
               if (!installed.phpmyadmin) handleDownloadService('phpmyadmin');
+              if (!installed.nodejs?.['20']) handleDownloadNodejs('20');
+              if (!installed.composer) handleDownloadService('composer');
             }}
             className="btn-primary bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
           >

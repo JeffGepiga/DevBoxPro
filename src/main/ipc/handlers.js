@@ -405,6 +405,22 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       return binaryDownload.downloadApache();
     });
 
+    ipcMain.handle('binaries:downloadNodejs', async (event, version) => {
+      return binaryDownload.downloadNodejs(version);
+    });
+
+    ipcMain.handle('binaries:downloadComposer', async () => {
+      return binaryDownload.downloadComposer();
+    });
+
+    ipcMain.handle('binaries:runComposer', async (event, projectPath, command, phpVersion) => {
+      return binaryDownload.runComposer(projectPath, command, phpVersion);
+    });
+
+    ipcMain.handle('binaries:runNpm', async (event, projectPath, command, nodeVersion) => {
+      return binaryDownload.runNpm(projectPath, command, nodeVersion);
+    });
+
     ipcMain.handle('binaries:remove', async (event, type, version) => {
       return binaryDownload.removeBinary(type, version);
     });

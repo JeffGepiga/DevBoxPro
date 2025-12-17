@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('devbox', {
     openInEditor: (id, editor) => ipcRenderer.invoke('projects:openInEditor', id, editor),
     openInBrowser: (id) => ipcRenderer.invoke('projects:openInBrowser', id),
     openFolder: (id) => ipcRenderer.invoke('projects:openFolder', id),
+    switchWebServer: (id, webServer) => ipcRenderer.invoke('projects:switchWebServer', id, webServer),
+    regenerateVhost: (id) => ipcRenderer.invoke('projects:regenerateVhost', id),
   },
 
   // PHP operations
@@ -118,6 +120,10 @@ contextBridge.exposeInMainWorld('devbox', {
     downloadPhpMyAdmin: () => ipcRenderer.invoke('binaries:downloadPhpMyAdmin'),
     downloadNginx: () => ipcRenderer.invoke('binaries:downloadNginx'),
     downloadApache: () => ipcRenderer.invoke('binaries:downloadApache'),
+    downloadNodejs: (version) => ipcRenderer.invoke('binaries:downloadNodejs', version),
+    downloadComposer: () => ipcRenderer.invoke('binaries:downloadComposer'),
+    runComposer: (projectPath, command, phpVersion) => ipcRenderer.invoke('binaries:runComposer', projectPath, command, phpVersion),
+    runNpm: (projectPath, command, nodeVersion) => ipcRenderer.invoke('binaries:runNpm', projectPath, command, nodeVersion),
     remove: (type, version) => ipcRenderer.invoke('binaries:remove', type, version),
     onProgress: (callback) => {
       const handler = (event, data) => callback(data.id, data.progress);
@@ -141,6 +147,7 @@ contextBridge.exposeInMainWorld('devbox', {
   on: (channel, callback) => {
     const validChannels = [
       'project:statusChanged',
+      'project:webServerChanged',
       'service:statusChanged',
       'log:newEntry',
       'terminal:output',

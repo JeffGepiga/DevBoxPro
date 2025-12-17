@@ -50,7 +50,7 @@ const WIZARD_STEPS = [
   { id: 'type', title: 'Project Type', icon: Folder },
   { id: 'details', title: 'Details', icon: Settings },
   { id: 'services', title: 'Services', icon: Database },
-  { id: 'domain', title: 'Domain & SSL', icon: Globe },
+  { id: 'domain', title: 'Domain & Server', icon: Globe },
   { id: 'review', title: 'Review', icon: Check },
 ];
 

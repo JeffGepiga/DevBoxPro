@@ -190,6 +190,13 @@ class ProjectManager {
       await this.stopProject(id);
     }
 
+    // Remove virtual host configuration
+    try {
+      await this.removeVirtualHost(project);
+    } catch (error) {
+      console.warn('Error removing virtual host:', error.message);
+    }
+
     // Remove project from config
     const projects = this.configStore.get('projects', []);
     const filtered = projects.filter((p) => p.id !== id);

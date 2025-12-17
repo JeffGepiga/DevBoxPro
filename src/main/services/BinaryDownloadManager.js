@@ -8,6 +8,7 @@ const { createWriteStream } = require('fs');
 const { createGunzip } = require('zlib');
 const tar = require('tar');
 const AdmZip = require('adm-zip');
+const { exec, spawn } = require('child_process');
 
 class BinaryDownloadManager {
   constructor() {
@@ -130,6 +131,44 @@ class BinaryDownloadManager {
           altInstall: 'brew install httpd',
         },
       },
+      nodejs: {
+        '22': {
+          win: {
+            url: 'https://nodejs.org/dist/v22.12.0/node-v22.12.0-win-x64.zip',
+            filename: 'node-v22.12.0-win-x64.zip',
+          },
+          mac: {
+            url: 'https://nodejs.org/dist/v22.12.0/node-v22.12.0-darwin-arm64.tar.gz',
+            filename: 'node-v22.12.0-darwin-arm64.tar.gz',
+          },
+        },
+        '20': {
+          win: {
+            url: 'https://nodejs.org/dist/v20.18.1/node-v20.18.1-win-x64.zip',
+            filename: 'node-v20.18.1-win-x64.zip',
+          },
+          mac: {
+            url: 'https://nodejs.org/dist/v20.18.1/node-v20.18.1-darwin-arm64.tar.gz',
+            filename: 'node-v20.18.1-darwin-arm64.tar.gz',
+          },
+        },
+        '18': {
+          win: {
+            url: 'https://nodejs.org/dist/v18.20.5/node-v18.20.5-win-x64.zip',
+            filename: 'node-v18.20.5-win-x64.zip',
+          },
+          mac: {
+            url: 'https://nodejs.org/dist/v18.20.5/node-v18.20.5-darwin-arm64.tar.gz',
+            filename: 'node-v18.20.5-darwin-arm64.tar.gz',
+          },
+        },
+      },
+      composer: {
+        all: {
+          url: 'https://getcomposer.org/download/2.8.4/composer.phar',
+          filename: 'composer.phar',
+        },
+      },
     };
   }
 
@@ -146,6 +185,8 @@ class BinaryDownloadManager {
     await fs.ensureDir(path.join(this.resourcesPath, 'phpmyadmin'));
     await fs.ensureDir(path.join(this.resourcesPath, 'nginx'));
     await fs.ensureDir(path.join(this.resourcesPath, 'apache'));
+    await fs.ensureDir(path.join(this.resourcesPath, 'nodejs'));
+    await fs.ensureDir(path.join(this.resourcesPath, 'composer'));
     await fs.ensureDir(path.join(this.resourcesPath, 'downloads'));
   }
 
@@ -169,6 +210,8 @@ class BinaryDownloadManager {
       phpmyadmin: false,
       nginx: false,
       apache: false,
+      nodejs: {},
+      composer: false,
     };
 
     // Check PHP versions
@@ -206,6 +249,17 @@ class BinaryDownloadManager {
     const apachePath = path.join(this.resourcesPath, 'apache', platform);
     const apacheExe = platform === 'win' ? 'bin/httpd.exe' : 'bin/httpd';
     installed.apache = await fs.pathExists(path.join(apachePath, apacheExe));
+
+    // Check Node.js versions
+    for (const version of ['18', '20', '22']) {
+      const nodePath = path.join(this.resourcesPath, 'nodejs', version, platform);
+      const nodeExe = platform === 'win' ? 'node.exe' : 'bin/node';
+      installed.nodejs[version] = await fs.pathExists(path.join(nodePath, nodeExe));
+    }
+
+    // Check Composer
+    const composerPath = path.join(this.resourcesPath, 'composer', 'composer.phar');
+    installed.composer = await fs.pathExists(composerPath);
 
     return installed;
   }
@@ -802,8 +856,12 @@ AddType application/x-httpd-php-source .phps
 
     if (type === 'php' && version) {
       targetPath = path.join(this.resourcesPath, 'php', version, platform);
+    } else if (type === 'nodejs' && version) {
+      targetPath = path.join(this.resourcesPath, 'nodejs', version, platform);
     } else if (type === 'phpmyadmin') {
       targetPath = path.join(this.resourcesPath, 'phpmyadmin');
+    } else if (type === 'composer') {
+      targetPath = path.join(this.resourcesPath, 'composer');
     } else {
       targetPath = path.join(this.resourcesPath, type, platform);
     }
@@ -822,13 +880,306 @@ AddType application/x-httpd-php-source .phps
       phpmyadmin: this.downloads.phpmyadmin.all,
       nginx: this.downloads.nginx[platform],
       apache: this.downloads.apache[platform],
+      nodejs: {},
+      composer: this.downloads.composer.all,
     };
 
     for (const version of Object.keys(this.downloads.php)) {
       urls.php[version] = this.downloads.php[version][platform];
     }
 
+    for (const version of Object.keys(this.downloads.nodejs)) {
+      urls.nodejs[version] = this.downloads.nodejs[version][platform];
+    }
+
     return urls;
+  }
+
+  // Download and install Node.js
+  async downloadNodejs(version = '20') {
+    const id = `nodejs-${version}`;
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads.nodejs[version]?.[platform];
+
+    if (!downloadInfo) {
+      throw new Error(`Node.js ${version} download not available for ${platform}`);
+    }
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
+      await this.downloadFile(downloadInfo.url, downloadPath, id);
+
+      this.emitProgress(id, { status: 'extracting', progress: 50 });
+
+      const nodejsPath = path.join(this.resourcesPath, 'nodejs', version, platform);
+      await fs.ensureDir(nodejsPath);
+
+      await this.extractArchive(downloadPath, nodejsPath, id);
+
+      // Move files from nested directory if needed
+      const contents = await fs.readdir(nodejsPath);
+      const extractedDir = contents.find((d) => d.startsWith('node-'));
+      if (extractedDir) {
+        const srcPath = path.join(nodejsPath, extractedDir);
+        const files = await fs.readdir(srcPath);
+        for (const file of files) {
+          await fs.move(path.join(srcPath, file), path.join(nodejsPath, file), { overwrite: true });
+        }
+        await fs.remove(srcPath);
+      }
+
+      // Set up PATH configuration for this Node.js version
+      await this.setupNodejsEnvironment(version, nodejsPath);
+
+      // Clean up download
+      await fs.remove(downloadPath);
+
+      this.emitProgress(id, { status: 'complete', progress: 100 });
+
+      return {
+        success: true,
+        version,
+        path: nodejsPath,
+      };
+    } catch (error) {
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  }
+
+  // Set up Node.js environment with proper PATH
+  async setupNodejsEnvironment(version, nodejsPath) {
+    const platform = this.getPlatform();
+    
+    // Create a wrapper script for easy access
+    const binDir = path.join(this.resourcesPath, 'bin');
+    await fs.ensureDir(binDir);
+
+    if (platform === 'win') {
+      // Create batch file wrapper for Windows
+      const nodeExe = path.join(nodejsPath, 'node.exe');
+      const npmExe = path.join(nodejsPath, 'npm.cmd');
+      const npxExe = path.join(nodejsPath, 'npx.cmd');
+
+      const nodeBat = `@echo off\n"${nodeExe}" %*`;
+      const npmBat = `@echo off\n"${nodeExe}" "${path.join(nodejsPath, 'node_modules', 'npm', 'bin', 'npm-cli.js')}" %*`;
+      const npxBat = `@echo off\n"${nodeExe}" "${path.join(nodejsPath, 'node_modules', 'npm', 'bin', 'npx-cli.js')}" %*`;
+
+      await fs.writeFile(path.join(binDir, `node${version}.cmd`), nodeBat);
+      await fs.writeFile(path.join(binDir, `npm${version}.cmd`), npmBat);
+      await fs.writeFile(path.join(binDir, `npx${version}.cmd`), npxBat);
+    } else {
+      // Create symlinks for macOS/Linux
+      const nodeBin = path.join(nodejsPath, 'bin', 'node');
+      const npmBin = path.join(nodejsPath, 'bin', 'npm');
+      const npxBin = path.join(nodejsPath, 'bin', 'npx');
+
+      try {
+        await fs.symlink(nodeBin, path.join(binDir, `node${version}`));
+        await fs.symlink(npmBin, path.join(binDir, `npm${version}`));
+        await fs.symlink(npxBin, path.join(binDir, `npx${version}`));
+      } catch (err) {
+        // Symlinks may already exist
+        console.log('Symlinks already exist or could not be created');
+      }
+    }
+
+    console.log(`Node.js ${version} environment set up at ${nodejsPath}`);
+  }
+
+  // Get Node.js executable path
+  getNodejsPath(version = '20') {
+    const platform = this.getPlatform();
+    const nodejsPath = path.join(this.resourcesPath, 'nodejs', version, platform);
+    const nodeExe = platform === 'win' ? 'node.exe' : 'bin/node';
+    return path.join(nodejsPath, nodeExe);
+  }
+
+  // Get npm executable path
+  getNpmPath(version = '20') {
+    const platform = this.getPlatform();
+    const nodejsPath = path.join(this.resourcesPath, 'nodejs', version, platform);
+    const npmExe = platform === 'win' ? 'npm.cmd' : 'bin/npm';
+    return path.join(nodejsPath, npmExe);
+  }
+
+  // Download and install Composer
+  async downloadComposer() {
+    const id = 'composer';
+    
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const downloadPath = path.join(this.resourcesPath, 'downloads', 'composer.phar');
+      await this.downloadFile(this.downloads.composer.all.url, downloadPath, id);
+
+      this.emitProgress(id, { status: 'installing', progress: 60 });
+
+      // Move to composer directory
+      const composerDir = path.join(this.resourcesPath, 'composer');
+      await fs.ensureDir(composerDir);
+      await fs.copy(downloadPath, path.join(composerDir, 'composer.phar'));
+
+      // Create wrapper scripts
+      await this.setupComposerEnvironment(composerDir);
+
+      // Clean up
+      await fs.remove(downloadPath);
+
+      this.emitProgress(id, { status: 'complete', progress: 100 });
+
+      return {
+        success: true,
+        path: composerDir,
+      };
+    } catch (error) {
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  }
+
+  // Set up Composer environment with wrapper scripts
+  async setupComposerEnvironment(composerDir) {
+    const platform = this.getPlatform();
+    const binDir = path.join(this.resourcesPath, 'bin');
+    await fs.ensureDir(binDir);
+
+    const composerPhar = path.join(composerDir, 'composer.phar');
+
+    if (platform === 'win') {
+      // Create batch wrapper for Windows
+      // Will use the first available PHP version
+      const composerBat = `@echo off
+setlocal
+set "PHP_PATHS=${path.join(this.resourcesPath, 'php')}"
+for /d %%V in ("%PHP_PATHS%\\*") do (
+    if exist "%%V\\win\\php.exe" (
+        "%%V\\win\\php.exe" "${composerPhar}" %*
+        exit /b %ERRORLEVEL%
+    )
+)
+echo No PHP installation found. Please install PHP first.
+exit /b 1
+`;
+      await fs.writeFile(path.join(binDir, 'composer.cmd'), composerBat);
+      await fs.writeFile(path.join(composerDir, 'composer.cmd'), composerBat);
+    } else {
+      // Create shell wrapper for macOS/Linux
+      const composerSh = `#!/bin/bash
+PHP_PATHS="${path.join(this.resourcesPath, 'php')}"
+for VERSION in 8.3 8.2 8.1 8.0 7.4; do
+    if [ -x "$PHP_PATHS/$VERSION/mac/php" ]; then
+        "$PHP_PATHS/$VERSION/mac/php" "${composerPhar}" "$@"
+        exit $?
+    fi
+done
+echo "No PHP installation found. Please install PHP first."
+exit 1
+`;
+      await fs.writeFile(path.join(binDir, 'composer'), composerSh);
+      await fs.chmod(path.join(binDir, 'composer'), '755');
+      await fs.writeFile(path.join(composerDir, 'composer'), composerSh);
+      await fs.chmod(path.join(composerDir, 'composer'), '755');
+    }
+
+    console.log('Composer environment set up');
+  }
+
+  // Get Composer path
+  getComposerPath() {
+    return path.join(this.resourcesPath, 'composer', 'composer.phar');
+  }
+
+  // Run Composer command with specific PHP version
+  async runComposer(projectPath, command, phpVersion = '8.3') {
+    const platform = this.getPlatform();
+    const phpPath = path.join(this.resourcesPath, 'php', phpVersion, platform, platform === 'win' ? 'php.exe' : 'php');
+    const composerPhar = this.getComposerPath();
+
+    if (!await fs.pathExists(phpPath)) {
+      throw new Error(`PHP ${phpVersion} is not installed`);
+    }
+
+    if (!await fs.pathExists(composerPhar)) {
+      throw new Error('Composer is not installed');
+    }
+
+    return new Promise((resolve, reject) => {
+      const args = [composerPhar, ...command.split(' ')];
+      const proc = spawn(phpPath, args, {
+        cwd: projectPath,
+        env: { ...process.env, COMPOSER_HOME: path.join(this.resourcesPath, 'composer') },
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve({ stdout, stderr });
+        } else {
+          reject(new Error(stderr || `Composer exited with code ${code}`));
+        }
+      });
+
+      proc.on('error', reject);
+    });
+  }
+
+  // Run npm command with specific Node.js version
+  async runNpm(projectPath, command, nodeVersion = '20') {
+    const platform = this.getPlatform();
+    const nodejsPath = path.join(this.resourcesPath, 'nodejs', nodeVersion, platform);
+    const nodePath = platform === 'win' ? path.join(nodejsPath, 'node.exe') : path.join(nodejsPath, 'bin', 'node');
+    const npmScript = platform === 'win' 
+      ? path.join(nodejsPath, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+      : path.join(nodejsPath, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+
+    if (!await fs.pathExists(nodePath)) {
+      throw new Error(`Node.js ${nodeVersion} is not installed`);
+    }
+
+    return new Promise((resolve, reject) => {
+      const args = [npmScript, ...command.split(' ')];
+      const proc = spawn(nodePath, args, {
+        cwd: projectPath,
+        env: { 
+          ...process.env, 
+          PATH: `${nodejsPath}${platform === 'win' ? '' : '/bin'}${path.delimiter}${process.env.PATH}`,
+        },
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve({ stdout, stderr });
+        } else {
+          reject(new Error(stderr || `npm exited with code ${code}`));
+        }
+      });
+
+      proc.on('error', reject);
+    });
   }
 }
 
