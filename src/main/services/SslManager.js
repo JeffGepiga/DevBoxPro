@@ -1,0 +1,387 @@
+const path = require('path');
+const fs = require('fs-extra');
+const { spawn, exec } = require('child_process');
+const crypto = require('crypto');
+
+class SslManager {
+  constructor(resourcePath, configStore) {
+    this.resourcePath = resourcePath;
+    this.configStore = configStore;
+    this.certsPath = null;
+    this.caPath = null;
+  }
+
+  async initialize() {
+    console.log('Initializing SslManager...');
+
+    const dataPath = this.configStore.get('dataPath');
+    this.certsPath = path.join(dataPath, 'ssl', 'certs');
+    this.caPath = path.join(dataPath, 'ssl', 'ca');
+
+    await fs.ensureDir(this.certsPath);
+    await fs.ensureDir(this.caPath);
+
+    // Check if CA certificate exists, create if not
+    const caCertPath = path.join(this.caPath, 'rootCA.pem');
+    if (!(await fs.pathExists(caCertPath))) {
+      console.log('Creating root CA certificate...');
+      await this.createRootCA();
+    }
+
+    console.log('SslManager initialized');
+  }
+
+  async createRootCA() {
+    const keyPath = path.join(this.caPath, 'rootCA-key.pem');
+    const certPath = path.join(this.caPath, 'rootCA.pem');
+
+    // Generate private key
+    await this.generatePrivateKey(keyPath);
+
+    // Generate self-signed root certificate
+    const config = this.createOpenSSLConfig('DevBox Pro Root CA', [], true);
+    const configPath = path.join(this.caPath, 'ca.cnf');
+    await fs.writeFile(configPath, config);
+
+    await this.runOpenSSL([
+      'req',
+      '-x509',
+      '-new',
+      '-nodes',
+      '-key',
+      keyPath,
+      '-sha256',
+      '-days',
+      '3650',
+      '-out',
+      certPath,
+      '-config',
+      configPath,
+      '-extensions',
+      'v3_ca',
+    ]);
+
+    console.log('Root CA certificate created');
+    return { keyPath, certPath };
+  }
+
+  async createCertificate(domains) {
+    if (!Array.isArray(domains) || domains.length === 0) {
+      throw new Error('At least one domain is required');
+    }
+
+    const primaryDomain = domains[0];
+    const certName = this.sanitizeCertName(primaryDomain);
+
+    const keyPath = path.join(this.certsPath, `${certName}.key`);
+    const csrPath = path.join(this.certsPath, `${certName}.csr`);
+    const certPath = path.join(this.certsPath, `${certName}.crt`);
+
+    console.log(`Creating certificate for: ${domains.join(', ')}`);
+
+    // Generate private key
+    await this.generatePrivateKey(keyPath);
+
+    // Create CSR config with SANs
+    const config = this.createOpenSSLConfig(primaryDomain, domains);
+    const configPath = path.join(this.certsPath, `${certName}.cnf`);
+    await fs.writeFile(configPath, config);
+
+    // Generate CSR
+    await this.runOpenSSL([
+      'req',
+      '-new',
+      '-key',
+      keyPath,
+      '-out',
+      csrPath,
+      '-config',
+      configPath,
+    ]);
+
+    // Sign with root CA
+    const caKeyPath = path.join(this.caPath, 'rootCA-key.pem');
+    const caCertPath = path.join(this.caPath, 'rootCA.pem');
+
+    await this.runOpenSSL([
+      'x509',
+      '-req',
+      '-in',
+      csrPath,
+      '-CA',
+      caCertPath,
+      '-CAkey',
+      caKeyPath,
+      '-CAcreateserial',
+      '-out',
+      certPath,
+      '-days',
+      '825',
+      '-sha256',
+      '-extfile',
+      configPath,
+      '-extensions',
+      'v3_req',
+    ]);
+
+    // Store certificate info
+    const certificates = this.configStore.get('certificates', {});
+    certificates[primaryDomain] = {
+      domains,
+      keyPath,
+      certPath,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 825 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    this.configStore.set('certificates', certificates);
+
+    console.log(`Certificate created for ${primaryDomain}`);
+
+    return {
+      domain: primaryDomain,
+      domains,
+      keyPath,
+      certPath,
+    };
+  }
+
+  async deleteCertificate(domain) {
+    const certificates = this.configStore.get('certificates', {});
+    const cert = certificates[domain];
+
+    if (!cert) {
+      throw new Error(`Certificate for ${domain} not found`);
+    }
+
+    // Delete certificate files
+    const certName = this.sanitizeCertName(domain);
+    const filesToDelete = [
+      path.join(this.certsPath, `${certName}.key`),
+      path.join(this.certsPath, `${certName}.csr`),
+      path.join(this.certsPath, `${certName}.crt`),
+      path.join(this.certsPath, `${certName}.cnf`),
+    ];
+
+    for (const file of filesToDelete) {
+      if (await fs.pathExists(file)) {
+        await fs.unlink(file);
+      }
+    }
+
+    // Remove from config
+    delete certificates[domain];
+    this.configStore.set('certificates', certificates);
+
+    console.log(`Certificate for ${domain} deleted`);
+    return { success: true };
+  }
+
+  async trustCertificate(domain) {
+    const certificates = this.configStore.get('certificates', {});
+    const cert = certificates[domain];
+
+    if (!cert) {
+      throw new Error(`Certificate for ${domain} not found`);
+    }
+
+    // Trust the root CA instead of individual certificates
+    const caCertPath = path.join(this.caPath, 'rootCA.pem');
+
+    try {
+      if (process.platform === 'darwin') {
+        // macOS: Add to System Keychain
+        await this.runCommand('sudo', [
+          'security',
+          'add-trusted-cert',
+          '-d',
+          '-r',
+          'trustRoot',
+          '-k',
+          '/Library/Keychains/System.keychain',
+          caCertPath,
+        ]);
+      } else if (process.platform === 'win32') {
+        // Windows: Add to certificate store
+        await this.runCommand('certutil', ['-addstore', '-user', 'Root', caCertPath]);
+      }
+
+      console.log('Root CA certificate trusted');
+      return { success: true, message: 'Certificate trusted successfully' };
+    } catch (error) {
+      console.error('Failed to trust certificate:', error);
+      return {
+        success: false,
+        error: error.message,
+        manual: this.getTrustInstructions(),
+      };
+    }
+  }
+
+  getTrustInstructions() {
+    const caCertPath = path.join(this.caPath, 'rootCA.pem');
+
+    if (process.platform === 'darwin') {
+      return `To trust the DevBox Pro certificate manually:
+1. Open Keychain Access
+2. File > Import Items
+3. Select: ${caCertPath}
+4. Double-click the imported certificate
+5. Expand "Trust" and set "When using this certificate" to "Always Trust"`;
+    } else if (process.platform === 'win32') {
+      return `To trust the DevBox Pro certificate manually:
+1. Double-click: ${caCertPath}
+2. Click "Install Certificate"
+3. Select "Current User" or "Local Machine"
+4. Choose "Place all certificates in the following store"
+5. Browse and select "Trusted Root Certification Authorities"
+6. Click "Finish"`;
+    }
+
+    return 'Please consult your OS documentation for trusting SSL certificates.';
+  }
+
+  listCertificates() {
+    return this.configStore.get('certificates', {});
+  }
+
+  getCertificate(domain) {
+    const certificates = this.configStore.get('certificates', {});
+    return certificates[domain] || null;
+  }
+
+  getCertificatePaths(domain) {
+    const cert = this.getCertificate(domain);
+    if (!cert) return null;
+
+    return {
+      key: cert.keyPath,
+      cert: cert.certPath,
+    };
+  }
+
+  // Helper methods
+  sanitizeCertName(domain) {
+    return domain.replace(/[^a-zA-Z0-9.-]/g, '_');
+  }
+
+  async generatePrivateKey(keyPath) {
+    await this.runOpenSSL(['genrsa', '-out', keyPath, '2048']);
+  }
+
+  createOpenSSLConfig(commonName, domains, isCA = false) {
+    let config = `
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+req_extensions = v3_req
+
+[dn]
+C = US
+ST = Local
+L = Local
+O = DevBox Pro
+OU = Development
+CN = ${commonName}
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+`;
+
+    if (isCA) {
+      config += `
+[v3_ca]
+basicConstraints = critical, CA:TRUE
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always, issuer
+`;
+    }
+
+    if (domains.length > 0) {
+      config += '\n[alt_names]\n';
+      domains.forEach((domain, index) => {
+        if (domain.includes('*')) {
+          config += `DNS.${index + 1} = ${domain}\n`;
+        } else {
+          config += `DNS.${index + 1} = ${domain}\n`;
+          config += `DNS.${index + 1 + domains.length} = *.${domain}\n`;
+        }
+      });
+    }
+
+    return config;
+  }
+
+  async runOpenSSL(args) {
+    const opensslPath = this.getOpenSSLPath();
+
+    return new Promise((resolve, reject) => {
+      const proc = spawn(opensslPath, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      let stderr = '';
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`OpenSSL failed: ${stderr}`));
+        }
+      });
+
+      proc.on('error', (error) => {
+        reject(error);
+      });
+    });
+  }
+
+  async runCommand(command, args) {
+    return new Promise((resolve, reject) => {
+      const proc = spawn(command, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      let stderr = '';
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`Command failed: ${stderr}`));
+        }
+      });
+
+      proc.on('error', (error) => {
+        reject(error);
+      });
+    });
+  }
+
+  getOpenSSLPath() {
+    // On macOS and Linux, OpenSSL is typically in PATH
+    // On Windows, we might bundle it or use the system one
+    if (process.platform === 'win32') {
+      const bundledPath = path.join(this.resourcePath, 'openssl', 'openssl.exe');
+      if (fs.existsSync(bundledPath)) {
+        return bundledPath;
+      }
+      return 'openssl'; // Fall back to system OpenSSL
+    }
+    return 'openssl';
+  }
+}
+
+module.exports = { SslManager };
