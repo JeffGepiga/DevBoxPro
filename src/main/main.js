@@ -22,10 +22,8 @@ const managers = {};
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 function getResourcePath() {
-  if (isDev) {
-    return path.join(__dirname, '../../resources');
-  }
-  return path.join(process.resourcesPath, 'resources');
+  // Always use userData path for resources to match BinaryDownloadManager
+  return path.join(app.getPath('userData'), 'resources');
 }
 
 async function createWindow() {
@@ -39,26 +37,54 @@ async function createWindow() {
     minHeight: 700,
     title: 'DevBox Pro',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    center: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1a1a2e' : '#ffffff',
-    show: false,
+    show: true,
   });
 
   // Load the app
   if (isDev) {
+    console.log('Loading dev URL: http://localhost:3000');
     await mainWindow.loadURL('http://localhost:3000');
-    mainWindow.webContents.openDevTools();
+    console.log('Dev URL loaded');
+    // Uncomment the line below to open DevTools automatically in dev mode
+    // mainWindow.webContents.openDevTools();
   } else {
     await mainWindow.loadFile(path.join(__dirname, '../renderer/dist/index.html'));
   }
 
+  // Log renderer console messages
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`[Renderer] ${message}`);
+  });
+
+  // Log renderer errors
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error(`Failed to load: ${errorDescription} (${errorCode})`);
+  });
+
   mainWindow.once('ready-to-show', () => {
+    console.log('Window ready to show');
     mainWindow.show();
   });
+
+  // Show window immediately in dev mode for debugging
+  if (isDev) {
+    mainWindow.show();
+  }
+
+  // Fallback: show window after timeout if ready-to-show doesn't fire
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      console.log('Forcing window to show after timeout');
+      mainWindow.show();
+    }
+  }, 3000);
 
   mainWindow.on('close', (event) => {
     if (!app.isQuitting) {

@@ -9,6 +9,7 @@ const { createGunzip } = require('zlib');
 const tar = require('tar');
 const AdmZip = require('adm-zip');
 const { exec, spawn } = require('child_process');
+const { Worker } = require('worker_threads');
 
 class BinaryDownloadManager {
   constructor() {
@@ -17,36 +18,47 @@ class BinaryDownloadManager {
     this.listeners = new Set();
     
     // Download URLs for each binary
+    // PHP versions updated from https://windows.php.net/download/ on 2025-01
     this.downloads = {
       php: {
-        '8.3': {
+        '8.4': {
           win: {
-            url: 'https://windows.php.net/downloads/releases/php-8.3.14-nts-Win32-vs16-x64.zip',
-            filename: 'php-8.3.14-nts-Win32-vs16-x64.zip',
+            url: 'https://windows.php.net/downloads/releases/php-8.4.16-nts-Win32-vs17-x64.zip',
+            filename: 'php-8.4.16-nts-Win32-vs17-x64.zip',
           },
           mac: {
-            url: 'https://github.com/shivammathur/php-builder/releases/download/8.3.14/php-8.3.14-darwin-arm64.tar.gz',
-            filename: 'php-8.3.14-darwin-arm64.tar.gz',
+            url: 'https://github.com/shivammathur/php-builder/releases/download/8.4.16/php-8.4.16-darwin-arm64.tar.gz',
+            filename: 'php-8.4.16-darwin-arm64.tar.gz',
+          },
+        },
+        '8.3': {
+          win: {
+            url: 'https://windows.php.net/downloads/releases/php-8.3.29-nts-Win32-vs16-x64.zip',
+            filename: 'php-8.3.29-nts-Win32-vs16-x64.zip',
+          },
+          mac: {
+            url: 'https://github.com/shivammathur/php-builder/releases/download/8.3.29/php-8.3.29-darwin-arm64.tar.gz',
+            filename: 'php-8.3.29-darwin-arm64.tar.gz',
           },
         },
         '8.2': {
           win: {
-            url: 'https://windows.php.net/downloads/releases/php-8.2.27-nts-Win32-vs16-x64.zip',
-            filename: 'php-8.2.27-nts-Win32-vs16-x64.zip',
+            url: 'https://windows.php.net/downloads/releases/php-8.2.30-nts-Win32-vs16-x64.zip',
+            filename: 'php-8.2.30-nts-Win32-vs16-x64.zip',
           },
           mac: {
-            url: 'https://github.com/shivammathur/php-builder/releases/download/8.2.27/php-8.2.27-darwin-arm64.tar.gz',
-            filename: 'php-8.2.27-darwin-arm64.tar.gz',
+            url: 'https://github.com/shivammathur/php-builder/releases/download/8.2.30/php-8.2.30-darwin-arm64.tar.gz',
+            filename: 'php-8.2.30-darwin-arm64.tar.gz',
           },
         },
         '8.1': {
           win: {
-            url: 'https://windows.php.net/downloads/releases/php-8.1.31-nts-Win32-vs16-x64.zip',
-            filename: 'php-8.1.31-nts-Win32-vs16-x64.zip',
+            url: 'https://windows.php.net/downloads/releases/php-8.1.34-nts-Win32-vs16-x64.zip',
+            filename: 'php-8.1.34-nts-Win32-vs16-x64.zip',
           },
           mac: {
-            url: 'https://github.com/shivammathur/php-builder/releases/download/8.1.31/php-8.1.31-darwin-arm64.tar.gz',
-            filename: 'php-8.1.31-darwin-arm64.tar.gz',
+            url: 'https://github.com/shivammathur/php-builder/releases/download/8.1.34/php-8.1.34-darwin-arm64.tar.gz',
+            filename: 'php-8.1.34-darwin-arm64.tar.gz',
           },
         },
         '8.0': {
@@ -72,12 +84,22 @@ class BinaryDownloadManager {
       },
       mysql: {
         win: {
-          url: 'https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.40-winx64.zip',
-          filename: 'mysql-8.0.40-winx64.zip',
+          url: 'https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.7-winx64.zip',
+          filename: 'mysql-8.4.7-winx64.zip',
         },
         mac: {
-          url: 'https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.40-macos14-arm64.tar.gz',
-          filename: 'mysql-8.0.40-macos14-arm64.tar.gz',
+          url: 'https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.7-macos14-arm64.tar.gz',
+          filename: 'mysql-8.4.7-macos14-arm64.tar.gz',
+        },
+      },
+      mariadb: {
+        win: {
+          url: 'https://archive.mariadb.org/mariadb-11.4.9/winx64-packages/mariadb-11.4.9-winx64.zip',
+          filename: 'mariadb-11.4.9-winx64.zip',
+        },
+        mac: {
+          url: 'https://archive.mariadb.org/mariadb-11.4.9/bintar-darwin-arm64/mariadb-11.4.9-macos14-arm64.tar.gz',
+          filename: 'mariadb-11.4.9-macos14-arm64.tar.gz',
         },
       },
       redis: {
@@ -103,31 +125,38 @@ class BinaryDownloadManager {
       },
       phpmyadmin: {
         all: {
-          url: 'https://files.phpmyadmin.net/phpMyAdmin/5.2.1/phpMyAdmin-5.2.1-all-languages.zip',
-          filename: 'phpMyAdmin-5.2.1-all-languages.zip',
+          url: 'https://files.phpmyadmin.net/phpMyAdmin/5.2.3/phpMyAdmin-5.2.3-all-languages.zip',
+          filename: 'phpMyAdmin-5.2.3-all-languages.zip',
         },
       },
       nginx: {
         win: {
-          url: 'https://nginx.org/download/nginx-1.26.2.zip',
-          filename: 'nginx-1.26.2.zip',
+          url: 'https://nginx.org/download/nginx-1.28.0.zip',
+          filename: 'nginx-1.28.0.zip',
         },
         mac: {
-          url: 'https://github.com/denji/homebrew-nginx/releases/download/nginx-1.26.2/nginx-1.26.2-arm64.tar.gz',
-          filename: 'nginx-1.26.2-arm64.tar.gz',
+          url: 'https://nginx.org/download/nginx-1.28.0.tar.gz',
+          filename: 'nginx-1.28.0.tar.gz',
           // Note: On macOS, nginx is best installed via Homebrew
           altInstall: 'brew install nginx',
         },
       },
       apache: {
         win: {
+          // Note: Apache Lounge blocks automated downloads
+          // Users may need to download manually from https://www.apachelounge.com/download/
           url: 'https://www.apachelounge.com/download/VS17/binaries/httpd-2.4.62-240904-win64-VS17.zip',
+          fallbackUrls: [
+            'https://www.apachelounge.com/download/VS17/binaries/httpd-2.4.61-240703-win64-VS17.zip',
+          ],
           filename: 'httpd-2.4.62-win64-VS17.zip',
+          manualDownloadUrl: 'https://www.apachelounge.com/download/',
+          manualDownloadNote: 'Apache Lounge may block automated downloads. If the download fails, please download manually.',
         },
         mac: {
           // Apache comes pre-installed on macOS, but we provide the option
-          url: 'https://github.com/nicbn/apache-httpd-releases/releases/download/2.4.62/httpd-2.4.62-macos-arm64.tar.gz',
-          filename: 'httpd-2.4.62-macos-arm64.tar.gz',
+          url: 'https://dlcdn.apache.org/httpd/httpd-2.4.63.tar.gz',
+          filename: 'httpd-2.4.63.tar.gz',
           altInstall: 'brew install httpd',
         },
       },
@@ -180,6 +209,7 @@ class BinaryDownloadManager {
     await fs.ensureDir(this.resourcesPath);
     await fs.ensureDir(path.join(this.resourcesPath, 'php'));
     await fs.ensureDir(path.join(this.resourcesPath, 'mysql'));
+    await fs.ensureDir(path.join(this.resourcesPath, 'mariadb'));
     await fs.ensureDir(path.join(this.resourcesPath, 'redis'));
     await fs.ensureDir(path.join(this.resourcesPath, 'mailpit'));
     await fs.ensureDir(path.join(this.resourcesPath, 'phpmyadmin'));
@@ -205,6 +235,7 @@ class BinaryDownloadManager {
     const installed = {
       php: {},
       mysql: false,
+      mariadb: false,
       redis: false,
       mailpit: false,
       phpmyadmin: false,
@@ -215,7 +246,7 @@ class BinaryDownloadManager {
     };
 
     // Check PHP versions
-    for (const version of ['7.4', '8.0', '8.1', '8.2', '8.3']) {
+    for (const version of ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4']) {
       const phpPath = path.join(this.resourcesPath, 'php', version, platform);
       const phpExe = platform === 'win' ? 'php.exe' : 'php';
       installed.php[version] = await fs.pathExists(path.join(phpPath, phpExe));
@@ -225,6 +256,11 @@ class BinaryDownloadManager {
     const mysqlPath = path.join(this.resourcesPath, 'mysql', platform, 'bin');
     const mysqlExe = platform === 'win' ? 'mysqld.exe' : 'mysqld';
     installed.mysql = await fs.pathExists(path.join(mysqlPath, mysqlExe));
+
+    // Check MariaDB
+    const mariadbPath = path.join(this.resourcesPath, 'mariadb', platform, 'bin');
+    const mariadbExe = platform === 'win' ? 'mariadbd.exe' : 'mariadbd';
+    installed.mariadb = await fs.pathExists(path.join(mariadbPath, mariadbExe));
 
     // Check Redis
     const redisPath = path.join(this.resourcesPath, 'redis', platform);
@@ -268,17 +304,24 @@ class BinaryDownloadManager {
     return new Promise((resolve, reject) => {
       const file = createWriteStream(destPath);
       const protocol = url.startsWith('https') ? https : http;
+      const parsedUrl = new URL(url);
 
       const request = protocol.get(url, { 
         headers: { 
-          'User-Agent': 'DevBox-Pro/1.0.0',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/octet-stream, application/zip, */*',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Host': parsedUrl.host,
         },
       }, (response) => {
         // Handle redirects
-        if (response.statusCode === 301 || response.statusCode === 302) {
+        if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307) {
           file.close();
           fs.unlinkSync(destPath);
-          return this.downloadFile(response.headers.location, destPath, id)
+          const redirectUrl = response.headers.location.startsWith('http') 
+            ? response.headers.location 
+            : new URL(response.headers.location, url).toString();
+          return this.downloadFile(redirectUrl, destPath, id)
             .then(resolve)
             .catch(reject);
         }
@@ -287,6 +330,15 @@ class BinaryDownloadManager {
           file.close();
           fs.unlinkSync(destPath);
           reject(new Error(`Download failed with status ${response.statusCode}`));
+          return;
+        }
+        
+        // Check if we're getting HTML instead of binary (common with blocked downloads)
+        const contentType = response.headers['content-type'] || '';
+        if (contentType.includes('text/html') && !destPath.endsWith('.html')) {
+          file.close();
+          fs.unlinkSync(destPath);
+          reject(new Error('Server returned HTML instead of binary. Download may be blocked or URL may be invalid.'));
           return;
         }
 
@@ -335,8 +387,19 @@ class BinaryDownloadManager {
     await fs.ensureDir(destPath);
 
     if (ext === '.zip') {
-      const zip = new AdmZip(archivePath);
-      zip.extractAllTo(destPath, true);
+      // Validate ZIP file before extraction
+      const isValidZip = await this.validateZipFile(archivePath);
+      if (!isValidZip) {
+        // Check if it's actually HTML
+        const fileStart = await fs.readFile(archivePath, { encoding: 'utf8', flag: 'r' }).catch(() => '');
+        const first500 = fileStart.slice(0, 500).toLowerCase();
+        if (first500.includes('<!doctype') || first500.includes('<html')) {
+          throw new Error('Downloaded file is HTML instead of ZIP. The download source may be blocking automated downloads or the URL is invalid.');
+        }
+        throw new Error('Invalid ZIP file. The download may have been corrupted or blocked.');
+      }
+      // Use async extraction to avoid blocking the UI
+      await this.extractZipAsync(archivePath, destPath, id);
     } else if (basename.endsWith('.tar.gz') || ext === '.tgz') {
       await tar.x({
         file: archivePath,
@@ -346,6 +409,64 @@ class BinaryDownloadManager {
     }
 
     this.emitProgress(id, { status: 'extracting', progress: 100 });
+  }
+
+  async validateZipFile(filePath) {
+    try {
+      // Read first 4 bytes - ZIP files start with PK (0x50 0x4B)
+      // Use fs.read with a callback-style approach since fs-extra.open returns fd number
+      const buffer = Buffer.alloc(4);
+      const fd = await fs.open(filePath, 'r');
+      await new Promise((resolve, reject) => {
+        require('fs').read(fd, buffer, 0, 4, 0, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      await fs.close(fd);
+      // Check for ZIP magic number: PK\x03\x04 or PK\x05\x06 (empty) or PK\x07\x08 (spanned)
+      const isValid = buffer[0] === 0x50 && buffer[1] === 0x4B;
+      console.log(`[ZIP Validation] ${filePath}: bytes=${buffer[0].toString(16)} ${buffer[1].toString(16)}, valid=${isValid}`);
+      return isValid;
+    } catch (err) {
+      console.error('Error validating ZIP file:', err);
+      return false;
+    }
+  }
+
+  async extractZipAsync(archivePath, destPath, id) {
+    return new Promise((resolve, reject) => {
+      try {
+        // Use worker thread to prevent UI freeze
+        const workerPath = path.join(__dirname, 'extractWorker.js');
+        
+        const worker = new Worker(workerPath, {
+          workerData: { archivePath, destPath }
+        });
+        
+        worker.on('message', (message) => {
+          if (message.type === 'progress') {
+            this.emitProgress(id, { status: 'extracting', progress: message.progress });
+          } else if (message.type === 'done') {
+            resolve();
+          } else if (message.type === 'error') {
+            reject(new Error(message.error));
+          }
+        });
+        
+        worker.on('error', (error) => {
+          reject(error);
+        });
+        
+        worker.on('exit', (code) => {
+          if (code !== 0) {
+            reject(new Error(`Worker stopped with exit code ${code}`));
+          }
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
   }
 
   async downloadPhp(version) {
@@ -505,6 +626,36 @@ opcache.revalidate_freq=0
 
       const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
       const extractPath = path.join(this.resourcesPath, 'mysql', platform);
+
+      await fs.remove(extractPath);
+      await fs.ensureDir(extractPath);
+
+      await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.extractArchive(downloadPath, extractPath, id);
+      await fs.remove(downloadPath);
+
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true };
+    } catch (error) {
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  }
+
+  async downloadMariadb() {
+    const id = 'mariadb';
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads.mariadb[platform];
+
+    if (!downloadInfo) {
+      throw new Error(`MariaDB not available for ${platform}`);
+    }
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
+      const extractPath = path.join(this.resourcesPath, 'mariadb', platform);
 
       await fs.remove(extractPath);
       await fs.ensureDir(extractPath);
@@ -752,14 +903,105 @@ server {
       await fs.remove(extractPath);
       await fs.ensureDir(extractPath);
 
-      await this.downloadFile(downloadInfo.url, downloadPath, id);
+      // Try primary URL first, then fallbacks
+      const urls = [downloadInfo.url, ...(downloadInfo.fallbackUrls || [])];
+      let lastError = null;
+      let downloaded = false;
+      
+      for (const url of urls) {
+        try {
+          console.log(`[Apache] Trying download from: ${url}`);
+          await this.downloadFile(url, downloadPath, id);
+          downloaded = true;
+          break;
+        } catch (err) {
+          console.log(`[Apache] Download failed from ${url}: ${err.message}`);
+          lastError = err;
+          // Clean up partial download
+          await fs.remove(downloadPath).catch(() => {});
+        }
+      }
+      
+      if (!downloaded) {
+        // Provide helpful error message for manual download
+        const manualNote = downloadInfo.manualDownloadNote || '';
+        const manualUrl = downloadInfo.manualDownloadUrl || 'https://www.apachelounge.com/download/';
+        throw new Error(`Apache download failed. ${manualNote} Manual download: ${manualUrl}`);
+      }
+
       await this.extractArchive(downloadPath, extractPath, id);
+
+      // Apache Lounge ZIPs have files inside an "Apache24" folder - move them up
+      const apache24Path = path.join(extractPath, 'Apache24');
+      if (await fs.pathExists(apache24Path)) {
+        console.log('[Apache] Moving files from Apache24 subfolder...');
+        const contents = await fs.readdir(apache24Path);
+        for (const item of contents) {
+          const srcPath = path.join(apache24Path, item);
+          const destPath = path.join(extractPath, item);
+          await fs.move(srcPath, destPath, { overwrite: true });
+        }
+        await fs.remove(apache24Path);
+        console.log('[Apache] Files moved successfully');
+      }
 
       // Create default Apache config for PHP
       await this.createApacheConfig(extractPath);
 
       await fs.remove(downloadPath);
 
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true };
+    } catch (error) {
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  }
+
+  async importApache(filePath) {
+    const id = 'apache';
+    const platform = this.getPlatform();
+    
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+      
+      // Validate file exists
+      if (!await fs.pathExists(filePath)) {
+        throw new Error('File not found: ' + filePath);
+      }
+      
+      // Validate it's a zip file
+      const isValid = await this.validateZipFile(filePath);
+      if (!isValid) {
+        throw new Error('Invalid ZIP file. Please download the correct Apache ZIP from Apache Lounge.');
+      }
+      
+      const extractPath = path.join(this.resourcesPath, 'apache', platform);
+      
+      await fs.remove(extractPath);
+      await fs.ensureDir(extractPath);
+      
+      this.emitProgress(id, { status: 'extracting', progress: 50 });
+      
+      await this.extractArchive(filePath, extractPath, id);
+      
+      // Apache Lounge ZIPs have files inside an "Apache24" folder - move them up
+      const apache24Path = path.join(extractPath, 'Apache24');
+      if (await fs.pathExists(apache24Path)) {
+        console.log('[Apache Import] Moving files from Apache24 subfolder...');
+        const contents = await fs.readdir(apache24Path);
+        for (const item of contents) {
+          const srcPath = path.join(apache24Path, item);
+          const destPath = path.join(extractPath, item);
+          await fs.move(srcPath, destPath, { overwrite: true });
+        }
+        await fs.remove(apache24Path);
+        console.log('[Apache Import] Files moved successfully');
+      }
+      
+      // Create default Apache config for PHP
+      await this.createApacheConfig(extractPath);
+      
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true };
     } catch (error) {
@@ -875,6 +1117,7 @@ AddType application/x-httpd-php-source .phps
     const urls = {
       php: {},
       mysql: this.downloads.mysql[platform],
+      mariadb: this.downloads.mariadb[platform],
       redis: this.downloads.redis[platform],
       mailpit: this.downloads.mailpit[platform],
       phpmyadmin: this.downloads.phpmyadmin.all,

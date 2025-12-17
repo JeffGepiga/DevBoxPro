@@ -15,16 +15,18 @@ import {
   Loader2,
   Globe,
   Zap,
+  FolderOpen,
 } from 'lucide-react';
 import clsx from 'clsx';
 
-const PHP_VERSIONS = ['8.3', '8.2', '8.1', '8.0', '7.4'];
+const PHP_VERSIONS = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
 const NODE_VERSIONS = ['22', '20', '18'];
 
 function BinaryManager() {
   const [installed, setInstalled] = useState({
     php: {},
     mysql: false,
+    mariadb: false,
     redis: false,
     mailpit: false,
     phpmyadmin: false,
@@ -98,65 +100,115 @@ function BinaryManager() {
 
   const handleDownloadPhp = async (version) => {
     const id = `php-${version}`;
+    
+    // Don't start if already downloading
+    if (downloading[id]) return;
+    
     setDownloading((prev) => ({ ...prev, [id]: true }));
     setProgress((prev) => ({ ...prev, [id]: { status: 'starting', progress: 0 } }));
 
-    try {
-      await window.devbox?.binaries.downloadPhp(version);
-    } catch (error) {
+    // Fire and forget - don't await, let progress events handle updates
+    window.devbox?.binaries.downloadPhp(version).catch((error) => {
       console.error(`Error downloading PHP ${version}:`, error);
       setProgress((prev) => ({ ...prev, [id]: { status: 'error', error: error.message } }));
       setDownloading((prev) => ({ ...prev, [id]: false }));
-    }
+    });
   };
 
   const handleDownloadService = async (service) => {
+    // Don't start if already downloading
+    if (downloading[service]) return;
+    
     setDownloading((prev) => ({ ...prev, [service]: true }));
     setProgress((prev) => ({ ...prev, [service]: { status: 'starting', progress: 0 } }));
 
-    try {
-      switch (service) {
-        case 'mysql':
-          await window.devbox?.binaries.downloadMysql();
-          break;
-        case 'redis':
-          await window.devbox?.binaries.downloadRedis();
-          break;
-        case 'mailpit':
-          await window.devbox?.binaries.downloadMailpit();
-          break;
-        case 'phpmyadmin':
-          await window.devbox?.binaries.downloadPhpMyAdmin();
-          break;
-        case 'nginx':
-          await window.devbox?.binaries.downloadNginx();
-          break;
-        case 'apache':
-          await window.devbox?.binaries.downloadApache();
-          break;
-        case 'composer':
-          await window.devbox?.binaries.downloadComposer();
-          break;
-      }
-    } catch (error) {
+    // Fire and forget - don't await, let progress events handle updates
+    let downloadPromise;
+    switch (service) {
+      case 'mysql':
+        downloadPromise = window.devbox?.binaries.downloadMysql();
+        break;
+      case 'mariadb':
+        downloadPromise = window.devbox?.binaries.downloadMariadb();
+        break;
+      case 'redis':
+        downloadPromise = window.devbox?.binaries.downloadRedis();
+        break;
+      case 'mailpit':
+        downloadPromise = window.devbox?.binaries.downloadMailpit();
+        break;
+      case 'phpmyadmin':
+        downloadPromise = window.devbox?.binaries.downloadPhpMyAdmin();
+        break;
+      case 'nginx':
+        downloadPromise = window.devbox?.binaries.downloadNginx();
+        break;
+      case 'apache':
+        downloadPromise = window.devbox?.binaries.downloadApache();
+        break;
+      case 'composer':
+        downloadPromise = window.devbox?.binaries.downloadComposer();
+        break;
+    }
+    
+    downloadPromise?.catch((error) => {
       console.error(`Error downloading ${service}:`, error);
       setProgress((prev) => ({ ...prev, [service]: { status: 'error', error: error.message } }));
       setDownloading((prev) => ({ ...prev, [service]: false }));
+    });
+  };
+
+  const handleOpenApacheDownloadPage = async () => {
+    try {
+      await window.devbox?.binaries.openApacheDownloadPage();
+    } catch (error) {
+      console.error('Error opening Apache download page:', error);
     }
+  };
+
+  const handleImportApache = async () => {
+    // Use file input to select a file
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.zip';
+    input.onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setDownloading((prev) => ({ ...prev, apache: true }));
+      setProgress((prev) => ({ ...prev, apache: { status: 'starting', progress: 0 } }));
+
+      try {
+        // Get the file path - we need to use the path property
+        const filePath = file.path;
+        if (!filePath) {
+          throw new Error('Could not get file path. Please try again.');
+        }
+        await window.devbox?.binaries.importApache(filePath);
+      } catch (error) {
+        console.error('Error importing Apache:', error);
+        setProgress((prev) => ({ ...prev, apache: { status: 'error', error: error.message } }));
+        setDownloading((prev) => ({ ...prev, apache: false }));
+      }
+    };
+    input.click();
   };
 
   const handleDownloadNodejs = async (version) => {
     const id = `nodejs-${version}`;
+    
+    // Don't start if already downloading
+    if (downloading[id]) return;
+    
     setDownloading((prev) => ({ ...prev, [id]: true }));
     setProgress((prev) => ({ ...prev, [id]: { status: 'starting', progress: 0 } }));
 
-    try {
-      await window.devbox?.binaries.downloadNodejs(version);
-    } catch (error) {
+    // Fire and forget - don't await, let progress events handle updates
+    window.devbox?.binaries.downloadNodejs(version).catch((error) => {
       console.error(`Error downloading Node.js ${version}:`, error);
       setProgress((prev) => ({ ...prev, [id]: { status: 'error', error: error.message } }));
       setDownloading((prev) => ({ ...prev, [id]: false }));
-    }
+    });
   };
 
   const handleRemove = async (type, version = null) => {
@@ -246,11 +298,21 @@ function BinaryManager() {
     {
       id: 'mysql',
       name: 'MySQL',
-      description: 'MySQL 8.0 database server',
+      description: 'MySQL 8.4 database server',
       icon: Database,
       installed: installed.mysql,
       url: downloadUrls.mysql?.url,
-      size: '~280 MB',
+      size: '~290 MB',
+      category: 'database',
+    },
+    {
+      id: 'mariadb',
+      name: 'MariaDB',
+      description: 'MariaDB 11.4 database server (MySQL compatible)',
+      icon: Database,
+      installed: installed.mariadb,
+      url: downloadUrls.mariadb?.url,
+      size: '~90 MB',
       category: 'database',
     },
     {
@@ -289,7 +351,7 @@ function BinaryManager() {
     {
       id: 'nginx',
       name: 'Nginx',
-      description: 'High-performance web server & reverse proxy',
+      description: 'High-performance web server & reverse proxy (v1.28.0)',
       icon: Zap,
       installed: installed.nginx,
       url: downloadUrls.nginx?.url,
@@ -298,13 +360,17 @@ function BinaryManager() {
     {
       id: 'apache',
       name: 'Apache',
-      description: 'Most popular web server with mod_php support',
+      description: 'Web server with mod_php support (manual download)',
       icon: Globe,
       installed: installed.apache,
       url: downloadUrls.apache?.url,
       size: '~60 MB',
     },
   ];
+
+  // Count active downloads
+  const activeDownloads = Object.entries(downloading).filter(([_, isDownloading]) => isDownloading);
+  const activeDownloadCount = activeDownloads.length;
 
   return (
     <div className="p-8">
@@ -315,6 +381,49 @@ function BinaryManager() {
           Download and manage required binaries for DevBox Pro
         </p>
       </div>
+
+      {/* Active Downloads Banner */}
+      {activeDownloadCount > 0 && (
+        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-blue-600 dark:text-blue-400" />
+            <span className="font-medium text-blue-800 dark:text-blue-200">
+              {activeDownloadCount} download{activeDownloadCount > 1 ? 's' : ''} in progress
+            </span>
+          </div>
+          <div className="mt-3 space-y-2">
+            {activeDownloads.map(([id]) => {
+              const p = progress[id];
+              return (
+                <div key={id} className="flex items-center gap-3 text-sm">
+                  <span className="text-gray-600 dark:text-gray-400 w-24 truncate capitalize">
+                    {id.replace('-', ' ')}
+                  </span>
+                  {p?.status === 'downloading' && (
+                    <>
+                      <div className="flex-1 h-2 bg-blue-200 dark:bg-blue-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-600 dark:bg-blue-400 transition-all duration-300"
+                          style={{ width: `${p.progress || 0}%` }}
+                        />
+                      </div>
+                      <span className="text-gray-500 dark:text-gray-400 w-12 text-right">
+                        {Math.round(p.progress || 0)}%
+                      </span>
+                    </>
+                  )}
+                  {p?.status === 'extracting' && (
+                    <span className="text-amber-600 dark:text-amber-400">Extracting...</span>
+                  )}
+                  {p?.status === 'starting' && (
+                    <span className="text-gray-500 dark:text-gray-400">Starting...</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* PHP Versions */}
       <div className="mb-8">
@@ -524,6 +633,26 @@ function BinaryManager() {
                         title="Remove"
                       >
                         <Trash2 className="w-4 h-4" />
+                      </button>
+                    </>
+                  ) : server.id === 'apache' ? (
+                    // Special handling for Apache - manual download required
+                    <>
+                      <button
+                        onClick={handleOpenApacheDownloadPage}
+                        className="btn-secondary flex items-center gap-2"
+                        title="Open Apache Lounge download page"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Download Page
+                      </button>
+                      <button
+                        onClick={handleImportApache}
+                        className="btn-primary flex items-center gap-2"
+                        title="Import downloaded Apache ZIP"
+                      >
+                        <FolderOpen className="w-4 h-4" />
+                        Import ZIP
                       </button>
                     </>
                   ) : (
@@ -826,13 +955,13 @@ function BinaryManager() {
               Download Full Stack Environment
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Download PHP 8.3, {webServerType === 'nginx' ? 'Nginx' : 'Apache'}, MySQL, Redis, Mailpit, phpMyAdmin, Node.js 20, and Composer
+              Download PHP 8.4, {webServerType === 'nginx' ? 'Nginx' : 'Apache'}, MySQL, Redis, Mailpit, phpMyAdmin, Node.js 20, and Composer
             </p>
           </div>
           <button
             onClick={async () => {
               // Download essentials
-              if (!installed.php['8.3']) handleDownloadPhp('8.3');
+              if (!installed.php['8.4']) handleDownloadPhp('8.4');
               if (!installed[webServerType]) handleDownloadService(webServerType);
               if (!installed.mysql) handleDownloadService('mysql');
               if (!installed.redis) handleDownloadService('redis');

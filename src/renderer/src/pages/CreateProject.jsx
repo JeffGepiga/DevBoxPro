@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
   ArrowLeft,
@@ -10,6 +10,8 @@ import {
   Globe,
   Settings,
   Zap,
+  AlertTriangle,
+  Download,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -59,6 +61,13 @@ function CreateProject() {
   const { createProject } = useApp();
   const [currentStep, setCurrentStep] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
+  const [binariesStatus, setBinariesStatus] = useState({
+    loading: true,
+    php: [],
+    nginx: false,
+    apache: false,
+    mysql: false,
+  });
   const [formData, setFormData] = useState({
     name: '',
     path: '',
@@ -73,6 +82,44 @@ function CreateProject() {
     ssl: true,
     webServer: 'nginx', // 'nginx' or 'apache'
   });
+
+  // Check available binaries on mount
+  useEffect(() => {
+    const checkBinaries = async () => {
+      try {
+        const status = await window.devbox?.binaries.getStatus();
+        if (status) {
+          const phpVersions = Object.entries(status.php || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+          
+          setBinariesStatus({
+            loading: false,
+            php: phpVersions,
+            nginx: status.nginx?.installed || false,
+            apache: status.apache?.installed || false,
+            mysql: status.mysql?.installed || false,
+          });
+
+          // Set default PHP version to first available
+          if (phpVersions.length > 0 && !phpVersions.includes(formData.phpVersion)) {
+            updateFormData({ phpVersion: phpVersions[0] });
+          }
+        } else {
+          setBinariesStatus(prev => ({ ...prev, loading: false }));
+        }
+      } catch (error) {
+        console.error('Error checking binaries:', error);
+        setBinariesStatus(prev => ({ ...prev, loading: false }));
+      }
+    };
+    checkBinaries();
+  }, []);
+
+  // Check if required binaries are available
+  const hasRequiredBinaries = () => {
+    return binariesStatus.php.length > 0 && (binariesStatus.nginx || binariesStatus.apache);
+  };
 
   const updateFormData = (updates) => {
     setFormData((prev) => ({ ...prev, ...updates }));
@@ -158,6 +205,51 @@ function CreateProject() {
         </h1>
       </div>
 
+      {/* Loading state */}
+      {binariesStatus.loading && (
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+          <span className="ml-3 text-gray-600 dark:text-gray-400">Checking available binaries...</span>
+        </div>
+      )}
+
+      {/* Missing binaries warning */}
+      {!binariesStatus.loading && !hasRequiredBinaries() && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6 mb-8">
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0">
+              <AlertTriangle className="w-8 h-8 text-yellow-500" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
+                Required Binaries Not Installed
+              </h3>
+              <p className="text-yellow-700 dark:text-yellow-300 mb-4">
+                Before creating a project, you need to download the required binaries. Please install the following:
+              </p>
+              <ul className="list-disc list-inside text-yellow-700 dark:text-yellow-300 mb-4 space-y-1">
+                {binariesStatus.php.length === 0 && (
+                  <li><strong>PHP</strong> - At least one PHP version is required</li>
+                )}
+                {!binariesStatus.nginx && !binariesStatus.apache && (
+                  <li><strong>Web Server</strong> - Nginx or Apache is required</li>
+                )}
+              </ul>
+              <Link
+                to="/binaries"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Go to Binary Manager
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Show wizard only if binaries are available */}
+      {!binariesStatus.loading && hasRequiredBinaries() && (
+        <>
       {/* Progress Steps */}
       <div className="mb-8">
         <div className="flex items-center justify-between">
@@ -214,6 +306,7 @@ function CreateProject() {
             formData={formData}
             updateFormData={updateFormData}
             onSelectPath={handleSelectPath}
+            availablePhpVersions={binariesStatus.php}
           />
         )}
         {currentStep === 2 && (
@@ -265,6 +358,8 @@ function CreateProject() {
           </button>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }
@@ -312,7 +407,11 @@ function StepProjectType({ formData, updateFormData }) {
   );
 }
 
-function StepDetails({ formData, updateFormData, onSelectPath }) {
+function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersions }) {
+  // Use available versions if provided, otherwise fall back to all versions
+  const phpVersions = availablePhpVersions && availablePhpVersions.length > 0 
+    ? PHP_VERSIONS.filter(v => availablePhpVersions.includes(v))
+    : PHP_VERSIONS;
   return (
     <div>
       <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
@@ -354,7 +453,7 @@ function StepDetails({ formData, updateFormData, onSelectPath }) {
         <div>
           <label className="label">PHP Version</label>
           <div className="grid grid-cols-5 gap-2">
-            {PHP_VERSIONS.map((version) => (
+            {phpVersions.map((version) => (
               <button
                 key={version}
                 onClick={() => updateFormData({ phpVersion: version })}

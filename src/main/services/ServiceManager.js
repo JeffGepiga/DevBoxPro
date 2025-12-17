@@ -71,13 +71,8 @@ class ServiceManager extends EventEmitter {
 
     for (const service of services) {
       try {
-        await this.startService(service);
-        const status = this.serviceStatus.get(service);
-        if (status.status === 'not_installed') {
-          results.push({ service, success: false, reason: 'not_installed' });
-        } else {
-          results.push({ service, success: true });
-        }
+        const result = await this.startService(service);
+        results.push({ service, success: result.success, status: result.status });
       } catch (error) {
         console.error(`Error starting ${service}:`, error);
         results.push({ service, success: false, error: error.message });
@@ -85,7 +80,8 @@ class ServiceManager extends EventEmitter {
     }
 
     const startedCount = results.filter(r => r.success).length;
-    console.log(`Core services started: ${startedCount}/${services.length}`);
+    const notInstalledCount = results.filter(r => r.status === 'not_installed').length;
+    console.log(`Core services started: ${startedCount}/${services.length} (${notInstalledCount} not installed)`);
     return results;
   }
 
@@ -113,13 +109,16 @@ class ServiceManager extends EventEmitter {
           break;
       }
 
-      // Update status
+      // Only update status to running if the service was actually started
+      // (i.e., not if it returned early due to missing binary)
       const status = this.serviceStatus.get(serviceName);
-      status.status = 'running';
-      status.startedAt = new Date();
-      this.emit('serviceStarted', serviceName);
+      if (status.status !== 'not_installed') {
+        status.status = 'running';
+        status.startedAt = new Date();
+        this.emit('serviceStarted', serviceName);
+      }
 
-      return { success: true, service: serviceName };
+      return { success: status.status === 'running', service: serviceName, status: status.status };
     } catch (error) {
       console.error(`Failed to start ${config.name}:`, error);
       const status = this.serviceStatus.get(serviceName);
@@ -457,15 +456,18 @@ appendfilename "appendonly.aof"
 
   // Utility methods
   getMySQLPath() {
-    return path.join(this.resourcePath, 'mysql');
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    return path.join(this.resourcePath, 'mysql', platform);
   }
 
   getRedisPath() {
-    return path.join(this.resourcePath, 'redis');
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    return path.join(this.resourcePath, 'redis', platform);
   }
 
   getMailpitPath() {
-    return path.join(this.resourcePath, 'mailpit');
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    return path.join(this.resourcePath, 'mailpit', platform);
   }
 
   async waitForService(serviceName, timeout) {

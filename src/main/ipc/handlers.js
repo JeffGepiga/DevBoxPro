@@ -373,6 +373,35 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       return binaryDownload.getInstalledBinaries();
     });
 
+    ipcMain.handle('binaries:getStatus', async () => {
+      const installed = await binaryDownload.getInstalledBinaries();
+      
+      // Transform to a more detailed status format
+      const status = {
+        php: {},
+        mysql: { installed: installed.mysql },
+        redis: { installed: installed.redis },
+        mailpit: { installed: installed.mailpit },
+        phpmyadmin: { installed: installed.phpmyadmin },
+        nginx: { installed: installed.nginx },
+        apache: { installed: installed.apache },
+        nodejs: {},
+        composer: { installed: installed.composer },
+      };
+
+      // Transform PHP versions
+      for (const [version, isInstalled] of Object.entries(installed.php)) {
+        status.php[version] = { installed: isInstalled };
+      }
+
+      // Transform Node.js versions
+      for (const [version, isInstalled] of Object.entries(installed.nodejs)) {
+        status.nodejs[version] = { installed: isInstalled };
+      }
+
+      return status;
+    });
+
     ipcMain.handle('binaries:getDownloadUrls', async () => {
       return binaryDownload.getDownloadUrls();
     });
@@ -383,6 +412,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
     ipcMain.handle('binaries:downloadMysql', async () => {
       return binaryDownload.downloadMysql();
+    });
+
+    ipcMain.handle('binaries:downloadMariadb', async () => {
+      return binaryDownload.downloadMariadb();
     });
 
     ipcMain.handle('binaries:downloadRedis', async () => {
@@ -403,6 +436,16 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
     ipcMain.handle('binaries:downloadApache', async () => {
       return binaryDownload.downloadApache();
+    });
+
+    ipcMain.handle('binaries:importApache', async (event, filePath) => {
+      return binaryDownload.importApache(filePath);
+    });
+
+    ipcMain.handle('binaries:openApacheDownloadPage', async () => {
+      const { shell } = require('electron');
+      await shell.openExternal('https://www.apachelounge.com/download/');
+      return { success: true };
     });
 
     ipcMain.handle('binaries:downloadNodejs', async (event, version) => {

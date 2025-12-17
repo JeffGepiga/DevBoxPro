@@ -112,14 +112,18 @@ contextBridge.exposeInMainWorld('devbox', {
   // Binary download operations
   binaries: {
     getInstalled: () => ipcRenderer.invoke('binaries:getInstalled'),
+    getStatus: () => ipcRenderer.invoke('binaries:getStatus'),
     getDownloadUrls: () => ipcRenderer.invoke('binaries:getDownloadUrls'),
     downloadPhp: (version) => ipcRenderer.invoke('binaries:downloadPhp', version),
     downloadMysql: () => ipcRenderer.invoke('binaries:downloadMysql'),
+    downloadMariadb: () => ipcRenderer.invoke('binaries:downloadMariadb'),
     downloadRedis: () => ipcRenderer.invoke('binaries:downloadRedis'),
     downloadMailpit: () => ipcRenderer.invoke('binaries:downloadMailpit'),
     downloadPhpMyAdmin: () => ipcRenderer.invoke('binaries:downloadPhpMyAdmin'),
     downloadNginx: () => ipcRenderer.invoke('binaries:downloadNginx'),
     downloadApache: () => ipcRenderer.invoke('binaries:downloadApache'),
+    importApache: (filePath) => ipcRenderer.invoke('binaries:importApache', filePath),
+    openApacheDownloadPage: () => ipcRenderer.invoke('binaries:openApacheDownloadPage'),
     downloadNodejs: (version) => ipcRenderer.invoke('binaries:downloadNodejs', version),
     downloadComposer: () => ipcRenderer.invoke('binaries:downloadComposer'),
     runComposer: (projectPath, command, phpVersion) => ipcRenderer.invoke('binaries:runComposer', projectPath, command, phpVersion),

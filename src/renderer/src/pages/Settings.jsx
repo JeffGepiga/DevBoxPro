@@ -327,7 +327,8 @@ function NetworkSettings({ settings, updateSetting }) {
 }
 
 function PhpSettings({ settings, updateSetting }) {
-  const phpVersions = ['8.3', '8.2', '8.1', '8.0', '7.4'];
+  // PHP versions available in BinaryDownloadManager
+  const phpVersions = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
 
   return (
     <div className="space-y-6">
