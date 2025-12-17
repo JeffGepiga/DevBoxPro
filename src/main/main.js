@@ -29,13 +29,16 @@ function getResourcePath() {
 }
 
 async function createWindow() {
+  const fs = require('fs');
+  const iconPath = path.join(__dirname, '../../build/icon.png');
+  
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1000,
     minHeight: 700,
     title: 'DevBox Pro',
-    icon: path.join(__dirname, '../../build/icon.png'),
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -72,8 +75,17 @@ async function createWindow() {
 }
 
 function createTray() {
-  const iconPath = path.join(__dirname, '../../build/tray-icon.png');
-  tray = new Tray(iconPath);
+  try {
+    const iconPath = path.join(__dirname, '../../build/tray-icon.png');
+    const fs = require('fs');
+    
+    // Check if tray icon exists, skip tray if not
+    if (!fs.existsSync(iconPath)) {
+      console.log('Tray icon not found, skipping tray creation');
+      return;
+    }
+    
+    tray = new Tray(iconPath);
 
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -111,6 +123,9 @@ function createTray() {
       mainWindow.show();
     }
   });
+  } catch (error) {
+    console.error('Failed to create tray:', error.message);
+  }
 }
 
 async function initializeManagers() {

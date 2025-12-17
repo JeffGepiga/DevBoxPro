@@ -275,8 +275,15 @@ default_bits = 2048
 prompt = no
 default_md = sha256
 distinguished_name = dn
-req_extensions = v3_req
+`;
 
+    // Only add req_extensions for non-CA certs with domains
+    if (!isCA && domains.length > 0) {
+      config += `req_extensions = v3_req
+`;
+    }
+
+    config += `
 [dn]
 C = US
 ST = Local
@@ -284,12 +291,25 @@ L = Local
 O = DevBox Pro
 OU = Development
 CN = ${commonName}
+`;
 
+    // Only add v3_req section for non-CA certificates with domains
+    if (!isCA && domains.length > 0) {
+      config += `
 [v3_req]
 basicConstraints = CA:FALSE
 keyUsage = nonRepudiation, digitalSignature, keyEncipherment
 subjectAltName = @alt_names
+
+[alt_names]
 `;
+      domains.forEach((domain, index) => {
+        config += `DNS.${index + 1} = ${domain}\n`;
+        if (!domain.includes('*')) {
+          config += `DNS.${index + 1 + domains.length} = *.${domain}\n`;
+        }
+      });
+    }
 
     if (isCA) {
       config += `
@@ -299,18 +319,6 @@ keyUsage = critical, digitalSignature, cRLSign, keyCertSign
 subjectKeyIdentifier = hash
 authorityKeyIdentifier = keyid:always, issuer
 `;
-    }
-
-    if (domains.length > 0) {
-      config += '\n[alt_names]\n';
-      domains.forEach((domain, index) => {
-        if (domain.includes('*')) {
-          config += `DNS.${index + 1} = ${domain}\n`;
-        } else {
-          config += `DNS.${index + 1} = ${domain}\n`;
-          config += `DNS.${index + 1 + domains.length} = *.${domain}\n`;
-        }
-      });
     }
 
     return config;

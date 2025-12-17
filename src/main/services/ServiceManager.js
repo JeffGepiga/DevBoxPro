@@ -66,16 +66,27 @@ class ServiceManager extends EventEmitter {
   async startCoreServices() {
     console.log('Starting core services...');
 
-    try {
-      await this.startService('mysql');
-      await this.startService('redis');
-      await this.startService('mailpit');
-      await this.startService('phpmyadmin');
-      console.log('Core services started');
-    } catch (error) {
-      console.error('Error starting core services:', error);
-      throw error;
+    const services = ['mysql', 'redis', 'mailpit', 'phpmyadmin'];
+    const results = [];
+
+    for (const service of services) {
+      try {
+        await this.startService(service);
+        const status = this.serviceStatus.get(service);
+        if (status.status === 'not_installed') {
+          results.push({ service, success: false, reason: 'not_installed' });
+        } else {
+          results.push({ service, success: true });
+        }
+      } catch (error) {
+        console.error(`Error starting ${service}:`, error);
+        results.push({ service, success: false, error: error.message });
+      }
     }
+
+    const startedCount = results.filter(r => r.success).length;
+    console.log(`Core services started: ${startedCount}/${services.length}`);
+    return results;
   }
 
   async startService(serviceName) {
@@ -176,6 +187,17 @@ class ServiceManager extends EventEmitter {
   // MySQL
   async startMySQL() {
     const mysqlPath = this.getMySQLPath();
+    const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
+    
+    // Check if MySQL binary exists
+    if (!await fs.pathExists(mysqldPath)) {
+      console.log('MySQL binary not found. Please download MySQL from the Binary Manager.');
+      const status = this.serviceStatus.get('mysql');
+      status.status = 'not_installed';
+      status.error = 'MySQL binary not found. Please download from Binary Manager.';
+      return;
+    }
+
     const dataPath = this.configStore.get('dataPath');
     const dataDir = path.join(dataPath, 'mysql', 'data');
     const port = this.serviceConfigs.mysql.defaultPort;
@@ -188,7 +210,6 @@ class ServiceManager extends EventEmitter {
       await this.initializeMySQLData(mysqlPath, dataDir);
     }
 
-    const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
     const configPath = path.join(dataPath, 'mysql', 'my.cnf');
 
     // Create MySQL config
@@ -274,13 +295,22 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
   // Redis
   async startRedis() {
     const redisPath = this.getRedisPath();
-    const dataPath = this.configStore.get('dataPath');
-    const port = this.serviceConfigs.redis.defaultPort;
-
     const redisServerPath = path.join(
       redisPath,
       process.platform === 'win32' ? 'redis-server.exe' : 'redis-server'
     );
+
+    // Check if Redis binary exists
+    if (!await fs.pathExists(redisServerPath)) {
+      console.log('Redis binary not found. Please download Redis from the Binary Manager.');
+      const status = this.serviceStatus.get('redis');
+      status.status = 'not_installed';
+      status.error = 'Redis binary not found. Please download from Binary Manager.';
+      return;
+    }
+
+    const dataPath = this.configStore.get('dataPath');
+    const port = this.serviceConfigs.redis.defaultPort;
 
     const configPath = path.join(dataPath, 'redis', 'redis.conf');
     await this.createRedisConfig(configPath, dataPath, port);
@@ -321,10 +351,19 @@ appendfilename "appendonly.aof"
   // Mailpit
   async startMailpit() {
     const mailpitPath = this.getMailpitPath();
+    const mailpitBin = path.join(mailpitPath, process.platform === 'win32' ? 'mailpit.exe' : 'mailpit');
+
+    // Check if Mailpit binary exists
+    if (!await fs.pathExists(mailpitBin)) {
+      console.log('Mailpit binary not found. Please download Mailpit from the Binary Manager.');
+      const status = this.serviceStatus.get('mailpit');
+      status.status = 'not_installed';
+      status.error = 'Mailpit binary not found. Please download from Binary Manager.';
+      return;
+    }
+
     const port = this.serviceConfigs.mailpit.defaultPort;
     const smtpPort = this.serviceConfigs.mailpit.smtpPort;
-
-    const mailpitBin = path.join(mailpitPath, process.platform === 'win32' ? 'mailpit.exe' : 'mailpit');
 
     const proc = spawn(mailpitBin, ['--listen', `127.0.0.1:${port}`, '--smtp', `127.0.0.1:${smtpPort}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -351,10 +390,49 @@ appendfilename "appendonly.aof"
   async startPhpMyAdmin() {
     const phpManager = this.managers.php;
     const defaultPhp = phpManager.getDefaultVersion();
-    const phpmyadminPath = path.join(this.resourcePath, 'phpmyadmin');
-    const port = this.serviceConfigs.phpmyadmin.defaultPort;
+    
+    // Check if any PHP version is available
+    const availableVersions = phpManager.getAvailableVersions().filter(v => v.available);
+    if (availableVersions.length === 0) {
+      console.log('No PHP version available. Please download PHP from the Binary Manager.');
+      const status = this.serviceStatus.get('phpmyadmin');
+      status.status = 'not_installed';
+      status.error = 'No PHP version available. Please download from Binary Manager.';
+      return;
+    }
 
-    const phpPath = phpManager.getPhpBinaryPath(defaultPhp);
+    let phpPath;
+    try {
+      phpPath = phpManager.getPhpBinaryPath(defaultPhp);
+    } catch (error) {
+      console.log('PHP binary not found. Please download PHP from the Binary Manager.');
+      const status = this.serviceStatus.get('phpmyadmin');
+      status.status = 'not_installed';
+      status.error = 'PHP binary not found. Please download from Binary Manager.';
+      return;
+    }
+    
+    // Check if PHP binary exists
+    if (!await fs.pathExists(phpPath)) {
+      console.log('PHP binary not found. Please download PHP from the Binary Manager.');
+      const status = this.serviceStatus.get('phpmyadmin');
+      status.status = 'not_installed';
+      status.error = 'PHP binary not found. Please download from Binary Manager.';
+      return;
+    }
+
+    const phpmyadminPath = path.join(this.resourcePath, 'phpmyadmin');
+    
+    // Check if phpMyAdmin is installed
+    if (!await fs.pathExists(phpmyadminPath)) {
+      console.log('phpMyAdmin not found. Please download phpMyAdmin from the Binary Manager.');
+      const status = this.serviceStatus.get('phpmyadmin');
+      status.status = 'not_installed';
+      status.error = 'phpMyAdmin not found. Please download from Binary Manager.';
+      return;
+    }
+
+    const port = this.serviceConfigs.phpmyadmin.defaultPort;
 
     const proc = spawn(phpPath, ['-S', `127.0.0.1:${port}`, '-t', phpmyadminPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
