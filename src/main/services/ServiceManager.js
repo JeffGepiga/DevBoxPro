@@ -607,6 +607,7 @@ http {
     sendfile      on;
     keepalive_timeout 65;
     client_max_body_size 128M;
+    server_names_hash_bucket_size 128;
     
     access_log ${logsPath.replace(/\\/g, '/')}/access.log;
     error_log ${logsPath.replace(/\\/g, '/')}/http_error.log;
