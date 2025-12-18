@@ -167,7 +167,7 @@ function Dashboard() {
             ))}
             {Object.keys(filteredServices).length === 0 && (
               <div className="p-6 text-center text-gray-500 dark:text-gray-400">
-                <p>No services configured</p>
+                <p>{runningProjects.length === 0 ? 'Start a project to see active services' : 'No services required'}</p>
               </div>
             )}
           </div>

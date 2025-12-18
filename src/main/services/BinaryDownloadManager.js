@@ -218,6 +218,93 @@ class BinaryDownloadManager {
     await fs.ensureDir(path.join(this.resourcesPath, 'nodejs'));
     await fs.ensureDir(path.join(this.resourcesPath, 'composer'));
     await fs.ensureDir(path.join(this.resourcesPath, 'downloads'));
+    
+    // Enable extensions in existing PHP installations
+    await this.enablePhpExtensions();
+  }
+
+  // Enable common extensions in all installed PHP versions
+  async enablePhpExtensions() {
+    const platform = this.getPlatform();
+    
+    for (const version of ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4']) {
+      const phpPath = path.join(this.resourcesPath, 'php', version, platform);
+      const iniPath = path.join(phpPath, 'php.ini');
+      
+      if (await fs.pathExists(iniPath)) {
+        try {
+          let iniContent = await fs.readFile(iniPath, 'utf8');
+          let modified = false;
+          
+          // Check if extension_dir is properly set
+          const extDir = path.join(phpPath, 'ext').replace(/\\/g, '/');
+          if (!iniContent.includes('extension_dir')) {
+            // Add extension_dir after [PHP]
+            iniContent = iniContent.replace('[PHP]', `[PHP]\nextension_dir = "${extDir}"`);
+            modified = true;
+          } else if (!iniContent.includes(extDir)) {
+            // Update extension_dir
+            iniContent = iniContent.replace(/extension_dir\s*=\s*"[^"]*"/g, `extension_dir = "${extDir}"`);
+            modified = true;
+          }
+          
+          // Fix extension format for Windows (add php_ prefix and .dll suffix if missing)
+          if (platform === 'win') {
+            const extensions = ['curl', 'fileinfo', 'gd', 'mbstring', 'mysqli', 'openssl', 'pdo_mysql', 'pdo_sqlite', 'sqlite3', 'zip'];
+            const missingExtensions = [];
+            
+            for (const ext of extensions) {
+              const extensionLine = `extension=php_${ext}.dll`;
+              
+              // Check if extension is already properly enabled
+              if (iniContent.includes(extensionLine)) {
+                continue; // Already enabled with correct format
+              }
+              
+              // Replace extension=name with extension=php_name.dll
+              const simplePattern = new RegExp(`^extension=${ext}\\s*$`, 'gm');
+              if (simplePattern.test(iniContent)) {
+                iniContent = iniContent.replace(simplePattern, extensionLine);
+                modified = true;
+                continue;
+              }
+              
+              // Also enable commented extensions with correct format
+              const commentedPattern = new RegExp(`^;extension=${ext}\\s*$`, 'gm');
+              if (commentedPattern.test(iniContent)) {
+                iniContent = iniContent.replace(commentedPattern, extensionLine);
+                modified = true;
+                continue;
+              }
+              
+              const commentedPattern2 = new RegExp(`^;extension=php_${ext}\\.dll\\s*$`, 'gm');
+              if (commentedPattern2.test(iniContent)) {
+                iniContent = iniContent.replace(commentedPattern2, extensionLine);
+                modified = true;
+                continue;
+              }
+              
+              // Extension not found at all - add it to the list of missing extensions
+              missingExtensions.push(extensionLine);
+            }
+            
+            // Add any missing extensions to the end of the file
+            if (missingExtensions.length > 0) {
+              iniContent = iniContent.trimEnd() + '\n' + missingExtensions.join('\n') + '\n';
+              modified = true;
+              console.log(`Added missing extensions to PHP ${version}: ${missingExtensions.join(', ')}`);
+            }
+          }
+          
+          if (modified) {
+            await fs.writeFile(iniPath, iniContent);
+            console.log(`Fixed php.ini for PHP ${version}`);
+          }
+        } catch (error) {
+          console.warn(`Could not update php.ini for PHP ${version}:`, error.message);
+        }
+      }
+    }
   }
 
   addProgressListener(callback) {
@@ -509,6 +596,13 @@ class BinaryDownloadManager {
   }
 
   async createPhpIni(phpPath, version) {
+    const platform = this.getPlatform();
+    const extDir = platform === 'win' ? path.join(phpPath, 'ext').replace(/\\/g, '/') : path.join(phpPath, 'lib', 'php', 'extensions');
+    
+    // Windows uses php_ prefix for extensions
+    const extPrefix = platform === 'win' ? 'php_' : '';
+    const extSuffix = platform === 'win' ? '.dll' : '.so';
+    
     const iniContent = `[PHP]
 ; DevBox Pro PHP ${version} Configuration
 engine = On
@@ -552,6 +646,9 @@ allow_url_fopen = On
 allow_url_include = Off
 default_socket_timeout = 60
 
+; Extension directory
+extension_dir = "${extDir}"
+
 [CLI Server]
 cli_server.color = On
 
@@ -584,8 +681,6 @@ session.gc_maxlifetime = 1440
 session.cache_limiter = nocache
 session.cache_expire = 180
 session.use_trans_sid = 0
-session.sid_length = 26
-session.sid_bits_per_character = 5
 
 [opcache]
 opcache.enable=1
@@ -596,16 +691,17 @@ opcache.max_accelerated_files=20000
 opcache.validate_timestamps=1
 opcache.revalidate_freq=0
 
-; Extensions (enable as needed)
-;extension=curl
-;extension=gd
-;extension=mbstring
-;extension=mysqli
-;extension=openssl
-;extension=pdo_mysql
-;extension=pdo_sqlite
-;extension=sqlite3
-;extension=zip
+; Extensions - enabled by default for Laravel compatibility
+extension=${extPrefix}curl${extSuffix}
+extension=${extPrefix}fileinfo${extSuffix}
+extension=${extPrefix}mbstring${extSuffix}
+extension=${extPrefix}openssl${extSuffix}
+extension=${extPrefix}pdo_mysql${extSuffix}
+extension=${extPrefix}pdo_sqlite${extSuffix}
+extension=${extPrefix}mysqli${extSuffix}
+extension=${extPrefix}sqlite3${extSuffix}
+extension=${extPrefix}zip${extSuffix}
+extension=${extPrefix}gd${extSuffix}
 `;
 
     const iniPath = path.join(phpPath, 'php.ini');
@@ -1341,22 +1437,26 @@ exit 1
     const phpPath = path.join(this.resourcesPath, 'php', phpVersion, platform, platform === 'win' ? 'php.exe' : 'php');
     const composerPhar = this.getComposerPath();
 
+    console.log('[runComposer] Checking PHP at:', phpPath);
+    console.log('[runComposer] Checking Composer at:', composerPhar);
+
     if (!await fs.pathExists(phpPath)) {
-      throw new Error(`PHP ${phpVersion} is not installed`);
+      const error = `PHP ${phpVersion} is not installed. Please download it from the Binary Manager.`;
+      if (onOutput) onOutput(error, 'error');
+      throw new Error(error);
     }
 
     if (!await fs.pathExists(composerPhar)) {
-      throw new Error('Composer is not installed');
+      const error = 'Composer is not installed. Please download it from the Binary Manager.';
+      if (onOutput) onOutput(error, 'error');
+      throw new Error(error);
     }
 
     return new Promise((resolve, reject) => {
       const args = [composerPhar, ...command.split(' ')];
       
       // Log the command being run
-      console.log(`Running: php ${args.join(' ')} in ${projectPath}`);
-      if (onOutput) {
-        onOutput(`$ composer ${command}`, 'command');
-      }
+      console.log(`[runComposer] Running: ${phpPath} ${args.join(' ')} in ${projectPath}`);
 
       const proc = spawn(phpPath, args, {
         cwd: projectPath,
@@ -1365,6 +1465,7 @@ exit 1
           COMPOSER_HOME: path.join(this.resourcesPath, 'composer'),
           COMPOSER_NO_INTERACTION: '1',
         },
+        windowsHide: true,
       });
 
       let stdout = '';
@@ -1373,6 +1474,7 @@ exit 1
       proc.stdout.on('data', (data) => {
         const text = data.toString();
         stdout += text;
+        console.log('[runComposer stdout]', text.trim());
         if (onOutput) {
           onOutput(text, 'stdout');
         }
@@ -1381,20 +1483,28 @@ exit 1
       proc.stderr.on('data', (data) => {
         const text = data.toString();
         stderr += text;
+        console.log('[runComposer stderr]', text.trim());
         if (onOutput) {
           onOutput(text, 'stderr');
         }
       });
 
       proc.on('close', (code) => {
+        console.log(`[runComposer] Process exited with code ${code}`);
         if (code === 0) {
           resolve({ stdout, stderr });
         } else {
-          reject(new Error(stderr || `Composer exited with code ${code}`));
+          const errorMsg = stderr || `Composer exited with code ${code}`;
+          if (onOutput) onOutput(`Process exited with code ${code}`, 'error');
+          reject(new Error(errorMsg));
         }
       });
 
-      proc.on('error', reject);
+      proc.on('error', (err) => {
+        console.error('[runComposer] Process error:', err);
+        if (onOutput) onOutput(`Process error: ${err.message}`, 'error');
+        reject(err);
+      });
     });
   }
 
@@ -1419,6 +1529,7 @@ exit 1
           ...process.env, 
           PATH: `${nodejsPath}${platform === 'win' ? '' : '/bin'}${path.delimiter}${process.env.PATH}`,
         },
+        windowsHide: true,
       });
 
       let stdout = '';

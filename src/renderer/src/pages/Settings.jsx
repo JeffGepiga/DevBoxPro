@@ -174,8 +174,46 @@ function Settings() {
 }
 
 function GeneralSettings({ settings, updateSetting }) {
+  const handleSelectProjectsPath = async () => {
+    try {
+      const result = await window.devbox?.system?.selectDirectory?.();
+      if (result) {
+        updateSetting('defaultProjectsPath', result);
+      }
+    } catch (error) {
+      console.error('Error selecting directory:', error);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          Projects
+        </h3>
+        <div className="space-y-4">
+          <div>
+            <label className="label">Default Projects Directory</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={settings.defaultProjectsPath || ''}
+                onChange={(e) => updateSetting('defaultProjectsPath', e.target.value)}
+                className="input flex-1"
+                placeholder="C:\\Users\\YourName\\Projects"
+              />
+              <button onClick={handleSelectProjectsPath} className="btn-secondary">
+                <Folder className="w-4 h-4" />
+                Browse
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              New projects will be created in this directory by default
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Startup

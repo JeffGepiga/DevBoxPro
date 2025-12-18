@@ -1,6 +1,7 @@
 const { dialog, shell } = require('electron');
 const { app } = require('electron');
 const path = require('path');
+const fs = require('fs-extra');
 
 function setupIpcHandlers(ipcMain, managers, mainWindow) {
   const { config, project, php, service, database, ssl, supervisor, log } = managers;
@@ -469,6 +470,35 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       return binaryDownload.removeBinary(type, version);
     });
 
+    // PHP.ini handlers
+    ipcMain.handle('binaries:getPhpIni', async (event, version) => {
+      const platform = process.platform === 'win32' ? 'win' : 'mac';
+      const phpPath = path.join(binaryDownload.resourcesPath, 'php', version, platform);
+      const iniPath = path.join(phpPath, 'php.ini');
+      
+      if (await fs.pathExists(iniPath)) {
+        return await fs.readFile(iniPath, 'utf8');
+      }
+      return null;
+    });
+
+    ipcMain.handle('binaries:savePhpIni', async (event, version, content) => {
+      const platform = process.platform === 'win32' ? 'win' : 'mac';
+      const phpPath = path.join(binaryDownload.resourcesPath, 'php', version, platform);
+      const iniPath = path.join(phpPath, 'php.ini');
+      
+      await fs.writeFile(iniPath, content, 'utf8');
+      return { success: true };
+    });
+
+    ipcMain.handle('binaries:resetPhpIni', async (event, version) => {
+      const platform = process.platform === 'win32' ? 'win' : 'mac';
+      const phpPath = path.join(binaryDownload.resourcesPath, 'php', version, platform);
+      
+      await binaryDownload.createPhpIni(phpPath, version);
+      return { success: true };
+    });
+
     // Listen to download progress and forward to renderer
     binaryDownload.addProgressListener((id, progress) => {
       mainWindow?.webContents.send('binaries:progress', { id, progress });
@@ -512,9 +542,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   ipcMain.handle('terminal:runCommand', async (event, projectId, command, options = {}) => {
     const { spawn } = require('child_process');
     const path = require('path');
+    const { app } = require('electron');
     
     const projectData = project.getProject(projectId);
-    if (!projectData && projectId !== 'system') {
+    if (!projectData && projectId !== 'system' && projectId !== 'terminal') {
       throw new Error('Project not found');
     }
 
@@ -528,7 +559,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       // Parse command for PHP/Composer handling
       let cmd, args;
       const platform = process.platform === 'win32' ? 'win' : 'mac';
-      const resourcePath = configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+      const resourcePath = config.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
       
       if (command.startsWith('php ') || command === 'php') {
         // Use project's PHP version
@@ -570,6 +601,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
           COMPOSER_HOME: path.join(resourcePath, 'composer'),
         },
         shell: false,
+        windowsHide: true,
       });
 
       // Store process reference for potential cancellation

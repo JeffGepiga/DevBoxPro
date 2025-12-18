@@ -135,6 +135,9 @@ contextBridge.exposeInMainWorld('devbox', {
     runComposer: (projectPath, command, phpVersion) => ipcRenderer.invoke('binaries:runComposer', projectPath, command, phpVersion),
     runNpm: (projectPath, command, nodeVersion) => ipcRenderer.invoke('binaries:runNpm', projectPath, command, nodeVersion),
     remove: (type, version) => ipcRenderer.invoke('binaries:remove', type, version),
+    getPhpIni: (version) => ipcRenderer.invoke('binaries:getPhpIni', version),
+    savePhpIni: (version, content) => ipcRenderer.invoke('binaries:savePhpIni', version, content),
+    resetPhpIni: (version) => ipcRenderer.invoke('binaries:resetPhpIni', version),
     onProgress: (callback) => {
       const handler = (event, data) => callback(data.id, data.progress);
       ipcRenderer.on('binaries:progress', handler);

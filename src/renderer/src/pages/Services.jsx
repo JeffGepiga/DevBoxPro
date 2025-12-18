@@ -316,6 +316,7 @@ function ServiceCard({ name, info, service, isRunning, resourceUsage, loading, o
     red: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
     green: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400',
     orange: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400',
+    teal: 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400',
     gray: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400',
   };
 

@@ -330,6 +330,7 @@ authorityKeyIdentifier = keyid:always, issuer
     return new Promise((resolve, reject) => {
       const proc = spawn(opensslPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let stderr = '';
@@ -356,6 +357,7 @@ authorityKeyIdentifier = keyid:always, issuer
     return new Promise((resolve, reject) => {
       const proc = spawn(command, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let stderr = '';

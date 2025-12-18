@@ -144,51 +144,27 @@ class ProjectManager {
     existingProjects.push(project);
     this.configStore.set('projects', existingProjects);
 
-    // Install fresh framework if requested
+    // Install fresh framework if requested - run async without blocking
     if (config.installFresh) {
-      try {
-        if (project.type === 'laravel') {
-          console.log(`Installing fresh Laravel at ${project.path}...`);
-          await this.installLaravel(project.path, project.phpVersion, project.name, mainWindow);
-        } else if (project.type === 'wordpress') {
-          console.log(`Installing fresh WordPress at ${project.path}...`);
-          await this.installWordPress(project.path, mainWindow);
-        }
-      } catch (error) {
-        console.error('Failed to install framework:', error);
-        // Don't fail project creation, just log the error
-        project.installError = error.message;
-        // Update project with error
-        const updatedProjects = this.configStore.get('projects', []);
-        const idx = updatedProjects.findIndex(p => p.id === project.id);
-        if (idx !== -1) {
-          updatedProjects[idx] = project;
-          this.configStore.set('projects', updatedProjects);
-        }
-      }
+      console.log('[createProject] installFresh is true, mainWindow:', mainWindow ? 'available' : 'not available');
+      
+      // Mark project as installing
+      project.installing = true;
+      
+      // Run installation in background (don't await)
+      this.runInstallation(project, mainWindow).catch(error => {
+        console.error('Background installation failed:', error);
+      });
     }
 
     console.log(`Project created: ${project.name} (${project.id})`);
     return project;
   }
 
-  async installLaravel(projectPath, phpVersion = '8.4', projectName = 'laravel', mainWindow = null) {
-    const parentPath = path.dirname(projectPath);
-    const folderName = path.basename(projectPath);
-    
-    // Ensure parent directory exists
-    await fs.ensureDir(parentPath);
-    
-    // Run composer create-project
-    const binary = this.managers.binary;
-    if (!binary) {
-      throw new Error('BinaryDownloadManager not available');
-    }
-
-    // Output callback to send to renderer
-    const onOutput = (text, type) => {
-      console.log(`[Laravel Install] ${text}`);
-      if (mainWindow) {
+  // Separate method for background installation
+  async runInstallation(project, mainWindow) {
+    const sendOutput = (text, type) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('terminal:output', {
           projectId: 'installation',
           text,
@@ -197,56 +173,202 @@ class ProjectManager {
       }
     };
 
-    onOutput(`Installing Laravel in ${projectPath}...`, 'info');
+    sendOutput(`Starting ${project.type} installation at ${project.path}...`, 'info');
 
-    // Use composer to create Laravel project
-    const result = await binary.runComposer(
-      parentPath,
-      `create-project laravel/laravel ${folderName} --prefer-dist`,
-      phpVersion,
-      onOutput
-    );
+    try {
+      if (project.type === 'laravel') {
+        console.log(`Installing fresh Laravel at ${project.path}...`);
+        
+        // Check if project directory already has files
+        if (await fs.pathExists(project.path)) {
+          const files = await fs.readdir(project.path);
+          if (files.length > 0) {
+            sendOutput(`Warning: Directory ${project.path} is not empty. Skipping Laravel installation.`, 'warning');
+            sendOutput('If you want a fresh installation, please choose an empty directory.', 'info');
+            project.installError = 'Directory not empty';
+            project.installing = false;
+            this.updateProjectInStore(project);
+            sendOutput('', 'complete'); // Signal completion
+            return;
+          }
+        }
+        
+        await this.installLaravel(project.path, project.phpVersion, project.name, mainWindow);
+        
+      } else if (project.type === 'wordpress') {
+        console.log(`Installing fresh WordPress at ${project.path}...`);
+        await this.installWordPress(project.path, mainWindow);
+      }
+      
+      // Mark installation complete
+      project.installing = false;
+      this.updateProjectInStore(project);
+      sendOutput('', 'complete');
+      
+    } catch (error) {
+      console.error('Failed to install framework:', error);
+      project.installError = error.message;
+      project.installing = false;
+      this.updateProjectInStore(project);
+      
+      sendOutput(`✗ Installation failed: ${error.message}`, 'error');
+      sendOutput('', 'complete');
+    }
+  }
 
-    onOutput('Laravel installed successfully!', 'success');
+  // Helper to update project in config store
+  updateProjectInStore(project) {
+    const projects = this.configStore.get('projects', []);
+    const idx = projects.findIndex(p => p.id === project.id);
+    if (idx !== -1) {
+      projects[idx] = project;
+      this.configStore.set('projects', projects);
+    }
+  }
+
+  async installLaravel(projectPath, phpVersion = '8.4', projectName = 'laravel', mainWindow = null) {
+    const parentPath = path.dirname(projectPath);
+    const folderName = path.basename(projectPath);
+    
+    console.log('[installLaravel] Starting installation:', { projectPath, phpVersion, projectName, hasMainWindow: !!mainWindow });
+    
+    // Ensure parent directory exists
+    await fs.ensureDir(parentPath);
+    
+    // Run composer create-project
+    const binary = this.managers.binaryDownload;
+    if (!binary) {
+      throw new Error('BinaryDownloadManager not available');
+    }
+
+    // Output callback to send to renderer
+    const onOutput = (text, type) => {
+      // Clean up the text
+      const cleanText = text.toString().replace(/\r\n/g, '\n').trim();
+      if (!cleanText) return;
+      
+      console.log(`[Laravel Install] [${type}] ${cleanText}`);
+      
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try {
+          mainWindow.webContents.send('terminal:output', {
+            projectId: 'installation',
+            text: cleanText,
+            type,
+          });
+          console.log('[Laravel Install] Sent to renderer');
+        } catch (err) {
+          console.error('[Laravel Install] Failed to send to renderer:', err);
+        }
+      } else {
+        console.warn('[Laravel Install] mainWindow not available');
+      }
+    };
+
+    onOutput('Creating Laravel project...', 'info');
+    onOutput(`$ composer create-project laravel/laravel ${folderName} --prefer-dist`, 'command');
+
+    try {
+      // Use composer to create Laravel project
+      console.log('[installLaravel] Running composer create-project...');
+      await binary.runComposer(
+        parentPath,
+        `create-project laravel/laravel ${folderName} --prefer-dist --no-interaction`,
+        phpVersion,
+        onOutput
+      );
+      console.log('[installLaravel] Composer create-project completed');
+
+      onOutput('✓ Laravel files installed successfully!', 'success');
+    } catch (error) {
+      console.error('[installLaravel] Composer error:', error);
+      onOutput(`✗ Composer error: ${error.message}`, 'error');
+      throw error;
+    }
+
+    // Copy .env.example to .env if it exists
+    try {
+      const envExamplePath = path.join(projectPath, '.env.example');
+      const envPath = path.join(projectPath, '.env');
+      
+      if (await fs.pathExists(envExamplePath) && !await fs.pathExists(envPath)) {
+        onOutput('Creating .env file...', 'info');
+        await fs.copy(envExamplePath, envPath);
+        onOutput('✓ .env file created from .env.example', 'success');
+      }
+    } catch (e) {
+      onOutput(`Warning: Could not create .env file: ${e.message}`, 'warning');
+    }
+
+    // Update .env with project-specific settings
+    try {
+      const envPath = path.join(projectPath, '.env');
+      if (await fs.pathExists(envPath)) {
+        let envContent = await fs.readFile(envPath, 'utf-8');
+        
+        // Update APP_NAME
+        envContent = envContent.replace(/^APP_NAME=.*/m, `APP_NAME="${projectName}"`);
+        
+        // Update APP_URL
+        const projectDomain = `${projectName.toLowerCase().replace(/[^a-z0-9]/g, '-')}.test`;
+        envContent = envContent.replace(/^APP_URL=.*/m, `APP_URL=http://${projectDomain}`);
+        
+        // Update DB settings if project has MySQL enabled
+        const project = this.configStore.get('projects', []).find(p => p.path === projectPath);
+        if (project) {
+          const dbName = this.sanitizeDatabaseName(projectName);
+          envContent = envContent.replace(/^DB_DATABASE=.*/m, `DB_DATABASE=${dbName}`);
+          envContent = envContent.replace(/^DB_USERNAME=.*/m, `DB_USERNAME=root`);
+          envContent = envContent.replace(/^DB_PASSWORD=.*/m, `DB_PASSWORD=`);
+        }
+        
+        await fs.writeFile(envPath, envContent);
+        onOutput('✓ .env file configured', 'success');
+      }
+    } catch (e) {
+      onOutput(`Warning: Could not update .env file: ${e.message}`, 'warning');
+    }
     
     // Generate application key
     try {
       onOutput('Generating application key...', 'info');
-      await binary.runComposer(projectPath, 'run-script post-root-package-install', phpVersion, onOutput);
-    } catch (e) {
-      // Ignore if script doesn't exist
-    }
-
-    // Run key:generate
-    try {
+      onOutput('$ php artisan key:generate', 'command');
+      
       const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
       const platform = process.platform === 'win32' ? 'win' : 'mac';
       const resourcePath = this.configStore.get('resourcePath') || require('path').join(require('electron').app.getPath('userData'), 'resources');
       const phpPath = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
       
       if (await fs.pathExists(phpPath)) {
-        const { spawn } = require('child_process');
         await new Promise((resolve, reject) => {
-          const proc = spawn(phpPath, ['artisan', 'key:generate'], { cwd: projectPath });
+          const proc = spawn(phpPath, ['artisan', 'key:generate'], { cwd: projectPath, windowsHide: true });
           proc.stdout.on('data', (data) => onOutput(data.toString(), 'stdout'));
           proc.stderr.on('data', (data) => onOutput(data.toString(), 'stderr'));
           proc.on('close', (code) => {
-            if (code === 0) resolve();
-            else reject(new Error(`key:generate failed with code ${code}`));
+            if (code === 0) {
+              onOutput('✓ Application key generated!', 'success');
+              resolve();
+            } else {
+              onOutput(`Warning: key:generate exited with code ${code}`, 'warning');
+              resolve(); // Don't fail
+            }
           });
-          proc.on('error', reject);
+          proc.on('error', (err) => {
+            onOutput(`Warning: ${err.message}`, 'warning');
+            resolve();
+          });
         });
-        onOutput('Application key generated!', 'success');
       }
     } catch (e) {
-      console.warn('Could not generate app key:', e.message);
+      onOutput(`Warning: Could not generate app key: ${e.message}`, 'warning');
     }
 
     // Run npm install if package.json exists (like Laragon does)
     try {
       const packageJsonPath = path.join(projectPath, 'package.json');
       if (await fs.pathExists(packageJsonPath)) {
-        onOutput('Running npm install...', 'info');
+        onOutput('Installing npm packages...', 'info');
+        onOutput('$ npm install', 'command');
         
         // Try to use downloaded Node.js, fall back to system npm
         const nodeVersion = '22'; // Use LTS version
@@ -254,23 +376,22 @@ class ProjectManager {
         const resourcePath = this.configStore.get('resourcePath') || require('path').join(require('electron').app.getPath('userData'), 'resources');
         const nodeDir = path.join(resourcePath, 'nodejs', nodeVersion, platform);
         
-        let npmPath = 'npm';
         let npmCmd = 'npm';
         
         // Check if we have local Node.js
         if (await fs.pathExists(nodeDir)) {
           if (process.platform === 'win32') {
-            npmPath = path.join(nodeDir, 'npm.cmd');
+            npmCmd = path.join(nodeDir, 'npm.cmd');
           } else {
-            npmPath = path.join(nodeDir, 'bin', 'npm');
+            npmCmd = path.join(nodeDir, 'bin', 'npm');
           }
-          npmCmd = npmPath;
         }
         
-        await new Promise((resolve, reject) => {
+        await new Promise((resolve) => {
           const npmProc = spawn(npmCmd, ['install'], {
             cwd: projectPath,
             shell: true,
+            windowsHide: true,
             env: {
               ...process.env,
               PATH: process.platform === 'win32' 
@@ -283,26 +404,27 @@ class ProjectManager {
           npmProc.stderr.on('data', (data) => onOutput(data.toString(), 'stderr'));
           npmProc.on('close', (code) => {
             if (code === 0) {
-              onOutput('npm packages installed successfully!', 'success');
-              resolve();
+              onOutput('✓ npm packages installed successfully!', 'success');
             } else {
-              // npm install failure is not critical
-              onOutput(`npm install finished with code ${code}`, 'warning');
-              resolve();
+              onOutput(`npm install finished with code ${code} (non-critical)`, 'warning');
             }
+            resolve();
           });
           npmProc.on('error', (err) => {
-            onOutput(`npm not available: ${err.message}`, 'warning');
-            resolve(); // Don't fail the whole installation
+            onOutput(`npm not available: ${err.message} (non-critical)`, 'warning');
+            resolve();
           });
         });
       }
     } catch (e) {
-      console.warn('Could not run npm install:', e.message);
       onOutput(`npm install skipped: ${e.message}`, 'warning');
     }
 
-    return result;
+    onOutput('', 'info');
+    onOutput('🎉 Laravel project created successfully!', 'success');
+    onOutput(`Project location: ${projectPath}`, 'info');
+    
+    return { success: true };
   }
 
   async installWordPress(projectPath) {
@@ -406,6 +528,7 @@ class ProjectManager {
           ...project.environment,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       serverProcess.stdout.on('data', (data) => {

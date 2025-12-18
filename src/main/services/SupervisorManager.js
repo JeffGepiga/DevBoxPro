@@ -134,6 +134,7 @@ class SupervisorManager {
         },
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: false,
+        windowsHide: true,
       });
 
       const instanceName = numProcs > 1 ? `${config.name}_${i}` : config.name;

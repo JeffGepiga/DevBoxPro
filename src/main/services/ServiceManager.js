@@ -72,7 +72,10 @@ class ServiceManager extends EventEmitter {
     // Ensure data directories exist
     const dataPath = this.configStore.get('dataPath');
     await fs.ensureDir(path.join(dataPath, 'mysql', 'data'));
+    await fs.ensureDir(path.join(dataPath, 'mariadb', 'data'));
     await fs.ensureDir(path.join(dataPath, 'redis'));
+    await fs.ensureDir(path.join(dataPath, 'nginx'));
+    await fs.ensureDir(path.join(dataPath, 'apache'));
     await fs.ensureDir(path.join(dataPath, 'logs'));
 
     console.log('ServiceManager initialized');
@@ -240,6 +243,7 @@ class ServiceManager extends EventEmitter {
       cwd: nginxPath,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
+      windowsHide: true,
     });
 
     proc.stdout.on('data', (data) => {
@@ -338,6 +342,7 @@ http {
       cwd: apachePath,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
+      windowsHide: true,
     });
 
     proc.stdout.on('data', (data) => {
@@ -418,29 +423,46 @@ Include "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     const dataDir = path.join(dataPath, 'mysql', 'data');
     const port = this.serviceConfigs.mysql.defaultPort;
 
+    // Ensure data directory exists
+    await fs.ensureDir(dataDir);
+
     // Check if MySQL data directory needs initialization
     const isInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
 
     if (!isInitialized) {
       console.log('Initializing MySQL data directory...');
-      await this.initializeMySQLData(mysqlPath, dataDir);
+      try {
+        await this.initializeMySQLData(mysqlPath, dataDir);
+      } catch (error) {
+        console.error('MySQL initialization failed:', error.message);
+        const status = this.serviceStatus.get('mysql');
+        status.status = 'error';
+        status.error = `Initialization failed: ${error.message}`;
+        return;
+      }
     }
 
     const configPath = path.join(dataPath, 'mysql', 'my.cnf');
 
     // Create MySQL config
+    await fs.ensureDir(path.dirname(configPath));
     await this.createMySQLConfig(configPath, dataDir, port);
 
+    console.log('Starting MySQL server...');
     const proc = spawn(mysqldPath, [`--defaults-file=${configPath}`], {
+      cwd: mysqlPath,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
+      windowsHide: true,
     });
 
     proc.stdout.on('data', (data) => {
+      console.log('[MySQL]', data.toString().trim());
       this.managers.log?.service('mysql', data.toString());
     });
 
     proc.stderr.on('data', (data) => {
+      console.log('[MySQL stderr]', data.toString().trim());
       this.managers.log?.service('mysql', data.toString(), 'error');
     });
 
@@ -465,19 +487,34 @@ Include "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     status.port = port;
 
     // Wait for MySQL to be ready
-    await this.waitForService('mysql', 30000);
+    try {
+      await this.waitForService('mysql', 30000);
+    } catch (error) {
+      console.error('MySQL failed to start:', error.message);
+      status.status = 'error';
+      status.error = 'Failed to start within timeout. Check logs for details.';
+    }
   }
 
   async initializeMySQLData(mysqlPath, dataDir) {
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
 
+    // Ensure data directory is empty before initialization
+    await fs.emptyDir(dataDir);
+
     return new Promise((resolve, reject) => {
+      console.log('Running MySQL initialization...');
       const proc = spawn(mysqldPath, ['--initialize-insecure', `--datadir=${dataDir}`], {
+        cwd: mysqlPath,
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let stderr = '';
-      proc.stderr.on('data', (data) => (stderr += data.toString()));
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+        console.log('[MySQL init]', data.toString().trim());
+      });
 
       proc.on('exit', (code) => {
         if (code === 0) {
@@ -543,6 +580,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     const proc = spawn(mariadbd, [`--defaults-file=${configPath}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
+      windowsHide: true,
     });
 
     proc.stdout.on('data', (data) => {
@@ -587,6 +625,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       const proc = spawn(installDb, [`--datadir=${dataDir}`, '--auth-root-authentication-method=normal'], {
         cwd: mariadbPath,
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let stderr = '';
@@ -648,6 +687,7 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
     const proc = spawn(redisServerPath, [configPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
+      windowsHide: true,
     });
 
     proc.stdout.on('data', (data) => {
@@ -698,6 +738,7 @@ appendfilename "appendonly.aof"
     const proc = spawn(mailpitBin, ['--listen', `127.0.0.1:${port}`, '--smtp', `127.0.0.1:${smtpPort}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
+      windowsHide: true,
     });
 
     proc.stdout.on('data', (data) => {
@@ -767,6 +808,7 @@ appendfilename "appendonly.aof"
     const proc = spawn(phpPath, ['-S', `127.0.0.1:${port}`, '-t', phpmyadminPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
+      windowsHide: true,
     });
 
     proc.stdout.on('data', (data) => {

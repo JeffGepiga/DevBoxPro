@@ -141,6 +141,39 @@ function Projects() {
 
 function ProjectCard({ project, onStart, onStop, onDelete }) {
   const [showMenu, setShowMenu] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleStart = async () => {
+    setIsStarting(true);
+    setError(null);
+    try {
+      const result = await onStart();
+      if (result && !result.success) {
+        setError(result.error || 'Failed to start project');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to start project');
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const handleStop = async () => {
+    setIsStopping(true);
+    setError(null);
+    try {
+      const result = await onStop();
+      if (result && !result.success) {
+        setError(result.error || 'Failed to stop project');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to stop project');
+    } finally {
+      setIsStopping(false);
+    }
+  };
 
   const typeColors = {
     laravel: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',

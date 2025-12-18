@@ -86,6 +86,7 @@ class DatabaseManager {
         ],
         {
           stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
         }
       );
 
@@ -133,6 +134,7 @@ class DatabaseManager {
         ],
         {
           stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
         }
       );
 
@@ -184,6 +186,7 @@ class DatabaseManager {
 
       const proc = spawn(mysqlPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let stdout = '';

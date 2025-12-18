@@ -1,8 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Terminal as TerminalIcon, Play, Square, Trash2, Copy, Check } from 'lucide-react';
+import { Terminal as TerminalIcon, Play, Square, Trash2, Copy, Check, Maximize2 } from 'lucide-react';
 import clsx from 'clsx';
 
-function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus = false }) {
+// Try to use XTerminal if available, fallback to simple terminal
+let XTerminal = null;
+try {
+  XTerminal = require('./XTerminal').default;
+} catch (e) {
+  console.log('XTerminal not available, using simple terminal');
+}
+
+function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus = false, useXterm = false }) {
   const [output, setOutput] = useState([]);
   const [command, setCommand] = useState('');
   const [isRunning, setIsRunning] = useState(false);

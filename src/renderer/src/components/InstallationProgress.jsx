@@ -15,7 +15,7 @@ function InstallationProgress({ isVisible, output, isComplete, hasError, onClose
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-[800px] max-h-[600px] flex flex-col overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-[900px] max-h-[700px] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3">
@@ -41,7 +41,7 @@ function InstallationProgress({ isVisible, output, isComplete, hasError, onClose
                   ? hasError
                     ? 'An error occurred during installation'
                     : 'Your Laravel project is ready'
-                  : 'Running composer create-project...'}
+                  : 'This may take a few minutes...'}
               </p>
             </div>
           </div>
@@ -63,30 +63,34 @@ function InstallationProgress({ isVisible, output, isComplete, hasError, onClose
           </div>
           <div
             ref={outputRef}
-            className="p-4 h-[400px] overflow-auto font-mono text-sm"
+            className="p-4 h-[500px] overflow-auto font-mono text-sm"
           >
             {output.length === 0 ? (
-              <div className="text-gray-500">Preparing installation...</div>
+              <div className="text-gray-500 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Starting installation...
+              </div>
             ) : (
               output.map((line, index) => (
                 <div
                   key={index}
                   className={clsx(
-                    'whitespace-pre-wrap break-all',
-                    line.type === 'command' && 'text-yellow-400 font-semibold mt-2',
+                    'whitespace-pre-wrap break-all leading-relaxed',
+                    line.type === 'command' && 'text-yellow-400 font-semibold mt-3 mb-1',
                     line.type === 'stdout' && 'text-gray-300',
                     line.type === 'stderr' && 'text-orange-400',
-                    line.type === 'error' && 'text-red-400',
-                    line.type === 'info' && 'text-blue-400',
-                    line.type === 'success' && 'text-green-400'
+                    line.type === 'error' && 'text-red-400 font-semibold',
+                    line.type === 'info' && 'text-cyan-400',
+                    line.type === 'success' && 'text-green-400 font-medium',
+                    line.type === 'warning' && 'text-yellow-500'
                   )}
                 >
                   {line.text}
                 </div>
               ))
             )}
-            {!isComplete && (
-              <div className="flex items-center gap-2 text-gray-400 mt-2">
+            {!isComplete && output.length > 0 && (
+              <div className="flex items-center gap-2 text-gray-400 mt-3 pt-2 border-t border-gray-700">
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
                 Running...
               </div>

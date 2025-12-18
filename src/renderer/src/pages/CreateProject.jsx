@@ -59,7 +59,7 @@ const WIZARD_STEPS = [
 
 function CreateProject() {
   const navigate = useNavigate();
-  const { createProject } = useApp();
+  const { createProject, settings } = useApp();
   const [currentStep, setCurrentStep] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
   const [showInstallProgress, setShowInstallProgress] = useState(false);
@@ -67,6 +67,8 @@ function CreateProject() {
   const [installComplete, setInstallComplete] = useState(false);
   const [installError, setInstallError] = useState(false);
   const [createdProject, setCreatedProject] = useState(null);
+  const [defaultProjectsPath, setDefaultProjectsPath] = useState('');
+  const [pathManuallySet, setPathManuallySet] = useState(false);
   const [binariesStatus, setBinariesStatus] = useState({
     loading: true,
     php: [],
@@ -93,20 +95,71 @@ function CreateProject() {
     webServer: 'nginx', // 'nginx' or 'apache'
   });
 
-  // Listen for terminal output during installation
+  // Load default projects path from settings
+  useEffect(() => {
+    const loadDefaultPath = async () => {
+      try {
+        const allSettings = await window.devbox?.settings?.getAll?.();
+        const defaultPath = allSettings?.settings?.defaultProjectsPath;
+        if (defaultPath) {
+          setDefaultProjectsPath(defaultPath);
+        }
+      } catch (error) {
+        console.error('Error loading settings:', error);
+      }
+    };
+    loadDefaultPath();
+  }, []);
+
+  // Auto-generate path when name changes (if path wasn't manually set)
+  useEffect(() => {
+    if (formData.name && defaultProjectsPath && !pathManuallySet) {
+      // Generate path from name: remove special chars, lowercase, replace spaces with dashes
+      const safeFolderName = formData.name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-');
+      
+      // Use platform-appropriate separator
+      const separator = navigator.platform.toLowerCase().includes('win') ? '\\' : '/';
+      const generatedPath = `${defaultProjectsPath}${separator}${safeFolderName}`;
+      
+      setFormData(prev => ({ ...prev, path: generatedPath }));
+    }
+  }, [formData.name, defaultProjectsPath, pathManuallySet]);
+
+  // Listen for terminal output during installation - always active
   useEffect(() => {
     const handleOutput = (event, data) => {
+      console.log('Received terminal output:', data);
       if (data.projectId === 'installation') {
+        // Check for completion signal
+        if (data.type === 'complete') {
+          setInstallComplete(true);
+          return;
+        }
+        
+        // Don't add empty text
+        if (!data.text) return;
+        
+        // Check for error in type
+        if (data.type === 'error') {
+          setInstallError(true);
+        }
+        
         setInstallOutput((prev) => [...prev, { text: data.text, type: data.type }]);
       }
     };
 
-    window.devbox?.terminal?.onOutput?.(handleOutput);
+    // Subscribe to terminal output immediately
+    const cleanup = window.devbox?.terminal?.onOutput?.(handleOutput);
 
     return () => {
-      window.devbox?.terminal?.offOutput?.(handleOutput);
+      if (cleanup && typeof cleanup === 'function') {
+        cleanup();
+      }
     };
-  }, []);
+  }, []); // Empty dependency - always listen
 
   // Check available binaries on mount
   useEffect(() => {
@@ -155,6 +208,7 @@ function CreateProject() {
   const handleSelectPath = async () => {
     const path = await window.devbox?.system.selectDirectory();
     if (path) {
+      setPathManuallySet(true); // Mark path as manually set
       updateFormData({ path });
 
       // Auto-generate name from folder name if not set
@@ -200,10 +254,14 @@ function CreateProject() {
   const handleCreate = async () => {
     setIsCreating(true);
     
-    // Show installation progress if installing fresh
-    if (formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress')) {
+    // Reset and show installation progress if installing fresh
+    const shouldShowProgress = formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress');
+    
+    if (shouldShowProgress) {
+      setInstallOutput([]); // Clear previous output
+      setInstallComplete(false);
+      setInstallError(false);
       setShowInstallProgress(true);
-      setInstallOutput([{ text: `Creating ${formData.type} project...`, type: 'info' }]);
     }
 
     try {
@@ -215,20 +273,16 @@ function CreateProject() {
       if (project) {
         setCreatedProject(project);
         
-        if (formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress')) {
-          setInstallOutput((prev) => [...prev, { text: '✓ Project created successfully!', type: 'success' }]);
-          setInstallComplete(true);
-          if (project.installError) {
-            setInstallError(true);
-            setInstallOutput((prev) => [...prev, { text: `Error: ${project.installError}`, type: 'error' }]);
-          }
-        } else {
+        if (!shouldShowProgress) {
+          // No installation needed, navigate directly
           navigate(`/projects/${project.id}`);
         }
+        // If shouldShowProgress is true, we wait for the 'complete' signal from IPC
+        // The installation is running in the background
       }
     } catch (error) {
       console.error('Error creating project:', error);
-      if (showInstallProgress) {
+      if (shouldShowProgress) {
         setInstallOutput((prev) => [...prev, { text: `Error: ${error.message}`, type: 'error' }]);
         setInstallComplete(true);
         setInstallError(true);
@@ -375,6 +429,8 @@ function CreateProject() {
             updateFormData={updateFormData}
             onSelectPath={handleSelectPath}
             availablePhpVersions={binariesStatus.php}
+            setPathManuallySet={setPathManuallySet}
+            defaultProjectsPath={defaultProjectsPath}
           />
         )}
         {currentStep === 2 && (
@@ -477,7 +533,7 @@ function StepProjectType({ formData, updateFormData }) {
   );
 }
 
-function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersions }) {
+function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersions, setPathManuallySet, defaultProjectsPath }) {
   // Use available versions if provided, otherwise fall back to all versions
   const phpVersions = availablePhpVersions && availablePhpVersions.length > 0 
     ? PHP_VERSIONS.filter(v => availablePhpVersions.includes(v))
@@ -509,15 +565,23 @@ function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersi
             <input
               type="text"
               value={formData.path}
-              onChange={(e) => updateFormData({ path: e.target.value })}
+              onChange={(e) => {
+                setPathManuallySet(true);
+                updateFormData({ path: e.target.value });
+              }}
               className="input flex-1"
-              placeholder="/path/to/project"
+              placeholder={defaultProjectsPath ? `${defaultProjectsPath}${navigator.platform.toLowerCase().includes('win') ? '\\' : '/'}your-project-name` : '/path/to/project'}
             />
             <button onClick={onSelectPath} className="btn-secondary">
               <Folder className="w-4 h-4" />
               Browse
             </button>
           </div>
+          {!defaultProjectsPath && (
+            <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
+              Tip: Set a default projects directory in Settings to auto-generate paths
+            </p>
+          )}
         </div>
 
         <div>

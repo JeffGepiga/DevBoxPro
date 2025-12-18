@@ -254,6 +254,7 @@ server {
         },
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       });
     } else {
       // macOS/Linux: Use php-fpm
@@ -262,6 +263,7 @@ server {
         cwd: project.path,
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       });
     }
 
@@ -351,6 +353,7 @@ catch_workers_output = yes
       serverProcess = spawn(nginxPath, ['-c', confPath, '-p', path.join(this.dataPath, 'nginx')], {
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       });
     } else {
       const apachePath = this.getApachePath();
@@ -362,6 +365,7 @@ catch_workers_output = yes
       serverProcess = spawn(apachePath, ['-f', confPath, '-k', 'start'], {
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       });
     }
 
@@ -551,7 +555,7 @@ IncludeOptional "${vhostsDir.replace(/\\/g, '/')}/*.conf"
     if (nginxRunning) {
       const nginxPath = this.getNginxPath();
       const confPath = path.join(this.dataPath, 'nginx', 'nginx.conf');
-      spawn(nginxPath, ['-c', confPath, '-s', 'reload'], { detached: true });
+      spawn(nginxPath, ['-c', confPath, '-s', 'reload'], { detached: true, windowsHide: true });
     }
 
     // Reload apache if running  
@@ -559,7 +563,7 @@ IncludeOptional "${vhostsDir.replace(/\\/g, '/')}/*.conf"
     if (apacheRunning) {
       const apachePath = this.getApachePath();
       const confPath = path.join(this.dataPath, 'apache', 'httpd.conf');
-      spawn(apachePath, ['-f', confPath, '-k', 'graceful'], { detached: true });
+      spawn(apachePath, ['-f', confPath, '-k', 'graceful'], { detached: true, windowsHide: true });
     }
   }
 

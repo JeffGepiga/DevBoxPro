@@ -260,6 +260,7 @@ opcache.revalidate_freq = 0
         cwd: workingDir,
         env: process.env,
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let stdout = '';
@@ -301,6 +302,7 @@ opcache.revalidate_freq = 0
         cwd: projectPath,
         env: process.env,
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let stdout = '';
@@ -339,6 +341,7 @@ opcache.revalidate_freq = 0
         cwd: projectPath,
         env: process.env,
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let stdout = '';
@@ -377,6 +380,7 @@ opcache.revalidate_freq = 0
     return new Promise((resolve, reject) => {
       const proc = spawn(phpPath, ['-i'], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
 
       let stdout = '';

@@ -16,8 +16,11 @@ import {
   Globe,
   Zap,
   FolderOpen,
+  FileText,
+  Settings,
 } from 'lucide-react';
 import clsx from 'clsx';
+import PhpIniEditor from '../components/PhpIniEditor';
 
 const PHP_VERSIONS = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
 const NODE_VERSIONS = ['22', '20', '18'];
@@ -40,6 +43,7 @@ function BinaryManager() {
   const [progress, setProgress] = useState({});
   const [loading, setLoading] = useState(true);
   const [webServerType, setWebServerType] = useState('nginx');
+  const [phpIniEditor, setPhpIniEditor] = useState({ open: false, version: null });
 
   const loadInstalled = useCallback(async () => {
     try {
@@ -374,6 +378,13 @@ function BinaryManager() {
 
   return (
     <div className="p-8">
+      {/* PHP.ini Editor Modal */}
+      <PhpIniEditor
+        version={phpIniEditor.version}
+        isOpen={phpIniEditor.open}
+        onClose={() => setPhpIniEditor({ open: false, version: null })}
+      />
+
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Binary Manager</h1>
@@ -475,6 +486,13 @@ function BinaryManager() {
                         <Check className="w-3 h-3" />
                         Installed
                       </span>
+                      <button
+                        onClick={() => setPhpIniEditor({ open: true, version })}
+                        className="btn-icon text-gray-500 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20"
+                        title="Edit php.ini"
+                      >
+                        <Settings className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={() => handleRemove('php', version)}
                         className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"

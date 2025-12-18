@@ -128,13 +128,27 @@ export function AppProvider({ children }) {
   }, []);
 
   const startProject = useCallback(async (id) => {
-    await window.devbox?.projects.start(id);
-    await refreshProjects();
+    try {
+      const result = await window.devbox?.projects.start(id);
+      await refreshProjects();
+      return { success: true, ...result };
+    } catch (error) {
+      console.error('Failed to start project:', error);
+      await refreshProjects();
+      return { success: false, error: error.message || 'Failed to start project' };
+    }
   }, [refreshProjects]);
 
   const stopProject = useCallback(async (id) => {
-    await window.devbox?.projects.stop(id);
-    await refreshProjects();
+    try {
+      await window.devbox?.projects.stop(id);
+      await refreshProjects();
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to stop project:', error);
+      await refreshProjects();
+      return { success: false, error: error.message || 'Failed to stop project' };
+    }
   }, [refreshProjects]);
 
   const startService = useCallback(async (name) => {
