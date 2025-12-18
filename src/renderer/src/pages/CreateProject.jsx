@@ -652,23 +652,13 @@ function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersi
 
 function StepServices({ formData, updateFormData, binariesStatus }) {
   const toggleService = (service) => {
-    // For database selection, only allow one at a time
-    if (service === 'mysql' || service === 'mariadb') {
-      updateFormData({
-        services: {
-          ...formData.services,
-          mysql: service === 'mysql' ? !formData.services.mysql : false,
-          mariadb: service === 'mariadb' ? !formData.services.mariadb : false,
-        },
-      });
-    } else {
-      updateFormData({
-        services: {
-          ...formData.services,
-          [service]: !formData.services[service],
-        },
-      });
-    }
+    // Allow both MySQL and MariaDB - they use dynamic port allocation
+    updateFormData({
+      services: {
+        ...formData.services,
+        [service]: !formData.services[service],
+      },
+    });
   };
 
   // Build services list dynamically based on installed binaries

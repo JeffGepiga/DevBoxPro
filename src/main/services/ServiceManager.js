@@ -1059,7 +1059,21 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'mariadb', 'data');
-    const port = this.serviceConfigs.mariadb.defaultPort;
+    
+    // Find available port dynamically
+    const defaultPort = this.serviceConfigs.mariadb.defaultPort;
+    let port = defaultPort;
+    
+    if (!await isPortAvailable(port)) {
+      port = await findAvailablePort(defaultPort, 100);
+      if (!port) {
+        throw new Error(`Could not find available port for MariaDB starting from ${defaultPort}`);
+      }
+      console.log(`MariaDB port ${defaultPort} in use, using ${port} instead`);
+    }
+    
+    // Store the actual port being used
+    this.serviceConfigs.mariadb.actualPort = port;
 
     // Check if MariaDB data directory needs initialization
     const isInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
