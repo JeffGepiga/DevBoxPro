@@ -576,16 +576,20 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       let cmd, args;
       const platform = process.platform === 'win32' ? 'win' : 'mac';
       const resourcePath = config.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
+      const phpExe = platform === 'win' ? 'php.exe' : 'php';
+      const phpBinary = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
       
       if (command.startsWith('php ') || command === 'php') {
         // Use project's PHP version
-        const phpExe = platform === 'win' ? 'php.exe' : 'php';
-        cmd = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
+        cmd = phpBinary;
         args = command === 'php' ? [] : command.substring(4).split(' ').filter(Boolean);
+      } else if (command.startsWith('artisan ') || command === 'artisan') {
+        // Shortcut for php artisan - use project's PHP version
+        cmd = phpBinary;
+        args = command === 'artisan' ? ['artisan'] : ['artisan', ...command.substring(8).split(' ').filter(Boolean)];
       } else if (command.startsWith('composer ')) {
-        // Use Composer with PHP
-        const phpExe = platform === 'win' ? 'php.exe' : 'php';
-        cmd = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
+        // Use Composer with project's PHP version
+        cmd = phpBinary;
         const composerPhar = path.join(resourcePath, 'composer', 'composer.phar');
         args = [composerPhar, ...command.substring(9).split(' ').filter(Boolean)];
       } else if (command.startsWith('npm ') || command.startsWith('npx ')) {
@@ -598,7 +602,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
           args = ['-c', command];
         }
       } else {
-        // Generic command
+        // Generic command - inject PHP path into PATH for scripts that might call php
         if (platform === 'win') {
           cmd = 'cmd.exe';
           args = ['/c', command];
@@ -610,10 +614,17 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
       console.log(`Running command: ${cmd} ${args.join(' ')} in ${cwd}`);
 
+      // Add PHP to PATH so scripts that call 'php' use the correct version
+      const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
+      const pathSeparator = platform === 'win' ? ';' : ':';
+      const enhancedPath = `${phpDir}${pathSeparator}${process.env.PATH || process.env.Path || ''}`;
+
       const proc = spawn(cmd, args, {
         cwd,
         env: {
           ...process.env,
+          PATH: enhancedPath,
+          Path: enhancedPath, // Windows uses Path
           COMPOSER_HOME: path.join(resourcePath, 'composer'),
           // Force ANSI color output
           FORCE_COLOR: '1',
