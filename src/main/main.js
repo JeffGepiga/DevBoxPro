@@ -28,7 +28,11 @@ function getResourcePath() {
 
 async function createWindow() {
   const fs = require('fs');
-  const iconPath = path.join(__dirname, '../../build/icon.png');
+  // Try logo.png first, then fallback to build/icon.png
+  let iconPath = path.join(__dirname, '../../logo.png');
+  if (!fs.existsSync(iconPath)) {
+    iconPath = path.join(__dirname, '../../build/icon.png');
+  }
   
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -38,6 +42,7 @@ async function createWindow() {
     title: 'DevBox Pro',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     center: true,
+    autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -102,8 +107,12 @@ async function createWindow() {
 
 function createTray() {
   try {
-    const iconPath = path.join(__dirname, '../../build/tray-icon.png');
     const fs = require('fs');
+    // Try logo.png first, then fallback to tray-icon.png
+    let iconPath = path.join(__dirname, '../../logo.png');
+    if (!fs.existsSync(iconPath)) {
+      iconPath = path.join(__dirname, '../../build/tray-icon.png');
+    }
     
     // Check if tray icon exists, skip tray if not
     if (!fs.existsSync(iconPath)) {

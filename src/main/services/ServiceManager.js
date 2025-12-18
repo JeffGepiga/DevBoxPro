@@ -559,30 +559,30 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     
     let config;
     if (isWindows) {
-      // Windows-specific config
-      // MySQL 8.4 on Windows requires at least one of: TCP/IP, shared-memory, or named-pipe
-      // We enable named-pipe to satisfy this requirement, TCP/IP is enabled by default
+      // Windows-specific config for MySQL 8.4
+      // Note: skip-grant-tables causes skip_networking=ON in MySQL 8.4, so we don't use it
+      // Instead, MySQL is initialized with --initialize-insecure which creates root without password
       config = `[mysqld]
 basedir=${this.getMySQLPath().replace(/\\/g, '/')}
 datadir=${dataDir.replace(/\\/g, '/')}
 port=${port}
 bind-address=0.0.0.0
-skip-grant-tables
-enable-named-pipe=1
+enable-named-pipe=ON
+socket=MYSQL
 pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+innodb_buffer_pool_size=128M
+innodb_redo_log_capacity=100M
+max_connections=100
 
 [client]
 port=${port}
-host=127.0.0.1
 `;
     } else {
       // Unix/macOS config with socket
       config = `[mysqld]
 datadir=${dataDir.replace(/\\/g, '/')}
 port=${port}
-skip-grant-tables
-skip-networking=0
 bind-address=127.0.0.1
 socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
@@ -941,6 +941,21 @@ appendfilename "appendonly.aof"
   getMailpitPath() {
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     return path.join(this.resourcePath, 'mailpit', platform);
+  }
+
+  async killOrphanMySQLProcesses() {
+    return new Promise((resolve) => {
+      if (process.platform === 'win32') {
+        exec('taskkill /F /IM mysqld.exe 2>nul', (error) => {
+          // Ignore errors - process may not exist
+          setTimeout(resolve, 1000); // Wait a bit for locks to release
+        });
+      } else {
+        exec('pkill -9 mysqld 2>/dev/null', (error) => {
+          setTimeout(resolve, 1000);
+        });
+      }
+    });
   }
 
   async waitForService(serviceName, timeout) {
