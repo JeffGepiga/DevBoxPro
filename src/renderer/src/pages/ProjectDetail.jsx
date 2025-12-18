@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import ProjectTerminal from '../components/ProjectTerminal';
 import {
   ArrowLeft,
   Play,
@@ -25,12 +26,21 @@ import clsx from 'clsx';
 function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { projects, startProject, stopProject, deleteProject } = useApp();
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'overview');
   const [project, setProject] = useState(null);
   const [logs, setLogs] = useState([]);
   const [processes, setProcesses] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Update tab from URL params
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['overview', 'terminal', 'logs', 'workers', 'environment'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const foundProject = projects.find((p) => p.id === id);
@@ -93,6 +103,7 @@ function ProjectDetail() {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Activity },
+    { id: 'terminal', label: 'Terminal', icon: Terminal },
     { id: 'logs', label: 'Logs', icon: FileText },
     { id: 'workers', label: 'Workers', icon: Cpu },
     { id: 'environment', label: 'Environment', icon: Settings },
@@ -179,6 +190,16 @@ function ProjectDetail() {
       {/* Tab Content */}
       {activeTab === 'overview' && (
         <OverviewTab project={project} processes={processes} />
+      )}
+      {activeTab === 'terminal' && (
+        <div className="h-[500px]">
+          <ProjectTerminal 
+            projectId={id} 
+            projectPath={project.path} 
+            phpVersion={project.phpVersion}
+            autoFocus={true}
+          />
+        </div>
       )}
       {activeTab === 'logs' && <LogsTab logs={logs} onRefresh={loadLogs} projectId={id} />}
       {activeTab === 'workers' && (

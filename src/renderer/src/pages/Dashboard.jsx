@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Play,
@@ -19,8 +19,60 @@ import clsx from 'clsx';
 function Dashboard() {
   const { projects, services, resourceUsage, loading, startProject, stopProject } = useApp();
 
-  const runningProjects = projects.filter((p) => p.isRunning);
-  const runningServices = Object.values(services).filter((s) => s.status === 'running');
+  // Get running projects
+  const runningProjects = useMemo(() => {
+    return projects.filter(p => p.isRunning);
+  }, [projects]);
+
+  // Determine required services based on running projects
+  const requiredServices = useMemo(() => {
+    const required = new Set();
+    
+    for (const project of runningProjects) {
+      // Web server
+      const webServer = project.webServer || 'nginx';
+      required.add(webServer);
+      
+      // Database
+      if (project.services?.mysql) required.add('mysql');
+      if (project.services?.mariadb) required.add('mariadb');
+      
+      // Other services
+      if (project.services?.redis) required.add('redis');
+      
+      // Always include mailpit and phpmyadmin if any project is running
+      required.add('mailpit');
+      if (project.services?.mysql || project.services?.mariadb) {
+        required.add('phpmyadmin');
+      }
+    }
+    
+    return required;
+  }, [runningProjects]);
+
+  // Filter services to show only those required by running projects
+  const filteredServices = useMemo(() => {
+    const result = {};
+    
+    if (runningProjects.length === 0) {
+      // No running projects - show core services (without web server)
+      for (const [name, service] of Object.entries(services)) {
+        if (name === 'nginx' || name === 'apache') continue;
+        result[name] = service;
+      }
+    } else {
+      // Show only services required by running projects
+      for (const [name, service] of Object.entries(services)) {
+        if (requiredServices.has(name)) {
+          result[name] = service;
+        }
+      }
+    }
+    
+    return result;
+  }, [services, runningProjects, requiredServices]);
+
+  const runningServices = Object.values(filteredServices).filter((s) => s.status === 'running');
 
   if (loading) {
     return (
@@ -110,10 +162,10 @@ function Dashboard() {
             </Link>
           </div>
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
-            {Object.entries(services).map(([name, service]) => (
+            {Object.entries(filteredServices).map(([name, service]) => (
               <ServiceRow key={name} name={name} service={service} />
             ))}
-            {Object.keys(services).length === 0 && (
+            {Object.keys(filteredServices).length === 0 && (
               <div className="p-6 text-center text-gray-500 dark:text-gray-400">
                 <p>No services configured</p>
               </div>

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
+import { Link } from 'react-router-dom';
 import {
   Play,
   Square,
@@ -12,19 +13,74 @@ import {
   Cpu,
   MemoryStick,
   ExternalLink,
+  Globe,
+  Box,
+  AlertTriangle,
 } from 'lucide-react';
 import clsx from 'clsx';
 
 function Services() {
-  const { services, resourceUsage, startService, stopService, refreshServices } = useApp();
+  const { services, resourceUsage, startService, stopService, refreshServices, projects } = useApp();
   const [loading, setLoading] = useState(false);
 
+  // Get running projects
+  const runningProjects = useMemo(() => {
+    return projects.filter(p => p.isRunning);
+  }, [projects]);
+
+  // Determine required services based on running projects
+  const requiredServices = useMemo(() => {
+    const required = new Set();
+    
+    for (const project of runningProjects) {
+      // Web server
+      const webServer = project.webServer || 'nginx';
+      required.add(webServer);
+      
+      // Database
+      if (project.services?.mysql) required.add('mysql');
+      if (project.services?.mariadb) required.add('mariadb');
+      
+      // Other services
+      if (project.services?.redis) required.add('redis');
+      
+      // Always include mailpit and phpmyadmin if any project is running
+      required.add('mailpit');
+      if (project.services?.mysql || project.services?.mariadb) {
+        required.add('phpmyadmin');
+      }
+    }
+    
+    return required;
+  }, [runningProjects]);
+
   const serviceInfo = {
+    nginx: {
+      name: 'Nginx',
+      description: 'High-performance web server',
+      icon: Globe,
+      color: 'green',
+      defaultPort: 80,
+    },
+    apache: {
+      name: 'Apache',
+      description: 'Full-featured web server',
+      icon: Box,
+      color: 'red',
+      defaultPort: 80,
+    },
     mysql: {
       name: 'MySQL',
       description: 'Relational database server',
       icon: Database,
       color: 'blue',
+      defaultPort: 3306,
+    },
+    mariadb: {
+      name: 'MariaDB',
+      description: 'MySQL-compatible database server',
+      icon: Database,
+      color: 'teal',
       defaultPort: 3306,
     },
     redis: {
@@ -51,6 +107,30 @@ function Services() {
       webUrl: 'http://localhost:8080',
     },
   };
+
+  // Filter services to show only those required by running projects
+  // If no projects are running, show all available services
+  const filteredServices = useMemo(() => {
+    const result = {};
+    
+    if (runningProjects.length === 0) {
+      // No running projects - show core services (without web server)
+      for (const [name, service] of Object.entries(services)) {
+        // Don't show web servers when no projects are running
+        if (name === 'nginx' || name === 'apache') continue;
+        result[name] = service;
+      }
+    } else {
+      // Show only services required by running projects
+      for (const [name, service] of Object.entries(services)) {
+        if (requiredServices.has(name)) {
+          result[name] = service;
+        }
+      }
+    }
+    
+    return result;
+  }, [services, runningProjects, requiredServices]);
 
   const handleStartAll = async () => {
     setLoading(true);
@@ -85,8 +165,8 @@ function Services() {
     }
   };
 
-  const runningCount = Object.values(services).filter((s) => s.status === 'running').length;
-  const totalCount = Object.keys(services).length;
+  const runningCount = Object.values(filteredServices).filter((s) => s.status === 'running').length;
+  const totalCount = Object.keys(filteredServices).length;
 
   return (
     <div className="p-8">
@@ -145,7 +225,7 @@ function Services() {
 
       {/* Services Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {Object.entries(services).map(([name, service]) => {
+        {Object.entries(filteredServices).map(([name, service]) => {
           const info = serviceInfo[name] || {
             name: service.name || name,
             description: 'Service',
@@ -169,15 +249,37 @@ function Services() {
         })}
       </div>
 
-      {Object.keys(services).length === 0 && (
+      {Object.keys(filteredServices).length === 0 && (
         <div className="card p-12 text-center">
           <Server className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-            No services configured
+            No services active
           </h3>
-          <p className="text-gray-500 dark:text-gray-400">
-            Services will appear here once the application is fully initialized
+          <p className="text-gray-500 dark:text-gray-400 mb-4">
+            {runningProjects.length === 0 
+              ? 'Start a project to see its required services here'
+              : 'No services configured for running projects'}
           </p>
+          {runningProjects.length === 0 && (
+            <Link to="/projects" className="btn-primary inline-flex">
+              Go to Projects
+            </Link>
+          )}
+        </div>
+      )}
+
+      {/* Running Projects Summary */}
+      {runningProjects.length > 0 && (
+        <div className="mt-8 card p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+          <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+            <AlertTriangle className="w-5 h-5" />
+            <span className="font-medium">
+              {runningProjects.length} project{runningProjects.length > 1 ? 's' : ''} running:
+            </span>
+            <span className="text-blue-600 dark:text-blue-300">
+              {runningProjects.map(p => p.name).join(', ')}
+            </span>
+          </div>
         </div>
       )}
     </div>

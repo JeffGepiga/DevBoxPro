@@ -15,7 +15,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('projects:create', async (event, projectConfig) => {
-    const newProject = await project.createProject(projectConfig);
+    const newProject = await project.createProject(projectConfig, mainWindow);
     mainWindow?.webContents.send('project:statusChanged', {
       id: newProject.id,
       status: 'created',
@@ -380,6 +380,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       const status = {
         php: {},
         mysql: { installed: installed.mysql },
+        mariadb: { installed: installed.mariadb },
         redis: { installed: installed.redis },
         mailpit: { installed: installed.mailpit },
         phpmyadmin: { installed: installed.phpmyadmin },
@@ -504,6 +505,124 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       return webServer.getRunningProjects();
     });
   }
+
+  // ============ TERMINAL HANDLERS ============
+  const runningProcesses = new Map();
+
+  ipcMain.handle('terminal:runCommand', async (event, projectId, command, options = {}) => {
+    const { spawn } = require('child_process');
+    const path = require('path');
+    
+    const projectData = project.getProject(projectId);
+    if (!projectData && projectId !== 'system') {
+      throw new Error('Project not found');
+    }
+
+    const cwd = options.cwd || projectData?.path || process.cwd();
+    const phpVersion = options.phpVersion || projectData?.phpVersion || '8.4';
+    
+    return new Promise((resolve, reject) => {
+      let stdout = '';
+      let stderr = '';
+
+      // Parse command for PHP/Composer handling
+      let cmd, args;
+      const platform = process.platform === 'win32' ? 'win' : 'mac';
+      const resourcePath = configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+      
+      if (command.startsWith('php ') || command === 'php') {
+        // Use project's PHP version
+        const phpExe = platform === 'win' ? 'php.exe' : 'php';
+        cmd = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
+        args = command === 'php' ? [] : command.substring(4).split(' ').filter(Boolean);
+      } else if (command.startsWith('composer ')) {
+        // Use Composer with PHP
+        const phpExe = platform === 'win' ? 'php.exe' : 'php';
+        cmd = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
+        const composerPhar = path.join(resourcePath, 'composer', 'composer.phar');
+        args = [composerPhar, ...command.substring(9).split(' ').filter(Boolean)];
+      } else if (command.startsWith('npm ') || command.startsWith('npx ')) {
+        // Use system npm/npx or installed Node
+        if (platform === 'win') {
+          cmd = 'cmd.exe';
+          args = ['/c', command];
+        } else {
+          cmd = '/bin/bash';
+          args = ['-c', command];
+        }
+      } else {
+        // Generic command
+        if (platform === 'win') {
+          cmd = 'cmd.exe';
+          args = ['/c', command];
+        } else {
+          cmd = '/bin/bash';
+          args = ['-c', command];
+        }
+      }
+
+      console.log(`Running command: ${cmd} ${args.join(' ')} in ${cwd}`);
+
+      const proc = spawn(cmd, args, {
+        cwd,
+        env: {
+          ...process.env,
+          COMPOSER_HOME: path.join(resourcePath, 'composer'),
+        },
+        shell: false,
+      });
+
+      // Store process reference for potential cancellation
+      runningProcesses.set(projectId, proc);
+
+      proc.stdout.on('data', (data) => {
+        const text = data.toString();
+        stdout += text;
+        // Send real-time output to renderer
+        mainWindow?.webContents.send('terminal:output', {
+          projectId,
+          text,
+          type: 'stdout',
+        });
+      });
+
+      proc.stderr.on('data', (data) => {
+        const text = data.toString();
+        stderr += text;
+        mainWindow?.webContents.send('terminal:output', {
+          projectId,
+          text,
+          type: 'stderr',
+        });
+      });
+
+      proc.on('error', (error) => {
+        runningProcesses.delete(projectId);
+        reject(error);
+      });
+
+      proc.on('close', (code) => {
+        runningProcesses.delete(projectId);
+        resolve({
+          stdout,
+          stderr,
+          code,
+          success: code === 0,
+        });
+      });
+    });
+  });
+
+  ipcMain.handle('terminal:cancelCommand', async (event, projectId) => {
+    const proc = runningProcesses.get(projectId);
+    if (proc) {
+      const kill = require('tree-kill');
+      kill(proc.pid, 'SIGTERM');
+      runningProcesses.delete(projectId);
+      return { success: true };
+    }
+    return { success: false };
+  });
 
   // Resource monitoring interval
   setInterval(async () => {

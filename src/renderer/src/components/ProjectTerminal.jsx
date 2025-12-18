@@ -1,0 +1,244 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Terminal as TerminalIcon, Play, Square, Trash2, Copy, Check } from 'lucide-react';
+import clsx from 'clsx';
+
+function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus = false }) {
+  const [output, setOutput] = useState([]);
+  const [command, setCommand] = useState('');
+  const [isRunning, setIsRunning] = useState(false);
+  const [commandHistory, setCommandHistory] = useState([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [copied, setCopied] = useState(false);
+  const outputRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Auto-scroll to bottom when output changes
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [output]);
+
+  // Focus input on mount if autoFocus
+  useEffect(() => {
+    if (autoFocus && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [autoFocus]);
+
+  // Listen for terminal output events
+  useEffect(() => {
+    const handleOutput = (event, data) => {
+      if (data.projectId === projectId) {
+        addOutput(data.text, data.type || 'stdout');
+      }
+    };
+
+    window.devbox?.terminal?.onOutput?.(handleOutput);
+
+    return () => {
+      window.devbox?.terminal?.offOutput?.(handleOutput);
+    };
+  }, [projectId]);
+
+  const addOutput = useCallback((text, type = 'stdout') => {
+    const timestamp = new Date().toLocaleTimeString();
+    setOutput((prev) => [...prev, { text, type, timestamp }]);
+  }, []);
+
+  const runCommand = async (cmd) => {
+    if (!cmd.trim() || isRunning) return;
+
+    // Add to history
+    setCommandHistory((prev) => [cmd, ...prev.slice(0, 49)]);
+    setHistoryIndex(-1);
+
+    // Show command in output
+    addOutput(`$ ${cmd}`, 'command');
+    setCommand('');
+    setIsRunning(true);
+
+    try {
+      const result = await window.devbox?.terminal?.runCommand(projectId, cmd, {
+        cwd: projectPath,
+        phpVersion,
+      });
+
+      if (result?.stdout) {
+        addOutput(result.stdout, 'stdout');
+      }
+      if (result?.stderr) {
+        addOutput(result.stderr, 'stderr');
+      }
+      if (result?.error) {
+        addOutput(result.error, 'error');
+      }
+    } catch (error) {
+      addOutput(error.message, 'error');
+    } finally {
+      setIsRunning(false);
+      inputRef.current?.focus();
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      runCommand(command);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (commandHistory.length > 0) {
+        const newIndex = Math.min(historyIndex + 1, commandHistory.length - 1);
+        setHistoryIndex(newIndex);
+        setCommand(commandHistory[newIndex]);
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIndex > 0) {
+        const newIndex = historyIndex - 1;
+        setHistoryIndex(newIndex);
+        setCommand(commandHistory[newIndex]);
+      } else {
+        setHistoryIndex(-1);
+        setCommand('');
+      }
+    } else if (e.key === 'c' && e.ctrlKey) {
+      // Cancel running command
+      if (isRunning) {
+        window.devbox?.terminal?.cancelCommand(projectId);
+        addOutput('^C', 'error');
+        setIsRunning(false);
+      }
+    }
+  };
+
+  const clearOutput = () => {
+    setOutput([]);
+  };
+
+  const copyOutput = async () => {
+    const text = output.map((o) => o.text).join('\n');
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Quick command buttons for common operations
+  const quickCommands = [
+    { label: 'artisan list', cmd: 'php artisan list', type: 'laravel' },
+    { label: 'migrate', cmd: 'php artisan migrate', type: 'laravel' },
+    { label: 'tinker', cmd: 'php artisan tinker', type: 'laravel' },
+    { label: 'composer install', cmd: 'composer install', type: 'all' },
+    { label: 'npm install', cmd: 'npm install', type: 'all' },
+    { label: 'npm run dev', cmd: 'npm run dev', type: 'all' },
+  ];
+
+  return (
+    <div className="flex flex-col h-full bg-gray-900 rounded-lg overflow-hidden">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
+        <div className="flex items-center gap-2">
+          <TerminalIcon className="w-4 h-4 text-green-400" />
+          <span className="text-sm font-medium text-gray-300">Terminal</span>
+          <span className="text-xs text-gray-500">PHP {phpVersion}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={copyOutput}
+            className="p-1.5 text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
+            title="Copy output"
+          >
+            {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+          </button>
+          <button
+            onClick={clearOutput}
+            className="p-1.5 text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
+            title="Clear terminal"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Quick Commands */}
+      <div className="flex items-center gap-2 px-4 py-2 bg-gray-800/50 border-b border-gray-700 overflow-x-auto">
+        <span className="text-xs text-gray-500 shrink-0">Quick:</span>
+        {quickCommands.map((qc) => (
+          <button
+            key={qc.cmd}
+            onClick={() => runCommand(qc.cmd)}
+            disabled={isRunning}
+            className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors whitespace-nowrap disabled:opacity-50"
+          >
+            {qc.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Output */}
+      <div
+        ref={outputRef}
+        className="flex-1 p-4 overflow-auto font-mono text-sm leading-relaxed"
+        onClick={() => inputRef.current?.focus()}
+      >
+        {output.length === 0 ? (
+          <div className="text-gray-500">
+            <p>Terminal ready. Type a command or use quick commands above.</p>
+            <p className="mt-2 text-gray-600">
+              Working directory: <span className="text-gray-400">{projectPath}</span>
+            </p>
+          </div>
+        ) : (
+          output.map((line, index) => (
+            <div
+              key={index}
+              className={clsx(
+                'whitespace-pre-wrap break-all',
+                line.type === 'command' && 'text-yellow-400 font-semibold mt-2',
+                line.type === 'stdout' && 'text-gray-300',
+                line.type === 'stderr' && 'text-orange-400',
+                line.type === 'error' && 'text-red-400',
+                line.type === 'info' && 'text-blue-400',
+                line.type === 'success' && 'text-green-400'
+              )}
+            >
+              {line.text}
+            </div>
+          ))
+        )}
+        {isRunning && (
+          <div className="flex items-center gap-2 text-gray-400 mt-2">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+            Running...
+          </div>
+        )}
+      </div>
+
+      {/* Input */}
+      <div className="flex items-center gap-2 px-4 py-3 bg-gray-800 border-t border-gray-700">
+        <span className="text-green-400 font-mono">$</span>
+        <input
+          ref={inputRef}
+          type="text"
+          value={command}
+          onChange={(e) => setCommand(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={isRunning}
+          placeholder={isRunning ? 'Running...' : 'Type a command...'}
+          className="flex-1 bg-transparent text-gray-100 font-mono text-sm outline-none placeholder-gray-500 disabled:opacity-50"
+          autoComplete="off"
+          spellCheck="false"
+        />
+        <button
+          onClick={() => runCommand(command)}
+          disabled={!command.trim() || isRunning}
+          className="p-1.5 text-gray-400 hover:text-green-400 disabled:opacity-50 disabled:hover:text-gray-400 transition-colors"
+        >
+          <Play className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default ProjectTerminal;

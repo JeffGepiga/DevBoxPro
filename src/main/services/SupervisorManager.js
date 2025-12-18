@@ -100,7 +100,8 @@ class SupervisorManager {
 
     // Get PHP path for the project
     const phpManager = require('./PhpManager');
-    const phpPath = path.join(this.resourcePath, 'php', project.phpVersion, 
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const phpPath = path.join(this.resourcePath, 'php', project.phpVersion, platform,
       process.platform === 'win32' ? 'php.exe' : 'php');
 
     const workingDir = config.directory || project.path;

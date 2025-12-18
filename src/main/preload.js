@@ -103,10 +103,16 @@ contextBridge.exposeInMainWorld('devbox', {
 
   // Terminal operations
   terminal: {
-    create: (projectId) => ipcRenderer.invoke('terminal:create', projectId),
-    write: (terminalId, data) => ipcRenderer.invoke('terminal:write', terminalId, data),
-    resize: (terminalId, cols, rows) => ipcRenderer.invoke('terminal:resize', terminalId, cols, rows),
-    close: (terminalId) => ipcRenderer.invoke('terminal:close', terminalId),
+    runCommand: (projectId, command, options) => ipcRenderer.invoke('terminal:runCommand', projectId, command, options),
+    cancelCommand: (projectId) => ipcRenderer.invoke('terminal:cancelCommand', projectId),
+    onOutput: (callback) => {
+      const handler = (event, data) => callback(event, data);
+      ipcRenderer.on('terminal:output', handler);
+      return () => ipcRenderer.removeListener('terminal:output', handler);
+    },
+    offOutput: (callback) => {
+      ipcRenderer.removeListener('terminal:output', callback);
+    },
   },
 
   // Binary download operations

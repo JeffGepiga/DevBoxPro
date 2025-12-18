@@ -1336,7 +1336,7 @@ exit 1
   }
 
   // Run Composer command with specific PHP version
-  async runComposer(projectPath, command, phpVersion = '8.3') {
+  async runComposer(projectPath, command, phpVersion = '8.3', onOutput = null) {
     const platform = this.getPlatform();
     const phpPath = path.join(this.resourcesPath, 'php', phpVersion, platform, platform === 'win' ? 'php.exe' : 'php');
     const composerPhar = this.getComposerPath();
@@ -1351,20 +1351,39 @@ exit 1
 
     return new Promise((resolve, reject) => {
       const args = [composerPhar, ...command.split(' ')];
+      
+      // Log the command being run
+      console.log(`Running: php ${args.join(' ')} in ${projectPath}`);
+      if (onOutput) {
+        onOutput(`$ composer ${command}`, 'command');
+      }
+
       const proc = spawn(phpPath, args, {
         cwd: projectPath,
-        env: { ...process.env, COMPOSER_HOME: path.join(this.resourcesPath, 'composer') },
+        env: { 
+          ...process.env, 
+          COMPOSER_HOME: path.join(this.resourcesPath, 'composer'),
+          COMPOSER_NO_INTERACTION: '1',
+        },
       });
 
       let stdout = '';
       let stderr = '';
 
       proc.stdout.on('data', (data) => {
-        stdout += data.toString();
+        const text = data.toString();
+        stdout += text;
+        if (onOutput) {
+          onOutput(text, 'stdout');
+        }
       });
 
       proc.stderr.on('data', (data) => {
-        stderr += data.toString();
+        const text = data.toString();
+        stderr += text;
+        if (onOutput) {
+          onOutput(text, 'stderr');
+        }
       });
 
       proc.on('close', (code) => {

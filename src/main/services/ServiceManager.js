@@ -14,10 +14,25 @@ class ServiceManager extends EventEmitter {
 
     // Service definitions
     this.serviceConfigs = {
+      nginx: {
+        name: 'Nginx',
+        defaultPort: 80,
+        healthCheck: this.checkNginxHealth.bind(this),
+      },
+      apache: {
+        name: 'Apache',
+        defaultPort: 80,
+        healthCheck: this.checkApacheHealth.bind(this),
+      },
       mysql: {
         name: 'MySQL',
         defaultPort: 3306,
         healthCheck: this.checkMySqlHealth.bind(this),
+      },
+      mariadb: {
+        name: 'MariaDB',
+        defaultPort: 3306,
+        healthCheck: this.checkMariaDbHealth.bind(this),
       },
       redis: {
         name: 'Redis',
@@ -95,8 +110,17 @@ class ServiceManager extends EventEmitter {
 
     try {
       switch (serviceName) {
+        case 'nginx':
+          await this.startNginx();
+          break;
+        case 'apache':
+          await this.startApache();
+          break;
         case 'mysql':
           await this.startMySQL();
+          break;
+        case 'mariadb':
+          await this.startMariaDB();
           break;
         case 'redis':
           await this.startRedis();
@@ -181,6 +205,199 @@ class ServiceManager extends EventEmitter {
       }
     }
     return results;
+  }
+
+  // Nginx
+  async startNginx() {
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const nginxPath = path.join(this.resourcePath, 'nginx', platform);
+    const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'nginx');
+    
+    // Check if Nginx binary exists
+    if (!await fs.pathExists(nginxExe)) {
+      console.log('Nginx binary not found. Please download Nginx from the Binary Manager.');
+      const status = this.serviceStatus.get('nginx');
+      status.status = 'not_installed';
+      status.error = 'Nginx binary not found. Please download from Binary Manager.';
+      return;
+    }
+
+    const dataPath = this.configStore.get('dataPath');
+    const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
+    const logsPath = path.join(dataPath, 'nginx', 'logs');
+    
+    // Ensure directories exist
+    await fs.ensureDir(path.join(dataPath, 'nginx'));
+    await fs.ensureDir(logsPath);
+    await fs.ensureDir(path.join(dataPath, 'nginx', 'conf.d'));
+
+    // Create default config if not exists
+    if (!await fs.pathExists(confPath)) {
+      await this.createNginxConfig(confPath, logsPath);
+    }
+
+    const proc = spawn(nginxExe, ['-c', confPath, '-p', nginxPath], {
+      cwd: nginxPath,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    });
+
+    proc.stdout.on('data', (data) => {
+      this.managers.log?.service('nginx', data.toString());
+    });
+
+    proc.stderr.on('data', (data) => {
+      this.managers.log?.service('nginx', data.toString(), 'error');
+    });
+
+    proc.on('error', (error) => {
+      console.error('Nginx process error:', error);
+      const status = this.serviceStatus.get('nginx');
+      status.status = 'error';
+      status.error = error.message;
+    });
+
+    proc.on('exit', (code) => {
+      console.log(`Nginx exited with code ${code}`);
+      const status = this.serviceStatus.get('nginx');
+      if (status.status === 'running') {
+        status.status = 'stopped';
+      }
+    });
+
+    this.processes.set('nginx', proc);
+    const status = this.serviceStatus.get('nginx');
+    status.pid = proc.pid;
+    status.port = 80;
+
+    // Wait for Nginx to be ready
+    await this.waitForService('nginx', 10000);
+  }
+
+  async createNginxConfig(confPath, logsPath) {
+    const dataPath = this.configStore.get('dataPath');
+    const config = `worker_processes 1;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    sendfile      on;
+    keepalive_timeout 65;
+    
+    access_log ${logsPath.replace(/\\/g, '/')}/access.log;
+    error_log ${logsPath.replace(/\\/g, '/')}/error.log;
+
+    # Include virtual host configs
+    include ${dataPath.replace(/\\/g, '/')}/nginx/conf.d/*.conf;
+
+    server {
+        listen 80 default_server;
+        server_name localhost;
+        root ${dataPath.replace(/\\/g, '/')}/www;
+        index index.html index.php;
+    }
+}
+`;
+    await fs.writeFile(confPath, config);
+  }
+
+  // Apache
+  async startApache() {
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const apachePath = path.join(this.resourcePath, 'apache', platform);
+    const httpdExe = path.join(apachePath, 'bin', process.platform === 'win32' ? 'httpd.exe' : 'httpd');
+    
+    // Check if Apache binary exists
+    if (!await fs.pathExists(httpdExe)) {
+      console.log('Apache binary not found. Please download Apache from the Binary Manager.');
+      const status = this.serviceStatus.get('apache');
+      status.status = 'not_installed';
+      status.error = 'Apache binary not found. Please download from Binary Manager.';
+      return;
+    }
+
+    const dataPath = this.configStore.get('dataPath');
+    const confPath = path.join(dataPath, 'apache', 'httpd.conf');
+    const logsPath = path.join(dataPath, 'apache', 'logs');
+    
+    // Ensure directories exist
+    await fs.ensureDir(path.join(dataPath, 'apache'));
+    await fs.ensureDir(logsPath);
+    await fs.ensureDir(path.join(dataPath, 'apache', 'vhosts'));
+
+    // Create default config if not exists
+    if (!await fs.pathExists(confPath)) {
+      await this.createApacheConfig(apachePath, confPath, logsPath);
+    }
+
+    const proc = spawn(httpdExe, ['-f', confPath], {
+      cwd: apachePath,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    });
+
+    proc.stdout.on('data', (data) => {
+      this.managers.log?.service('apache', data.toString());
+    });
+
+    proc.stderr.on('data', (data) => {
+      this.managers.log?.service('apache', data.toString(), 'error');
+    });
+
+    proc.on('error', (error) => {
+      console.error('Apache process error:', error);
+      const status = this.serviceStatus.get('apache');
+      status.status = 'error';
+      status.error = error.message;
+    });
+
+    proc.on('exit', (code) => {
+      console.log(`Apache exited with code ${code}`);
+      const status = this.serviceStatus.get('apache');
+      if (status.status === 'running') {
+        status.status = 'stopped';
+      }
+    });
+
+    this.processes.set('apache', proc);
+    const status = this.serviceStatus.get('apache');
+    status.pid = proc.pid;
+    status.port = 80;
+
+    // Wait for Apache to be ready
+    await this.waitForService('apache', 10000);
+  }
+
+  async createApacheConfig(apachePath, confPath, logsPath) {
+    const dataPath = this.configStore.get('dataPath');
+    const config = `ServerRoot "${apachePath.replace(/\\/g, '/')}"
+Listen 80
+
+LoadModule authz_core_module modules/mod_authz_core.so
+LoadModule dir_module modules/mod_dir.so
+LoadModule mime_module modules/mod_mime.so
+LoadModule log_config_module modules/mod_log_config.so
+LoadModule rewrite_module modules/mod_rewrite.so
+
+ServerName localhost:80
+DocumentRoot "${dataPath.replace(/\\/g, '/')}/www"
+
+<Directory "${dataPath.replace(/\\/g, '/')}/www">
+    Options Indexes FollowSymLinks
+    AllowOverride All
+    Require all granted
+</Directory>
+
+ErrorLog "${logsPath.replace(/\\/g, '/')}/error.log"
+CustomLog "${logsPath.replace(/\\/g, '/')}/access.log" combined
+
+Include "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
+`;
+    await fs.writeFile(confPath, config);
   }
 
   // MySQL
@@ -286,6 +503,120 @@ log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
 [client]
 port=${port}
 socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
+`;
+
+    await fs.writeFile(configPath, config);
+  }
+
+  // MariaDB
+  async startMariaDB() {
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const mariadbPath = path.join(this.resourcePath, 'mariadb', platform);
+    const mariadbd = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
+    
+    // Check if MariaDB binary exists
+    if (!await fs.pathExists(mariadbd)) {
+      console.log('MariaDB binary not found. Please download MariaDB from the Binary Manager.');
+      const status = this.serviceStatus.get('mariadb');
+      status.status = 'not_installed';
+      status.error = 'MariaDB binary not found. Please download from Binary Manager.';
+      return;
+    }
+
+    const dataPath = this.configStore.get('dataPath');
+    const dataDir = path.join(dataPath, 'mariadb', 'data');
+    const port = this.serviceConfigs.mariadb.defaultPort;
+
+    // Check if MariaDB data directory needs initialization
+    const isInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
+
+    if (!isInitialized) {
+      console.log('Initializing MariaDB data directory...');
+      await this.initializeMariaDBData(mariadbPath, dataDir);
+    }
+
+    const configPath = path.join(dataPath, 'mariadb', 'my.cnf');
+
+    // Create MariaDB config
+    await this.createMariaDBConfig(configPath, dataDir, port);
+
+    const proc = spawn(mariadbd, [`--defaults-file=${configPath}`], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    });
+
+    proc.stdout.on('data', (data) => {
+      this.managers.log?.service('mariadb', data.toString());
+    });
+
+    proc.stderr.on('data', (data) => {
+      this.managers.log?.service('mariadb', data.toString(), 'error');
+    });
+
+    proc.on('error', (error) => {
+      console.error('MariaDB process error:', error);
+      const status = this.serviceStatus.get('mariadb');
+      status.status = 'error';
+      status.error = error.message;
+    });
+
+    proc.on('exit', (code) => {
+      console.log(`MariaDB exited with code ${code}`);
+      const status = this.serviceStatus.get('mariadb');
+      if (status.status === 'running') {
+        status.status = 'stopped';
+      }
+    });
+
+    this.processes.set('mariadb', proc);
+    const status = this.serviceStatus.get('mariadb');
+    status.pid = proc.pid;
+    status.port = port;
+
+    // Wait for MariaDB to be ready
+    await this.waitForService('mariadb', 30000);
+  }
+
+  async initializeMariaDBData(mariadbPath, dataDir) {
+    // MariaDB uses mysql_install_db or mariadb-install-db
+    const installDb = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadb-install-db.exe' : 'mariadb-install-db');
+    
+    await fs.ensureDir(dataDir);
+
+    return new Promise((resolve, reject) => {
+      const proc = spawn(installDb, [`--datadir=${dataDir}`, '--auth-root-authentication-method=normal'], {
+        cwd: mariadbPath,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stderr = '';
+      proc.stderr.on('data', (data) => (stderr += data.toString()));
+
+      proc.on('exit', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`MariaDB initialization failed: ${stderr}`));
+        }
+      });
+    });
+  }
+
+  async createMariaDBConfig(configPath, dataDir, port) {
+    await fs.ensureDir(path.dirname(configPath));
+    const config = `[mysqld]
+datadir=${dataDir.replace(/\\/g, '/')}
+port=${port}
+skip-grant-tables
+skip-networking=0
+bind-address=127.0.0.1
+socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
+pid-file=${path.join(dataDir, 'mariadb.pid').replace(/\\/g, '/')}
+log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+
+[client]
+port=${port}
+socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
 `;
 
     await fs.writeFile(configPath, config);
@@ -490,8 +821,23 @@ appendfilename "appendonly.aof"
     throw new Error(`${config.name} failed to start within ${timeout}ms`);
   }
 
+  async checkNginxHealth() {
+    const port = this.serviceConfigs.nginx.defaultPort;
+    return this.checkPortOpen(port);
+  }
+
+  async checkApacheHealth() {
+    const port = this.serviceConfigs.apache.defaultPort;
+    return this.checkPortOpen(port);
+  }
+
   async checkMySqlHealth() {
     const port = this.serviceConfigs.mysql.defaultPort;
+    return this.checkPortOpen(port);
+  }
+
+  async checkMariaDbHealth() {
+    const port = this.serviceConfigs.mariadb.defaultPort;
     return this.checkPortOpen(port);
   }
 

@@ -262,13 +262,15 @@ class DatabaseManager {
   }
 
   getMysqlPath() {
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
     const binName = process.platform === 'win32' ? 'mysql.exe' : 'mysql';
-    return path.join(this.resourcePath, 'mysql', 'bin', binName);
+    return path.join(this.resourcePath, 'mysql', platform, 'bin', binName);
   }
 
   getMysqldumpPath() {
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
     const binName = process.platform === 'win32' ? 'mysqldump.exe' : 'mysqldump';
-    return path.join(this.resourcePath, 'mysql', 'bin', binName);
+    return path.join(this.resourcePath, 'mysql', platform, 'bin', binName);
   }
 
   async checkConnection() {

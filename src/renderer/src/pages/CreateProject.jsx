@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import InstallationProgress from '../components/InstallationProgress';
 import {
   ArrowLeft,
   ArrowRight,
@@ -46,7 +47,7 @@ const PROJECT_TYPES = [
   },
 ];
 
-const PHP_VERSIONS = ['8.3', '8.2', '8.1', '8.0', '7.4'];
+const PHP_VERSIONS = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
 
 const WIZARD_STEPS = [
   { id: 'type', title: 'Project Type', icon: Folder },
@@ -61,20 +62,29 @@ function CreateProject() {
   const { createProject } = useApp();
   const [currentStep, setCurrentStep] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
+  const [showInstallProgress, setShowInstallProgress] = useState(false);
+  const [installOutput, setInstallOutput] = useState([]);
+  const [installComplete, setInstallComplete] = useState(false);
+  const [installError, setInstallError] = useState(false);
+  const [createdProject, setCreatedProject] = useState(null);
   const [binariesStatus, setBinariesStatus] = useState({
     loading: true,
     php: [],
     nginx: false,
     apache: false,
     mysql: false,
+    mariadb: false,
+    redis: false,
   });
   const [formData, setFormData] = useState({
     name: '',
     path: '',
     type: 'laravel',
-    phpVersion: '8.2',
+    phpVersion: '8.4',
+    installFresh: true, // Install fresh Laravel/WordPress
     services: {
       mysql: true,
+      mariadb: false,
       redis: false,
       queue: false,
     },
@@ -82,6 +92,21 @@ function CreateProject() {
     ssl: true,
     webServer: 'nginx', // 'nginx' or 'apache'
   });
+
+  // Listen for terminal output during installation
+  useEffect(() => {
+    const handleOutput = (event, data) => {
+      if (data.projectId === 'installation') {
+        setInstallOutput((prev) => [...prev, { text: data.text, type: data.type }]);
+      }
+    };
+
+    window.devbox?.terminal?.onOutput?.(handleOutput);
+
+    return () => {
+      window.devbox?.terminal?.offOutput?.(handleOutput);
+    };
+  }, []);
 
   // Check available binaries on mount
   useEffect(() => {
@@ -99,6 +124,8 @@ function CreateProject() {
             nginx: status.nginx?.installed || false,
             apache: status.apache?.installed || false,
             mysql: status.mysql?.installed || false,
+            mariadb: status.mariadb?.installed || false,
+            redis: status.redis?.installed || false,
           });
 
           // Set default PHP version to first available
@@ -172,6 +199,13 @@ function CreateProject() {
 
   const handleCreate = async () => {
     setIsCreating(true);
+    
+    // Show installation progress if installing fresh
+    if (formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress')) {
+      setShowInstallProgress(true);
+      setInstallOutput([{ text: `Creating ${formData.type} project...`, type: 'info' }]);
+    }
+
     try {
       const project = await createProject({
         ...formData,
@@ -179,18 +213,52 @@ function CreateProject() {
       });
 
       if (project) {
-        navigate(`/projects/${project.id}`);
+        setCreatedProject(project);
+        
+        if (formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress')) {
+          setInstallOutput((prev) => [...prev, { text: '✓ Project created successfully!', type: 'success' }]);
+          setInstallComplete(true);
+          if (project.installError) {
+            setInstallError(true);
+            setInstallOutput((prev) => [...prev, { text: `Error: ${project.installError}`, type: 'error' }]);
+          }
+        } else {
+          navigate(`/projects/${project.id}`);
+        }
       }
     } catch (error) {
       console.error('Error creating project:', error);
-      alert('Failed to create project: ' + error.message);
+      if (showInstallProgress) {
+        setInstallOutput((prev) => [...prev, { text: `Error: ${error.message}`, type: 'error' }]);
+        setInstallComplete(true);
+        setInstallError(true);
+      } else {
+        alert('Failed to create project: ' + error.message);
+      }
     } finally {
       setIsCreating(false);
     }
   };
 
+  const handleInstallClose = () => {
+    setShowInstallProgress(false);
+    if (createdProject && !installError) {
+      // Navigate to terminal tab of the new project
+      navigate(`/projects/${createdProject.id}?tab=terminal`);
+    }
+  };
+
   return (
     <div className="p-8 max-w-4xl mx-auto">
+      {/* Installation Progress Modal */}
+      <InstallationProgress
+        isVisible={showInstallProgress}
+        output={installOutput}
+        isComplete={installComplete}
+        hasError={installError}
+        onClose={handleInstallClose}
+      />
+
       {/* Header */}
       <div className="mb-8">
         <button
@@ -310,7 +378,7 @@ function CreateProject() {
           />
         )}
         {currentStep === 2 && (
-          <StepServices formData={formData} updateFormData={updateFormData} />
+          <StepServices formData={formData} updateFormData={updateFormData} binariesStatus={binariesStatus} />
         )}
         {currentStep === 3 && (
           <StepDomain formData={formData} updateFormData={updateFormData} />
@@ -347,7 +415,9 @@ function CreateProject() {
             {isCreating ? (
               <>
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Creating...
+                {formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress')
+                  ? `Installing ${formData.type === 'laravel' ? 'Laravel' : 'WordPress'}...`
+                  : 'Creating...'}
               </>
             ) : (
               <>
@@ -452,7 +522,7 @@ function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersi
 
         <div>
           <label className="label">PHP Version</label>
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-6 gap-2">
             {phpVersions.map((version) => (
               <button
                 key={version}
@@ -469,33 +539,80 @@ function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersi
             ))}
           </div>
         </div>
+
+        {/* Fresh Install Toggle */}
+        {(formData.type === 'laravel' || formData.type === 'wordpress') && (
+          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.installFresh}
+                onChange={(e) => updateFormData({ installFresh: e.target.checked })}
+                className="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <div>
+                <span className="font-medium text-gray-900 dark:text-white">
+                  Install Fresh {formData.type === 'laravel' ? 'Laravel' : 'WordPress'}
+                </span>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {formData.type === 'laravel' 
+                    ? 'Run "composer create-project laravel/laravel" to set up a new Laravel installation'
+                    : 'Download and install a fresh WordPress copy'}
+                </p>
+              </div>
+            </label>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function StepServices({ formData, updateFormData }) {
+function StepServices({ formData, updateFormData, binariesStatus }) {
   const toggleService = (service) => {
-    updateFormData({
-      services: {
-        ...formData.services,
-        [service]: !formData.services[service],
-      },
-    });
+    // For database selection, only allow one at a time
+    if (service === 'mysql' || service === 'mariadb') {
+      updateFormData({
+        services: {
+          ...formData.services,
+          mysql: service === 'mysql' ? !formData.services.mysql : false,
+          mariadb: service === 'mariadb' ? !formData.services.mariadb : false,
+        },
+      });
+    } else {
+      updateFormData({
+        services: {
+          ...formData.services,
+          [service]: !formData.services[service],
+        },
+      });
+    }
   };
 
-  const services = [
+  // Build services list dynamically based on installed binaries
+  const allServices = [
     {
       id: 'mysql',
       name: 'MySQL',
       description: 'Relational database for data storage',
       icon: '🗄️',
+      installed: binariesStatus?.mysql,
+      isDatabase: true,
+    },
+    {
+      id: 'mariadb',
+      name: 'MariaDB',
+      description: 'MySQL-compatible database with extra features',
+      icon: '🗃️',
+      installed: binariesStatus?.mariadb,
+      isDatabase: true,
     },
     {
       id: 'redis',
       name: 'Redis',
       description: 'In-memory cache and session storage',
       icon: '⚡',
+      installed: binariesStatus?.redis,
     },
     {
       id: 'queue',
@@ -503,8 +620,20 @@ function StepServices({ formData, updateFormData }) {
       description: 'Background job processing (Laravel)',
       icon: '⚙️',
       laravelOnly: true,
+      installed: true, // Always available if Laravel is selected
     },
   ];
+
+  // Filter to show only installed services
+  const services = allServices.filter(service => {
+    // Queue worker is always available for Laravel projects
+    if (service.id === 'queue') return true;
+    // Show service if installed
+    return service.installed;
+  });
+
+  // Check if any database is available
+  const hasDatabaseOptions = binariesStatus?.mysql || binariesStatus?.mariadb;
 
   return (
     <div>
@@ -515,8 +644,60 @@ function StepServices({ formData, updateFormData }) {
         Select the services you need for this project
       </p>
 
+      {/* Database Section */}
+      {hasDatabaseOptions && (
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+            <Database className="w-4 h-4" />
+            Database
+            <span className="text-xs font-normal text-gray-500">(select one)</span>
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            {services.filter(s => s.isDatabase).map((service) => (
+              <button
+                key={service.id}
+                onClick={() => toggleService(service.id)}
+                className={clsx(
+                  'p-4 rounded-xl border-2 text-left transition-all flex items-center gap-3',
+                  formData.services[service.id]
+                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                )}
+              >
+                <div className="text-2xl">{service.icon}</div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-gray-900 dark:text-white">
+                    {service.name}
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {service.description}
+                  </p>
+                </div>
+                <div
+                  className={clsx(
+                    'w-6 h-6 rounded-full border-2 flex items-center justify-center',
+                    formData.services[service.id]
+                      ? 'border-green-500 bg-green-500'
+                      : 'border-gray-300 dark:border-gray-600'
+                  )}
+                >
+                  {formData.services[service.id] && (
+                    <Check className="w-4 h-4 text-white" />
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Other Services Section */}
       <div className="space-y-4">
-        {services.map((service) => {
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+          <Settings className="w-4 h-4" />
+          Additional Services
+        </h3>
+        {services.filter(s => !s.isDatabase).map((service) => {
           const disabled = service.laravelOnly && formData.type !== 'laravel';
 
           return (
@@ -561,6 +742,16 @@ function StepServices({ formData, updateFormData }) {
           );
         })}
       </div>
+
+      {/* No services warning */}
+      {!hasDatabaseOptions && !binariesStatus?.redis && (
+        <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl">
+          <p className="text-sm text-yellow-700 dark:text-yellow-300">
+            <AlertTriangle className="w-4 h-4 inline mr-2" />
+            No database services installed. Visit the <Link to="/binaries" className="underline">Binary Manager</Link> to download MySQL or MariaDB.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -766,6 +957,25 @@ function StepReview({ formData }) {
             )}
           </div>
         </div>
+
+        {/* Fresh Install Notice */}
+        {formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress') && (
+          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">📦</span>
+              <div>
+                <h3 className="font-medium text-blue-900 dark:text-blue-100">
+                  Fresh {formData.type === 'laravel' ? 'Laravel' : 'WordPress'} Installation
+                </h3>
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  {formData.type === 'laravel' 
+                    ? 'Will run "composer create-project", generate app key, and "npm install" to set up a complete Laravel application.'
+                    : 'Will download and install a fresh WordPress copy.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

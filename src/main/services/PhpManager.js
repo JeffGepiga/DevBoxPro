@@ -13,11 +13,12 @@ class PhpManager {
   async initialize() {
     console.log('Initializing PhpManager...');
 
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
     const phpBasePath = path.join(this.resourcePath, 'php');
 
     // Discover available PHP versions
     for (const version of this.supportedVersions) {
-      const versionPath = path.join(phpBasePath, version);
+      const versionPath = path.join(phpBasePath, version, platform);
       const phpBinary = this.getPhpBinaryName();
       const binaryPath = path.join(versionPath, phpBinary);
 

@@ -42,7 +42,7 @@ class ProjectManager {
     return project;
   }
 
-  async createProject(config) {
+  async createProject(config, mainWindow = null) {
     const id = uuidv4();
     const settings = this.configStore.get('settings', {});
     const existingProjects = this.configStore.get('projects', []);
@@ -140,12 +140,181 @@ class ProjectManager {
       });
     }
 
-    // Save project
+    // Save project first (before installation which might take time)
     existingProjects.push(project);
     this.configStore.set('projects', existingProjects);
 
+    // Install fresh framework if requested
+    if (config.installFresh) {
+      try {
+        if (project.type === 'laravel') {
+          console.log(`Installing fresh Laravel at ${project.path}...`);
+          await this.installLaravel(project.path, project.phpVersion, project.name, mainWindow);
+        } else if (project.type === 'wordpress') {
+          console.log(`Installing fresh WordPress at ${project.path}...`);
+          await this.installWordPress(project.path, mainWindow);
+        }
+      } catch (error) {
+        console.error('Failed to install framework:', error);
+        // Don't fail project creation, just log the error
+        project.installError = error.message;
+        // Update project with error
+        const updatedProjects = this.configStore.get('projects', []);
+        const idx = updatedProjects.findIndex(p => p.id === project.id);
+        if (idx !== -1) {
+          updatedProjects[idx] = project;
+          this.configStore.set('projects', updatedProjects);
+        }
+      }
+    }
+
     console.log(`Project created: ${project.name} (${project.id})`);
     return project;
+  }
+
+  async installLaravel(projectPath, phpVersion = '8.4', projectName = 'laravel', mainWindow = null) {
+    const parentPath = path.dirname(projectPath);
+    const folderName = path.basename(projectPath);
+    
+    // Ensure parent directory exists
+    await fs.ensureDir(parentPath);
+    
+    // Run composer create-project
+    const binary = this.managers.binary;
+    if (!binary) {
+      throw new Error('BinaryDownloadManager not available');
+    }
+
+    // Output callback to send to renderer
+    const onOutput = (text, type) => {
+      console.log(`[Laravel Install] ${text}`);
+      if (mainWindow) {
+        mainWindow.webContents.send('terminal:output', {
+          projectId: 'installation',
+          text,
+          type,
+        });
+      }
+    };
+
+    onOutput(`Installing Laravel in ${projectPath}...`, 'info');
+
+    // Use composer to create Laravel project
+    const result = await binary.runComposer(
+      parentPath,
+      `create-project laravel/laravel ${folderName} --prefer-dist`,
+      phpVersion,
+      onOutput
+    );
+
+    onOutput('Laravel installed successfully!', 'success');
+    
+    // Generate application key
+    try {
+      onOutput('Generating application key...', 'info');
+      await binary.runComposer(projectPath, 'run-script post-root-package-install', phpVersion, onOutput);
+    } catch (e) {
+      // Ignore if script doesn't exist
+    }
+
+    // Run key:generate
+    try {
+      const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
+      const platform = process.platform === 'win32' ? 'win' : 'mac';
+      const resourcePath = this.configStore.get('resourcePath') || require('path').join(require('electron').app.getPath('userData'), 'resources');
+      const phpPath = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
+      
+      if (await fs.pathExists(phpPath)) {
+        const { spawn } = require('child_process');
+        await new Promise((resolve, reject) => {
+          const proc = spawn(phpPath, ['artisan', 'key:generate'], { cwd: projectPath });
+          proc.stdout.on('data', (data) => onOutput(data.toString(), 'stdout'));
+          proc.stderr.on('data', (data) => onOutput(data.toString(), 'stderr'));
+          proc.on('close', (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`key:generate failed with code ${code}`));
+          });
+          proc.on('error', reject);
+        });
+        onOutput('Application key generated!', 'success');
+      }
+    } catch (e) {
+      console.warn('Could not generate app key:', e.message);
+    }
+
+    // Run npm install if package.json exists (like Laragon does)
+    try {
+      const packageJsonPath = path.join(projectPath, 'package.json');
+      if (await fs.pathExists(packageJsonPath)) {
+        onOutput('Running npm install...', 'info');
+        
+        // Try to use downloaded Node.js, fall back to system npm
+        const nodeVersion = '22'; // Use LTS version
+        const platform = process.platform === 'win32' ? 'win' : 'mac';
+        const resourcePath = this.configStore.get('resourcePath') || require('path').join(require('electron').app.getPath('userData'), 'resources');
+        const nodeDir = path.join(resourcePath, 'nodejs', nodeVersion, platform);
+        
+        let npmPath = 'npm';
+        let npmCmd = 'npm';
+        
+        // Check if we have local Node.js
+        if (await fs.pathExists(nodeDir)) {
+          if (process.platform === 'win32') {
+            npmPath = path.join(nodeDir, 'npm.cmd');
+          } else {
+            npmPath = path.join(nodeDir, 'bin', 'npm');
+          }
+          npmCmd = npmPath;
+        }
+        
+        await new Promise((resolve, reject) => {
+          const npmProc = spawn(npmCmd, ['install'], {
+            cwd: projectPath,
+            shell: true,
+            env: {
+              ...process.env,
+              PATH: process.platform === 'win32' 
+                ? `${nodeDir};${process.env.PATH}`
+                : `${path.join(nodeDir, 'bin')}:${process.env.PATH}`,
+            },
+          });
+          
+          npmProc.stdout.on('data', (data) => onOutput(data.toString(), 'stdout'));
+          npmProc.stderr.on('data', (data) => onOutput(data.toString(), 'stderr'));
+          npmProc.on('close', (code) => {
+            if (code === 0) {
+              onOutput('npm packages installed successfully!', 'success');
+              resolve();
+            } else {
+              // npm install failure is not critical
+              onOutput(`npm install finished with code ${code}`, 'warning');
+              resolve();
+            }
+          });
+          npmProc.on('error', (err) => {
+            onOutput(`npm not available: ${err.message}`, 'warning');
+            resolve(); // Don't fail the whole installation
+          });
+        });
+      }
+    } catch (e) {
+      console.warn('Could not run npm install:', e.message);
+      onOutput(`npm install skipped: ${e.message}`, 'warning');
+    }
+
+    return result;
+  }
+
+  async installWordPress(projectPath) {
+    // Ensure directory exists
+    await fs.ensureDir(projectPath);
+    
+    // Download WordPress
+    const wpUrl = 'https://wordpress.org/latest.zip';
+    const downloadPath = path.join(projectPath, 'wordpress.zip');
+    
+    // TODO: Implement WordPress download and extraction
+    console.log('WordPress installation not yet implemented');
   }
 
   async updateProject(id, updates) {
@@ -220,6 +389,9 @@ class ProjectManager {
     console.log(`Starting project: ${project.name}`);
 
     try {
+      // Start required services first
+      await this.startProjectServices(project);
+
       // Get PHP binary path
       const phpPath = this.managers.php.getPhpBinaryPath(project.phpVersion);
 
@@ -330,6 +502,62 @@ class ProjectManager {
         }
       }
     }
+  }
+
+  /**
+   * Start all services required by a project
+   */
+  async startProjectServices(project) {
+    const serviceManager = this.managers.service;
+    if (!serviceManager) {
+      console.warn('ServiceManager not available, skipping service auto-start');
+      return;
+    }
+
+    console.log(`Starting services for project ${project.name}...`);
+
+    const servicesToStart = [];
+
+    // Web server (nginx or apache)
+    const webServer = project.webServer || 'nginx';
+    servicesToStart.push(webServer);
+
+    // Database (mysql or mariadb)
+    if (project.services?.mysql) {
+      servicesToStart.push('mysql');
+    }
+    if (project.services?.mariadb) {
+      servicesToStart.push('mariadb');
+    }
+
+    // Redis
+    if (project.services?.redis) {
+      servicesToStart.push('redis');
+    }
+
+    // Always start mailpit for email testing
+    servicesToStart.push('mailpit');
+
+    // phpMyAdmin if database is used
+    if (project.services?.mysql || project.services?.mariadb) {
+      servicesToStart.push('phpmyadmin');
+    }
+
+    // Start each service
+    for (const serviceName of servicesToStart) {
+      try {
+        const status = serviceManager.serviceStatus.get(serviceName);
+        if (status && status.status !== 'running') {
+          console.log(`Auto-starting ${serviceName}...`);
+          await serviceManager.startService(serviceName);
+        }
+      } catch (error) {
+        console.warn(`Failed to auto-start ${serviceName}:`, error.message);
+        // Continue with other services even if one fails
+      }
+    }
+
+    console.log(`Services started for project ${project.name}`);
   }
 
   getProjectStatus(id) {
