@@ -128,6 +128,7 @@ class ProjectManager {
     if (project.ssl) {
       try {
         await this.managers.ssl?.createCertificate(project.domains);
+        // Note: SSL certificates are signed by Root CA which is trusted during SslManager initialization
       } catch (error) {
         console.warn('Could not create SSL certificate:', error.message);
       }
@@ -1304,7 +1305,22 @@ server {
     // Ensure document root exists
     await fs.ensureDir(documentRoot);
     
-    const phpFpmPort = 9000 + (parseInt(project.id.slice(-4), 16) % 1000);
+    const idSlice = project.id.slice(-4);
+    const parsedInt = parseInt(idSlice, 16);
+    const modResult = parsedInt % 1000;
+    let phpFpmPort = 9000 + modResult;
+    
+    // Ensure port is a valid number and convert to string explicitly
+    if (isNaN(phpFpmPort) || phpFpmPort < 9000 || phpFpmPort > 9999) {
+      console.error(`[Apache Vhost] Invalid PHP-CGI port calculated: ${phpFpmPort}. Using default 9000.`);
+      phpFpmPort = 9000;
+    }
+    
+    // Convert to string and validate - ensure no extra characters
+    const phpFpmPortStr = String(phpFpmPort).trim();
+    console.log(`[Apache Vhost] Project: ${project.name}, ID: ${project.id}`);
+    console.log(`[Apache Vhost] Port calculation: slice="${idSlice}", parseInt=${parsedInt}, mod=${modResult}`);
+    console.log(`[Apache Vhost] PHP-CGI port: ${phpFpmPortStr} (type: ${typeof phpFpmPortStr}, length: ${phpFpmPortStr.length})`);
     
     // Get dynamic ports from ServiceManager
     const serviceManager = this.managers.service;
@@ -1341,9 +1357,16 @@ server {
     </Directory>
 
     # PHP-FPM Configuration
-    <FilesMatch \\.php$>
-        SetHandler "proxy:fcgi://127.0.0.1:${phpFpmPort}"
-    </FilesMatch>
+    <IfModule proxy_fcgi_module>
+        # Pass SCRIPT_FILENAME to PHP-CGI
+        <FilesMatch \\.php$>
+            SetHandler "proxy:fcgi://127.0.0.1:${phpFpmPortStr}"
+        </FilesMatch>
+        
+        # Ensure SCRIPT_FILENAME is set correctly for Windows paths
+        ProxyFCGISetEnvIf "true" SCRIPT_FILENAME "%{DOCUMENT_ROOT}%{SCRIPT_NAME}"
+        ProxyFCGISetEnvIf "true" PATH_INFO "%{PATH_INFO}"
+    </IfModule>
 
     DirectoryIndex index.php index.html
 
@@ -1414,9 +1437,17 @@ server {
         </IfModule>
     </Directory>
 
-    <FilesMatch \\.php$>
-        SetHandler "proxy:fcgi://127.0.0.1:${phpFpmPort}"
-    </FilesMatch>
+    # PHP-FPM Configuration
+    <IfModule proxy_fcgi_module>
+        # Pass SCRIPT_FILENAME to PHP-CGI
+        <FilesMatch \\.php$>
+            SetHandler "proxy:fcgi://127.0.0.1:${phpFpmPortStr}"
+        </FilesMatch>
+        
+        # Ensure SCRIPT_FILENAME is set correctly for Windows paths
+        ProxyFCGISetEnvIf "true" SCRIPT_FILENAME "%{DOCUMENT_ROOT}%{SCRIPT_NAME}"
+        ProxyFCGISetEnvIf "true" PATH_INFO "%{PATH_INFO}"
+    </IfModule>
 
     DirectoryIndex index.php index.html
 
@@ -1426,9 +1457,28 @@ server {
 `;
     }
 
+    // Debug: Log the SetHandler line to verify correct port
+    const setHandlerMatches = config.match(/SetHandler "proxy:fcgi:\/\/127\.0\.0\.1:(\d+)"/g);
+    if (setHandlerMatches) {
+      console.log(`[Apache Vhost] SetHandler directives in config:`);
+      setHandlerMatches.forEach((match, idx) => {
+        console.log(`  ${idx + 1}. ${match}`);
+      });
+    }
+    
     // Save config file
     const configPath = path.join(vhostsDir, `${project.id}.conf`);
     await fs.writeFile(configPath, config);
+    
+    // Verify what was actually written to the file
+    const writtenContent = await fs.readFile(configPath, 'utf-8');
+    const writtenMatches = writtenContent.match(/SetHandler "proxy:fcgi:\/\/127\.0\.0\.1:(\d+)"/g);
+    if (writtenMatches) {
+      console.log(`[Apache Vhost] Verified SetHandler in written file:`);
+      writtenMatches.forEach((match, idx) => {
+        console.log(`  ${idx + 1}. ${match}`);
+      });
+    }
 
     // Ensure logs directory exists
     await fs.ensureDir(path.join(dataPath, 'apache', 'logs'));

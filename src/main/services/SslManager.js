@@ -54,7 +54,8 @@ class SslManager {
         
         return new Promise((resolve, reject) => {
           // Use certutil to add to local machine root store (requires admin)
-          const command = `certutil -addstore -f "Root" "${caCertPath}"`;
+          // -f flag forces overwrite if already exists
+          const command = `certutil -f -addstore "Root" "${caCertPath}"`;
           
           sudo.exec(command, options, (error, stdout, stderr) => {
             if (error) {
@@ -64,6 +65,7 @@ class SslManager {
               resolve(); // Don't fail initialization
             } else {
               console.log('Root CA certificate trusted successfully');
+              console.log('All DevBox Pro SSL certificates will now be trusted automatically.');
               resolve();
             }
           });

@@ -542,28 +542,40 @@ class ServiceManager extends EventEmitter {
 
     console.log('Reloading Apache configuration...');
 
-    return new Promise((resolve, reject) => {
-      // Apache uses -k graceful for graceful restart/reload
-      const proc = spawn(httpdExe, ['-k', 'graceful', '-f', confPath], {
-        windowsHide: true,
-        cwd: apachePath,
-      });
+    // On Windows, Apache running as a process (not service) cannot use -k graceful
+    // We need to restart it to pick up config changes
+    if (process.platform === 'win32') {
+      try {
+        console.log('Restarting Apache on Windows to apply config changes...');
+        await this.restartService('apache');
+        console.log('Apache restarted successfully');
+      } catch (error) {
+        console.error('Apache restart failed:', error);
+        throw error;
+      }
+    } else {
+      // On Unix-like systems, we can use graceful restart
+      return new Promise((resolve, reject) => {
+        const proc = spawn(httpdExe, ['-k', 'graceful', '-f', confPath], {
+          cwd: apachePath,
+        });
 
-      proc.on('close', (code) => {
-        if (code === 0) {
-          console.log('Apache configuration reloaded successfully');
-          resolve();
-        } else {
-          console.error(`Apache reload failed with code ${code}`);
-          reject(new Error(`Apache reload failed with code ${code}`));
-        }
-      });
+        proc.on('close', (code) => {
+          if (code === 0) {
+            console.log('Apache configuration reloaded successfully');
+            resolve();
+          } else {
+            console.error(`Apache reload failed with code ${code}`);
+            reject(new Error(`Apache reload failed with code ${code}`));
+          }
+        });
 
-      proc.on('error', (error) => {
-        console.error('Apache reload error:', error);
-        reject(error);
+        proc.on('error', (error) => {
+          console.error('Apache reload error:', error);
+          reject(error);
+        });
       });
-    });
+    }
   }
 
   async createNginxConfig(confPath, logsPath, httpPort = 80, sslPort = 443) {
