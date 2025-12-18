@@ -25,12 +25,46 @@ class SslManager {
 
     // Check if CA certificate exists, create if not
     const caCertPath = path.join(this.caPath, 'rootCA.pem');
-    if (!(await fs.pathExists(caCertPath))) {
+    const isNewCA = !(await fs.pathExists(caCertPath));
+    
+    if (isNewCA) {
       console.log('Creating root CA certificate...');
       await this.createRootCA();
+      
+      // Automatically prompt to trust the new Root CA
+      console.log('Prompting user to trust Root CA...');
+      await this.promptTrustRootCA();
     }
 
     console.log('SslManager initialized');
+  }
+
+  // Prompt user to trust the Root CA certificate
+  async promptTrustRootCA() {
+    const caCertPath = path.join(this.caPath, 'rootCA.pem');
+    
+    try {
+      if (process.platform === 'win32') {
+        // Windows: Use certutil to add to user's trusted root store
+        // This will show a security prompt to the user
+        console.log('Adding Root CA to Windows trusted certificates...');
+        await this.runCommand('certutil', ['-addstore', '-user', 'Root', caCertPath]);
+        console.log('Root CA certificate trusted successfully');
+      } else if (process.platform === 'darwin') {
+        // macOS: Add to login keychain (requires user password)
+        console.log('Adding Root CA to macOS keychain...');
+        await this.runCommand('security', [
+          'add-trusted-cert',
+          '-r', 'trustRoot',
+          '-k', path.join(process.env.HOME, 'Library/Keychains/login.keychain-db'),
+          caCertPath
+        ]);
+        console.log('Root CA certificate trusted successfully');
+      }
+    } catch (error) {
+      console.warn('Could not automatically trust Root CA:', error.message);
+      console.log('You may need to manually trust the certificate at:', caCertPath);
+    }
   }
 
   async createRootCA() {

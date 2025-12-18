@@ -974,6 +974,12 @@ class ProjectManager {
     
     if (webServer === 'nginx') {
       await this.createNginxVhost(project);
+      // Reload nginx to pick up config changes
+      try {
+        await this.managers.service?.reloadNginx();
+      } catch (error) {
+        console.warn('Could not reload nginx:', error.message);
+      }
     } else {
       await this.createApacheVhost(project);
     }

@@ -337,6 +337,50 @@ class ServiceManager extends EventEmitter {
     await this.waitForService('nginx', 10000);
   }
 
+  // Reload Nginx configuration without stopping
+  async reloadNginx() {
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const nginxPath = path.join(this.resourcePath, 'nginx', platform);
+    const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'sbin/nginx');
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
+
+    if (!await fs.pathExists(nginxExe)) {
+      console.log('Nginx binary not found, cannot reload');
+      return;
+    }
+
+    const status = this.serviceStatus.get('nginx');
+    if (status?.status !== 'running') {
+      console.log('Nginx is not running, skipping reload');
+      return;
+    }
+
+    console.log('Reloading Nginx configuration...');
+
+    return new Promise((resolve, reject) => {
+      const proc = spawn(nginxExe, ['-s', 'reload', '-c', confPath, '-p', nginxPath], {
+        windowsHide: true,
+        cwd: nginxPath,
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          console.log('Nginx configuration reloaded successfully');
+          resolve();
+        } else {
+          console.error(`Nginx reload failed with code ${code}`);
+          reject(new Error(`Nginx reload failed with code ${code}`));
+        }
+      });
+
+      proc.on('error', (error) => {
+        console.error('Nginx reload error:', error);
+        reject(error);
+      });
+    });
+  }
+
   async createNginxConfig(confPath, logsPath) {
     const dataPath = path.join(app.getPath('userData'), 'data');
     const platform = process.platform === 'win32' ? 'win' : 'mac';
