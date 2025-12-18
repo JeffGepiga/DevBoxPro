@@ -12,6 +12,7 @@ import {
   MoreVertical,
   Code,
   Filter,
+  RefreshCw,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -267,33 +268,54 @@ function ProjectCard({ project, onStart, onStop, onDelete }) {
             </p>
           </div>
         )}
+
+        {/* Error message */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+            <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+          </div>
+        )}
       </div>
 
       {/* Actions */}
       <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {project.isRunning ? (
-            <button onClick={onStop} className="btn-secondary btn-sm">
-              <Square className="w-4 h-4" />
-              Stop
+            <button 
+              onClick={handleStop} 
+              disabled={isStopping}
+              className="btn-secondary btn-sm"
+            >
+              {isStopping ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Square className="w-4 h-4" />
+              )}
+              {isStopping ? 'Stopping...' : 'Stop'}
             </button>
           ) : (
-            <button onClick={onStart} className="btn-success btn-sm">
-              <Play className="w-4 h-4" />
-              Start
+            <button 
+              onClick={handleStart} 
+              disabled={isStarting}
+              className="btn-success btn-sm"
+            >
+              {isStarting ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Play className="w-4 h-4" />
+              )}
+              {isStarting ? 'Starting...' : 'Start'}
             </button>
           )}
         </div>
         {project.isRunning && (
-          <a
-            href={`http://${project.domains?.[0] || `localhost:${project.port}`}`}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={() => window.devbox?.projects.openInBrowser(project.id)}
             className="btn-ghost btn-sm"
           >
             <ExternalLink className="w-4 h-4" />
             Open
-          </a>
+          </button>
         )}
       </div>
     </div>

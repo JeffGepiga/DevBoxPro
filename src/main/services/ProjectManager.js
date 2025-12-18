@@ -512,45 +512,28 @@ class ProjectManager {
 
     try {
       // Start required services first
-      await this.startProjectServices(project);
+      const serviceResult = await this.startProjectServices(project);
+      
+      // Check if critical services failed
+      if (!serviceResult.success) {
+        const errorMsg = serviceResult.errors.length > 0 
+          ? serviceResult.errors.join('; ') 
+          : `Critical services failed to start: ${serviceResult.criticalFailures.join(', ')}`;
+        throw new Error(errorMsg);
+      }
 
-      // Get PHP binary path
-      const phpPath = this.managers.php.getPhpBinaryPath(project.phpVersion);
+      // Calculate PHP-CGI port (unique per project)
+      const phpFpmPort = 9000 + (parseInt(project.id.slice(-4), 16) % 1000);
 
-      // Determine document root based on project type
-      const documentRoot = this.getDocumentRoot(project);
-
-      // Start PHP built-in server
-      const serverProcess = spawn(phpPath, ['-S', `127.0.0.1:${project.port}`, '-t', documentRoot], {
-        cwd: project.path,
-        env: {
-          ...process.env,
-          ...project.environment,
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true,
-      });
-
-      serverProcess.stdout.on('data', (data) => {
-        this.managers.log?.project(id, data.toString());
-      });
-
-      serverProcess.stderr.on('data', (data) => {
-        this.managers.log?.project(id, data.toString());
-      });
-
-      serverProcess.on('error', (error) => {
-        console.error(`Project ${project.name} server error:`, error);
-        this.runningProjects.delete(id);
-      });
-
-      serverProcess.on('exit', (code) => {
-        console.log(`Project ${project.name} server exited with code ${code}`);
-        this.runningProjects.delete(id);
-      });
+      // Start PHP-CGI for this project
+      const phpCgiProcess = await this.startPhpCgi(project, phpFpmPort);
+      
+      // Regenerate virtual host config to ensure correct port
+      await this.createVirtualHost(project);
 
       this.runningProjects.set(id, {
-        process: serverProcess,
+        phpCgiProcess: phpCgiProcess,
+        phpFpmPort: phpFpmPort,
         startedAt: new Date(),
       });
 
@@ -570,12 +553,61 @@ class ProjectManager {
         this.configStore.set('projects', projects);
       }
 
-      console.log(`Project ${project.name} started on port ${project.port}`);
-      return { success: true, port: project.port };
+      console.log(`Project ${project.name} started with PHP-CGI on port ${phpFpmPort}`);
+      return { success: true, port: project.port, phpFpmPort };
     } catch (error) {
       console.error(`Failed to start project ${project.name}:`, error);
       throw error;
     }
+  }
+
+  // Start PHP-CGI process for FastCGI
+  async startPhpCgi(project, port) {
+    const phpVersion = project.phpVersion || '8.3';
+    const phpPath = this.managers.php.getPhpBinaryPath(phpVersion);
+    const phpDir = path.dirname(phpPath);
+    const phpCgiPath = path.join(phpDir, process.platform === 'win32' ? 'php-cgi.exe' : 'php-cgi');
+    
+    // Check if php-cgi exists
+    if (!await fs.pathExists(phpCgiPath)) {
+      throw new Error(`PHP-CGI not found for PHP ${phpVersion}. Please ensure php-cgi is available.`);
+    }
+
+    console.log(`Starting PHP-CGI ${phpVersion} on port ${port}...`);
+
+    const phpCgiProcess = spawn(phpCgiPath, ['-b', `127.0.0.1:${port}`], {
+      cwd: project.path,
+      env: {
+        ...process.env,
+        ...project.environment,
+        PHP_FCGI_MAX_REQUESTS: '0', // Unlimited requests (don't exit after N requests)
+        PHP_FCGI_CHILDREN: '4', // Number of child processes
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+
+    phpCgiProcess.stdout.on('data', (data) => {
+      this.managers.log?.project(project.id, `[php-cgi] ${data.toString()}`);
+    });
+
+    phpCgiProcess.stderr.on('data', (data) => {
+      this.managers.log?.project(project.id, `[php-cgi] ${data.toString()}`);
+    });
+
+    phpCgiProcess.on('error', (error) => {
+      console.error(`PHP-CGI error for ${project.name}:`, error);
+    });
+
+    phpCgiProcess.on('exit', (code) => {
+      console.log(`PHP-CGI for ${project.name} exited with code ${code}`);
+    });
+
+    // Wait a moment for PHP-CGI to start
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    console.log(`PHP-CGI started for ${project.name} on port ${port}`);
+    return phpCgiProcess;
   }
 
   async stopProject(id) {
@@ -590,14 +622,15 @@ class ProjectManager {
     try {
       const kill = require('tree-kill');
 
-      // Stop main server process
-      if (running.process && running.process.pid) {
+      // Stop PHP-CGI process
+      if (running.phpCgiProcess && running.phpCgiProcess.pid) {
         await new Promise((resolve) => {
-          kill(running.process.pid, 'SIGTERM', (err) => {
-            if (err) console.error('Error killing process:', err);
+          kill(running.phpCgiProcess.pid, 'SIGTERM', (err) => {
+            if (err) console.error('Error killing PHP-CGI process:', err);
             resolve();
           });
         });
+        console.log(`PHP-CGI stopped for ${project?.name || id}`);
       }
 
       // Stop supervisor processes
@@ -629,58 +662,97 @@ class ProjectManager {
 
   /**
    * Start all services required by a project
+   * @returns {Object} Result with success status, failed services, and error messages
    */
   async startProjectServices(project) {
     const serviceManager = this.managers.service;
     if (!serviceManager) {
       console.warn('ServiceManager not available, skipping service auto-start');
-      return;
+      return { success: true, warning: 'ServiceManager not available' };
     }
 
     console.log(`Starting services for project ${project.name}...`);
 
+    // Web server is critical - project cannot run without it
+    const webServer = project.webServer || 'nginx';
+    
     const servicesToStart = [];
 
-    // Web server (nginx or apache)
-    const webServer = project.webServer || 'nginx';
-    servicesToStart.push(webServer);
+    // Web server (nginx or apache) - CRITICAL
+    servicesToStart.push({ name: webServer, critical: true });
 
     // Database (mysql or mariadb)
     if (project.services?.mysql) {
-      servicesToStart.push('mysql');
+      servicesToStart.push({ name: 'mysql', critical: false });
     }
     if (project.services?.mariadb) {
-      servicesToStart.push('mariadb');
+      servicesToStart.push({ name: 'mariadb', critical: false });
     }
 
     // Redis
     if (project.services?.redis) {
-      servicesToStart.push('redis');
+      servicesToStart.push({ name: 'redis', critical: false });
     }
 
     // Always start mailpit for email testing
-    servicesToStart.push('mailpit');
+    servicesToStart.push({ name: 'mailpit', critical: false });
 
     // phpMyAdmin if database is used
     if (project.services?.mysql || project.services?.mariadb) {
-      servicesToStart.push('phpmyadmin');
+      servicesToStart.push({ name: 'phpmyadmin', critical: false });
     }
 
+    const results = {
+      success: true,
+      started: [],
+      failed: [],
+      criticalFailures: [],
+      errors: [],
+    };
+
     // Start each service
-    for (const serviceName of servicesToStart) {
+    for (const service of servicesToStart) {
       try {
-        const status = serviceManager.serviceStatus.get(serviceName);
+        const status = serviceManager.serviceStatus.get(service.name);
         if (status && status.status !== 'running') {
-          console.log(`Auto-starting ${serviceName}...`);
-          await serviceManager.startService(serviceName);
+          console.log(`Auto-starting ${service.name}...`);
+          const result = await serviceManager.startService(service.name);
+          
+          // Check if service actually started (could be not_installed)
+          if (result.status === 'not_installed') {
+            const errorMsg = `${service.name} is not installed. Please download it from Binary Manager.`;
+            results.failed.push(service.name);
+            results.errors.push(errorMsg);
+            if (service.critical) {
+              results.criticalFailures.push(service.name);
+              results.success = false;
+            }
+          } else if (result.success) {
+            results.started.push(service.name);
+          }
+        } else if (status && status.status === 'running') {
+          results.started.push(service.name);
         }
       } catch (error) {
-        console.warn(`Failed to auto-start ${serviceName}:`, error.message);
-        // Continue with other services even if one fails
+        const errorMsg = `Failed to start ${service.name}: ${error.message}`;
+        console.warn(errorMsg);
+        results.failed.push(service.name);
+        results.errors.push(errorMsg);
+        
+        if (service.critical) {
+          results.criticalFailures.push(service.name);
+          results.success = false;
+        }
       }
     }
 
-    console.log(`Services started for project ${project.name}`);
+    if (results.success) {
+      console.log(`Services started for project ${project.name}`);
+    } else {
+      console.error(`Critical services failed for project ${project.name}:`, results.criticalFailures);
+    }
+
+    return results;
   }
 
   getProjectStatus(id) {
@@ -812,13 +884,34 @@ class ProjectManager {
   }
 
   async updateHostsFile(project) {
-    // This would require elevated permissions
-    // For now, we'll just log a message
-    const domains = project.domains.join(', ');
-    console.log(`Note: Add the following to your hosts file for custom domains: 127.0.0.1 ${domains}`);
-
-    // In a production app, you might use a local DNS server or
-    // prompt the user for admin permissions to modify the hosts file
+    // Add all project domains to hosts file
+    const domainsToAdd = [];
+    
+    // Add main domain
+    if (project.domain) {
+      domainsToAdd.push(project.domain);
+    }
+    
+    // Add any additional domains
+    if (project.domains && Array.isArray(project.domains)) {
+      for (const domain of project.domains) {
+        if (domain && !domainsToAdd.includes(domain)) {
+          domainsToAdd.push(domain);
+        }
+      }
+    }
+    
+    // Add each domain to hosts file
+    for (const domain of domainsToAdd) {
+      try {
+        const result = await this.addToHostsFile(domain);
+        if (result?.success) {
+          console.log(`Hosts file updated for ${domain}`);
+        }
+      } catch (error) {
+        console.warn(`Could not add ${domain} to hosts file:`, error.message);
+      }
+    }
   }
 
   // Create virtual host configuration for the project
@@ -847,6 +940,7 @@ class ProjectManager {
     const phpFpmPort = 9000 + (parseInt(project.id.slice(-4), 16) % 1000);
 
     // Generate nginx config with both HTTP and HTTPS
+    // PHP-CGI runs on phpFpmPort for FastCGI
     let config = `
 # DevBox Pro - ${project.name}
 # Domain: ${project.domain}
@@ -1071,6 +1165,8 @@ server {
 
   // Add domain to hosts file (requires admin privileges)
   async addToHostsFile(domain) {
+    if (!domain) return;
+    
     const hostsPath = process.platform === 'win32' 
       ? 'C:\\Windows\\System32\\drivers\\etc\\hosts'
       : '/etc/hosts';
@@ -1078,43 +1174,68 @@ server {
     try {
       const hostsContent = await fs.readFile(hostsPath, 'utf-8');
       
-      // Check if domain already exists
-      if (hostsContent.includes(domain)) {
+      // Check if domain already exists (check both with and without www)
+      const domainRegex = new RegExp(`^\\s*127\\.0\\.0\\.1\\s+${domain.replace('.', '\\.')}\\s*$`, 'm');
+      if (domainRegex.test(hostsContent)) {
         console.log(`Domain ${domain} already in hosts file`);
-        return;
+        return { success: true, alreadyExists: true };
       }
 
-      // Entry to add
-      const entry = `\n127.0.0.1\t${domain}\n127.0.0.1\twww.${domain}`;
+      // Entries to add
+      const entries = [
+        `127.0.0.1\t${domain}`,
+        `127.0.0.1\twww.${domain}`
+      ];
       
-      // Try to append (may fail without admin rights)
+      // Try to append using sudo-prompt for proper elevation
+      const sudo = require('sudo-prompt');
+      const options = {
+        name: 'DevBox Pro',
+        icns: undefined // Can add icon path later
+      };
+
       if (process.platform === 'win32') {
-        // On Windows, we need to use PowerShell with admin rights
-        const { exec } = require('child_process');
-        const command = `powershell -Command "Start-Process powershell -ArgumentList '-Command', 'Add-Content -Path ''${hostsPath}'' -Value ''${entry.replace(/\n/g, '`n')}''' -Verb RunAs"`;
+        // Create a batch script to add the entries
+        const { app } = require('electron');
+        const tempDir = app.getPath('temp');
+        const scriptPath = path.join(tempDir, 'devbox-hosts-update.bat');
         
-        return new Promise((resolve, reject) => {
-          exec(command, (error) => {
+        // Build the batch commands to echo each entry
+        const batchContent = entries.map(entry => 
+          `echo ${entry}>> "${hostsPath}"`
+        ).join('\r\n');
+        
+        await fs.writeFile(scriptPath, batchContent);
+        
+        return new Promise((resolve) => {
+          sudo.exec(`cmd /c "${scriptPath}"`, options, async (error, stdout, stderr) => {
+            // Clean up temp file
+            try { await fs.remove(scriptPath); } catch (e) {}
+            
             if (error) {
-              console.warn(`Could not update hosts file automatically. Please add manually:\n127.0.0.1\t${domain}`);
-              resolve(); // Don't reject, just warn
+              console.warn(`Could not update hosts file automatically: ${error.message}`);
+              console.warn(`Please add manually:\n${entries.join('\n')}`);
+              resolve({ success: false, error: error.message });
             } else {
               console.log(`Added ${domain} to hosts file`);
-              resolve();
+              resolve({ success: true });
             }
           });
         });
       } else {
-        // On macOS/Linux
-        const command = `echo '${entry}' | sudo tee -a ${hostsPath}`;
-        return new Promise((resolve, reject) => {
-          exec(command, (error) => {
+        // On macOS/Linux, use sudo-prompt with tee
+        const entry = entries.join('\n');
+        const command = `sh -c "echo '${entry}' >> ${hostsPath}"`;
+        
+        return new Promise((resolve) => {
+          sudo.exec(command, options, (error, stdout, stderr) => {
             if (error) {
-              console.warn(`Could not update hosts file automatically. Please add manually:\n127.0.0.1\t${domain}`);
-              resolve();
+              console.warn(`Could not update hosts file automatically: ${error.message}`);
+              console.warn(`Please add manually:\n${entries.join('\n')}`);
+              resolve({ success: false, error: error.message });
             } else {
               console.log(`Added ${domain} to hosts file`);
-              resolve();
+              resolve({ success: true });
             }
           });
         });
@@ -1122,11 +1243,14 @@ server {
     } catch (error) {
       console.warn(`Could not read hosts file: ${error.message}`);
       console.warn(`Please add manually: 127.0.0.1\t${domain}`);
+      return { success: false, error: error.message };
     }
   }
 
   // Remove domain from hosts file
   async removeFromHostsFile(domain) {
+    if (!domain) return;
+    
     const hostsPath = process.platform === 'win32'
       ? 'C:\\Windows\\System32\\drivers\\etc\\hosts'
       : '/etc/hosts';
@@ -1137,20 +1261,70 @@ server {
       // Remove lines containing the domain
       const lines = hostsContent.split('\n').filter(line => {
         const trimmed = line.trim();
-        return !trimmed.includes(domain);
+        // Only filter out DevBox Pro entries for this domain
+        return !trimmed.includes(domain) || !trimmed.startsWith('127.0.0.1');
       });
       
       const newContent = lines.join('\n');
       
       if (newContent !== hostsContent) {
+        const sudo = require('sudo-prompt');
+        const options = {
+          name: 'DevBox Pro',
+          icns: undefined
+        };
+        
         if (process.platform === 'win32') {
-          console.warn(`Please remove ${domain} from hosts file manually`);
+          const { app } = require('electron');
+          const tempDir = app.getPath('temp');
+          const tempHostsPath = path.join(tempDir, 'hosts-new');
+          
+          // Write new content to temp file
+          await fs.writeFile(tempHostsPath, newContent);
+          
+          // Use sudo to copy the temp file to the hosts location
+          const command = `copy /Y "${tempHostsPath}" "${hostsPath}"`;
+          
+          return new Promise((resolve) => {
+            sudo.exec(`cmd /c ${command}`, options, async (error, stdout, stderr) => {
+              try { await fs.remove(tempHostsPath); } catch (e) {}
+              
+              if (error) {
+                console.warn(`Could not remove ${domain} from hosts file: ${error.message}`);
+                resolve({ success: false, error: error.message });
+              } else {
+                console.log(`Removed ${domain} from hosts file`);
+                resolve({ success: true });
+              }
+            });
+          });
         } else {
-          console.warn(`Please remove ${domain} from hosts file manually`);
+          const { app } = require('electron');
+          const tempDir = app.getPath('temp');
+          const tempHostsPath = path.join(tempDir, 'hosts-new');
+          
+          await fs.writeFile(tempHostsPath, newContent);
+          
+          return new Promise((resolve) => {
+            sudo.exec(`cp "${tempHostsPath}" "${hostsPath}"`, options, async (error, stdout, stderr) => {
+              try { await fs.remove(tempHostsPath); } catch (e) {}
+              
+              if (error) {
+                console.warn(`Could not remove ${domain} from hosts file: ${error.message}`);
+                resolve({ success: false, error: error.message });
+              } else {
+                console.log(`Removed ${domain} from hosts file`);
+                resolve({ success: true });
+              }
+            });
+          });
         }
       }
+      
+      return { success: true, nothingToRemove: true };
     } catch (error) {
       console.warn(`Could not update hosts file: ${error.message}`);
+      return { success: false, error: error.message };
     }
   }
 

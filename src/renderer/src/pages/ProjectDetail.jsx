@@ -33,6 +33,9 @@ function ProjectDetail() {
   const [logs, setLogs] = useState([]);
   const [processes, setProcesses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isStarting, setIsStarting] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const [actionError, setActionError] = useState(null);
 
   // Update tab from URL params
   useEffect(() => {
@@ -68,6 +71,36 @@ function ProjectDetail() {
       setProcesses(supervisorProcesses || []);
     } catch (error) {
       console.error('Error loading processes:', error);
+    }
+  };
+
+  const handleStart = async () => {
+    setIsStarting(true);
+    setActionError(null);
+    try {
+      const result = await startProject(id);
+      if (result && !result.success) {
+        setActionError(result.error || 'Failed to start project');
+      }
+    } catch (err) {
+      setActionError(err.message || 'Failed to start project');
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const handleStop = async () => {
+    setIsStopping(true);
+    setActionError(null);
+    try {
+      const result = await stopProject(id);
+      if (result && !result.success) {
+        setActionError(result.error || 'Failed to stop project');
+      }
+    } catch (err) {
+      setActionError(err.message || 'Failed to stop project');
+    } finally {
+      setIsStopping(false);
     }
   };
 
@@ -135,24 +168,38 @@ function ProjectDetail() {
           <div className="flex items-center gap-2">
             {project.isRunning ? (
               <>
-                <a
-                  href={`http://localhost:${project.port}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  onClick={() => window.devbox?.projects.openInBrowser(project.id)}
                   className="btn-secondary"
                 >
                   <ExternalLink className="w-4 h-4" />
                   Open
-                </a>
-                <button onClick={() => stopProject(id)} className="btn-danger">
-                  <Square className="w-4 h-4" />
-                  Stop
+                </button>
+                <button 
+                  onClick={handleStop} 
+                  disabled={isStopping}
+                  className="btn-danger"
+                >
+                  {isStopping ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Square className="w-4 h-4" />
+                  )}
+                  {isStopping ? 'Stopping...' : 'Stop'}
                 </button>
               </>
             ) : (
-              <button onClick={() => startProject(id)} className="btn-success">
-                <Play className="w-4 h-4" />
-                Start
+              <button 
+                onClick={handleStart} 
+                disabled={isStarting}
+                className="btn-success"
+              >
+                {isStarting ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                {isStarting ? 'Starting...' : 'Start'}
               </button>
             )}
             <button
@@ -164,6 +211,15 @@ function ProjectDetail() {
             </button>
           </div>
         </div>
+
+        {/* Error message */}
+        {actionError && (
+          <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <p className="text-sm text-red-700 dark:text-red-400">
+              <strong>Error:</strong> {actionError}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}

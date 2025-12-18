@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Play,
@@ -233,6 +233,27 @@ function StatCard({ title, value, icon: Icon, color }) {
 }
 
 function ProjectRow({ project, onStart, onStop }) {
+  const [isStarting, setIsStarting] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+
+  const handleStart = async () => {
+    setIsStarting(true);
+    try {
+      await onStart();
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const handleStop = async () => {
+    setIsStopping(true);
+    try {
+      await onStop();
+    } finally {
+      setIsStopping(false);
+    }
+  };
+
   const statusColors = {
     running: 'status-running',
     stopped: 'status-stopped',
@@ -259,30 +280,38 @@ function ProjectRow({ project, onStart, onStop }) {
       <div className="flex items-center gap-2">
         {project.isRunning ? (
           <>
-            <a
-              href={`http://localhost:${project.port}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => window.devbox?.projects.openInBrowser(project.id)}
               className="btn-ghost btn-sm btn-icon"
               title="Open in browser"
             >
               <ExternalLink className="w-4 h-4" />
-            </a>
+            </button>
             <button
-              onClick={onStop}
+              onClick={handleStop}
+              disabled={isStopping}
               className="btn-ghost btn-sm btn-icon text-red-500 hover:text-red-600"
               title="Stop"
             >
-              <Square className="w-4 h-4" />
+              {isStopping ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Square className="w-4 h-4" />
+              )}
             </button>
           </>
         ) : (
           <button
-            onClick={onStart}
+            onClick={handleStart}
+            disabled={isStarting}
             className="btn-ghost btn-sm btn-icon text-green-500 hover:text-green-600"
             title="Start"
           >
-            <Play className="w-4 h-4" />
+            {isStarting ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Play className="w-4 h-4" />
+            )}
           </button>
         )}
       </div>

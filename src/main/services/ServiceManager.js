@@ -233,6 +233,13 @@ class ServiceManager extends EventEmitter {
     await fs.ensureDir(path.join(dataPath, 'nginx'));
     await fs.ensureDir(logsPath);
     await fs.ensureDir(path.join(dataPath, 'nginx', 'conf.d'));
+    
+    // Ensure nginx temp directories exist (required on Windows)
+    await fs.ensureDir(path.join(nginxPath, 'temp', 'client_body_temp'));
+    await fs.ensureDir(path.join(nginxPath, 'temp', 'proxy_temp'));
+    await fs.ensureDir(path.join(nginxPath, 'temp', 'fastcgi_temp'));
+    await fs.ensureDir(path.join(nginxPath, 'temp', 'uwsgi_temp'));
+    await fs.ensureDir(path.join(nginxPath, 'temp', 'scgi_temp'));
 
     // Create default config if not exists
     if (!await fs.pathExists(confPath)) {
@@ -280,6 +287,14 @@ class ServiceManager extends EventEmitter {
 
   async createNginxConfig(confPath, logsPath) {
     const dataPath = this.configStore.get('dataPath');
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const nginxPath = path.join(this.resourcePath, 'nginx', platform);
+    const mimeTypesPath = path.join(nginxPath, 'conf', 'mime.types').replace(/\\/g, '/');
+    const sitesPath = path.join(dataPath, 'nginx', 'sites').replace(/\\/g, '/');
+    
+    // Ensure sites directory exists
+    await fs.ensureDir(path.join(dataPath, 'nginx', 'sites'));
+    
     const config = `worker_processes 1;
 
 events {
@@ -287,22 +302,28 @@ events {
 }
 
 http {
-    include       mime.types;
+    include       ${mimeTypesPath};
     default_type  application/octet-stream;
     sendfile      on;
     keepalive_timeout 65;
+    client_max_body_size 128M;
     
     access_log ${logsPath.replace(/\\/g, '/')}/access.log;
     error_log ${logsPath.replace(/\\/g, '/')}/error.log;
 
-    # Include virtual host configs
-    include ${dataPath.replace(/\\/g, '/')}/nginx/conf.d/*.conf;
+    # Include virtual host configs from sites directory
+    include ${sitesPath}/*.conf;
 
+    # Default server for unmatched requests
     server {
         listen 80 default_server;
         server_name localhost;
         root ${dataPath.replace(/\\/g, '/')}/www;
         index index.html index.php;
+        
+        location / {
+            try_files $uri $uri/ =404;
+        }
     }
 }
 `;
@@ -379,6 +400,8 @@ http {
 
   async createApacheConfig(apachePath, confPath, logsPath) {
     const dataPath = this.configStore.get('dataPath');
+    const mimeTypesPath = path.join(apachePath, 'conf', 'mime.types').replace(/\\/g, '/');
+    
     const config = `ServerRoot "${apachePath.replace(/\\/g, '/')}"
 Listen 80
 
@@ -387,6 +410,8 @@ LoadModule dir_module modules/mod_dir.so
 LoadModule mime_module modules/mod_mime.so
 LoadModule log_config_module modules/mod_log_config.so
 LoadModule rewrite_module modules/mod_rewrite.so
+
+TypesConfig "${mimeTypesPath}"
 
 ServerName localhost:80
 DocumentRoot "${dataPath.replace(/\\/g, '/')}/www"
@@ -400,7 +425,7 @@ DocumentRoot "${dataPath.replace(/\\/g, '/')}/www"
 ErrorLog "${logsPath.replace(/\\/g, '/')}/error.log"
 CustomLog "${logsPath.replace(/\\/g, '/')}/access.log" combined
 
-Include "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
+IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 `;
     await fs.writeFile(confPath, config);
   }
@@ -527,7 +552,28 @@ Include "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
   }
 
   async createMySQLConfig(configPath, dataDir, port) {
-    const config = `[mysqld]
+    const isWindows = process.platform === 'win32';
+    
+    let config;
+    if (isWindows) {
+      // Windows-specific config - use TCP/IP
+      config = `[mysqld]
+datadir=${dataDir.replace(/\\/g, '/')}
+port=${port}
+skip-grant-tables
+skip-networking=OFF
+bind-address=127.0.0.1
+enable_named_pipe=ON
+pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
+log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+
+[client]
+port=${port}
+protocol=tcp
+`;
+    } else {
+      // Unix/macOS config with socket
+      config = `[mysqld]
 datadir=${dataDir.replace(/\\/g, '/')}
 port=${port}
 skip-grant-tables
@@ -541,6 +587,7 @@ log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
 port=${port}
 socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 `;
+    }
 
     await fs.writeFile(configPath, config);
   }
@@ -643,7 +690,26 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 
   async createMariaDBConfig(configPath, dataDir, port) {
     await fs.ensureDir(path.dirname(configPath));
-    const config = `[mysqld]
+    const isWindows = process.platform === 'win32';
+    
+    let config;
+    if (isWindows) {
+      // Windows-specific config - no socket, use TCP/IP and named pipe
+      config = `[mysqld]
+datadir=${dataDir.replace(/\\/g, '/')}
+port=${port}
+skip-grant-tables
+bind-address=127.0.0.1
+enable_named_pipe=ON
+pid-file=${path.join(dataDir, 'mariadb.pid').replace(/\\/g, '/')}
+log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+
+[client]
+port=${port}
+`;
+    } else {
+      // Unix/macOS config with socket
+      config = `[mysqld]
 datadir=${dataDir.replace(/\\/g, '/')}
 port=${port}
 skip-grant-tables
@@ -657,6 +723,7 @@ log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
 port=${port}
 socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
 `;
+    }
 
     await fs.writeFile(configPath, config);
   }
