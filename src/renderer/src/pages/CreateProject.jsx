@@ -151,15 +151,31 @@ function CreateProject() {
       }
     };
 
-    // Subscribe to terminal output immediately
-    const cleanup = window.devbox?.terminal?.onOutput?.(handleOutput);
-
-    return () => {
-      if (cleanup && typeof cleanup === 'function') {
-        cleanup();
+    // Handle installation complete event - auto redirect to project overview
+    const handleInstallComplete = (event, data) => {
+      console.log('Installation complete:', data);
+      if (data?.projectId) {
+        // Small delay to let user see the success message
+        setTimeout(() => {
+          setShowInstallProgress(false);
+          navigate(`/projects/${data.projectId}`);
+        }, 2000);
       }
     };
-  }, []); // Empty dependency - always listen
+
+    // Subscribe to terminal output immediately
+    const cleanupOutput = window.devbox?.terminal?.onOutput?.(handleOutput);
+    const cleanupComplete = window.devbox?.terminal?.onInstallComplete?.(handleInstallComplete);
+
+    return () => {
+      if (cleanupOutput && typeof cleanupOutput === 'function') {
+        cleanupOutput();
+      }
+      if (cleanupComplete && typeof cleanupComplete === 'function') {
+        cleanupComplete();
+      }
+    };
+  }, [navigate]); // Add navigate dependency
 
   // Check available binaries on mount
   useEffect(() => {

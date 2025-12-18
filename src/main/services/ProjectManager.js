@@ -229,10 +229,77 @@ class ProjectManager {
         sendOutput(`Warning: Could not create virtual host: ${error.message}`, 'warning');
       }
       
+      // Run php artisan optimize for Laravel projects
+      if (project.type === 'laravel') {
+        try {
+          sendOutput('Optimizing application...', 'info');
+          sendOutput('$ php artisan optimize', 'command');
+          
+          const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
+          const platform = process.platform === 'win32' ? 'win' : 'mac';
+          const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+          const phpPath = path.join(resourcePath, 'php', project.phpVersion, platform, phpExe);
+          
+          if (await fs.pathExists(phpPath)) {
+            await new Promise((resolve) => {
+              const proc = spawn(phpPath, ['artisan', 'optimize'], { 
+                cwd: project.path, 
+                stdio: ['ignore', 'pipe', 'pipe'],
+                windowsHide: true 
+              });
+              proc.stdout.on('data', (data) => sendOutput(data.toString(), 'stdout'));
+              proc.stderr.on('data', (data) => sendOutput(data.toString(), 'stderr'));
+              proc.on('close', (code) => {
+                if (code === 0) {
+                  sendOutput('✓ Application optimized!', 'success');
+                }
+                resolve();
+              });
+              proc.on('error', () => resolve());
+            });
+          }
+        } catch (e) {
+          sendOutput(`Warning: Could not optimize application: ${e.message}`, 'warning');
+        }
+      }
+      
       // Mark installation complete
       project.installing = false;
       this.updateProjectInStore(project);
+      
+      // Show thank you message
+      sendOutput('', 'info');
+      sendOutput('═══════════════════════════════════════════════════════════════', 'info');
+      sendOutput('🎉 Thank you for using DevBox Pro!', 'success');
+      sendOutput('', 'info');
+      sendOutput(`Your project "${project.name}" is now available at:`, 'info');
+      sendOutput(`   🌐 HTTP:  http://${project.domain}`, 'info');
+      if (project.ssl) {
+        sendOutput(`   🔒 HTTPS: https://${project.domain}`, 'info');
+      }
+      sendOutput('', 'info');
+      sendOutput('Starting your project now...', 'info');
+      sendOutput('═══════════════════════════════════════════════════════════════', 'info');
+      
+      // Auto-start the project
+      try {
+        await this.startProject(project.id);
+        sendOutput('✓ Project started successfully!', 'success');
+      } catch (startError) {
+        sendOutput(`Warning: Could not auto-start project: ${startError.message}`, 'warning');
+      }
+      
+      // Signal completion with redirect info
       sendOutput('', 'complete');
+      
+      // Send redirect signal to frontend
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('installation:complete', {
+          projectId: project.id,
+          domain: project.domain,
+          ssl: project.ssl,
+        });
+      }
       
     } catch (error) {
       console.error('Failed to install framework:', error);

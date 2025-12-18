@@ -117,6 +117,11 @@ contextBridge.exposeInMainWorld('devbox', {
     offOutput: (callback) => {
       ipcRenderer.removeListener('terminal:output', callback);
     },
+    onInstallComplete: (callback) => {
+      const handler = (event, data) => callback(event, data);
+      ipcRenderer.on('installation:complete', handler);
+      return () => ipcRenderer.removeListener('installation:complete', handler);
+    },
   },
 
   // Binary download operations
