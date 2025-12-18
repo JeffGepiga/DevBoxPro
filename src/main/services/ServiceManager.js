@@ -556,20 +556,21 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     
     let config;
     if (isWindows) {
-      // Windows-specific config - use TCP/IP
+      // Windows-specific config - minimal TCP/IP setup
       config = `[mysqld]
+basedir=${this.getMySQLPath().replace(/\\/g, '/')}
 datadir=${dataDir.replace(/\\/g, '/')}
 port=${port}
 skip-grant-tables
-skip-networking=OFF
-bind-address=127.0.0.1
-enable_named_pipe=ON
+bind-address=0.0.0.0
+enable-named-pipe=0
+shared-memory=0
 pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
 
 [client]
 port=${port}
-protocol=tcp
+host=127.0.0.1
 `;
     } else {
       // Unix/macOS config with socket
