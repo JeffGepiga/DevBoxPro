@@ -109,8 +109,9 @@ contextBridge.exposeInMainWorld('devbox', {
   terminal: {
     runCommand: (projectId, command, options) => ipcRenderer.invoke('terminal:runCommand', projectId, command, options),
     cancelCommand: (projectId) => ipcRenderer.invoke('terminal:cancelCommand', projectId),
+    sendInput: (projectId, input) => ipcRenderer.invoke('terminal:sendInput', projectId, input),
     onOutput: (callback) => {
-      const handler = (event, data) => callback(event, data);
+      const handler = (event, data) => callback(data);
       ipcRenderer.on('terminal:output', handler);
       return () => ipcRenderer.removeListener('terminal:output', handler);
     },

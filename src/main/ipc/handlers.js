@@ -663,6 +663,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         },
         shell: false,
         windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe'], // Enable stdin pipe for interactive commands
       });
 
       // Store process reference for potential cancellation
@@ -712,6 +713,15 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       const kill = require('tree-kill');
       kill(proc.pid, 'SIGTERM');
       runningProcesses.delete(projectId);
+      return { success: true };
+    }
+    return { success: false };
+  });
+
+  ipcMain.handle('terminal:sendInput', async (event, projectId, input) => {
+    const proc = runningProcesses.get(projectId);
+    if (proc && proc.stdin && !proc.stdin.destroyed) {
+      proc.stdin.write(input);
       return { success: true };
     }
     return { success: false };

@@ -124,27 +124,36 @@ function Services() {
 
   // Filter services to show only those required by running projects
   // If no projects are running, show all available services
+  // Always base on serviceInfo (static definition) and merge with backend status
   const filteredServices = useMemo(() => {
     const result = {};
     
     if (runningProjects.length === 0) {
       // No running projects - show core services (without web server)
-      for (const [name, service] of Object.entries(services)) {
+      for (const [name, info] of Object.entries(serviceInfo)) {
         // Don't show web servers when no projects are running
         if (name === 'nginx' || name === 'apache') continue;
-        result[name] = service;
+        // Merge static info with backend status
+        result[name] = {
+          ...info,
+          ...(services[name] || { status: 'stopped' }),
+        };
       }
     } else {
       // Show only services required by running projects
-      for (const [name, service] of Object.entries(services)) {
-        if (requiredServices.has(name)) {
-          result[name] = service;
+      for (const name of requiredServices) {
+        if (serviceInfo[name]) {
+          // Merge static info with backend status
+          result[name] = {
+            ...serviceInfo[name],
+            ...(services[name] || { status: 'stopped' }),
+          };
         }
       }
     }
     
     return result;
-  }, [services, runningProjects, requiredServices]);
+  }, [serviceInfo, services, runningProjects, requiredServices]);
 
   const handleStartAll = async () => {
     setLoading(true);

@@ -99,7 +99,8 @@ class ProjectManager {
       ssl: config.ssl !== false, // SSL enabled by default
       autoStart: config.autoStart || false,
       services: {
-        mysql: config.services?.mysql !== false,
+        mysql: config.services?.mysql || false,
+        mariadb: config.services?.mariadb || false,
         redis: config.services?.redis || false,
         queue: config.services?.queue || false,
       },
@@ -112,8 +113,8 @@ class ProjectManager {
       lastStarted: null,
     };
 
-    // Create database for project if MySQL is enabled
-    if (project.services.mysql) {
+    // Create database for project if MySQL or MariaDB is enabled
+    if (project.services.mysql || project.services.mariadb) {
       const dbName = this.sanitizeDatabaseName(config.name);
       project.environment.DB_DATABASE = dbName;
 

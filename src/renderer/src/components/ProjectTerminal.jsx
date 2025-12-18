@@ -92,7 +92,9 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
 
   // Listen for terminal output events
   useEffect(() => {
-    const handleOutput = (event, data) => {
+    const handleOutput = (data) => {
+      // Add null check for data since different terminal events have different structures
+      if (!data || !data.projectId) return;
       if (data.projectId === projectId) {
         addOutput(data.text, data.type || 'stdout');
       }

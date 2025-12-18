@@ -130,7 +130,9 @@ function CreateProject() {
 
   // Listen for terminal output during installation - always active
   useEffect(() => {
-    const handleOutput = (event, data) => {
+    const handleOutput = (data) => {
+      // Add null check for data since different terminal events have different structures
+      if (!data || !data.projectId) return;
       console.log('Received terminal output:', data);
       if (data.projectId === 'installation') {
         // Check for completion signal

@@ -66,27 +66,47 @@ function Dashboard() {
     return required;
   }, [runningProjects]);
 
+  // Define core services (static definition to ensure they're always available)
+  const coreServiceNames = useMemo(() => ({
+    nginx: { name: 'Nginx' },
+    apache: { name: 'Apache' },
+    mysql: { name: 'MySQL' },
+    mariadb: { name: 'MariaDB' },
+    redis: { name: 'Redis' },
+    mailpit: { name: 'Mailpit' },
+    phpmyadmin: { name: 'phpMyAdmin' },
+  }), []);
+
   // Filter services to show only those required by running projects
+  // Always base on static definition and merge with backend status
   const filteredServices = useMemo(() => {
     const result = {};
     
     if (runningProjects.length === 0) {
       // No running projects - show core services (without web server)
-      for (const [name, service] of Object.entries(services)) {
+      for (const [name, info] of Object.entries(coreServiceNames)) {
         if (name === 'nginx' || name === 'apache') continue;
-        result[name] = service;
+        // Merge static info with backend status
+        result[name] = {
+          ...info,
+          ...(services[name] || { status: 'stopped' }),
+        };
       }
     } else {
       // Show only services required by running projects
-      for (const [name, service] of Object.entries(services)) {
-        if (requiredServices.has(name)) {
-          result[name] = service;
+      for (const name of requiredServices) {
+        if (coreServiceNames[name]) {
+          // Merge static info with backend status
+          result[name] = {
+            ...coreServiceNames[name],
+            ...(services[name] || { status: 'stopped' }),
+          };
         }
       }
     }
     
     return result;
-  }, [services, runningProjects, requiredServices]);
+  }, [coreServiceNames, services, runningProjects, requiredServices]);
 
   const runningServices = Object.values(filteredServices).filter((s) => s.status === 'running');
 
