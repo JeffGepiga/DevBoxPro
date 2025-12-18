@@ -1088,6 +1088,8 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     // Create MariaDB config
     await this.createMariaDBConfig(configPath, dataDir, port);
 
+    console.log(`Starting MariaDB server on port ${port}...`);
+
     const proc = spawn(mariadbd, [`--defaults-file=${configPath}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
@@ -1161,17 +1163,20 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     let config;
     if (isWindows) {
       // Windows-specific config - no socket, use TCP/IP and named pipe
+      // Use unique named pipe name to avoid conflict with MySQL
       config = `[mysqld]
 datadir=${dataDir.replace(/\\/g, '/')}
 port=${port}
 skip-grant-tables
 bind-address=127.0.0.1
 enable_named_pipe=ON
+socket=MARIADB
 pid-file=${path.join(dataDir, 'mariadb.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
 
 [client]
 port=${port}
+socket=MARIADB
 `;
     } else {
       // Unix/macOS config with socket
