@@ -587,12 +587,15 @@ class ServiceManager extends EventEmitter {
     // WebServerManager stores sites in userData/data/nginx/sites, so we need to match that path
     const webServerDataPath = dataPath;
     const sitesPath = path.join(webServerDataPath, 'nginx', 'sites').replace(/\\/g, '/');
+    const pidPath = path.join(webServerDataPath, 'nginx', 'nginx.pid').replace(/\\/g, '/');
     
     // Ensure sites directory exists
     await fs.ensureDir(path.join(webServerDataPath, 'nginx', 'sites'));
     await fs.ensureDir(path.join(webServerDataPath, 'nginx', 'logs'));
     
     const config = `worker_processes 1;
+pid ${pidPath};
+error_log ${logsPath.replace(/\\/g, '/')}/error.log;
 
 events {
     worker_connections 1024;
@@ -606,7 +609,7 @@ http {
     client_max_body_size 128M;
     
     access_log ${logsPath.replace(/\\/g, '/')}/access.log;
-    error_log ${logsPath.replace(/\\/g, '/')}/error.log;
+    error_log ${logsPath.replace(/\\/g, '/')}/http_error.log;
 
     # FastCGI params
     include ${path.join(nginxPath, 'conf', 'fastcgi_params').replace(/\\/g, '/')};
@@ -1115,7 +1118,9 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     await fs.ensureDir(dataDir);
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(installDb, [`--datadir=${dataDir}`, '--auth-root-authentication-method=normal'], {
+      // Note: Newer MariaDB versions don't support --auth-root-authentication-method
+      // Just use --datadir for initialization
+      const proc = spawn(installDb, [`--datadir=${dataDir}`], {
         cwd: mariadbPath,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
