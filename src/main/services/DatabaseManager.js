@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const net = require('net');
+const { app } = require('electron');
 
 class DatabaseManager {
   constructor(resourcePath, configStore) {
@@ -18,7 +19,7 @@ class DatabaseManager {
   async initialize() {
     console.log('Initializing DatabaseManager...');
 
-    const dataPath = this.configStore.get('dataPath');
+    const dataPath = path.join(app.getPath('userData'), 'data');
     await fs.ensureDir(path.join(dataPath, 'mysql', 'data'));
     await fs.ensureDir(path.join(dataPath, 'mysql', 'backups'));
     await fs.ensureDir(path.join(dataPath, 'mariadb', 'data'));

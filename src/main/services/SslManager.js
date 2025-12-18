@@ -14,7 +14,9 @@ class SslManager {
   async initialize() {
     console.log('Initializing SslManager...');
 
-    const dataPath = this.configStore.get('dataPath');
+    // Use the same data path as ProjectManager (app.getPath('userData')/data)
+    const { app } = require('electron');
+    const dataPath = path.join(app.getPath('userData'), 'data');
     this.certsPath = path.join(dataPath, 'ssl', 'certs');
     this.caPath = path.join(dataPath, 'ssl', 'ca');
 
@@ -73,9 +75,14 @@ class SslManager {
     const primaryDomain = domains[0];
     const certName = this.sanitizeCertName(primaryDomain);
 
-    const keyPath = path.join(this.certsPath, `${certName}.key`);
-    const csrPath = path.join(this.certsPath, `${certName}.csr`);
-    const certPath = path.join(this.certsPath, `${certName}.crt`);
+    // Create per-domain directory for certificates
+    const domainCertDir = path.join(this.certsPath, '..', primaryDomain);
+    await fs.ensureDir(domainCertDir);
+
+    // Use naming convention expected by ProjectManager: cert.pem and key.pem
+    const keyPath = path.join(domainCertDir, 'key.pem');
+    const csrPath = path.join(domainCertDir, `${certName}.csr`);
+    const certPath = path.join(domainCertDir, 'cert.pem');
 
     console.log(`Creating certificate for: ${domains.join(', ')}`);
 
@@ -84,7 +91,7 @@ class SslManager {
 
     // Create CSR config with SANs
     const config = this.createOpenSSLConfig(primaryDomain, domains);
-    const configPath = path.join(this.certsPath, `${certName}.cnf`);
+    const configPath = path.join(domainCertDir, `${certName}.cnf`);
     await fs.writeFile(configPath, config);
 
     // Generate CSR
@@ -153,19 +160,10 @@ class SslManager {
       throw new Error(`Certificate for ${domain} not found`);
     }
 
-    // Delete certificate files
-    const certName = this.sanitizeCertName(domain);
-    const filesToDelete = [
-      path.join(this.certsPath, `${certName}.key`),
-      path.join(this.certsPath, `${certName}.csr`),
-      path.join(this.certsPath, `${certName}.crt`),
-      path.join(this.certsPath, `${certName}.cnf`),
-    ];
-
-    for (const file of filesToDelete) {
-      if (await fs.pathExists(file)) {
-        await fs.unlink(file);
-      }
+    // Delete per-domain certificate directory
+    const domainCertDir = path.join(this.certsPath, '..', domain);
+    if (await fs.pathExists(domainCertDir)) {
+      await fs.remove(domainCertDir);
     }
 
     // Remove from config

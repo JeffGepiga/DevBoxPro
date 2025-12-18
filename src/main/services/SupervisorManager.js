@@ -3,19 +3,15 @@ const fs = require('fs-extra');
 const { spawn } = require('child_process');
 
 // Helper function to spawn a process hidden on Windows
+// On Windows, uses regular spawn with windowsHide
 function spawnHidden(command, args, options = {}) {
   if (process.platform === 'win32') {
-    const psCommand = `& '${command}' ${args.map(a => `'${a}'`).join(' ')}`;
-    return spawn('powershell.exe', [
-      '-WindowStyle', 'Hidden',
-      '-NoProfile',
-      '-ExecutionPolicy', 'Bypass',
-      '-Command', psCommand
-    ], {
+    const proc = spawn(command, args, {
       ...options,
-      stdio: options.stdio || 'ignore',
       windowsHide: true,
     });
+    
+    return proc;
   } else {
     return spawn(command, args, {
       ...options,
@@ -34,7 +30,8 @@ class SupervisorManager {
   async initialize() {
     console.log('Initializing SupervisorManager...');
 
-    const dataPath = this.configStore.get('dataPath');
+    const { app } = require('electron');
+    const dataPath = path.join(app.getPath('userData'), 'data');
     const supervisorPath = path.join(dataPath, 'supervisor');
     await fs.ensureDir(supervisorPath);
     await fs.ensureDir(path.join(supervisorPath, 'logs'));

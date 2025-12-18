@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs-extra');
 const { EventEmitter } = require('events');
+const { app } = require('electron');
 
 class LogManager extends EventEmitter {
   constructor(configStore) {
@@ -16,7 +17,7 @@ class LogManager extends EventEmitter {
   async initialize() {
     console.log('Initializing LogManager...');
 
-    const dataPath = this.configStore.get('dataPath');
+    const dataPath = path.join(app.getPath('userData'), 'data');
     this.logsPath = path.join(dataPath, 'logs');
 
     await fs.ensureDir(this.logsPath);

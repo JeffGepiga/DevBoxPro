@@ -7,19 +7,15 @@ const httpProxy = require('http-proxy');
 const os = require('os');
 
 // Helper function to spawn a process hidden on Windows
+// On Windows, uses regular spawn with windowsHide
 function spawnHidden(command, args, options = {}) {
   if (process.platform === 'win32') {
-    const psCommand = `& '${command}' ${args.map(a => `'${a}'`).join(' ')}`;
-    return spawn('powershell.exe', [
-      '-WindowStyle', 'Hidden',
-      '-NoProfile',
-      '-ExecutionPolicy', 'Bypass',
-      '-Command', psCommand
-    ], {
+    const proc = spawn(command, args, {
       ...options,
-      stdio: options.stdio || 'ignore',
       windowsHide: true,
     });
+    
+    return proc;
   } else {
     return spawn(command, args, {
       ...options,
@@ -613,6 +609,23 @@ class ProjectManager {
           PHP_FCGI_MAX_REQUESTS: '0',
           PHP_FCGI_CHILDREN: '4',
         },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      
+      phpCgiProcess.stdout?.on('data', (data) => {
+        this.managers.log?.project(project.id, `[php-cgi] ${data.toString()}`);
+      });
+
+      phpCgiProcess.stderr?.on('data', (data) => {
+        this.managers.log?.project(project.id, `[php-cgi] ${data.toString()}`);
+      });
+
+      phpCgiProcess.on('error', (error) => {
+        console.error(`PHP-CGI error for ${project.name}:`, error);
+      });
+
+      phpCgiProcess.on('exit', (code) => {
+        console.log(`PHP-CGI for ${project.name} exited with code ${code}`);
       });
     } else {
       phpCgiProcess = spawn(phpCgiPath, ['-b', `127.0.0.1:${port}`], {
@@ -1032,9 +1045,24 @@ server {
 `;
 
     // Add HTTPS server block if SSL is enabled AND certificates exist
-    const certPath = path.join(sslDir, 'cert.pem');
-    const keyPath = path.join(sslDir, 'key.pem');
-    const certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
+    let certPath = path.join(sslDir, 'cert.pem');
+    let keyPath = path.join(sslDir, 'key.pem');
+    let certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
+    
+    // Auto-create SSL certificates if SSL is enabled but certs don't exist
+    if (project.ssl && !certsExist) {
+      console.log(`SSL enabled for ${project.domain} but certificates not found. Creating certificates...`);
+      try {
+        await this.managers.ssl?.createCertificate(project.domains);
+        // Re-check if certificates were created successfully
+        certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
+        if (certsExist) {
+          console.log(`SSL certificates created successfully for ${project.domain}`);
+        }
+      } catch (error) {
+        console.warn(`Failed to create SSL certificates for ${project.domain}:`, error.message);
+      }
+    }
     
     if (project.ssl && !certsExist) {
       console.warn(`SSL enabled for ${project.domain} but certificates not found at ${sslDir}. Skipping SSL block.`);
@@ -1155,8 +1183,32 @@ server {
 </VirtualHost>
 `;
 
-    // Add HTTPS virtual host if SSL is enabled
-    if (project.ssl) {
+    // Check if SSL certificates exist for HTTPS
+    let certPath = path.join(sslDir, 'cert.pem');
+    let keyPath = path.join(sslDir, 'key.pem');
+    let certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
+
+    // Auto-create SSL certificates if SSL is enabled but certs don't exist
+    if (project.ssl && !certsExist) {
+      console.log(`SSL enabled for ${project.domain} but certificates not found. Creating certificates...`);
+      try {
+        await this.managers.ssl?.createCertificate(project.domains);
+        // Re-check if certificates were created successfully
+        certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
+        if (certsExist) {
+          console.log(`SSL certificates created successfully for ${project.domain}`);
+        }
+      } catch (error) {
+        console.warn(`Failed to create SSL certificates for ${project.domain}:`, error.message);
+      }
+    }
+
+    if (project.ssl && !certsExist) {
+      console.warn(`SSL enabled for ${project.domain} but certificates not found at ${sslDir}. Skipping SSL block.`);
+    }
+
+    // Add HTTPS virtual host if SSL is enabled and certs exist
+    if (project.ssl && certsExist) {
       config += `
 # HTTPS Virtual Host (SSL)
 <VirtualHost *:443>
