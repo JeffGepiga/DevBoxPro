@@ -444,6 +444,9 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       return;
     }
 
+    // Kill any orphan MySQL processes before starting
+    await this.killOrphanMySQLProcesses();
+
     const dataPath = this.configStore.get('dataPath');
     const dataDir = path.join(dataPath, 'mysql', 'data');
     const port = this.serviceConfigs.mysql.defaultPort;
@@ -556,15 +559,16 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     
     let config;
     if (isWindows) {
-      // Windows-specific config - minimal TCP/IP setup
+      // Windows-specific config
+      // MySQL 8.4 on Windows requires at least one of: TCP/IP, shared-memory, or named-pipe
+      // We enable named-pipe to satisfy this requirement, TCP/IP is enabled by default
       config = `[mysqld]
 basedir=${this.getMySQLPath().replace(/\\/g, '/')}
 datadir=${dataDir.replace(/\\/g, '/')}
 port=${port}
-skip-grant-tables
 bind-address=0.0.0.0
-enable-named-pipe=0
-shared-memory=0
+skip-grant-tables
+enable-named-pipe=1
 pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
 
@@ -860,6 +864,18 @@ appendfilename "appendonly.aof"
       return;
     }
 
+    // Ensure mysqli extension is enabled for phpMyAdmin
+    try {
+      const extensions = phpManager.getExtensions(defaultPhp);
+      const mysqliExt = extensions.find(ext => ext.name === 'mysqli');
+      if (mysqliExt && !mysqliExt.enabled) {
+        console.log('Enabling mysqli extension for phpMyAdmin...');
+        await phpManager.toggleExtension(defaultPhp, 'mysqli', true);
+      }
+    } catch (error) {
+      console.warn('Could not check/enable mysqli extension:', error.message);
+    }
+
     const phpmyadminPath = path.join(this.resourcePath, 'phpmyadmin');
     
     // Check if phpMyAdmin is installed
@@ -871,9 +887,25 @@ appendfilename "appendonly.aof"
       return;
     }
 
+    // Check if MySQL is running - phpMyAdmin needs MySQL to work
+    const mysqlStatus = this.serviceStatus.get('mysql');
+    if (mysqlStatus.status !== 'running') {
+      console.log('MySQL is not running. Starting MySQL first...');
+      try {
+        await this.startMySQL();
+        // Wait a bit for MySQL to fully initialize
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (error) {
+        console.warn('Could not start MySQL automatically:', error.message);
+      }
+    }
+
     const port = this.serviceConfigs.phpmyadmin.defaultPort;
 
-    const proc = spawn(phpPath, ['-S', `127.0.0.1:${port}`, '-t', phpmyadminPath], {
+    // Get PHP directory for php.ini location
+    const phpDir = path.dirname(phpPath);
+
+    const proc = spawn(phpPath, ['-S', `127.0.0.1:${port}`, '-t', phpmyadminPath, '-c', phpDir], {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
       windowsHide: true,

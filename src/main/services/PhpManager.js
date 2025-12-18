@@ -224,6 +224,7 @@ extension=fileinfo
 extension=gd
 extension=intl
 extension=mbstring
+extension=mysqli
 extension=openssl
 extension=pdo_mysql
 extension=pdo_sqlite
