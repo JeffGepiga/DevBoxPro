@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Play,
@@ -17,7 +17,23 @@ import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 
 function Dashboard() {
-  const { projects, services, resourceUsage, loading, startProject, stopProject } = useApp();
+  const { projects, services, resourceUsage, loading, startProject, stopProject, refreshServices, refreshProjects } = useApp();
+
+  // Auto-refresh on mount and set up polling for real-time updates
+  useEffect(() => {
+    // Refresh immediately when the dashboard is shown
+    refreshServices();
+    refreshProjects();
+
+    // Set up polling interval for real-time updates (every 5 seconds)
+    const intervalId = setInterval(() => {
+      refreshServices();
+      refreshProjects();
+    }, 5000);
+
+    // Cleanup interval on unmount
+    return () => clearInterval(intervalId);
+  }, [refreshServices, refreshProjects]);
 
   // Get running projects
   const runningProjects = useMemo(() => {

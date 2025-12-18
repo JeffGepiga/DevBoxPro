@@ -23,6 +23,20 @@ function Services() {
   const { services, resourceUsage, startService, stopService, refreshServices, projects } = useApp();
   const [loading, setLoading] = useState(false);
 
+  // Auto-refresh services when component mounts and set up polling interval
+  useEffect(() => {
+    // Refresh immediately when the tab is shown
+    refreshServices();
+
+    // Set up polling interval for real-time updates (every 3 seconds)
+    const intervalId = setInterval(() => {
+      refreshServices();
+    }, 3000);
+
+    // Cleanup interval on unmount
+    return () => clearInterval(intervalId);
+  }, [refreshServices]);
+
   // Get running projects
   const runningProjects = useMemo(() => {
     return projects.filter(p => p.isRunning);

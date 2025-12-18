@@ -74,6 +74,10 @@ class WebServerManager {
     const sslPort = project.sslPort || 443;
     const phpFpmPort = 9000 + parseInt(id.slice(-4), 16) % 1000; // Unique port per project
 
+    // Get absolute path to fastcgi_params
+    const platform = this.getPlatform();
+    const fastcgiParamsPath = path.join(this.resourcesPath, 'nginx', platform, 'conf', 'fastcgi_params').replace(/\\/g, '/');
+
     let serverConfig = `
 # DevBox Pro - ${name}
 # Auto-generated configuration
@@ -98,7 +102,7 @@ server {
     location ~ \\.php$ {
         fastcgi_pass 127.0.0.1:${phpFpmPort};
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-        include fastcgi_params;
+        include ${fastcgiParamsPath};
         fastcgi_hide_header X-Powered-By;
     }
 
@@ -141,7 +145,7 @@ server {
     location ~ \\.php$ {
         fastcgi_pass 127.0.0.1:${phpFpmPort};
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-        include fastcgi_params;
+        include ${fastcgiParamsPath};
         fastcgi_hide_header X-Powered-By;
     }
 

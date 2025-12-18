@@ -1,7 +1,31 @@
 const path = require('path');
 const fs = require('fs-extra');
-const { spawn, exec } = require('child_process');
+const { spawn, exec, execFile } = require('child_process');
 const { EventEmitter } = require('events');
+
+// Helper function to spawn a process hidden on Windows
+function spawnHidden(command, args, options = {}) {
+  if (process.platform === 'win32') {
+    // On Windows, use wscript with a VBS script to run completely hidden
+    // Or use powershell with -WindowStyle Hidden
+    const psCommand = `& '${command}' ${args.map(a => `'${a}'`).join(' ')}`;
+    return spawn('powershell.exe', [
+      '-WindowStyle', 'Hidden',
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-Command', psCommand
+    ], {
+      ...options,
+      stdio: options.stdio || 'ignore',
+      windowsHide: true,
+    });
+  } else {
+    return spawn(command, args, {
+      ...options,
+      detached: true,
+    });
+  }
+}
 
 class ServiceManager extends EventEmitter {
   constructor(resourcePath, configStore, managers) {
@@ -246,39 +270,44 @@ class ServiceManager extends EventEmitter {
       await this.createNginxConfig(confPath, logsPath);
     }
 
-    const proc = spawn(nginxExe, ['-c', confPath, '-p', nginxPath], {
-      cwd: nginxPath,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
-      windowsHide: true,
-    });
+    let proc;
+    if (process.platform === 'win32') {
+      proc = spawnHidden(nginxExe, ['-c', confPath, '-p', nginxPath], {
+        cwd: nginxPath,
+      });
+    } else {
+      proc = spawn(nginxExe, ['-c', confPath, '-p', nginxPath], {
+        cwd: nginxPath,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
 
-    proc.stdout.on('data', (data) => {
-      this.managers.log?.service('nginx', data.toString());
-    });
+      proc.stdout.on('data', (data) => {
+        this.managers.log?.service('nginx', data.toString());
+      });
 
-    proc.stderr.on('data', (data) => {
-      this.managers.log?.service('nginx', data.toString(), 'error');
-    });
+      proc.stderr.on('data', (data) => {
+        this.managers.log?.service('nginx', data.toString(), 'error');
+      });
 
-    proc.on('error', (error) => {
-      console.error('Nginx process error:', error);
-      const status = this.serviceStatus.get('nginx');
-      status.status = 'error';
-      status.error = error.message;
-    });
+      proc.on('error', (error) => {
+        console.error('Nginx process error:', error);
+        const status = this.serviceStatus.get('nginx');
+        status.status = 'error';
+        status.error = error.message;
+      });
 
-    proc.on('exit', (code) => {
-      console.log(`Nginx exited with code ${code}`);
-      const status = this.serviceStatus.get('nginx');
-      if (status.status === 'running') {
-        status.status = 'stopped';
-      }
-    });
+      proc.on('exit', (code) => {
+        console.log(`Nginx exited with code ${code}`);
+        const status = this.serviceStatus.get('nginx');
+        if (status.status === 'running') {
+          status.status = 'stopped';
+        }
+      });
+    }
 
     this.processes.set('nginx', proc);
     const status = this.serviceStatus.get('nginx');
-    status.pid = proc.pid;
     status.port = 80;
 
     // Wait for Nginx to be ready
@@ -290,10 +319,15 @@ class ServiceManager extends EventEmitter {
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const nginxPath = path.join(this.resourcePath, 'nginx', platform);
     const mimeTypesPath = path.join(nginxPath, 'conf', 'mime.types').replace(/\\/g, '/');
-    const sitesPath = path.join(dataPath, 'nginx', 'sites').replace(/\\/g, '/');
+    
+    // WebServerManager stores sites in userData/data/nginx/sites, so we need to match that path
+    const { app } = require('electron');
+    const webServerDataPath = path.join(app.getPath('userData'), 'data');
+    const sitesPath = path.join(webServerDataPath, 'nginx', 'sites').replace(/\\/g, '/');
     
     // Ensure sites directory exists
-    await fs.ensureDir(path.join(dataPath, 'nginx', 'sites'));
+    await fs.ensureDir(path.join(webServerDataPath, 'nginx', 'sites'));
+    await fs.ensureDir(path.join(webServerDataPath, 'nginx', 'logs'));
     
     const config = `worker_processes 1;
 
@@ -310,6 +344,9 @@ http {
     
     access_log ${logsPath.replace(/\\/g, '/')}/access.log;
     error_log ${logsPath.replace(/\\/g, '/')}/error.log;
+
+    # FastCGI params
+    include ${path.join(nginxPath, 'conf', 'fastcgi_params').replace(/\\/g, '/')};
 
     # Include virtual host configs from sites directory
     include ${sitesPath}/*.conf;
@@ -477,41 +514,48 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     await this.createMySQLConfig(configPath, dataDir, port);
 
     console.log('Starting MySQL server...');
-    const proc = spawn(mysqldPath, [`--defaults-file=${configPath}`], {
-      cwd: mysqlPath,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
-      windowsHide: true,
-    });
+    
+    let proc;
+    if (process.platform === 'win32') {
+      // On Windows, use spawnHidden to run without console window
+      proc = spawnHidden(mysqldPath, [`--defaults-file=${configPath}`], {
+        cwd: mysqlPath,
+      });
+    } else {
+      proc = spawn(mysqldPath, [`--defaults-file=${configPath}`], {
+        cwd: mysqlPath,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
+      
+      proc.stdout.on('data', (data) => {
+        console.log('[MySQL]', data.toString().trim());
+        this.managers.log?.service('mysql', data.toString());
+      });
 
-    proc.stdout.on('data', (data) => {
-      console.log('[MySQL]', data.toString().trim());
-      this.managers.log?.service('mysql', data.toString());
-    });
+      proc.stderr.on('data', (data) => {
+        console.log('[MySQL stderr]', data.toString().trim());
+        this.managers.log?.service('mysql', data.toString(), 'error');
+      });
+      
+      proc.on('error', (error) => {
+        console.error('MySQL process error:', error);
+        const status = this.serviceStatus.get('mysql');
+        status.status = 'error';
+        status.error = error.message;
+      });
 
-    proc.stderr.on('data', (data) => {
-      console.log('[MySQL stderr]', data.toString().trim());
-      this.managers.log?.service('mysql', data.toString(), 'error');
-    });
-
-    proc.on('error', (error) => {
-      console.error('MySQL process error:', error);
-      const status = this.serviceStatus.get('mysql');
-      status.status = 'error';
-      status.error = error.message;
-    });
-
-    proc.on('exit', (code) => {
-      console.log(`MySQL exited with code ${code}`);
-      const status = this.serviceStatus.get('mysql');
-      if (status.status === 'running') {
-        status.status = 'stopped';
-      }
-    });
-
+      proc.on('exit', (code) => {
+        console.log(`MySQL exited with code ${code}`);
+        const status = this.serviceStatus.get('mysql');
+        if (status.status === 'running') {
+          status.status = 'stopped';
+        }
+      });
+    }
+    
     this.processes.set('mysql', proc);
     const status = this.serviceStatus.get('mysql');
-    status.pid = proc.pid;
     status.port = port;
 
     // Wait for MySQL to be ready
@@ -756,23 +800,26 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
     const configPath = path.join(dataPath, 'redis', 'redis.conf');
     await this.createRedisConfig(configPath, dataPath, port);
 
-    const proc = spawn(redisServerPath, [configPath], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
-      windowsHide: true,
-    });
+    let proc;
+    if (process.platform === 'win32') {
+      proc = spawnHidden(redisServerPath, [configPath]);
+    } else {
+      proc = spawn(redisServerPath, [configPath], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
 
-    proc.stdout.on('data', (data) => {
-      this.managers.log?.service('redis', data.toString());
-    });
+      proc.stdout.on('data', (data) => {
+        this.managers.log?.service('redis', data.toString());
+      });
 
-    proc.stderr.on('data', (data) => {
-      this.managers.log?.service('redis', data.toString(), 'error');
-    });
+      proc.stderr.on('data', (data) => {
+        this.managers.log?.service('redis', data.toString(), 'error');
+      });
+    }
 
     this.processes.set('redis', proc);
     const status = this.serviceStatus.get('redis');
-    status.pid = proc.pid;
     status.port = port;
 
     await this.waitForService('redis', 10000);
@@ -807,23 +854,26 @@ appendfilename "appendonly.aof"
     const port = this.serviceConfigs.mailpit.defaultPort;
     const smtpPort = this.serviceConfigs.mailpit.smtpPort;
 
-    const proc = spawn(mailpitBin, ['--listen', `127.0.0.1:${port}`, '--smtp', `127.0.0.1:${smtpPort}`], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
-      windowsHide: true,
-    });
+    let proc;
+    if (process.platform === 'win32') {
+      proc = spawnHidden(mailpitBin, ['--listen', `127.0.0.1:${port}`, '--smtp', `127.0.0.1:${smtpPort}`]);
+    } else {
+      proc = spawn(mailpitBin, ['--listen', `127.0.0.1:${port}`, '--smtp', `127.0.0.1:${smtpPort}`], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
 
-    proc.stdout.on('data', (data) => {
-      this.managers.log?.service('mailpit', data.toString());
-    });
+      proc.stdout.on('data', (data) => {
+        this.managers.log?.service('mailpit', data.toString());
+      });
 
-    proc.stderr.on('data', (data) => {
-      this.managers.log?.service('mailpit', data.toString(), 'error');
-    });
+      proc.stderr.on('data', (data) => {
+        this.managers.log?.service('mailpit', data.toString(), 'error');
+      });
+    }
 
     this.processes.set('mailpit', proc);
     const status = this.serviceStatus.get('mailpit');
-    status.pid = proc.pid;
     status.port = port;
 
     await this.waitForService('mailpit', 10000);
@@ -905,23 +955,26 @@ appendfilename "appendonly.aof"
     // Get PHP directory for php.ini location
     const phpDir = path.dirname(phpPath);
 
-    const proc = spawn(phpPath, ['-S', `127.0.0.1:${port}`, '-t', phpmyadminPath, '-c', phpDir], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
-      windowsHide: true,
-    });
+    let proc;
+    if (process.platform === 'win32') {
+      proc = spawnHidden(phpPath, ['-S', `127.0.0.1:${port}`, '-t', phpmyadminPath, '-c', phpDir]);
+    } else {
+      proc = spawn(phpPath, ['-S', `127.0.0.1:${port}`, '-t', phpmyadminPath, '-c', phpDir], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
 
-    proc.stdout.on('data', (data) => {
-      this.managers.log?.service('phpmyadmin', data.toString());
-    });
+      proc.stdout.on('data', (data) => {
+        this.managers.log?.service('phpmyadmin', data.toString());
+      });
 
-    proc.stderr.on('data', (data) => {
-      this.managers.log?.service('phpmyadmin', data.toString(), 'error');
-    });
+      proc.stderr.on('data', (data) => {
+        this.managers.log?.service('phpmyadmin', data.toString(), 'error');
+      });
+    }
 
     this.processes.set('phpmyadmin', proc);
     const status = this.serviceStatus.get('phpmyadmin');
-    status.pid = proc.pid;
     status.port = port;
 
     await this.waitForService('phpmyadmin', 10000);

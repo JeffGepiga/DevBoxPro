@@ -6,6 +6,28 @@ const http = require('http');
 const httpProxy = require('http-proxy');
 const os = require('os');
 
+// Helper function to spawn a process hidden on Windows
+function spawnHidden(command, args, options = {}) {
+  if (process.platform === 'win32') {
+    const psCommand = `& '${command}' ${args.map(a => `'${a}'`).join(' ')}`;
+    return spawn('powershell.exe', [
+      '-WindowStyle', 'Hidden',
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-Command', psCommand
+    ], {
+      ...options,
+      stdio: options.stdio || 'ignore',
+      windowsHide: true,
+    });
+  } else {
+    return spawn(command, args, {
+      ...options,
+      detached: true,
+    });
+  }
+}
+
 class ProjectManager {
   constructor(configStore, managers) {
     this.configStore = configStore;
@@ -341,7 +363,11 @@ class ProjectManager {
       
       if (await fs.pathExists(phpPath)) {
         await new Promise((resolve, reject) => {
-          const proc = spawn(phpPath, ['artisan', 'key:generate'], { cwd: projectPath, windowsHide: true });
+          const proc = spawn(phpPath, ['artisan', 'key:generate'], { 
+            cwd: projectPath, 
+            stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true 
+          });
           proc.stdout.on('data', (data) => onOutput(data.toString(), 'stdout'));
           proc.stderr.on('data', (data) => onOutput(data.toString(), 'stderr'));
           proc.on('close', (code) => {
@@ -391,6 +417,7 @@ class ProjectManager {
           const npmProc = spawn(npmCmd, ['install'], {
             cwd: projectPath,
             shell: true,
+            stdio: ['ignore', 'pipe', 'pipe'],
             windowsHide: true,
             env: {
               ...process.env,
@@ -575,33 +602,47 @@ class ProjectManager {
 
     console.log(`Starting PHP-CGI ${phpVersion} on port ${port}...`);
 
-    const phpCgiProcess = spawn(phpCgiPath, ['-b', `127.0.0.1:${port}`], {
-      cwd: project.path,
-      env: {
-        ...process.env,
-        ...project.environment,
-        PHP_FCGI_MAX_REQUESTS: '0', // Unlimited requests (don't exit after N requests)
-        PHP_FCGI_CHILDREN: '4', // Number of child processes
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    let phpCgiProcess;
+    if (process.platform === 'win32') {
+      // On Windows, use spawnHidden to run without a console window
+      phpCgiProcess = spawnHidden(phpCgiPath, ['-b', `127.0.0.1:${port}`], {
+        cwd: project.path,
+        env: {
+          ...process.env,
+          ...project.environment,
+          PHP_FCGI_MAX_REQUESTS: '0',
+          PHP_FCGI_CHILDREN: '4',
+        },
+      });
+    } else {
+      phpCgiProcess = spawn(phpCgiPath, ['-b', `127.0.0.1:${port}`], {
+        cwd: project.path,
+        env: {
+          ...process.env,
+          ...project.environment,
+          PHP_FCGI_MAX_REQUESTS: '0',
+          PHP_FCGI_CHILDREN: '4',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
 
-    phpCgiProcess.stdout.on('data', (data) => {
-      this.managers.log?.project(project.id, `[php-cgi] ${data.toString()}`);
-    });
+      phpCgiProcess.stdout.on('data', (data) => {
+        this.managers.log?.project(project.id, `[php-cgi] ${data.toString()}`);
+      });
 
-    phpCgiProcess.stderr.on('data', (data) => {
-      this.managers.log?.project(project.id, `[php-cgi] ${data.toString()}`);
-    });
+      phpCgiProcess.stderr.on('data', (data) => {
+        this.managers.log?.project(project.id, `[php-cgi] ${data.toString()}`);
+      });
 
-    phpCgiProcess.on('error', (error) => {
-      console.error(`PHP-CGI error for ${project.name}:`, error);
-    });
+      phpCgiProcess.on('error', (error) => {
+        console.error(`PHP-CGI error for ${project.name}:`, error);
+      });
 
-    phpCgiProcess.on('exit', (code) => {
-      console.log(`PHP-CGI for ${project.name} exited with code ${code}`);
-    });
+      phpCgiProcess.on('exit', (code) => {
+        console.log(`PHP-CGI for ${project.name} exited with code ${code}`);
+      });
+    }
 
     // Wait a moment for PHP-CGI to start
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -931,8 +972,11 @@ class ProjectManager {
   async createNginxVhost(project) {
     const { app } = require('electron');
     const dataPath = path.join(app.getPath('userData'), 'data');
+    const resourcesPath = path.join(app.getPath('userData'), 'resources');
     const sitesDir = path.join(dataPath, 'nginx', 'sites');
     const sslDir = path.join(dataPath, 'ssl', project.domain);
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const fastcgiParamsPath = path.join(resourcesPath, 'nginx', platform, 'conf', 'fastcgi_params').replace(/\\/g, '/');
 
     await fs.ensureDir(sitesDir);
 
@@ -973,7 +1017,7 @@ server {
         fastcgi_pass 127.0.0.1:${phpFpmPort};
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-        include fastcgi_params;
+        include ${fastcgiParamsPath};
         fastcgi_hide_header X-Powered-By;
         fastcgi_read_timeout 300;
     }
@@ -987,8 +1031,16 @@ server {
 }
 `;
 
-    // Add HTTPS server block if SSL is enabled
-    if (project.ssl) {
+    // Add HTTPS server block if SSL is enabled AND certificates exist
+    const certPath = path.join(sslDir, 'cert.pem');
+    const keyPath = path.join(sslDir, 'key.pem');
+    const certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
+    
+    if (project.ssl && !certsExist) {
+      console.warn(`SSL enabled for ${project.domain} but certificates not found at ${sslDir}. Skipping SSL block.`);
+    }
+    
+    if (project.ssl && certsExist) {
       config += `
 # HTTPS Server (SSL)
 server {
@@ -1027,7 +1079,7 @@ server {
         fastcgi_pass 127.0.0.1:${phpFpmPort};
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-        include fastcgi_params;
+        include ${fastcgiParamsPath};
         fastcgi_hide_header X-Powered-By;
         fastcgi_read_timeout 300;
     }

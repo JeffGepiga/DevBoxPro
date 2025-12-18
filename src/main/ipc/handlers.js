@@ -202,6 +202,22 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return database.getPhpMyAdminUrl();
   });
 
+  ipcMain.handle('database:getActiveDatabaseType', async () => {
+    return database.getActiveDatabaseType();
+  });
+
+  ipcMain.handle('database:setActiveDatabaseType', async (event, dbType) => {
+    return database.setActiveDatabaseType(dbType);
+  });
+
+  ipcMain.handle('database:getDatabaseInfo', async () => {
+    return database.getDatabaseInfo();
+  });
+
+  ipcMain.handle('database:resetCredentials', async (event, user, password) => {
+    return database.resetCredentials(user, password);
+  });
+
   // ============ SSL HANDLERS ============
   ipcMain.handle('ssl:getCertificates', async () => {
     return ssl.listCertificates();

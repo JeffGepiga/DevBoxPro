@@ -51,6 +51,10 @@ contextBridge.exposeInMainWorld('devbox', {
     exportDatabase: (name, filePath) => ipcRenderer.invoke('database:exportDatabase', name, filePath),
     runQuery: (database, query) => ipcRenderer.invoke('database:runQuery', database, query),
     getPhpMyAdminUrl: () => ipcRenderer.invoke('database:getPhpMyAdminUrl'),
+    getActiveDatabaseType: () => ipcRenderer.invoke('database:getActiveDatabaseType'),
+    setActiveDatabaseType: (dbType) => ipcRenderer.invoke('database:setActiveDatabaseType', dbType),
+    getDatabaseInfo: () => ipcRenderer.invoke('database:getDatabaseInfo'),
+    resetCredentials: (user, password) => ipcRenderer.invoke('database:resetCredentials', user, password),
   },
 
   // SSL operations

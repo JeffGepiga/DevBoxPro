@@ -7,7 +7,7 @@ class DatabaseManager {
   constructor(resourcePath, configStore) {
     this.resourcePath = resourcePath;
     this.configStore = configStore;
-    this.mysqlConfig = {
+    this.dbConfig = {
       host: '127.0.0.1',
       port: 3306,
       user: 'root',
@@ -21,23 +21,88 @@ class DatabaseManager {
     const dataPath = this.configStore.get('dataPath');
     await fs.ensureDir(path.join(dataPath, 'mysql', 'data'));
     await fs.ensureDir(path.join(dataPath, 'mysql', 'backups'));
+    await fs.ensureDir(path.join(dataPath, 'mariadb', 'data'));
+    await fs.ensureDir(path.join(dataPath, 'mariadb', 'backups'));
 
     console.log('DatabaseManager initialized');
   }
 
-  getConnections() {
+  // Get the currently active database type (mysql or mariadb)
+  getActiveDatabaseType() {
+    return this.configStore.getSetting('activeDatabaseType', 'mysql');
+  }
+
+  // Set the active database type
+  async setActiveDatabaseType(dbType) {
+    if (!['mysql', 'mariadb'].includes(dbType)) {
+      throw new Error('Invalid database type. Must be "mysql" or "mariadb"');
+    }
+    this.configStore.setSetting('activeDatabaseType', dbType);
+    console.log(`Active database type set to: ${dbType}`);
+    return { success: true, type: dbType };
+  }
+
+  // Get database info including type and credentials
+  getDatabaseInfo() {
+    const dbType = this.getActiveDatabaseType();
+    const settings = this.configStore.get('settings', {});
     return {
-      mysql: {
-        host: this.mysqlConfig.host,
-        port: this.mysqlConfig.port,
-        user: this.mysqlConfig.user,
+      type: dbType,
+      host: this.dbConfig.host,
+      port: settings.mysqlPort || 3306,
+      user: settings.dbUser || 'root',
+      password: settings.dbPassword || '',
+    };
+  }
+
+  // Reset database credentials
+  async resetCredentials(newUser = 'root', newPassword = '') {
+    const dbType = this.getActiveDatabaseType();
+    console.log(`Resetting ${dbType} credentials: user=${newUser}`);
+
+    try {
+      // Update the root password using ALTER USER
+      if (newPassword) {
+        await this.runDbQuery(`ALTER USER '${newUser}'@'localhost' IDENTIFIED BY '${newPassword}'`);
+        await this.runDbQuery(`ALTER USER '${newUser}'@'127.0.0.1' IDENTIFIED BY '${newPassword}'`);
+      } else {
+        // Set empty password
+        await this.runDbQuery(`ALTER USER '${newUser}'@'localhost' IDENTIFIED BY ''`);
+        await this.runDbQuery(`ALTER USER '${newUser}'@'127.0.0.1' IDENTIFIED BY ''`);
+      }
+      await this.runDbQuery('FLUSH PRIVILEGES');
+
+      // Save the new credentials in settings
+      this.configStore.setSetting('dbUser', newUser);
+      this.configStore.setSetting('dbPassword', newPassword);
+
+      // Update local config
+      this.dbConfig.user = newUser;
+      this.dbConfig.password = newPassword;
+
+      console.log('Database credentials reset successfully');
+      return { success: true };
+    } catch (error) {
+      console.error('Error resetting credentials:', error);
+      throw new Error(`Failed to reset credentials: ${error.message}`);
+    }
+  }
+
+  getConnections() {
+    const dbType = this.getActiveDatabaseType();
+    return {
+      [dbType]: {
+        type: dbType,
+        host: this.dbConfig.host,
+        port: this.dbConfig.port,
+        user: this.dbConfig.user,
         status: 'connected', // Would need actual check
       },
     };
   }
 
   async listDatabases() {
-    const result = await this.runMySqlQuery('SHOW DATABASES');
+    const result = await this.runDbQuery('SHOW DATABASES');
     return result.map((row) => ({
       name: row.Database,
       isSystem: ['information_schema', 'mysql', 'performance_schema', 'sys'].includes(row.Database),
@@ -46,7 +111,7 @@ class DatabaseManager {
 
   async createDatabase(name) {
     const safeName = this.sanitizeName(name);
-    await this.runMySqlQuery(`CREATE DATABASE IF NOT EXISTS \`${safeName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    await this.runDbQuery(`CREATE DATABASE IF NOT EXISTS \`${safeName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
     console.log(`Database created: ${safeName}`);
     return { success: true, name: safeName };
   }
@@ -59,7 +124,7 @@ class DatabaseManager {
       throw new Error('Cannot delete system database');
     }
 
-    await this.runMySqlQuery(`DROP DATABASE IF EXISTS \`${safeName}\``);
+    await this.runDbQuery(`DROP DATABASE IF EXISTS \`${safeName}\``);
     console.log(`Database deleted: ${safeName}`);
     return { success: true, name: safeName };
   }
@@ -73,15 +138,15 @@ class DatabaseManager {
 
     console.log(`Importing database ${safeName} from ${filePath}`);
 
-    const mysqlPath = this.getMysqlPath();
+    const clientPath = this.getDbClientPath();
 
     return new Promise((resolve, reject) => {
       const proc = spawn(
-        mysqlPath,
+        clientPath,
         [
-          `-h${this.mysqlConfig.host}`,
-          `-P${this.mysqlConfig.port}`,
-          `-u${this.mysqlConfig.user}`,
+          `-h${this.dbConfig.host}`,
+          `-P${this.dbConfig.port}`,
+          `-u${this.dbConfig.user}`,
           safeName,
         ],
         {
@@ -118,15 +183,15 @@ class DatabaseManager {
 
     console.log(`Exporting database ${safeName} to ${outputPath}`);
 
-    const mysqldumpPath = this.getMysqldumpPath();
+    const dumpPath = this.getDbDumpPath();
 
     return new Promise((resolve, reject) => {
       const proc = spawn(
-        mysqldumpPath,
+        dumpPath,
         [
-          `-h${this.mysqlConfig.host}`,
-          `-P${this.mysqlConfig.port}`,
-          `-u${this.mysqlConfig.user}`,
+          `-h${this.dbConfig.host}`,
+          `-P${this.dbConfig.port}`,
+          `-u${this.dbConfig.user}`,
           '--single-transaction',
           '--routines',
           '--triggers',
@@ -163,17 +228,17 @@ class DatabaseManager {
 
   async runQuery(databaseName, query) {
     const safeName = this.sanitizeName(databaseName);
-    return this.runMySqlQuery(query, safeName);
+    return this.runDbQuery(query, safeName);
   }
 
-  async runMySqlQuery(query, database = null) {
-    const mysqlPath = this.getMysqlPath();
+  async runDbQuery(query, database = null) {
+    const clientPath = this.getDbClientPath();
 
     return new Promise((resolve, reject) => {
       const args = [
-        `-h${this.mysqlConfig.host}`,
-        `-P${this.mysqlConfig.port}`,
-        `-u${this.mysqlConfig.user}`,
+        `-h${this.dbConfig.host}`,
+        `-P${this.dbConfig.port}`,
+        `-u${this.dbConfig.user}`,
         '-N', // Skip column names
         '-B', // Batch mode
         '-e',
@@ -184,7 +249,7 @@ class DatabaseManager {
         args.push(database);
       }
 
-      const proc = spawn(mysqlPath, args, {
+      const proc = spawn(clientPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });
@@ -236,14 +301,14 @@ class DatabaseManager {
 
   async getTables(databaseName) {
     const safeName = this.sanitizeName(databaseName);
-    const result = await this.runMySqlQuery('SHOW TABLES', safeName);
+    const result = await this.runDbQuery('SHOW TABLES', safeName);
     return result.map((row) => row[0]);
   }
 
   async getTableStructure(databaseName, tableName) {
     const safeName = this.sanitizeName(databaseName);
     const safeTable = this.sanitizeName(tableName);
-    const result = await this.runMySqlQuery(`DESCRIBE \`${safeTable}\``, safeName);
+    const result = await this.runDbQuery(`DESCRIBE \`${safeTable}\``, safeName);
     return result;
   }
 
@@ -255,7 +320,7 @@ class DatabaseManager {
       FROM information_schema.tables 
       WHERE table_schema = '${safeName}'
     `;
-    const result = await this.runMySqlQuery(query);
+    const result = await this.runDbQuery(query);
     return parseInt(result[0]?.[0] || 0, 10);
   }
 
@@ -264,16 +329,29 @@ class DatabaseManager {
     return name.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 64);
   }
 
-  getMysqlPath() {
+  // Get the client path based on active database type
+  getDbClientPath() {
+    const dbType = this.getActiveDatabaseType();
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const binName = process.platform === 'win32' ? 'mysql.exe' : 'mysql';
-    return path.join(this.resourcePath, 'mysql', platform, 'bin', binName);
+    return path.join(this.resourcePath, dbType, platform, 'bin', binName);
+  }
+
+  // Get the dump path based on active database type
+  getDbDumpPath() {
+    const dbType = this.getActiveDatabaseType();
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const binName = process.platform === 'win32' ? 'mysqldump.exe' : 'mysqldump';
+    return path.join(this.resourcePath, dbType, platform, 'bin', binName);
+  }
+
+  // Legacy method names for backwards compatibility
+  getMysqlPath() {
+    return this.getDbClientPath();
   }
 
   getMysqldumpPath() {
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
-    const binName = process.platform === 'win32' ? 'mysqldump.exe' : 'mysqldump';
-    return path.join(this.resourcePath, 'mysql', platform, 'bin', binName);
+    return this.getDbDumpPath();
   }
 
   async checkConnection() {
@@ -295,7 +373,7 @@ class DatabaseManager {
         resolve(false);
       });
 
-      socket.connect(this.mysqlConfig.port, this.mysqlConfig.host);
+      socket.connect(this.dbConfig.port, this.dbConfig.host);
     });
   }
 }

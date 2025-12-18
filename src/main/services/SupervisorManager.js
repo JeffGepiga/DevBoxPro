@@ -2,6 +2,28 @@ const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 
+// Helper function to spawn a process hidden on Windows
+function spawnHidden(command, args, options = {}) {
+  if (process.platform === 'win32') {
+    const psCommand = `& '${command}' ${args.map(a => `'${a}'`).join(' ')}`;
+    return spawn('powershell.exe', [
+      '-WindowStyle', 'Hidden',
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-Command', psCommand
+    ], {
+      ...options,
+      stdio: options.stdio || 'ignore',
+      windowsHide: true,
+    });
+  } else {
+    return spawn(command, args, {
+      ...options,
+      detached: true,
+    });
+  }
+}
+
 class SupervisorManager {
   constructor(resourcePath, configStore) {
     this.resourcePath = resourcePath;
@@ -125,48 +147,60 @@ class SupervisorManager {
     const numProcs = config.numprocs || 1;
 
     for (let i = 0; i < numProcs; i++) {
-      const proc = spawn(command, args, {
-        cwd: workingDir,
-        env: {
-          ...process.env,
-          ...project.environment,
-          ...config.environment,
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: false,
-        windowsHide: true,
-      });
-
+      let proc;
       const instanceName = numProcs > 1 ? `${config.name}_${i}` : config.name;
+      
+      if (process.platform === 'win32') {
+        // On Windows, use spawnHidden to run without a console window
+        proc = spawnHidden(command, args, {
+          cwd: workingDir,
+          env: {
+            ...process.env,
+            ...project.environment,
+            ...config.environment,
+          },
+        });
+      } else {
+        proc = spawn(command, args, {
+          cwd: workingDir,
+          env: {
+            ...process.env,
+            ...project.environment,
+            ...config.environment,
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: true,
+        });
 
-      proc.stdout.on('data', (data) => {
-        this.logOutput(projectId, instanceName, data.toString(), 'stdout');
-      });
+        proc.stdout.on('data', (data) => {
+          this.logOutput(projectId, instanceName, data.toString(), 'stdout');
+        });
 
-      proc.stderr.on('data', (data) => {
-        this.logOutput(projectId, instanceName, data.toString(), 'stderr');
-      });
+        proc.stderr.on('data', (data) => {
+          this.logOutput(projectId, instanceName, data.toString(), 'stderr');
+        });
 
-      proc.on('error', (error) => {
-        console.error(`Process ${instanceName} error:`, error);
-        this.updateProcessStatus(projectId, config.name, 'error', null);
-      });
+        proc.on('error', (error) => {
+          console.error(`Process ${instanceName} error:`, error);
+          this.updateProcessStatus(projectId, config.name, 'error', null);
+        });
 
-      proc.on('exit', (code, signal) => {
-        console.log(`Process ${instanceName} exited with code ${code}, signal ${signal}`);
-        
-        // Auto-restart if enabled
-        if (config.autorestart && code !== 0) {
-          setTimeout(() => {
-            console.log(`Auto-restarting process ${instanceName}`);
-            this.startProcess(projectId, config).catch((err) => {
-              console.error(`Failed to restart process ${instanceName}:`, err);
-            });
-          }, 1000);
-        } else {
-          this.updateProcessStatus(projectId, config.name, 'stopped', null);
-        }
-      });
+        proc.on('exit', (code, signal) => {
+          console.log(`Process ${instanceName} exited with code ${code}, signal ${signal}`);
+          
+          // Auto-restart if enabled
+          if (config.autorestart && code !== 0) {
+            setTimeout(() => {
+              console.log(`Auto-restarting process ${instanceName}`);
+              this.startProcess(projectId, config).catch((err) => {
+                console.error(`Failed to restart process ${instanceName}:`, err);
+              });
+            }, 1000);
+          } else {
+            this.updateProcessStatus(projectId, config.name, 'stopped', null);
+          }
+        });
+      }
 
       instances.push({
         name: instanceName,

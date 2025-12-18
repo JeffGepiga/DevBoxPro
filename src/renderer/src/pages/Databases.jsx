@@ -10,6 +10,9 @@ import {
   Search,
   Table,
   HardDrive,
+  Key,
+  Settings,
+  ChevronDown,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -18,11 +21,40 @@ function Databases() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
   const [newDbName, setNewDbName] = useState('');
+  const [activeDatabaseType, setActiveDatabaseType] = useState('mysql');
+  const [dbInfo, setDbInfo] = useState(null);
+  const [binariesStatus, setBinariesStatus] = useState(null);
+  const [resetForm, setResetForm] = useState({ user: 'root', password: '' });
+  const [resetting, setResetting] = useState(false);
+  useEffect(() => {
+    loadInitialData();
+  }, []);
 
   useEffect(() => {
-    loadDatabases();
-  }, []);
+    if (activeDatabaseType) {
+      loadDatabases();
+    }
+  }, [activeDatabaseType]);
+
+  const loadInitialData = async () => {
+    setLoading(true);
+    try {
+      const [dbType, status, info] = await Promise.all([
+        window.devbox?.database.getActiveDatabaseType(),
+        window.devbox?.binaries.getStatus(),
+        window.devbox?.database.getDatabaseInfo(),
+      ]);
+      setActiveDatabaseType(dbType || 'mysql');
+      setBinariesStatus(status);
+      setDbInfo(info);
+      setResetForm({ user: info?.user || 'root', password: '' });
+    } catch (error) {
+      console.error('Error loading initial data:', error);
+    }
+    await loadDatabases();
+  };
 
   const loadDatabases = async () => {
     setLoading(true);
@@ -33,6 +65,42 @@ function Databases() {
       console.error('Error loading databases:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSwitchDatabase = async (dbType) => {
+    if (dbType === activeDatabaseType) return;
+    
+    try {
+      await window.devbox?.database.setActiveDatabaseType(dbType);
+      setActiveDatabaseType(dbType);
+      // Reload databases after switching
+      await loadDatabases();
+    } catch (error) {
+      console.error('Error switching database:', error);
+      alert('Failed to switch database type: ' + error.message);
+    }
+  };
+
+  const handleResetCredentials = async () => {
+    if (!resetForm.user.trim()) {
+      alert('Username is required');
+      return;
+    }
+
+    setResetting(true);
+    try {
+      await window.devbox?.database.resetCredentials(resetForm.user, resetForm.password);
+      setShowResetModal(false);
+      alert('Database credentials reset successfully!');
+      // Reload database info
+      const info = await window.devbox?.database.getDatabaseInfo();
+      setDbInfo(info);
+    } catch (error) {
+      console.error('Error resetting credentials:', error);
+      alert('Failed to reset credentials: ' + error.message);
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -110,7 +178,11 @@ function Databases() {
   const userDatabases = filteredDatabases.filter((db) => !db.isSystem);
   const systemDatabases = filteredDatabases.filter((db) => db.isSystem);
 
-  if (loading) {
+  const mysqlInstalled = binariesStatus?.mysql?.installed;
+  const mariadbInstalled = binariesStatus?.mariadb?.installed;
+  const dbTypeLabel = activeDatabaseType === 'mysql' ? 'MySQL' : 'MariaDB';
+
+  if (loading && !databases.length) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
@@ -125,7 +197,7 @@ function Databases() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Databases</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            Manage your MySQL databases
+            Manage your {dbTypeLabel} databases
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -138,6 +210,60 @@ function Databases() {
             New Database
           </button>
         </div>
+      </div>
+
+      {/* Database Type Switcher & Credentials */}
+      <div className="card p-4 mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Database Engine:</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleSwitchDatabase('mysql')}
+                disabled={!mysqlInstalled}
+                className={clsx(
+                  'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                  activeDatabaseType === 'mysql'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600',
+                  !mysqlInstalled && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                MySQL
+                {!mysqlInstalled && <span className="text-xs ml-1">(not installed)</span>}
+              </button>
+              <button
+                onClick={() => handleSwitchDatabase('mariadb')}
+                disabled={!mariadbInstalled}
+                className={clsx(
+                  'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                  activeDatabaseType === 'mariadb'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600',
+                  !mariadbInstalled && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                MariaDB
+                {!mariadbInstalled && <span className="text-xs ml-1">(not installed)</span>}
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowResetModal(true)}
+            className="btn-secondary"
+          >
+            <Key className="w-4 h-4" />
+            Reset Credentials
+          </button>
+        </div>
+        {dbInfo && (
+          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex items-center gap-6 text-sm text-gray-600 dark:text-gray-400">
+            <span><strong>Host:</strong> {dbInfo.host}</span>
+            <span><strong>Port:</strong> {dbInfo.port}</span>
+            <span><strong>User:</strong> {dbInfo.user}</span>
+            <span><strong>Password:</strong> {dbInfo.password ? '••••••' : '(empty)'}</span>
+          </div>
+        )}
       </div>
 
       {/* Search */}
@@ -176,7 +302,7 @@ function Databases() {
             <Database className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
             <p className="text-gray-500 dark:text-gray-400">
               {databases.length === 0
-                ? 'No databases found. Make sure MySQL is running.'
+                ? `No databases found. Make sure ${dbTypeLabel} is running.`
                 : 'No user databases yet'}
             </p>
           </div>
@@ -244,6 +370,61 @@ function Databases() {
                 className="btn-primary"
               >
                 Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Credentials Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="card p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Reset {dbTypeLabel} Credentials
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="label">Username</label>
+                <input
+                  type="text"
+                  value={resetForm.user}
+                  onChange={(e) => setResetForm({ ...resetForm, user: e.target.value })}
+                  className="input"
+                  placeholder="root"
+                />
+              </div>
+              <div>
+                <label className="label">New Password</label>
+                <input
+                  type="password"
+                  value={resetForm.password}
+                  onChange={(e) => setResetForm({ ...resetForm, password: e.target.value })}
+                  className="input"
+                  placeholder="Leave empty for no password"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Leave empty to set no password (default for local development)
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => {
+                  setShowResetModal(false);
+                  setResetForm({ user: dbInfo?.user || 'root', password: '' });
+                }}
+                className="btn-secondary"
+                disabled={resetting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetCredentials}
+                disabled={!resetForm.user.trim() || resetting}
+                className="btn-primary"
+              >
+                {resetting ? 'Resetting...' : 'Reset Credentials'}
               </button>
             </div>
           </div>
