@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, Tray, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, Tray, nativeTheme, dialog } = require('electron');
 const path = require('path');
 const { ServiceManager } = require('./services/ServiceManager');
 const { ProjectManager } = require('./services/ProjectManager');
@@ -11,6 +11,25 @@ const BinaryDownloadManager = require('./services/BinaryDownloadManager');
 const { WebServerManager } = require('./services/WebServerManager');
 const { ConfigStore } = require('./utils/ConfigStore');
 const { setupIpcHandlers } = require('./ipc/handlers');
+
+// Single instance lock - prevent multiple instances of the app
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  // Another instance is already running, quit this one
+  app.quit();
+} else {
+  // This is the first instance - set up handler for second instance attempts
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // Someone tried to run a second instance, focus our window instead
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.focus();
+    }
+  });
+}
 
 // Keep references to prevent garbage collection
 let mainWindow = null;
