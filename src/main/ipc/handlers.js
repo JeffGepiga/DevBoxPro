@@ -615,6 +615,12 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         env: {
           ...process.env,
           COMPOSER_HOME: path.join(resourcePath, 'composer'),
+          // Force ANSI color output
+          FORCE_COLOR: '1',
+          TERM: 'xterm-256color',
+          // Laravel/Symfony specific
+          ANSICON: '1',
+          ConEmuANSI: 'ON',
         },
         shell: false,
         windowsHide: true,

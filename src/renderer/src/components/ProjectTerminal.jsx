@@ -10,6 +10,62 @@ try {
   console.log('XTerminal not available, using simple terminal');
 }
 
+// ANSI escape code to HTML converter
+const ansiToHtml = (text) => {
+  if (!text) return '';
+  
+  const ansiColors = {
+    '30': '#4a4a4a', '31': '#f7768e', '32': '#9ece6a', '33': '#e0af68',
+    '34': '#7aa2f7', '35': '#bb9af7', '36': '#7dcfff', '37': '#c0caf5',
+    '90': '#6b7089', '91': '#ff7a93', '92': '#b9f27c', '93': '#ff9e64',
+    '94': '#7da6ff', '95': '#c49fd6', '96': '#89ddff', '97': '#ffffff',
+    // Background colors
+    '40': '#1a1b26', '41': '#f7768e', '42': '#9ece6a', '43': '#e0af68',
+    '44': '#7aa2f7', '45': '#bb9af7', '46': '#7dcfff', '47': '#c0caf5',
+  };
+
+  // Replace ANSI codes with HTML spans
+  let result = text
+    // Handle ESC[ sequences
+    .replace(/\x1b\[(\d+(?:;\d+)*)m/g, (match, codes) => {
+      const codeList = codes.split(';');
+      let style = '';
+      
+      for (const code of codeList) {
+        if (code === '0' || code === '39') {
+          return '</span>';
+        } else if (code === '1') {
+          style += 'font-weight:bold;';
+        } else if (code === '3') {
+          style += 'font-style:italic;';
+        } else if (code === '4') {
+          style += 'text-decoration:underline;';
+        } else if (ansiColors[code]) {
+          if (parseInt(code) >= 40) {
+            style += `background-color:${ansiColors[code]};`;
+          } else {
+            style += `color:${ansiColors[code]};`;
+          }
+        }
+      }
+      
+      return style ? `<span style="${style}">` : '';
+    })
+    // Remove any remaining escape sequences
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    // Handle carriage returns
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+  
+  return result;
+};
+
+// Component to render ANSI-formatted text
+const AnsiText = ({ text }) => {
+  const html = ansiToHtml(text);
+  return <span dangerouslySetInnerHTML={{ __html: html }} />;
+};
+
 function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus = false, useXterm = false }) {
   const [output, setOutput] = useState([]);
   const [command, setCommand] = useState('');
@@ -210,7 +266,11 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
                 line.type === 'success' && 'text-green-400'
               )}
             >
-              {line.text}
+              {line.type === 'stdout' || line.type === 'stderr' ? (
+                <AnsiText text={line.text} />
+              ) : (
+                line.text
+              )}
             </div>
           ))
         )}
