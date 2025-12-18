@@ -45,11 +45,29 @@ class SslManager {
     
     try {
       if (process.platform === 'win32') {
-        // Windows: Use certutil to add to user's trusted root store
-        // This will show a security prompt to the user
+        // Windows: Use certutil with sudo-prompt for elevation
         console.log('Adding Root CA to Windows trusted certificates...');
-        await this.runCommand('certutil', ['-addstore', '-user', 'Root', caCertPath]);
-        console.log('Root CA certificate trusted successfully');
+        const sudo = require('sudo-prompt');
+        const options = {
+          name: 'DevBox Pro',
+        };
+        
+        return new Promise((resolve, reject) => {
+          // Use certutil to add to local machine root store (requires admin)
+          const command = `certutil -addstore -f "Root" "${caCertPath}"`;
+          
+          sudo.exec(command, options, (error, stdout, stderr) => {
+            if (error) {
+              console.warn('Could not add Root CA to trusted store:', error.message);
+              console.log('You may need to manually trust the certificate at:', caCertPath);
+              console.log('To trust manually: Double-click the certificate > Install Certificate > Local Machine > Trusted Root Certification Authorities');
+              resolve(); // Don't fail initialization
+            } else {
+              console.log('Root CA certificate trusted successfully');
+              resolve();
+            }
+          });
+        });
       } else if (process.platform === 'darwin') {
         // macOS: Add to login keychain (requires user password)
         console.log('Adding Root CA to macOS keychain...');
@@ -233,8 +251,26 @@ class SslManager {
           caCertPath,
         ]);
       } else if (process.platform === 'win32') {
-        // Windows: Add to certificate store
-        await this.runCommand('certutil', ['-addstore', '-user', 'Root', caCertPath]);
+        // Windows: Add to certificate store with elevation
+        const sudo = require('sudo-prompt');
+        const options = { name: 'DevBox Pro' };
+        
+        return new Promise((resolve) => {
+          const command = `certutil -addstore -f "Root" "${caCertPath}"`;
+          sudo.exec(command, options, (error, stdout, stderr) => {
+            if (error) {
+              console.error('Failed to trust certificate:', error);
+              resolve({
+                success: false,
+                error: error.message,
+                manual: this.getTrustInstructions(),
+              });
+            } else {
+              console.log('Root CA certificate trusted');
+              resolve({ success: true, message: 'Certificate trusted successfully' });
+            }
+          });
+        });
       }
 
       console.log('Root CA certificate trusted');

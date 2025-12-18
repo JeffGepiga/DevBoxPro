@@ -240,16 +240,59 @@ app.on('activate', () => {
   }
 });
 
-app.on('before-quit', async () => {
-  app.isQuitting = true;
-  console.log('Shutting down DevBox Pro...');
+// Track if we're already shutting down to prevent multiple cleanup attempts
+let isShuttingDown = false;
 
-  // Stop all services gracefully
-  if (managers.service) {
-    await managers.service.stopAllServices();
+/**
+ * Gracefully shutdown all services and projects
+ */
+async function gracefulShutdown() {
+  if (isShuttingDown) {
+    return;
   }
+  isShuttingDown = true;
+  
+  console.log('Shutting down DevBox Pro...');
+  
+  try {
+    // Stop all running projects first
+    if (managers.project) {
+      console.log('Stopping all projects...');
+      await managers.project.stopAllProjects();
+    }
+    
+    // Then stop all services
+    if (managers.service) {
+      console.log('Stopping all services...');
+      await managers.service.stopAllServices();
+    }
+    
+    console.log('DevBox Pro shutdown complete.');
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+  }
+}
 
-  console.log('DevBox Pro shutdown complete.');
+app.on('before-quit', async (event) => {
+  if (!isShuttingDown) {
+    event.preventDefault();
+    app.isQuitting = true;
+    
+    await gracefulShutdown();
+    
+    // Now quit the app
+    app.quit();
+  }
+});
+
+// Handle window close on Windows - ensure cleanup
+app.on('window-all-closed', async () => {
+  // On macOS, apps typically stay active until explicitly quit
+  if (process.platform !== 'darwin') {
+    // Windows/Linux: perform cleanup when all windows are closed
+    await gracefulShutdown();
+    app.quit();
+  }
 });
 
 // Handle uncaught exceptions

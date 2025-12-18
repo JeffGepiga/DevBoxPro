@@ -82,9 +82,25 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     const projectData = project.getProject(id);
     if (!projectData) throw new Error('Project not found');
 
-    const protocol = projectData.ssl ? 'https' : 'http';
-    const domain = projectData.domains?.[0] || `localhost:${projectData.port}`;
-    await shell.openExternal(`${protocol}://${domain}`);
+    const webServer = projectData.webServer || 'nginx';
+    
+    // Get dynamic ports from service manager for the project's web server
+    // With first-come-first-served, either server could have 80/443 or 8081/8444
+    const ports = service?.getServicePorts(webServer);
+    const httpPort = ports?.httpPort || 80;
+    const sslPort = ports?.sslPort || 443;
+    
+    // Build URL with appropriate port
+    let url;
+    if (projectData.ssl) {
+      const portSuffix = sslPort === 443 ? '' : `:${sslPort}`;
+      url = `https://${projectData.domain}${portSuffix}`;
+    } else {
+      const portSuffix = httpPort === 80 ? '' : `:${httpPort}`;
+      url = `http://${projectData.domain}${portSuffix}`;
+    }
+    
+    await shell.openExternal(url);
     return true;
   });
 
@@ -233,6 +249,18 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('ssl:trustCertificate', async (event, domain) => {
     return ssl.trustCertificate(domain);
+  });
+
+  // Trust the Root CA certificate (for browser to trust all DevBox certificates)
+  ipcMain.handle('ssl:trustRootCA', async () => {
+    return ssl.promptTrustRootCA();
+  });
+
+  // Get Root CA path for manual trust instructions
+  ipcMain.handle('ssl:getRootCAPath', async () => {
+    const { app } = require('electron');
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    return path.join(dataPath, 'ssl', 'ca', 'rootCA.pem');
   });
 
   // ============ SUPERVISOR HANDLERS ============

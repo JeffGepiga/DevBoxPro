@@ -134,10 +134,13 @@ class ProjectManager {
     }
 
     // Create virtual host configuration (HTTP + HTTPS)
-    try {
-      await this.createVirtualHost(project);
-    } catch (error) {
-      console.warn('Could not create virtual host:', error.message);
+    // Skip if installing fresh - the document root doesn't exist yet
+    if (!config.installFresh) {
+      try {
+        await this.createVirtualHost(project);
+      } catch (error) {
+        console.warn('Could not create virtual host:', error.message);
+      }
     }
 
     // Add domain to hosts file
@@ -216,6 +219,14 @@ class ProjectManager {
       } else if (project.type === 'wordpress') {
         console.log(`Installing fresh WordPress at ${project.path}...`);
         await this.installWordPress(project.path, mainWindow);
+      }
+      
+      // Create virtual host now that the project files exist
+      try {
+        await this.createVirtualHost(project);
+        sendOutput('✓ Virtual host configured', 'success');
+      } catch (error) {
+        sendOutput(`Warning: Could not create virtual host: ${error.message}`, 'warning');
       }
       
       // Mark installation complete
@@ -702,6 +713,41 @@ class ProjectManager {
     }
   }
 
+  /**
+   * Stop all running projects
+   * @returns {Object} Result with success status and count of stopped projects
+   */
+  async stopAllProjects() {
+    const runningProjectIds = Array.from(this.runningProjects.keys());
+    
+    if (runningProjectIds.length === 0) {
+      console.log('No running projects to stop');
+      return { success: true, stoppedCount: 0 };
+    }
+
+    console.log(`Stopping ${runningProjectIds.length} running project(s)...`);
+    
+    const results = [];
+    for (const id of runningProjectIds) {
+      try {
+        await this.stopProject(id);
+        results.push({ id, success: true });
+      } catch (error) {
+        console.error(`Error stopping project ${id}:`, error);
+        results.push({ id, success: false, error: error.message });
+      }
+    }
+
+    const stoppedCount = results.filter(r => r.success).length;
+    console.log(`Stopped ${stoppedCount}/${runningProjectIds.length} projects`);
+    
+    return { 
+      success: results.every(r => r.success), 
+      stoppedCount,
+      results 
+    };
+  }
+
   async startSupervisorProcesses(project) {
     for (const processConfig of project.supervisor.processes) {
       if (processConfig.autostart) {
@@ -732,8 +778,12 @@ class ProjectManager {
     
     const servicesToStart = [];
 
-    // Web server (nginx or apache) - CRITICAL
-    servicesToStart.push({ name: webServer, critical: true });
+    // Only start the web server the project needs
+    if (webServer === 'nginx') {
+      servicesToStart.push({ name: 'nginx', critical: true });
+    } else if (webServer === 'apache') {
+      servicesToStart.push({ name: 'apache', critical: true });
+    }
 
     // Database (mysql or mariadb)
     if (project.services?.mysql) {
@@ -768,6 +818,23 @@ class ProjectManager {
     for (const service of servicesToStart) {
       try {
         const status = serviceManager.serviceStatus.get(service.name);
+        
+        // For web servers, check if we should restart to claim standard ports
+        if ((service.name === 'nginx' || service.name === 'apache') && 
+            status && status.status === 'running') {
+          // Check if this web server is on alternate ports but could use standard ports
+          const ports = serviceManager.getServicePorts(service.name);
+          const isOnAlternatePorts = ports?.httpPort === 8081;
+          const standardPortsAvailable = serviceManager.standardPortOwner === null;
+          
+          if (isOnAlternatePorts && standardPortsAvailable) {
+            console.log(`Restarting ${service.name} to claim standard ports (80/443)...`);
+            await serviceManager.restartService(service.name);
+            results.started.push(service.name);
+            continue;
+          }
+        }
+        
         if (status && status.status !== 'running') {
           console.log(`Auto-starting ${service.name}...`);
           const result = await serviceManager.startService(service.name);
@@ -982,6 +1049,12 @@ class ProjectManager {
       }
     } else {
       await this.createApacheVhost(project);
+      // Reload Apache to pick up config changes
+      try {
+        await this.managers.service?.reloadApache();
+      } catch (error) {
+        console.warn('Could not reload Apache:', error.message);
+      }
     }
 
     console.log(`Virtual host created for ${project.domain} using ${webServer}`);
@@ -1000,7 +1073,17 @@ class ProjectManager {
     await fs.ensureDir(sitesDir);
 
     const documentRoot = this.getDocumentRoot(project);
+    
+    // Ensure document root exists
+    await fs.ensureDir(documentRoot);
+    
     const phpFpmPort = 9000 + (parseInt(project.id.slice(-4), 16) % 1000);
+    
+    // Get dynamic ports from ServiceManager
+    const serviceManager = this.managers.service;
+    const nginxPorts = serviceManager?.getServicePorts('nginx');
+    const httpPort = nginxPorts?.httpPort || 80;
+    const httpsPort = nginxPorts?.sslPort || 443;
 
     // Generate nginx config with both HTTP and HTTPS
     // PHP-CGI runs on phpFpmPort for FastCGI
@@ -1008,10 +1091,11 @@ class ProjectManager {
 # DevBox Pro - ${project.name}
 # Domain: ${project.domain}
 # Generated: ${new Date().toISOString()}
+# Ports: HTTP=${httpPort}, HTTPS=${httpsPort}
 
 # HTTP Server
 server {
-    listen 80;
+    listen ${httpPort};
     server_name ${project.domain} www.${project.domain};
     root "${documentRoot.replace(/\\/g, '/')}";
     index index.php index.html index.htm;
@@ -1078,7 +1162,8 @@ server {
       config += `
 # HTTPS Server (SSL)
 server {
-    listen 443 ssl http2;
+    listen ${httpsPort} ssl;
+    http2 on;
     server_name ${project.domain} www.${project.domain};
     root "${documentRoot.replace(/\\/g, '/')}";
     index index.php index.html index.htm;
@@ -1148,16 +1233,27 @@ server {
     await fs.ensureDir(vhostsDir);
 
     const documentRoot = this.getDocumentRoot(project);
+    
+    // Ensure document root exists
+    await fs.ensureDir(documentRoot);
+    
     const phpFpmPort = 9000 + (parseInt(project.id.slice(-4), 16) % 1000);
+    
+    // Get dynamic ports from ServiceManager
+    const serviceManager = this.managers.service;
+    const apachePorts = serviceManager?.getServicePorts('apache');
+    const httpPort = apachePorts?.httpPort || 80;
+    const httpsPort = apachePorts?.sslPort || 443;
 
     // Generate Apache config with both HTTP and HTTPS
     let config = `
 # DevBox Pro - ${project.name}
 # Domain: ${project.domain}
 # Generated: ${new Date().toISOString()}
+# Apache running on ports ${httpPort}/${httpsPort}
 
 # HTTP Virtual Host
-<VirtualHost *:80>
+<VirtualHost *:${httpPort}>
     ServerName ${project.domain}
     ServerAlias www.${project.domain}
     DocumentRoot "${documentRoot}"
@@ -1217,7 +1313,7 @@ server {
     if (project.ssl && certsExist) {
       config += `
 # HTTPS Virtual Host (SSL)
-<VirtualHost *:443>
+<VirtualHost *:${httpsPort}>
     ServerName ${project.domain}
     ServerAlias www.${project.domain}
     DocumentRoot "${documentRoot}"

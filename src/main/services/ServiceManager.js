@@ -3,6 +3,7 @@ const fs = require('fs-extra');
 const { spawn, exec, execFile } = require('child_process');
 const { EventEmitter } = require('events');
 const { app } = require('electron');
+const { isPortAvailable, findAvailablePort } = require('../utils/PortUtils');
 
 // Helper function to spawn a process hidden on Windows
 // On Windows, uses regular spawn with windowsHide and shell option
@@ -35,16 +36,32 @@ class ServiceManager extends EventEmitter {
     this.processes = new Map();
     this.serviceStatus = new Map();
 
+    // Track which web server owns the standard ports (80/443)
+    // First web server to start gets these ports
+    this.standardPortOwner = null;
+    
+    // Standard and alternate ports for web servers
+    this.webServerPorts = {
+      standard: { http: 80, https: 443 },
+      alternate: { http: 8081, https: 8444 },
+    };
+
     // Service definitions
     this.serviceConfigs = {
       nginx: {
         name: 'Nginx',
         defaultPort: 80,
+        sslPort: 443,
+        alternatePort: 8081,
+        alternateSslPort: 8444,
         healthCheck: this.checkNginxHealth.bind(this),
       },
       apache: {
         name: 'Apache',
         defaultPort: 80,
+        sslPort: 443,
+        alternatePort: 8081,
+        alternateSslPort: 8444,
         healthCheck: this.checkApacheHealth.bind(this),
       },
       mysql: {
@@ -191,6 +208,63 @@ class ServiceManager extends EventEmitter {
       await this.killProcess(process);
       this.processes.delete(serviceName);
     }
+    
+    // For Nginx on Windows, also try to stop gracefully and kill any remaining workers
+    if (serviceName === 'nginx' && require('os').platform() === 'win32') {
+      try {
+        const platform = 'win';
+        const nginxPath = path.join(this.resourcePath, 'nginx', platform);
+        const nginxExe = path.join(nginxPath, 'nginx.exe');
+        const dataPath = path.join(app.getPath('userData'), 'data');
+        const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
+        
+        if (await fs.pathExists(nginxExe)) {
+          // Send stop signal to Nginx
+          const { execSync } = require('child_process');
+          try {
+            execSync(`"${nginxExe}" -s stop -c "${confPath}"`, { 
+              cwd: nginxPath,
+              windowsHide: true,
+              timeout: 5000
+            });
+          } catch (e) {
+            // Ignore errors - process may already be dead
+          }
+          
+          // Kill any remaining nginx processes
+          try {
+            execSync('taskkill /F /IM nginx.exe 2>nul', { windowsHide: true, timeout: 5000 });
+          } catch (e) {
+            // Ignore - no processes to kill
+          }
+        }
+      } catch (error) {
+        console.warn('Error during Nginx cleanup:', error.message);
+      }
+    }
+    
+    // For Apache on Windows, kill any remaining httpd processes
+    if (serviceName === 'apache' && require('os').platform() === 'win32') {
+      try {
+        const { execSync } = require('child_process');
+        try {
+          execSync('taskkill /F /IM httpd.exe 2>nul', { windowsHide: true, timeout: 5000 });
+        } catch (e) {
+          // Ignore - no processes to kill
+        }
+      } catch (error) {
+        console.warn('Error during Apache cleanup:', error.message);
+      }
+    }
+    
+    // Wait a moment for ports to be released
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Release standard ports if this web server owned them
+    if ((serviceName === 'nginx' || serviceName === 'apache') && this.standardPortOwner === serviceName) {
+      console.log(`${config.name} releasing standard ports (80/443)`);
+      this.standardPortOwner = null;
+    }
 
     const status = this.serviceStatus.get(serviceName);
     status.status = 'stopped';
@@ -222,6 +296,19 @@ class ServiceManager extends EventEmitter {
 
   async stopAllServices() {
     const results = [];
+    
+    // First, stop all running projects
+    if (this.managers.project) {
+      try {
+        console.log('Stopping all running projects before stopping services...');
+        await this.managers.project.stopAllProjects();
+        console.log('All projects stopped');
+      } catch (error) {
+        console.error('Error stopping projects:', error);
+      }
+    }
+    
+    // Then stop all services
     for (const serviceName of Object.keys(this.serviceConfigs)) {
       try {
         await this.stopService(serviceName);
@@ -252,6 +339,58 @@ class ServiceManager extends EventEmitter {
     const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
     const logsPath = path.join(dataPath, 'nginx', 'logs');
     
+    // Determine which ports to use based on first-come-first-served
+    let httpPort, sslPort;
+    
+    if (this.standardPortOwner === null) {
+      // No web server owns standard ports yet - try to claim them
+      const standardHttp = this.webServerPorts.standard.http;
+      const standardHttps = this.webServerPorts.standard.https;
+      
+      if (await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps)) {
+        // Claim standard ports
+        httpPort = standardHttp;
+        sslPort = standardHttps;
+        this.standardPortOwner = 'nginx';
+        console.log(`Nginx claiming standard ports (${httpPort}/${sslPort})`);
+      } else {
+        // Standard ports not available, use alternate
+        httpPort = this.webServerPorts.alternate.http;
+        sslPort = this.webServerPorts.alternate.https;
+        console.log(`Standard ports not available, Nginx using alternate ports (${httpPort}/${sslPort})`);
+      }
+    } else if (this.standardPortOwner === 'nginx') {
+      // Nginx already owns standard ports (shouldn't happen, but handle it)
+      httpPort = this.webServerPorts.standard.http;
+      sslPort = this.webServerPorts.standard.https;
+    } else {
+      // Another web server owns standard ports, use alternate
+      httpPort = this.webServerPorts.alternate.http;
+      sslPort = this.webServerPorts.alternate.https;
+      console.log(`Apache owns standard ports, Nginx using alternate ports (${httpPort}/${sslPort})`);
+    }
+    
+    // Verify chosen ports are available, find alternatives if not
+    if (!await isPortAvailable(httpPort)) {
+      httpPort = await findAvailablePort(httpPort, 100);
+      if (!httpPort) {
+        throw new Error(`Could not find available HTTP port for Nginx`);
+      }
+      console.log(`Nginx HTTP port in use, using ${httpPort} instead`);
+    }
+    
+    if (!await isPortAvailable(sslPort)) {
+      sslPort = await findAvailablePort(sslPort, 100);
+      if (!sslPort) {
+        throw new Error(`Could not find available HTTPS port for Nginx`);
+      }
+      console.log(`Nginx HTTPS port in use, using ${sslPort} instead`);
+    }
+    
+    // Store the actual ports being used
+    this.serviceConfigs.nginx.actualHttpPort = httpPort;
+    this.serviceConfigs.nginx.actualSslPort = sslPort;
+    
     // Ensure directories exist
     await fs.ensureDir(path.join(dataPath, 'nginx'));
     await fs.ensureDir(logsPath);
@@ -264,10 +403,10 @@ class ServiceManager extends EventEmitter {
     await fs.ensureDir(path.join(nginxPath, 'temp', 'uwsgi_temp'));
     await fs.ensureDir(path.join(nginxPath, 'temp', 'scgi_temp'));
 
-    // Create default config if not exists
-    if (!await fs.pathExists(confPath)) {
-      await this.createNginxConfig(confPath, logsPath);
-    }
+    // Always recreate config with current ports
+    await this.createNginxConfig(confPath, logsPath, httpPort, sslPort);
+
+    console.log(`Starting Nginx on ports ${httpPort} (HTTP) and ${sslPort} (HTTPS)...`);
 
     let proc;
     if (process.platform === 'win32') {
@@ -331,7 +470,8 @@ class ServiceManager extends EventEmitter {
 
     this.processes.set('nginx', proc);
     const status = this.serviceStatus.get('nginx');
-    status.port = 80;
+    status.port = httpPort;
+    status.sslPort = sslPort;
 
     // Wait for Nginx to be ready
     await this.waitForService('nginx', 10000);
@@ -381,7 +521,52 @@ class ServiceManager extends EventEmitter {
     });
   }
 
-  async createNginxConfig(confPath, logsPath) {
+  // Reload Apache configuration without stopping
+  async reloadApache() {
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const apachePath = path.join(this.resourcePath, 'apache', platform);
+    const httpdExe = path.join(apachePath, 'bin', process.platform === 'win32' ? 'httpd.exe' : 'httpd');
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const confPath = path.join(dataPath, 'apache', 'httpd.conf');
+
+    if (!await fs.pathExists(httpdExe)) {
+      console.log('Apache binary not found, cannot reload');
+      return;
+    }
+
+    const status = this.serviceStatus.get('apache');
+    if (status?.status !== 'running') {
+      console.log('Apache is not running, skipping reload');
+      return;
+    }
+
+    console.log('Reloading Apache configuration...');
+
+    return new Promise((resolve, reject) => {
+      // Apache uses -k graceful for graceful restart/reload
+      const proc = spawn(httpdExe, ['-k', 'graceful', '-f', confPath], {
+        windowsHide: true,
+        cwd: apachePath,
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          console.log('Apache configuration reloaded successfully');
+          resolve();
+        } else {
+          console.error(`Apache reload failed with code ${code}`);
+          reject(new Error(`Apache reload failed with code ${code}`));
+        }
+      });
+
+      proc.on('error', (error) => {
+        console.error('Apache reload error:', error);
+        reject(error);
+      });
+    });
+  }
+
+  async createNginxConfig(confPath, logsPath, httpPort = 80, sslPort = 443) {
     const dataPath = path.join(app.getPath('userData'), 'data');
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const nginxPath = path.join(this.resourcePath, 'nginx', platform);
@@ -419,7 +604,7 @@ http {
 
     # Default server for unmatched requests
     server {
-        listen 80 default_server;
+        listen ${httpPort} default_server;
         server_name localhost;
         root ${dataPath.replace(/\\/g, '/')}/www;
         index index.html index.php;
@@ -456,12 +641,84 @@ http {
     await fs.ensureDir(path.join(dataPath, 'apache'));
     await fs.ensureDir(logsPath);
     await fs.ensureDir(path.join(dataPath, 'apache', 'vhosts'));
+    await fs.ensureDir(path.join(dataPath, 'www')); // Default document root
 
-    // Create default config if not exists
-    if (!await fs.pathExists(confPath)) {
-      await this.createApacheConfig(apachePath, confPath, logsPath);
+    // Determine which ports to use based on first-come-first-served
+    let httpPort, httpsPort;
+    
+    if (this.standardPortOwner === null) {
+      // No web server owns standard ports yet - try to claim them
+      const standardHttp = this.webServerPorts.standard.http;
+      const standardHttps = this.webServerPorts.standard.https;
+      
+      if (await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps)) {
+        // Claim standard ports
+        httpPort = standardHttp;
+        httpsPort = standardHttps;
+        this.standardPortOwner = 'apache';
+        console.log(`Apache claiming standard ports (${httpPort}/${httpsPort})`);
+      } else {
+        // Standard ports not available, use alternate
+        httpPort = this.webServerPorts.alternate.http;
+        httpsPort = this.webServerPorts.alternate.https;
+        console.log(`Standard ports not available, Apache using alternate ports (${httpPort}/${httpsPort})`);
+      }
+    } else if (this.standardPortOwner === 'apache') {
+      // Apache already owns standard ports (shouldn't happen, but handle it)
+      httpPort = this.webServerPorts.standard.http;
+      httpsPort = this.webServerPorts.standard.https;
+    } else {
+      // Another web server owns standard ports, use alternate
+      httpPort = this.webServerPorts.alternate.http;
+      httpsPort = this.webServerPorts.alternate.https;
+      console.log(`Nginx owns standard ports, Apache using alternate ports (${httpPort}/${httpsPort})`);
+    }
+    
+    // Verify chosen ports are available, find alternatives if not
+    if (!await isPortAvailable(httpPort)) {
+      httpPort = await findAvailablePort(httpPort, 100);
+      if (!httpPort) {
+        throw new Error(`Could not find available HTTP port for Apache`);
+      }
+      console.log(`Apache HTTP port in use, using ${httpPort} instead`);
+    }
+    
+    if (!await isPortAvailable(httpsPort)) {
+      httpsPort = await findAvailablePort(httpsPort, 100);
+      if (!httpsPort) {
+        throw new Error(`Could not find available HTTPS port for Apache`);
+      }
+      console.log(`Apache HTTPS port in use, using ${httpsPort} instead`);
+    }
+    
+    // Store the actual ports being used
+    this.serviceConfigs.apache.actualHttpPort = httpPort;
+    this.serviceConfigs.apache.actualSslPort = httpsPort;
+
+    // Always recreate config with current ports
+    await this.createApacheConfig(apachePath, confPath, logsPath, httpPort, httpsPort);
+
+    // Test Apache config before starting
+    console.log(`Testing Apache configuration...`);
+    try {
+      const { execSync } = require('child_process');
+      execSync(`"${httpdExe}" -t -f "${confPath}"`, { 
+        cwd: apachePath,
+        windowsHide: true,
+        timeout: 10000,
+        encoding: 'utf8'
+      });
+      console.log('Apache configuration test passed');
+    } catch (configError) {
+      console.error('Apache configuration test failed:', configError.message);
+      if (configError.stderr) {
+        console.error('Config error details:', configError.stderr);
+      }
+      throw new Error(`Apache configuration error: ${configError.message}`);
     }
 
+    console.log(`Starting Apache on ports ${httpPort} (HTTP) and ${httpsPort} (HTTPS)...`);
+    
     const proc = spawn(httpdExe, ['-f', confPath], {
       cwd: apachePath,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -495,28 +752,46 @@ http {
     this.processes.set('apache', proc);
     const status = this.serviceStatus.get('apache');
     status.pid = proc.pid;
-    status.port = 80;
+    status.port = httpPort;
+    status.sslPort = httpsPort;
 
     // Wait for Apache to be ready
     await this.waitForService('apache', 10000);
+    
+    console.log(`Apache started on ports ${httpPort} (HTTP) and ${httpsPort} (HTTPS)`);
   }
 
-  async createApacheConfig(apachePath, confPath, logsPath) {
+  async createApacheConfig(apachePath, confPath, logsPath, httpPort = 8081, httpsPort = 8444) {
     const dataPath = path.join(app.getPath('userData'), 'data');
     const mimeTypesPath = path.join(apachePath, 'conf', 'mime.types').replace(/\\/g, '/');
     
     const config = `ServerRoot "${apachePath.replace(/\\/g, '/')}"
-Listen 80
+Listen ${httpPort}
+Listen ${httpsPort}
 
+# Core modules
 LoadModule authz_core_module modules/mod_authz_core.so
+LoadModule authz_host_module modules/mod_authz_host.so
 LoadModule dir_module modules/mod_dir.so
 LoadModule mime_module modules/mod_mime.so
 LoadModule log_config_module modules/mod_log_config.so
 LoadModule rewrite_module modules/mod_rewrite.so
+LoadModule alias_module modules/mod_alias.so
+LoadModule env_module modules/mod_env.so
+LoadModule setenvif_module modules/mod_setenvif.so
+LoadModule headers_module modules/mod_headers.so
+
+# Proxy modules for PHP-FPM
+LoadModule proxy_module modules/mod_proxy.so
+LoadModule proxy_fcgi_module modules/mod_proxy_fcgi.so
+
+# SSL modules
+LoadModule ssl_module modules/mod_ssl.so
+LoadModule socache_shmcb_module modules/mod_socache_shmcb.so
 
 TypesConfig "${mimeTypesPath}"
 
-ServerName localhost:80
+ServerName localhost:${httpPort}
 DocumentRoot "${dataPath.replace(/\\/g, '/')}/www"
 
 <Directory "${dataPath.replace(/\\/g, '/')}/www">
@@ -552,7 +827,21 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'mysql', 'data');
-    const port = this.serviceConfigs.mysql.defaultPort;
+    
+    // Find available port dynamically
+    const defaultPort = this.serviceConfigs.mysql.defaultPort;
+    let port = defaultPort;
+    
+    if (!await isPortAvailable(port)) {
+      port = await findAvailablePort(defaultPort, 100);
+      if (!port) {
+        throw new Error(`Could not find available port for MySQL starting from ${defaultPort}`);
+      }
+      console.log(`MySQL port ${defaultPort} in use, using ${port} instead`);
+    }
+    
+    // Store the actual port being used
+    this.serviceConfigs.mysql.actualPort = port;
 
     // Ensure data directory exists
     await fs.ensureDir(dataDir);
@@ -579,7 +868,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     await fs.ensureDir(path.dirname(configPath));
     await this.createMySQLConfig(configPath, dataDir, port);
 
-    console.log('Starting MySQL server...');
+    console.log(`Starting MySQL server on port ${port}...`);
     
     let proc;
     if (process.platform === 'win32') {
@@ -887,11 +1176,27 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
     }
 
     const dataPath = path.join(app.getPath('userData'), 'data');
-    const port = this.serviceConfigs.redis.defaultPort;
+    
+    // Find available port dynamically
+    const defaultPort = this.serviceConfigs.redis.defaultPort;
+    let port = defaultPort;
+    
+    if (!await isPortAvailable(port)) {
+      port = await findAvailablePort(defaultPort, 100);
+      if (!port) {
+        throw new Error(`Could not find available port for Redis starting from ${defaultPort}`);
+      }
+      console.log(`Redis port ${defaultPort} in use, using ${port} instead`);
+    }
+    
+    // Store the actual port being used
+    this.serviceConfigs.redis.actualPort = port;
 
     const configPath = path.join(dataPath, 'redis', 'redis.conf');
     await this.createRedisConfig(configPath, dataPath, port);
 
+    console.log(`Starting Redis server on port ${port}...`);
+    
     let proc;
     if (process.platform === 'win32') {
       proc = spawnHidden(redisServerPath, [configPath], {
@@ -953,8 +1258,34 @@ appendfilename "appendonly.aof"
       return;
     }
 
-    const port = this.serviceConfigs.mailpit.defaultPort;
-    const smtpPort = this.serviceConfigs.mailpit.smtpPort;
+    // Find available ports dynamically
+    const defaultPort = this.serviceConfigs.mailpit.defaultPort;
+    const defaultSmtpPort = this.serviceConfigs.mailpit.smtpPort;
+    
+    let port = defaultPort;
+    let smtpPort = defaultSmtpPort;
+    
+    if (!await isPortAvailable(port)) {
+      port = await findAvailablePort(defaultPort, 100);
+      if (!port) {
+        throw new Error(`Could not find available web port for Mailpit starting from ${defaultPort}`);
+      }
+      console.log(`Mailpit web port ${defaultPort} in use, using ${port} instead`);
+    }
+    
+    if (!await isPortAvailable(smtpPort)) {
+      smtpPort = await findAvailablePort(defaultSmtpPort, 100);
+      if (!smtpPort) {
+        throw new Error(`Could not find available SMTP port for Mailpit starting from ${defaultSmtpPort}`);
+      }
+      console.log(`Mailpit SMTP port ${defaultSmtpPort} in use, using ${smtpPort} instead`);
+    }
+    
+    // Store the actual ports being used
+    this.serviceConfigs.mailpit.actualPort = port;
+    this.serviceConfigs.mailpit.actualSmtpPort = smtpPort;
+
+    console.log(`Starting Mailpit on port ${port} (web) and ${smtpPort} (SMTP)...`);
 
     let proc;
     if (process.platform === 'win32') {
@@ -987,6 +1318,7 @@ appendfilename "appendonly.aof"
     this.processes.set('mailpit', proc);
     const status = this.serviceStatus.get('mailpit');
     status.port = port;
+    status.smtpPort = smtpPort;
 
     await this.waitForService('mailpit', 10000);
   }
@@ -1062,10 +1394,25 @@ appendfilename "appendonly.aof"
       }
     }
 
-    const port = this.serviceConfigs.phpmyadmin.defaultPort;
+    // Find available port dynamically
+    const defaultPort = this.serviceConfigs.phpmyadmin.defaultPort;
+    let port = defaultPort;
+    
+    if (!await isPortAvailable(port)) {
+      port = await findAvailablePort(defaultPort, 100);
+      if (!port) {
+        throw new Error(`Could not find available port for phpMyAdmin starting from ${defaultPort}`);
+      }
+      console.log(`phpMyAdmin port ${defaultPort} in use, using ${port} instead`);
+    }
+    
+    // Store the actual port being used
+    this.serviceConfigs.phpmyadmin.actualPort = port;
 
     // Get PHP directory for php.ini location
     const phpDir = path.dirname(phpPath);
+
+    console.log(`Starting phpMyAdmin on port ${port}...`);
 
     let proc;
     if (process.platform === 'win32') {
@@ -1154,37 +1501,37 @@ appendfilename "appendonly.aof"
   }
 
   async checkNginxHealth() {
-    const port = this.serviceConfigs.nginx.defaultPort;
+    const port = this.serviceConfigs.nginx.actualHttpPort || this.serviceConfigs.nginx.defaultPort;
     return this.checkPortOpen(port);
   }
 
   async checkApacheHealth() {
-    const port = this.serviceConfigs.apache.defaultPort;
+    const port = this.serviceConfigs.apache.actualHttpPort || this.serviceConfigs.apache.defaultPort;
     return this.checkPortOpen(port);
   }
 
   async checkMySqlHealth() {
-    const port = this.serviceConfigs.mysql.defaultPort;
+    const port = this.serviceConfigs.mysql.actualPort || this.serviceConfigs.mysql.defaultPort;
     return this.checkPortOpen(port);
   }
 
   async checkMariaDbHealth() {
-    const port = this.serviceConfigs.mariadb.defaultPort;
+    const port = this.serviceConfigs.mariadb.actualPort || this.serviceConfigs.mariadb.defaultPort;
     return this.checkPortOpen(port);
   }
 
   async checkRedisHealth() {
-    const port = this.serviceConfigs.redis.defaultPort;
+    const port = this.serviceConfigs.redis.actualPort || this.serviceConfigs.redis.defaultPort;
     return this.checkPortOpen(port);
   }
 
   async checkMailpitHealth() {
-    const port = this.serviceConfigs.mailpit.defaultPort;
+    const port = this.serviceConfigs.mailpit.actualPort || this.serviceConfigs.mailpit.defaultPort;
     return this.checkPortOpen(port);
   }
 
   async checkPhpMyAdminHealth() {
-    const port = this.serviceConfigs.phpmyadmin.defaultPort;
+    const port = this.serviceConfigs.phpmyadmin.actualPort || this.serviceConfigs.phpmyadmin.defaultPort;
     return this.checkPortOpen(port);
   }
 
@@ -1237,6 +1584,23 @@ appendfilename "appendonly.aof"
       };
     }
     return result;
+  }
+
+  /**
+   * Get the actual ports being used by a service
+   * @param {string} serviceName - The name of the service
+   * @returns {Object} - Object with httpPort and sslPort
+   */
+  getServicePorts(serviceName) {
+    const config = this.serviceConfigs[serviceName];
+    if (!config) {
+      return null;
+    }
+    
+    return {
+      httpPort: config.actualHttpPort || config.defaultPort,
+      sslPort: config.actualSslPort || config.sslPort,
+    };
   }
 
   async getResourceUsage() {
