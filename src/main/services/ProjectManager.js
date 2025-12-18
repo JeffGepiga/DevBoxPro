@@ -627,8 +627,14 @@ class ProjectManager {
       // Calculate PHP-CGI port (unique per project)
       const phpFpmPort = 9000 + (parseInt(project.id.slice(-4), 16) % 1000);
 
-      // Start PHP-CGI for this project
-      const phpCgiProcess = await this.startPhpCgi(project, phpFpmPort);
+      let phpCgiProcess = null;
+      
+      // Only start PHP-CGI process for Nginx (uses FastCGI)
+      // Apache uses Action/AddHandler CGI approach - invokes PHP-CGI directly per request
+      const webServer = project.webServer || 'nginx';
+      if (webServer === 'nginx') {
+        phpCgiProcess = await this.startPhpCgi(project, phpFpmPort);
+      }
       
       // Regenerate virtual host config to ensure correct port
       await this.createVirtualHost(project);
@@ -1328,12 +1334,19 @@ server {
     const httpPort = apachePorts?.httpPort || 80;
     const httpsPort = apachePorts?.sslPort || 443;
 
+    // Get PHP-CGI path for this PHP version
+    const phpVersion = project.phpVersion || '8.4';
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const resourcesPath = path.join(app.getPath('userData'), 'resources');
+    const phpCgiPath = path.join(resourcesPath, 'php', phpVersion, platform, 'php-cgi.exe').replace(/\\/g, '/');
+
     // Generate Apache config with both HTTP and HTTPS
     let config = `
 # DevBox Pro - ${project.name}
 # Domain: ${project.domain}
 # Generated: ${new Date().toISOString()}
 # Apache running on ports ${httpPort}/${httpsPort}
+# PHP Version: ${phpVersion}
 
 # HTTP Virtual Host
 <VirtualHost *:${httpPort}>
@@ -1342,7 +1355,7 @@ server {
     DocumentRoot "${documentRoot}"
     
     <Directory "${documentRoot}">
-        Options Indexes FollowSymLinks MultiViews
+        Options Indexes FollowSymLinks MultiViews ExecCGI
         AllowOverride All
         Require all granted
         
@@ -1356,17 +1369,16 @@ server {
         </IfModule>
     </Directory>
 
-    # PHP-FPM Configuration
-    <IfModule proxy_fcgi_module>
-        # Pass SCRIPT_FILENAME to PHP-CGI
-        <FilesMatch \\.php$>
-            SetHandler "proxy:fcgi://127.0.0.1:${phpFpmPortStr}"
-        </FilesMatch>
-        
-        # Ensure SCRIPT_FILENAME is set correctly for Windows paths
-        ProxyFCGISetEnvIf "true" SCRIPT_FILENAME "%{DOCUMENT_ROOT}%{SCRIPT_NAME}"
-        ProxyFCGISetEnvIf "true" PATH_INFO "%{PATH_INFO}"
-    </IfModule>
+    # PHP Configuration using Action/AddHandler (like Laragon)
+    ScriptAlias /php-cgi/ "${path.dirname(phpCgiPath).replace(/\\/g, '/')}/"
+    <Directory "${path.dirname(phpCgiPath).replace(/\\/g, '/')}">
+        AllowOverride None
+        Options None
+        Require all granted
+    </Directory>
+    
+    Action application/x-httpd-php "/php-cgi/php-cgi.exe"
+    AddHandler application/x-httpd-php .php
 
     DirectoryIndex index.php index.html
 
@@ -1424,7 +1436,7 @@ server {
     Header always set X-Content-Type-Options "nosniff"
     
     <Directory "${documentRoot}">
-        Options Indexes FollowSymLinks MultiViews
+        Options Indexes FollowSymLinks MultiViews ExecCGI
         AllowOverride All
         Require all granted
         
@@ -1437,17 +1449,16 @@ server {
         </IfModule>
     </Directory>
 
-    # PHP-FPM Configuration
-    <IfModule proxy_fcgi_module>
-        # Pass SCRIPT_FILENAME to PHP-CGI
-        <FilesMatch \\.php$>
-            SetHandler "proxy:fcgi://127.0.0.1:${phpFpmPortStr}"
-        </FilesMatch>
-        
-        # Ensure SCRIPT_FILENAME is set correctly for Windows paths
-        ProxyFCGISetEnvIf "true" SCRIPT_FILENAME "%{DOCUMENT_ROOT}%{SCRIPT_NAME}"
-        ProxyFCGISetEnvIf "true" PATH_INFO "%{PATH_INFO}"
-    </IfModule>
+    # PHP Configuration using Action/AddHandler (like Laragon)
+    ScriptAlias /php-cgi/ "${path.dirname(phpCgiPath).replace(/\\\\/g, '/')}/"
+    <Directory "${path.dirname(phpCgiPath).replace(/\\\\/g, '/')}">
+        AllowOverride None
+        Options None
+        Require all granted
+    </Directory>
+    
+    Action application/x-httpd-php "/php-cgi/php-cgi.exe"
+    AddHandler application/x-httpd-php .php
 
     DirectoryIndex index.php index.html
 

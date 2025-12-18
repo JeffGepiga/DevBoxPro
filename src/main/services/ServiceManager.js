@@ -793,6 +793,10 @@ LoadModule env_module modules/mod_env.so
 LoadModule setenvif_module modules/mod_setenvif.so
 LoadModule headers_module modules/mod_headers.so
 
+# CGI modules for PHP
+LoadModule cgi_module modules/mod_cgi.so
+LoadModule actions_module modules/mod_actions.so
+
 # Proxy modules for PHP-FPM
 LoadModule proxy_module modules/mod_proxy.so
 LoadModule proxy_fcgi_module modules/mod_proxy_fcgi.so
