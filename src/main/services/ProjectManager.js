@@ -38,8 +38,6 @@ class ProjectManager {
   }
 
   async initialize() {
-    console.log('Initializing ProjectManager...');
-
     // Ensure projects array exists in config
     if (!this.configStore.get('projects')) {
       this.configStore.set('projects', []);
@@ -47,8 +45,6 @@ class ProjectManager {
 
     // Initialize compatibility manager (loads cached config)
     await this.compatibilityManager.initialize();
-
-    console.log('ProjectManager initialized');
   }
 
   /**
@@ -67,18 +63,15 @@ class ProjectManager {
       
       // Install CLI script if not installed
       if (!status.installed) {
-        console.log('Installing CLI scripts...');
         await cli.installCli();
       }
 
       // Add to PATH if not already in PATH (Windows only supports auto-add)
       if (!status.inPath && process.platform === 'win32') {
-        console.log('Adding CLI to PATH...');
         try {
           await cli.addToPath();
-          console.log('CLI added to PATH. Restart terminal to use.');
         } catch (error) {
-          console.warn('Could not add CLI to PATH:', error.message);
+          // Silently ignore PATH errors
         }
       }
 
@@ -200,7 +193,6 @@ class ProjectManager {
     // If there are warnings and user hasn't acknowledged them, return warnings for UI to display
     if (compatibility.hasIssues && !config.compatibilityWarningsAcknowledged) {
       // Still create the project but include warnings for the UI to display
-      console.log(`Compatibility warnings for project ${project.name}:`, compatibility.warnings);
     }
 
     // Create database for project if MySQL or MariaDB is enabled
@@ -262,8 +254,6 @@ class ProjectManager {
 
     // Install fresh framework if requested - run async without blocking
     if (config.installFresh) {
-      console.log('[createProject] installFresh is true, mainWindow:', mainWindow ? 'available' : 'not available');
-      
       // Mark project as installing
       project.installing = true;
       
@@ -273,7 +263,6 @@ class ProjectManager {
       });
     }
 
-    console.log(`Project created: ${project.name} (${project.id})`);
     return project;
   }
 
@@ -293,8 +282,6 @@ class ProjectManager {
 
     try {
       if (project.type === 'laravel') {
-        console.log(`Installing fresh Laravel at ${project.path}...`);
-        
         // Check if project directory already has files
         if (await fs.pathExists(project.path)) {
           const files = await fs.readdir(project.path);
@@ -312,7 +299,6 @@ class ProjectManager {
         await this.installLaravel(project, mainWindow);
         
       } else if (project.type === 'wordpress') {
-        console.log(`Installing fresh WordPress at ${project.path}...`);
         await this.installWordPress(project.path, mainWindow);
       }
       
@@ -427,8 +413,6 @@ class ProjectManager {
     const parentPath = path.dirname(projectPath);
     const folderName = path.basename(projectPath);
     
-    console.log('[installLaravel] Starting installation:', { projectPath, phpVersion, projectName, hasMainWindow: !!mainWindow });
-    
     // Ensure parent directory exists
     await fs.ensureDir(parentPath);
     
@@ -444,8 +428,6 @@ class ProjectManager {
       const cleanText = text.toString().replace(/\r\n/g, '\n').trim();
       if (!cleanText) return;
       
-      console.log(`[Laravel Install] [${type}] ${cleanText}`);
-      
       if (mainWindow && !mainWindow.isDestroyed()) {
         try {
           mainWindow.webContents.send('terminal:output', {
@@ -453,12 +435,9 @@ class ProjectManager {
             text: cleanText,
             type,
           });
-          console.log('[Laravel Install] Sent to renderer');
         } catch (err) {
-          console.error('[Laravel Install] Failed to send to renderer:', err);
+          // Ignore send errors
         }
-      } else {
-        console.warn('[Laravel Install] mainWindow not available');
       }
     };
 
@@ -467,14 +446,12 @@ class ProjectManager {
 
     try {
       // Use composer to create Laravel project
-      console.log('[installLaravel] Running composer create-project...');
       await binary.runComposer(
         parentPath,
         `create-project laravel/laravel ${folderName} --prefer-dist --no-interaction`,
         phpVersion,
         onOutput
       );
-      console.log('[installLaravel] Composer create-project completed');
 
       onOutput('✓ Laravel files installed successfully!', 'success');
     } catch (error) {
@@ -705,7 +682,6 @@ class ProjectManager {
     const envPath = path.join(project.path, '.env');
     
     if (!await fs.pathExists(envPath)) {
-      console.log('.env file does not exist, skipping sync');
       return;
     }
 
@@ -726,7 +702,6 @@ class ProjectManager {
     }
 
     await fs.writeFile(envPath, envContent);
-    console.log(`Synced environment to ${envPath}`);
   }
 
   /**
@@ -741,7 +716,6 @@ class ProjectManager {
     const envPath = path.join(project.path, '.env');
     
     if (!await fs.pathExists(envPath)) {
-      console.log('.env file does not exist');
       return {};
     }
 
@@ -773,7 +747,6 @@ class ProjectManager {
       }
     }
     
-    console.log(`Read ${Object.keys(environment).length} variables from ${envPath}`);
     return environment;
   }
 
@@ -805,9 +778,7 @@ class ProjectManager {
     // Delete project files if requested
     if (deleteFiles && project.path) {
       try {
-        console.log(`Deleting project files at: ${project.path}`);
         await fs.remove(project.path);
-        console.log(`Project files deleted: ${project.path}`);
       } catch (error) {
         console.error('Error deleting project files:', error.message);
         throw new Error(`Failed to delete project files: ${error.message}`);
@@ -822,7 +793,6 @@ class ProjectManager {
     // Sync CLI projects file
     await this.syncCliProjectsFile();
 
-    console.log(`Project deleted: ${project.name} (${id})${deleteFiles ? ' - files also deleted' : ''}`);
     return { success: true, filesDeleted: deleteFiles };
   }
 
@@ -833,12 +803,10 @@ class ProjectManager {
     }
 
     if (this.runningProjects.has(id)) {
-      console.log(`Project ${project.name} is already running`);
       this.managers.log?.project(id, `Project ${project.name} is already running`);
       return { success: true, alreadyRunning: true };
     }
 
-    console.log(`Starting project: ${project.name}`);
     this.managers.log?.project(id, `Starting project: ${project.name}`);
     this.managers.log?.project(id, `Type: ${project.type}, PHP: ${project.phpVersion}, Web Server: ${project.webServer}`);
     this.managers.log?.project(id, `Domain: ${project.domain}, Path: ${project.path}`);
@@ -904,7 +872,6 @@ class ProjectManager {
         this.configStore.set('projects', projects);
       }
 
-      console.log(`Project ${project.name} started with PHP-CGI on port ${actualPhpFpmPort}`);
       this.managers.log?.project(id, `Project ${project.name} started successfully`);
       this.managers.log?.project(id, `PHP-CGI running on port ${actualPhpFpmPort}`);
       return { success: true, port: project.port, phpFpmPort: actualPhpFpmPort };
@@ -991,15 +958,11 @@ class ProjectManager {
     // Check if port is available, find alternative if not
     let actualPort = port;
     if (!await isPortAvailable(port)) {
-      console.log(`PHP-CGI port ${port} is in use, finding alternative...`);
       actualPort = await findAvailablePort(port, 100);
       if (!actualPort) {
         throw new Error(`Could not find available port for PHP-CGI (starting from ${port})`);
       }
-      console.log(`PHP-CGI will use port ${actualPort} instead`);
     }
-
-    console.log(`Starting PHP-CGI ${phpVersion} on port ${actualPort}...`);
 
     let phpCgiProcess;
     if (process.platform === 'win32') {
@@ -1028,7 +991,7 @@ class ProjectManager {
       });
 
       phpCgiProcess.on('exit', (code) => {
-        console.log(`PHP-CGI for ${project.name} exited with code ${code}`);
+        // Process exited
       });
     } else {
       phpCgiProcess = spawn(phpCgiPath, ['-b', `127.0.0.1:${actualPort}`], {
@@ -1056,7 +1019,7 @@ class ProjectManager {
       });
 
       phpCgiProcess.on('exit', (code) => {
-        console.log(`PHP-CGI for ${project.name} exited with code ${code}`);
+        // Process exited
       });
     }
 
@@ -1076,7 +1039,6 @@ class ProjectManager {
       console.warn(`PHP-CGI may not have started properly on port ${actualPort}`);
     }
 
-    console.log(`PHP-CGI started for ${project.name} on port ${actualPort}`);
     return { process: phpCgiProcess, port: actualPort };
   }
 
@@ -1087,7 +1049,6 @@ class ProjectManager {
     }
 
     const project = this.getProject(id);
-    console.log(`Stopping project: ${project?.name || id}`);
     this.managers.log?.project(id, `Stopping project: ${project?.name || id}`);
 
     try {
@@ -1101,7 +1062,6 @@ class ProjectManager {
             resolve();
           });
         });
-        console.log(`PHP-CGI stopped for ${project?.name || id}`);
       }
 
       // Stop supervisor processes
@@ -1110,7 +1070,6 @@ class ProjectManager {
       }
 
       this.runningProjects.delete(id);
-      console.log(`Project ${project?.name || id} stopped`);
       this.managers.log?.project(id, `Project ${project?.name || id} stopped successfully`);
 
       return { success: true, wasRunning: true };
@@ -1128,15 +1087,12 @@ class ProjectManager {
     const runningProjectIds = Array.from(this.runningProjects.keys());
     
     if (runningProjectIds.length === 0) {
-      console.log('No running projects to stop');
       // Still do cleanup in case of orphan processes
       if (process.platform === 'win32') {
         await this.forceKillOrphanPhpProcesses();
       }
       return { success: true, stoppedCount: 0 };
     }
-
-    console.log(`Stopping ${runningProjectIds.length} running project(s)...`);
     
     const results = [];
     for (const id of runningProjectIds) {
@@ -1155,7 +1111,6 @@ class ProjectManager {
     }
 
     const stoppedCount = results.filter(r => r.success).length;
-    console.log(`Stopped ${stoppedCount}/${runningProjectIds.length} projects`);
     
     return { 
       success: results.every(r => r.success), 
@@ -1175,7 +1130,6 @@ class ProjectManager {
         timeout: 5000,
         stdio: 'ignore'
       });
-      console.log('Killed orphan php-cgi.exe processes');
     } catch (e) {
       // Ignore - no processes to kill
     }
@@ -1200,11 +1154,8 @@ class ProjectManager {
   async startProjectServices(project) {
     const serviceManager = this.managers.service;
     if (!serviceManager) {
-      console.warn('ServiceManager not available, skipping service auto-start');
       return { success: true, warning: 'ServiceManager not available' };
     }
-
-    console.log(`Starting services for project ${project.name}...`);
 
     // Web server is critical - project cannot run without it
     const webServer = project.webServer || 'nginx';
@@ -1274,7 +1225,6 @@ class ProjectManager {
           const standardPortsAvailable = serviceManager.standardPortOwner === null;
           
           if (isOnAlternatePorts && standardPortsAvailable) {
-            console.log(`Restarting ${service.name} to claim standard ports (80/443)...`);
             await serviceManager.restartService(service.name, requestedVersion);
             results.started.push(service.name);
             continue;
@@ -1286,14 +1236,12 @@ class ProjectManager {
         if (isVersioned && requestedVersion) {
           const versionRunning = serviceManager.isVersionRunning(service.name, requestedVersion);
           if (versionRunning) {
-            console.log(`${service.name} ${requestedVersion} already running`);
             results.started.push(`${service.name}:${requestedVersion}`);
             continue;
           }
         }
         
         if (needsStart || (isVersioned && !serviceManager.isVersionRunning(service.name, requestedVersion))) {
-          console.log(`Auto-starting ${service.name}${requestedVersion ? ' ' + requestedVersion : ''}...`);
           const result = await serviceManager.startService(service.name, requestedVersion);
           
           // Check if service actually started (could be not_installed)
@@ -1327,7 +1275,6 @@ class ProjectManager {
     }
 
     if (results.success) {
-      console.log(`Services started for project ${project.name}`);
       this.managers.log?.project(project.id, `Services ready: ${results.started.join(', ')}`);
     } else {
       console.error(`Critical services failed for project ${project.name}:`, results.criticalFailures);
@@ -1501,10 +1448,7 @@ class ProjectManager {
     // Add each domain to hosts file
     for (const domain of domainsToAdd) {
       try {
-        const result = await this.addToHostsFile(domain);
-        if (result?.success) {
-          console.log(`Hosts file updated for ${domain}`);
-        }
+        await this.addToHostsFile(domain);
       } catch (error) {
         console.warn(`Could not add ${domain} to hosts file:`, error.message);
       }
@@ -1532,8 +1476,6 @@ class ProjectManager {
         console.warn('Could not reload Apache:', error.message);
       }
     }
-
-    console.log(`Virtual host created for ${project.domain} using ${webServer}`);
   }
 
   // Create Nginx virtual host
@@ -1561,8 +1503,6 @@ class ProjectManager {
     const nginxPorts = serviceManager?.getServicePorts('nginx');
     const httpPort = nginxPorts?.httpPort || 80;
     const httpsPort = nginxPorts?.sslPort || 443;
-
-    console.log(`Creating Nginx vhost for ${project.domain} with PHP-CGI on port ${phpFpmPort}`);
 
     // Generate nginx config with both HTTP and HTTPS
     // PHP-CGI runs on phpFpmPort for FastCGI
@@ -1620,14 +1560,10 @@ server {
     
     // Auto-create SSL certificates if SSL is enabled but certs don't exist
     if (project.ssl && !certsExist) {
-      console.log(`SSL enabled for ${project.domain} but certificates not found. Creating certificates...`);
       try {
         await this.managers.ssl?.createCertificate(project.domains);
         // Re-check if certificates were created successfully
         certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
-        if (certsExist) {
-          console.log(`SSL certificates created successfully for ${project.domain}`);
-        }
       } catch (error) {
         console.warn(`Failed to create SSL certificates for ${project.domain}:`, error.message);
       }
@@ -1729,9 +1665,6 @@ server {
     
     // Convert to string and validate - ensure no extra characters
     const phpFpmPortStr = String(phpFpmPort).trim();
-    console.log(`[Apache Vhost] Project: ${project.name}, ID: ${project.id}`);
-    console.log(`[Apache Vhost] Port calculation: slice="${idSlice}", parseInt=${parsedInt}, mod=${modResult}`);
-    console.log(`[Apache Vhost] PHP-CGI port: ${phpFpmPortStr} (type: ${typeof phpFpmPortStr}, length: ${phpFpmPortStr.length})`);
     
     // Get dynamic ports from ServiceManager
     const serviceManager = this.managers.service;
@@ -1799,14 +1732,10 @@ server {
 
     // Auto-create SSL certificates if SSL is enabled but certs don't exist
     if (project.ssl && !certsExist) {
-      console.log(`SSL enabled for ${project.domain} but certificates not found. Creating certificates...`);
       try {
         await this.managers.ssl?.createCertificate(project.domains);
         // Re-check if certificates were created successfully
         certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
-        if (certsExist) {
-          console.log(`SSL certificates created successfully for ${project.domain}`);
-        }
       } catch (error) {
         console.warn(`Failed to create SSL certificates for ${project.domain}:`, error.message);
       }
@@ -1873,28 +1802,9 @@ server {
 `;
     }
 
-    // Debug: Log the SetHandler line to verify correct port
-    const setHandlerMatches = config.match(/SetHandler "proxy:fcgi:\/\/127\.0\.0\.1:(\d+)"/g);
-    if (setHandlerMatches) {
-      console.log(`[Apache Vhost] SetHandler directives in config:`);
-      setHandlerMatches.forEach((match, idx) => {
-        console.log(`  ${idx + 1}. ${match}`);
-      });
-    }
-    
     // Save config file
     const configPath = path.join(vhostsDir, `${project.id}.conf`);
     await fs.writeFile(configPath, config);
-    
-    // Verify what was actually written to the file
-    const writtenContent = await fs.readFile(configPath, 'utf-8');
-    const writtenMatches = writtenContent.match(/SetHandler "proxy:fcgi:\/\/127\.0\.0\.1:(\d+)"/g);
-    if (writtenMatches) {
-      console.log(`[Apache Vhost] Verified SetHandler in written file:`);
-      writtenMatches.forEach((match, idx) => {
-        console.log(`  ${idx + 1}. ${match}`);
-      });
-    }
 
     // Ensure logs directory exists
     await fs.ensureDir(path.join(dataPath, 'apache', 'logs'));
@@ -1916,7 +1826,6 @@ server {
       // Check if domain already exists (check both with and without www)
       const domainRegex = new RegExp(`^\\s*127\\.0\\.0\\.1\\s+${domain.replace('.', '\\.')}\\s*$`, 'm');
       if (domainRegex.test(hostsContent)) {
-        console.log(`Domain ${domain} already in hosts file`);
         return { success: true, alreadyExists: true };
       }
 
@@ -1953,10 +1862,8 @@ server {
             
             if (error) {
               console.warn(`Could not update hosts file automatically: ${error.message}`);
-              console.warn(`Please add manually:\n${entries.join('\n')}`);
               resolve({ success: false, error: error.message });
             } else {
-              console.log(`Added ${domain} to hosts file`);
               resolve({ success: true });
             }
           });
@@ -1970,10 +1877,8 @@ server {
           sudo.exec(command, options, (error, stdout, stderr) => {
             if (error) {
               console.warn(`Could not update hosts file automatically: ${error.message}`);
-              console.warn(`Please add manually:\n${entries.join('\n')}`);
               resolve({ success: false, error: error.message });
             } else {
-              console.log(`Added ${domain} to hosts file`);
               resolve({ success: true });
             }
           });
@@ -1981,7 +1886,6 @@ server {
       }
     } catch (error) {
       console.warn(`Could not read hosts file: ${error.message}`);
-      console.warn(`Please add manually: 127.0.0.1\t${domain}`);
       return { success: false, error: error.message };
     }
   }

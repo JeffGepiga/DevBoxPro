@@ -61,8 +61,6 @@ async function createWindow() {
     iconPath = path.join(path.dirname(app.getPath('exe')), 'icon.png');
   }
   
-  console.log('Window icon path:', iconPath, 'exists:', fs.existsSync(iconPath));
-  
   // Create native image for better Windows support
   let icon;
   if (fs.existsSync(iconPath)) {
@@ -89,22 +87,14 @@ async function createWindow() {
 
   // Load the app
   if (isDev) {
-    console.log('Loading dev URL: http://localhost:3000');
     await mainWindow.loadURL('http://localhost:3000');
-    console.log('Dev URL loaded');
     // Uncomment to open DevTools in dev mode
     // mainWindow.webContents.openDevTools();
   } else {
     // In production, renderer is at /renderer/index.html in the asar
     const rendererPath = path.join(app.getAppPath(), 'renderer', 'index.html');
-    console.log('Loading renderer from:', rendererPath);
     await mainWindow.loadFile(rendererPath);
   }
-
-  // Log renderer console messages
-  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    console.log(`[Renderer] ${message}`);
-  });
 
   // Log renderer errors
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
@@ -112,7 +102,6 @@ async function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => {
-    console.log('Window ready to show');
     mainWindow.show();
   });
 
@@ -124,7 +113,6 @@ async function createWindow() {
   // Fallback: show window after timeout if ready-to-show doesn't fire
   setTimeout(() => {
     if (mainWindow && !mainWindow.isVisible()) {
-      console.log('Forcing window to show after timeout');
       mainWindow.show();
     }
   }, 3000);
@@ -172,26 +160,18 @@ function createTray() {
     }
     
     // Find first existing icon
-    iconPath = possiblePaths.find(p => {
-      const exists = fs.existsSync(p);
-      console.log('Checking tray icon path:', p, 'exists:', exists);
-      return exists;
-    });
+    iconPath = possiblePaths.find(p => fs.existsSync(p));
     
     // Check if tray icon exists, skip tray if not
     if (!iconPath) {
-      console.log('Tray icon not found in any location');
       return;
     }
-    
-    console.log('Using tray icon:', iconPath);
     
     // Create native image for better Windows support - resize for tray
     let icon = nativeImage.createFromPath(iconPath);
     
     // Check if icon loaded successfully
     if (icon.isEmpty()) {
-      console.log('Tray icon loaded but is empty');
       return;
     }
     
@@ -199,7 +179,6 @@ function createTray() {
     const traySize = isWindows ? 16 : 22;
     icon = icon.resize({ width: traySize, height: traySize });
     
-    console.log('Creating tray with icon');
     tray = new Tray(icon);
 
   const contextMenu = Menu.buildFromTemplate([
@@ -244,7 +223,6 @@ function createTray() {
 }
 
 async function initializeManagers() {
-  console.log('Initializing managers...');
   const startTime = Date.now();
   
   const resourcePath = getResourcePath();
@@ -269,8 +247,6 @@ async function initializeManagers() {
     managers.ssl.initialize(),
   ]);
 
-  console.log(`Critical init done in ${Date.now() - startTime}ms`);
-  
   return managers;
 }
 
@@ -293,8 +269,6 @@ async function initializeManagersDeferred() {
     // These depend on others or are slower
     await managers.binaryDownload.initialize();
     await managers.cli.initialize(resourcePath);
-    
-    console.log(`Deferred init done in ${Date.now() - startTime}ms`);
   } catch (error) {
     console.error('Error in deferred initialization:', error);
   }
@@ -302,32 +276,30 @@ async function initializeManagersDeferred() {
 
 async function startup() {
   try {
-    console.log('DevBox Pro starting...');
     const startTime = Date.now();
 
     // Initialize critical managers only (fast)
     await initializeManagers();
-    console.log(`Managers created in ${Date.now() - startTime}ms`);
 
     // Create main window immediately so user sees the app
     await createWindow();
-    console.log(`Window created in ${Date.now() - startTime}ms`);
 
     // Create system tray
     createTray();
 
     // Setup IPC handlers
-    setupIpcHandlers(ipcMain, managers, mainWindow);
-    console.log(`IPC handlers ready in ${Date.now() - startTime}ms`);
+    try {
+      setupIpcHandlers(ipcMain, managers, mainWindow);
+      console.log('[Main] IPC handlers setup complete');
+    } catch (err) {
+      console.error('[Main] Failed to setup IPC handlers:', err);
+    }
 
     // Initialize remaining managers in background (don't block UI)
     initializeManagersDeferred().then(() => {
-      console.log(`Full initialization complete in ${Date.now() - startTime}ms`);
-      
       // Auto-start services if enabled (after deferred init)
       const settings = managers.config.get('settings', {});
       if (settings.autoStartServices) {
-        console.log('Auto-starting services...');
         managers.service.startCoreServices().catch(err => {
           console.error('Error auto-starting services:', err);
         });
@@ -339,10 +311,8 @@ async function startup() {
       const projects = managers.project.getAllProjects();
       const autoStartProjects = projects.filter(p => p.autoStart);
       if (autoStartProjects.length > 0) {
-        console.log(`Auto-starting ${autoStartProjects.length} project(s)...`);
         for (const project of autoStartProjects) {
           try {
-            console.log(`Auto-starting project: ${project.name}`);
             await managers.project.startProject(project.id);
           } catch (err) {
             console.error(`Failed to auto-start project ${project.name}:`, err.message);
@@ -352,8 +322,6 @@ async function startup() {
     } catch (err) {
       console.error('Error auto-starting projects:', err);
     }
-
-    console.log('DevBox Pro started successfully!');
   } catch (error) {
     console.error('Failed to start DevBox Pro:', error);
   }
@@ -397,22 +365,16 @@ async function gracefulShutdown() {
   }
   isShuttingDown = true;
   
-  console.log('Shutting down DevBox Pro...');
-  
   try {
     // Stop all running projects first
     if (managers.project) {
-      console.log('Stopping all projects...');
       await managers.project.stopAllProjects();
     }
     
     // Then stop all services
     if (managers.service) {
-      console.log('Stopping all services...');
       await managers.service.stopAllServices();
     }
-    
-    console.log('DevBox Pro shutdown complete.');
   } catch (error) {
     console.error('Error during shutdown:', error);
   }
