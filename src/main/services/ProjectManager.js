@@ -717,6 +717,54 @@ class ProjectManager {
     console.log(`Synced environment to ${envPath}`);
   }
 
+  /**
+   * Read environment variables from the project's .env file
+   */
+  async readEnvFile(projectId) {
+    const project = this.getProject(projectId);
+    if (!project || !project.path) {
+      throw new Error('Project not found');
+    }
+
+    const envPath = path.join(project.path, '.env');
+    
+    if (!await fs.pathExists(envPath)) {
+      console.log('.env file does not exist');
+      return {};
+    }
+
+    const envContent = await fs.readFile(envPath, 'utf-8');
+    const environment = {};
+    
+    // Parse .env file line by line
+    const lines = envContent.split('\n');
+    for (const line of lines) {
+      // Skip comments and empty lines
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) {
+        continue;
+      }
+      
+      // Parse KEY=VALUE format
+      const equalsIndex = trimmed.indexOf('=');
+      if (equalsIndex > 0) {
+        const key = trimmed.substring(0, equalsIndex).trim();
+        let value = trimmed.substring(equalsIndex + 1).trim();
+        
+        // Remove surrounding quotes if present
+        if ((value.startsWith('"') && value.endsWith('"')) || 
+            (value.startsWith("'") && value.endsWith("'"))) {
+          value = value.slice(1, -1);
+        }
+        
+        environment[key] = value;
+      }
+    }
+    
+    console.log(`Read ${Object.keys(environment).length} variables from ${envPath}`);
+    return environment;
+  }
+
   async deleteProject(id, deleteFiles = false) {
     const project = this.getProject(id);
     if (!project) {

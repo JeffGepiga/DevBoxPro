@@ -1110,20 +1110,47 @@ function WorkersTab({ processes, projectId, onRefresh }) {
 }
 
 function EnvironmentTab({ project, onRefresh }) {
-  const [environment, setEnvironment] = useState(project.environment || {});
+  const [environment, setEnvironment] = useState({});
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [saveMessage, setSaveMessage] = useState(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [originalEnv, setOriginalEnv] = useState({});
+
+  // Load environment from .env file on mount
+  useEffect(() => {
+    const loadEnvFile = async () => {
+      setIsLoading(true);
+      try {
+        const envFromFile = await window.devbox?.projects.readEnv(project.id);
+        if (envFromFile && Object.keys(envFromFile).length > 0) {
+          setEnvironment(envFromFile);
+          setOriginalEnv(envFromFile);
+        } else {
+          // Fallback to project.environment if .env file doesn't exist
+          setEnvironment(project.environment || {});
+          setOriginalEnv(project.environment || {});
+        }
+      } catch (error) {
+        console.error('Failed to load .env file:', error);
+        // Fallback to project.environment
+        setEnvironment(project.environment || {});
+        setOriginalEnv(project.environment || {});
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadEnvFile();
+  }, [project.id]);
 
   // Check if there are unsaved changes
   useEffect(() => {
-    const originalEnv = project.environment || {};
     const hasChanged = JSON.stringify(environment) !== JSON.stringify(originalEnv);
     setHasChanges(hasChanged);
-  }, [environment, project.environment]);
+  }, [environment, originalEnv]);
 
   const handleValueChange = (key, value) => {
     setEnvironment((prev) => ({ ...prev, [key]: value }));
@@ -1158,9 +1185,9 @@ function EnvironmentTab({ project, onRefresh }) {
         
         try {
           // Clear and rebuild all caches
-          await window.devbox?.php.runCommand(project.id, 'php artisan config:clear');
-          await window.devbox?.php.runCommand(project.id, 'php artisan cache:clear');
-          await window.devbox?.php.runCommand(project.id, 'php artisan config:cache');
+          await window.devbox?.php.runArtisan(project.id, 'config:clear');
+          await window.devbox?.php.runArtisan(project.id, 'cache:clear');
+          await window.devbox?.php.runArtisan(project.id, 'config:cache');
           setSaveMessage({ type: 'success', text: 'Environment saved and Laravel caches refreshed!' });
         } catch (optimizeError) {
           console.warn('Cache optimization failed:', optimizeError);
@@ -1173,6 +1200,7 @@ function EnvironmentTab({ project, onRefresh }) {
       
       // Refresh project data
       onRefresh?.();
+      setOriginalEnv(environment);
       setHasChanges(false);
     } catch (error) {
       console.error('Failed to save environment:', error);
@@ -1188,6 +1216,17 @@ function EnvironmentTab({ project, onRefresh }) {
     warning: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400',
     error: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400',
   };
+
+  if (isLoading) {
+    return (
+      <div className="card p-6">
+        <div className="flex items-center justify-center py-8">
+          <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+          <span className="ml-2 text-gray-500 dark:text-gray-400">Loading environment variables...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="card p-6">

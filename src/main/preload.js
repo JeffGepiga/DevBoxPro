@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('devbox', {
     updateServiceVersions: (id, versions) => ipcRenderer.invoke('projects:updateServiceVersions', id, versions),
     checkCompatibility: (config) => ipcRenderer.invoke('projects:checkCompatibility', config),
     getCompatibilityRules: () => ipcRenderer.invoke('projects:getCompatibilityRules'),
+    // Environment operations
+    readEnv: (id) => ipcRenderer.invoke('projects:readEnv', id),
   },
 
   // PHP operations
@@ -35,6 +37,7 @@ contextBridge.exposeInMainWorld('devbox', {
     toggleExtension: (version, extension, enabled) =>
       ipcRenderer.invoke('php:toggleExtension', version, extension, enabled),
     runCommand: (projectId, command) => ipcRenderer.invoke('php:runCommand', projectId, command),
+    runArtisan: (projectId, artisanCommand) => ipcRenderer.invoke('php:runArtisan', projectId, artisanCommand),
   },
 
   // Service operations

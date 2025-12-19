@@ -38,6 +38,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return project.updateProject(id, projectConfig);
   });
 
+  ipcMain.handle('projects:readEnv', async (event, id) => {
+    return project.readEnvFile(id);
+  });
+
   ipcMain.handle('projects:delete', async (event, id, deleteFiles) => {
     return project.deleteProject(id, deleteFiles);
   });
@@ -179,6 +183,12 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     const projectData = project.getProject(projectId);
     if (!projectData) throw new Error('Project not found');
     return php.runCommand(projectData.phpVersion, projectData.path, command);
+  });
+
+  ipcMain.handle('php:runArtisan', async (event, projectId, artisanCommand) => {
+    const projectData = project.getProject(projectId);
+    if (!projectData) throw new Error('Project not found');
+    return php.runArtisan(projectData.phpVersion, projectData.path, artisanCommand);
   });
 
   // ============ SERVICE HANDLERS ============
