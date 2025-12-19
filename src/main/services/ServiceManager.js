@@ -1226,6 +1226,9 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       return;
     }
 
+    // Kill any orphan MariaDB processes before starting
+    await this.killOrphanMariaDBProcesses();
+
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'mariadb', 'data');
     
@@ -1684,6 +1687,21 @@ appendfilename "appendonly.aof"
         });
       } else {
         exec('pkill -9 mysqld 2>/dev/null', (error) => {
+          setTimeout(resolve, 1000);
+        });
+      }
+    });
+  }
+
+  async killOrphanMariaDBProcesses() {
+    return new Promise((resolve) => {
+      if (process.platform === 'win32') {
+        exec('taskkill /F /IM mariadbd.exe 2>nul', (error) => {
+          // Ignore errors - process may not exist
+          setTimeout(resolve, 1000); // Wait a bit for locks to release
+        });
+      } else {
+        exec('pkill -9 mariadbd 2>/dev/null', (error) => {
           setTimeout(resolve, 1000);
         });
       }

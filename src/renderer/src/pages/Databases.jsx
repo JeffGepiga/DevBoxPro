@@ -26,29 +26,47 @@ function Databases() {
   const [activeDatabaseType, setActiveDatabaseType] = useState('mysql');
   const [dbInfo, setDbInfo] = useState(null);
   const [binariesStatus, setBinariesStatus] = useState(null);
+  const [servicesStatus, setServicesStatus] = useState({});
   const [resetForm, setResetForm] = useState({ user: 'root', password: '' });
   const [resetting, setResetting] = useState(false);
+  const [startingService, setStartingService] = useState(false);
+  const [serviceError, setServiceError] = useState(null);
+
   useEffect(() => {
     loadInitialData();
+    // Poll service status every 3 seconds
+    const interval = setInterval(loadServicesStatus, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
     if (activeDatabaseType) {
       loadDatabases();
     }
-  }, [activeDatabaseType]);
+  }, [activeDatabaseType, servicesStatus]);
+
+  const loadServicesStatus = async () => {
+    try {
+      const status = await window.devbox?.services.getStatus();
+      setServicesStatus(status || {});
+    } catch (error) {
+      console.error('Error loading services status:', error);
+    }
+  };
 
   const loadInitialData = async () => {
     setLoading(true);
     try {
-      const [dbType, status, info] = await Promise.all([
+      const [dbType, status, info, services] = await Promise.all([
         window.devbox?.database.getActiveDatabaseType(),
         window.devbox?.binaries.getStatus(),
         window.devbox?.database.getDatabaseInfo(),
+        window.devbox?.services.getStatus(),
       ]);
       setActiveDatabaseType(dbType || 'mysql');
       setBinariesStatus(status);
       setDbInfo(info);
+      setServicesStatus(services || {});
       setResetForm({ user: info?.user || 'root', password: '' });
     } catch (error) {
       console.error('Error loading initial data:', error);
@@ -57,12 +75,23 @@ function Databases() {
   };
 
   const loadDatabases = async () => {
+    // Check if the active database service is running
+    const serviceStatus = servicesStatus[activeDatabaseType];
+    if (serviceStatus?.status !== 'running') {
+      setDatabases([]);
+      setLoading(false);
+      return;
+    }
+    
     setLoading(true);
+    setServiceError(null);
     try {
       const dbs = await window.devbox?.database.getDatabases();
       setDatabases(dbs || []);
     } catch (error) {
       console.error('Error loading databases:', error);
+      setServiceError(error.message);
+      setDatabases([]);
     } finally {
       setLoading(false);
     }
@@ -74,11 +103,29 @@ function Databases() {
     try {
       await window.devbox?.database.setActiveDatabaseType(dbType);
       setActiveDatabaseType(dbType);
+      setServiceError(null);
       // Reload databases after switching
       await loadDatabases();
     } catch (error) {
       console.error('Error switching database:', error);
       alert('Failed to switch database type: ' + error.message);
+    }
+  };
+
+  const handleStartService = async () => {
+    setStartingService(true);
+    setServiceError(null);
+    try {
+      await window.devbox?.services.start(activeDatabaseType);
+      // Wait a moment for service to fully start
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      await loadServicesStatus();
+      await loadDatabases();
+    } catch (error) {
+      console.error('Error starting service:', error);
+      setServiceError(`Failed to start ${activeDatabaseType}: ${error.message}`);
+    } finally {
+      setStartingService(false);
     }
   };
 
@@ -181,8 +228,10 @@ function Databases() {
   const mysqlInstalled = binariesStatus?.mysql?.installed;
   const mariadbInstalled = binariesStatus?.mariadb?.installed;
   const dbTypeLabel = activeDatabaseType === 'mysql' ? 'MySQL' : 'MariaDB';
+  const currentServiceStatus = servicesStatus[activeDatabaseType];
+  const isServiceRunning = currentServiceStatus?.status === 'running';
 
-  if (loading && !databases.length) {
+  if (loading && !databases.length && isServiceRunning) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
@@ -201,11 +250,19 @@ function Databases() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={openPhpMyAdmin} className="btn-secondary">
+          <button 
+            onClick={openPhpMyAdmin} 
+            className="btn-secondary"
+            disabled={!isServiceRunning}
+          >
             <ExternalLink className="w-4 h-4" />
             phpMyAdmin
           </button>
-          <button onClick={() => setShowCreateModal(true)} className="btn-primary">
+          <button 
+            onClick={() => setShowCreateModal(true)} 
+            className="btn-primary"
+            disabled={!isServiceRunning}
+          >
             <Plus className="w-4 h-4" />
             New Database
           </button>
@@ -265,6 +322,49 @@ function Databases() {
           </div>
         )}
       </div>
+
+      {/* Service Not Running Warning */}
+      {!isServiceRunning && (
+        <div className="card p-6 mb-6 border-2 border-yellow-400 dark:border-yellow-600 bg-yellow-50 dark:bg-yellow-900/20">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-800 rounded-full flex items-center justify-center">
+                <Database className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 dark:text-white">
+                  {dbTypeLabel} is not running
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Start the {dbTypeLabel} service to view and manage databases
+                </p>
+                {serviceError && (
+                  <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                    {serviceError}
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={handleStartService}
+              disabled={startingService}
+              className="btn-primary"
+            >
+              {startingService ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <Database className="w-4 h-4" />
+                  Start {dbTypeLabel}
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Search */}
       <div className="card p-4 mb-6">

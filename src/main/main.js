@@ -191,10 +191,10 @@ async function initializeManagers() {
   managers.log = new LogManager(configStore);
   managers.php = new PhpManager(resourcePath, configStore);
   managers.ssl = new SslManager(resourcePath, configStore);
-  managers.database = new DatabaseManager(resourcePath, configStore);
+  managers.database = new DatabaseManager(resourcePath, configStore, managers);
   managers.supervisor = new SupervisorManager(resourcePath, configStore);
-  managers.project = new ProjectManager(configStore, managers);
   managers.service = new ServiceManager(resourcePath, configStore, managers);
+  managers.project = new ProjectManager(configStore, managers);
   managers.binaryDownload = new BinaryDownloadManager();
   managers.webServer = new WebServerManager(configStore, managers);
 

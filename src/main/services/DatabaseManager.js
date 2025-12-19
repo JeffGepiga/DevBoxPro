@@ -5,9 +5,10 @@ const net = require('net');
 const { app } = require('electron');
 
 class DatabaseManager {
-  constructor(resourcePath, configStore) {
+  constructor(resourcePath, configStore, managers = {}) {
     this.resourcePath = resourcePath;
     this.configStore = configStore;
+    this.managers = managers;
     this.dbConfig = {
       host: '127.0.0.1',
       port: 3306,
@@ -50,10 +51,55 @@ class DatabaseManager {
     return {
       type: dbType,
       host: this.dbConfig.host,
-      port: settings.mysqlPort || 3306,
+      port: this.getActualPort(),
       user: settings.dbUser || 'root',
       password: settings.dbPassword || '',
     };
+  }
+
+  // Get the actual running port for the active database type
+  getActualPort() {
+    const dbType = this.getActiveDatabaseType();
+    const settings = this.configStore.get('settings', {});
+    
+    // Try to get the actual port from ServiceManager
+    if (this.managers.service) {
+      const serviceConfig = this.managers.service.serviceConfigs[dbType];
+      if (serviceConfig?.actualPort) {
+        console.log(`${dbType} using actual port: ${serviceConfig.actualPort}`);
+        return serviceConfig.actualPort;
+      }
+      
+      // Check service status - if not running, we can't connect anyway
+      const serviceStatus = this.managers.service.serviceStatus.get(dbType);
+      if (serviceStatus?.status !== 'running') {
+        console.log(`${dbType} service is not running`);
+        // Return a port that will likely fail - better than connecting to wrong service
+        return dbType === 'mariadb' ? 3307 : 3306;
+      }
+      
+      // Service is running but no actualPort stored - use status port
+      if (serviceStatus?.port) {
+        console.log(`${dbType} using status port: ${serviceStatus.port}`);
+        return serviceStatus.port;
+      }
+    }
+    
+    // Fallback to default port for the specific database type
+    // MariaDB defaults to 3306 but if MySQL is also on 3306, MariaDB would be on 3307
+    const defaultPort = dbType === 'mariadb' ? 3306 : (settings.mysqlPort || 3306);
+    console.log(`${dbType} using fallback port: ${defaultPort}`);
+    return defaultPort;
+  }
+
+  // Check if a specific database service is running
+  isServiceRunning(dbType = null) {
+    const type = dbType || this.getActiveDatabaseType();
+    if (this.managers.service) {
+      const serviceStatus = this.managers.service.serviceStatus.get(type);
+      return serviceStatus?.status === 'running';
+    }
+    return false;
   }
 
   // Reset database credentials
@@ -103,6 +149,14 @@ class DatabaseManager {
   }
 
   async listDatabases() {
+    const dbType = this.getActiveDatabaseType();
+    
+    // Check if service is running first - just return empty array if not
+    if (!this.isServiceRunning()) {
+      console.log(`${dbType} service is not running, returning empty database list`);
+      return [];
+    }
+    
     const result = await this.runDbQuery('SHOW DATABASES');
     return result.map((row) => ({
       name: row.Database,
@@ -140,14 +194,17 @@ class DatabaseManager {
     console.log(`Importing database ${safeName} from ${filePath}`);
 
     const clientPath = this.getDbClientPath();
+    const port = this.getActualPort();
+    const settings = this.configStore.get('settings', {});
+    const user = settings.dbUser || this.dbConfig.user;
 
     return new Promise((resolve, reject) => {
       const proc = spawn(
         clientPath,
         [
           `-h${this.dbConfig.host}`,
-          `-P${this.dbConfig.port}`,
-          `-u${this.dbConfig.user}`,
+          `-P${port}`,
+          `-u${user}`,
           safeName,
         ],
         {
@@ -185,14 +242,17 @@ class DatabaseManager {
     console.log(`Exporting database ${safeName} to ${outputPath}`);
 
     const dumpPath = this.getDbDumpPath();
+    const port = this.getActualPort();
+    const settings = this.configStore.get('settings', {});
+    const user = settings.dbUser || this.dbConfig.user;
 
     return new Promise((resolve, reject) => {
       const proc = spawn(
         dumpPath,
         [
           `-h${this.dbConfig.host}`,
-          `-P${this.dbConfig.port}`,
-          `-u${this.dbConfig.user}`,
+          `-P${port}`,
+          `-u${user}`,
           '--single-transaction',
           '--routines',
           '--triggers',
@@ -234,12 +294,15 @@ class DatabaseManager {
 
   async runDbQuery(query, database = null) {
     const clientPath = this.getDbClientPath();
+    const port = this.getActualPort();
+    const settings = this.configStore.get('settings', {});
+    const user = settings.dbUser || this.dbConfig.user;
 
     return new Promise((resolve, reject) => {
       const args = [
         `-h${this.dbConfig.host}`,
-        `-P${this.dbConfig.port}`,
-        `-u${this.dbConfig.user}`,
+        `-P${port}`,
+        `-u${user}`,
         '-N', // Skip column names
         '-B', // Batch mode
         '-e',
