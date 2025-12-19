@@ -531,8 +531,12 @@ class BinaryDownloadManager {
     // Load cached config from previous updates
     await this.loadCachedConfig();
     
-    // Enable extensions in existing PHP installations
-    await this.enablePhpExtensions();
+    // Enable extensions in existing PHP installations (run in background, don't block startup)
+    setImmediate(() => {
+      this.enablePhpExtensions().catch(err => {
+        console.warn('Error enabling PHP extensions:', err.message);
+      });
+    });
   }
 
   // Load cached binary config from local storage

@@ -518,29 +518,33 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   // ============ BINARY DOWNLOAD HANDLERS ============
-  const { binaryDownload, webServer } = managers;
+  // Note: binaryDownload may not be initialized immediately, access via managers object
   
-  if (binaryDownload) {
-    ipcMain.handle('binaries:getInstalled', async () => {
-      return binaryDownload.getInstalledBinaries();
-    });
+  ipcMain.handle('binaries:getInstalled', async () => {
+    if (!managers.binaryDownload) return {};
+    return managers.binaryDownload.getInstalledBinaries();
+  });
 
-    ipcMain.handle('binaries:getActiveDownloads', async () => {
-      return binaryDownload.getActiveDownloads();
-    });
+  ipcMain.handle('binaries:getActiveDownloads', async () => {
+    if (!managers.binaryDownload) return {};
+    return managers.binaryDownload.getActiveDownloads();
+  });
 
-    // Check for binary updates from remote GitHub config
-    ipcMain.handle('binaries:checkForUpdates', async () => {
-      return binaryDownload.checkForUpdates();
-    });
+  // Check for binary updates from remote GitHub config
+  ipcMain.handle('binaries:checkForUpdates', async () => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized yet');
+    return managers.binaryDownload.checkForUpdates();
+  });
 
-    // Apply updates from remote config
-    ipcMain.handle('binaries:applyUpdates', async () => {
-      return binaryDownload.applyUpdates();
-    });
+  // Apply updates from remote config
+  ipcMain.handle('binaries:applyUpdates', async () => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized yet');
+    return managers.binaryDownload.applyUpdates();
+  });
 
-    ipcMain.handle('binaries:getStatus', async () => {
-      const installed = await binaryDownload.getInstalledBinaries();
+  ipcMain.handle('binaries:getStatus', async () => {
+    if (!managers.binaryDownload) return { php: {}, mysql: {}, mariadb: {}, redis: {}, nginx: {}, apache: {}, nodejs: {}, mailpit: false, phpmyadmin: false, composer: false };
+    const installed = await managers.binaryDownload.getInstalledBinaries();
       
       // Transform to a more detailed status format for versioned services
       const status = {
@@ -592,164 +596,197 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       }
 
       return status;
-    });
+  });
 
-    // Get available versions for each service
-    ipcMain.handle('binaries:getAvailableVersions', async () => {
-      return binaryDownload.getVersionMeta();
-    });
+  // Get available versions for each service
+  ipcMain.handle('binaries:getAvailableVersions', async () => {
+    if (!managers.binaryDownload) return {};
+    return managers.binaryDownload.getVersionMeta();
+  });
 
-    // Get full service configuration (versions, ports, offsets)
-    ipcMain.handle('binaries:getServiceConfig', async () => {
-      return {
-        versions: SERVICE_VERSIONS,
-        portOffsets: VERSION_PORT_OFFSETS,
-        defaultPorts: DEFAULT_PORTS,
-        serviceInfo: SERVICE_INFO,
-      };
-    });
+  // Get full service configuration (versions, ports, offsets)
+  ipcMain.handle('binaries:getServiceConfig', async () => {
+    return {
+      versions: SERVICE_VERSIONS,
+      portOffsets: VERSION_PORT_OFFSETS,
+      defaultPorts: DEFAULT_PORTS,
+      serviceInfo: SERVICE_INFO,
+    };
+  });
 
-    ipcMain.handle('binaries:getDownloadUrls', async () => {
-      return binaryDownload.getDownloadUrls();
-    });
+  ipcMain.handle('binaries:getDownloadUrls', async () => {
+    if (!managers.binaryDownload) return {};
+    return managers.binaryDownload.getDownloadUrls();
+  });
 
-    ipcMain.handle('binaries:downloadPhp', async (event, version) => {
-      return binaryDownload.downloadPhp(version);
-    });
+  ipcMain.handle('binaries:downloadPhp', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadPhp(version);
+  });
 
-    ipcMain.handle('binaries:downloadMysql', async (event, version) => {
-      return binaryDownload.downloadMysql(version);
-    });
+  ipcMain.handle('binaries:downloadMysql', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadMysql(version);
+  });
 
-    ipcMain.handle('binaries:downloadMariadb', async (event, version) => {
-      return binaryDownload.downloadMariadb(version);
-    });
+  ipcMain.handle('binaries:downloadMariadb', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadMariadb(version);
+  });
 
-    ipcMain.handle('binaries:downloadRedis', async (event, version) => {
-      return binaryDownload.downloadRedis(version);
-    });
+  ipcMain.handle('binaries:downloadRedis', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadRedis(version);
+  });
 
-    ipcMain.handle('binaries:downloadMailpit', async () => {
-      return binaryDownload.downloadMailpit();
-    });
+  ipcMain.handle('binaries:downloadMailpit', async () => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadMailpit();
+  });
 
-    ipcMain.handle('binaries:downloadPhpMyAdmin', async () => {
-      return binaryDownload.downloadPhpMyAdmin();
-    });
+  ipcMain.handle('binaries:downloadPhpMyAdmin', async () => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadPhpMyAdmin();
+  });
 
-    ipcMain.handle('binaries:downloadNginx', async (event, version) => {
-      return binaryDownload.downloadNginx(version);
-    });
+  ipcMain.handle('binaries:downloadNginx', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadNginx(version);
+  });
 
-    ipcMain.handle('binaries:downloadApache', async (event, version) => {
-      return binaryDownload.downloadApache(version);
-    });
+  ipcMain.handle('binaries:downloadApache', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadApache(version);
+  });
 
-    ipcMain.handle('binaries:importApache', async (event, filePath) => {
-      return binaryDownload.importApache(filePath);
-    });
+  ipcMain.handle('binaries:importApache', async (event, filePath) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.importApache(filePath);
+  });
 
-    // Generic binary import for any service
-    ipcMain.handle('binaries:import', async (event, serviceName, version, filePath) => {
-      return binaryDownload.importBinary(serviceName, version, filePath);
-    });
+  // Generic binary import for any service
+  ipcMain.handle('binaries:import', async (event, serviceName, version, filePath) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.importBinary(serviceName, version, filePath);
+  });
 
-    ipcMain.handle('binaries:openApacheDownloadPage', async () => {
-      const { shell } = require('electron');
-      await shell.openExternal('https://www.apachelounge.com/download/');
-      return { success: true };
-    });
+  ipcMain.handle('binaries:openApacheDownloadPage', async () => {
+    const { shell } = require('electron');
+    await shell.openExternal('https://www.apachelounge.com/download/');
+    return { success: true };
+  });
 
-    ipcMain.handle('binaries:downloadNodejs', async (event, version) => {
-      return binaryDownload.downloadNodejs(version);
-    });
+  ipcMain.handle('binaries:downloadNodejs', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadNodejs(version);
+  });
 
-    ipcMain.handle('binaries:downloadComposer', async () => {
-      return binaryDownload.downloadComposer();
-    });
+  ipcMain.handle('binaries:downloadComposer', async () => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadComposer();
+  });
 
-    ipcMain.handle('binaries:runComposer', async (event, projectPath, command, phpVersion) => {
-      return binaryDownload.runComposer(projectPath, command, phpVersion);
-    });
+  ipcMain.handle('binaries:runComposer', async (event, projectPath, command, phpVersion) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.runComposer(projectPath, command, phpVersion);
+  });
 
-    ipcMain.handle('binaries:runNpm', async (event, projectPath, command, nodeVersion) => {
-      return binaryDownload.runNpm(projectPath, command, nodeVersion);
-    });
+  ipcMain.handle('binaries:runNpm', async (event, projectPath, command, nodeVersion) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.runNpm(projectPath, command, nodeVersion);
+  });
 
-    ipcMain.handle('binaries:remove', async (event, type, version) => {
-      return binaryDownload.removeBinary(type, version);
-    });
+  ipcMain.handle('binaries:remove', async (event, type, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.removeBinary(type, version);
+  });
 
-    // Scan for custom imported versions
-    ipcMain.handle('binaries:scanCustomVersions', async () => {
-      return binaryDownload.scanCustomVersions();
-    });
+  // Scan for custom imported versions
+  ipcMain.handle('binaries:scanCustomVersions', async () => {
+    if (!managers.binaryDownload) return {};
+    return managers.binaryDownload.scanCustomVersions();
+  });
 
-    // PHP.ini handlers
-    ipcMain.handle('binaries:getPhpIni', async (event, version) => {
-      const platform = process.platform === 'win32' ? 'win' : 'mac';
-      const phpPath = path.join(binaryDownload.resourcesPath, 'php', version, platform);
-      const iniPath = path.join(phpPath, 'php.ini');
-      
-      if (await fs.pathExists(iniPath)) {
-        return await fs.readFile(iniPath, 'utf8');
-      }
-      return null;
-    });
+  // PHP.ini handlers
+  ipcMain.handle('binaries:getPhpIni', async (event, version) => {
+    if (!managers.binaryDownload) return null;
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const phpPath = path.join(managers.binaryDownload.resourcesPath, 'php', version, platform);
+    const iniPath = path.join(phpPath, 'php.ini');
+    
+    if (await fs.pathExists(iniPath)) {
+      return await fs.readFile(iniPath, 'utf8');
+    }
+    return null;
+  });
 
-    ipcMain.handle('binaries:savePhpIni', async (event, version, content) => {
-      const platform = process.platform === 'win32' ? 'win' : 'mac';
-      const phpPath = path.join(binaryDownload.resourcesPath, 'php', version, platform);
-      const iniPath = path.join(phpPath, 'php.ini');
-      
-      await fs.writeFile(iniPath, content, 'utf8');
-      return { success: true };
-    });
+  ipcMain.handle('binaries:savePhpIni', async (event, version, content) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const phpPath = path.join(managers.binaryDownload.resourcesPath, 'php', version, platform);
+    const iniPath = path.join(phpPath, 'php.ini');
+    
+    await fs.writeFile(iniPath, content, 'utf8');
+    return { success: true };
+  });
 
-    ipcMain.handle('binaries:resetPhpIni', async (event, version) => {
-      const platform = process.platform === 'win32' ? 'win' : 'mac';
-      const phpPath = path.join(binaryDownload.resourcesPath, 'php', version, platform);
-      
-      await binaryDownload.createPhpIni(phpPath, version);
-      return { success: true };
-    });
+  ipcMain.handle('binaries:resetPhpIni', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const phpPath = path.join(managers.binaryDownload.resourcesPath, 'php', version, platform);
+    
+    await managers.binaryDownload.createPhpIni(phpPath, version);
+    return { success: true };
+  });
 
-    // Listen to download progress and forward to renderer
-    binaryDownload.addProgressListener((id, progress) => {
-      mainWindow?.webContents.send('binaries:progress', { id, progress });
-    });
-  }
+  // Setup progress listener when binaryDownload becomes available
+  const setupBinaryProgressListener = () => {
+    if (managers.binaryDownload) {
+      managers.binaryDownload.addProgressListener((id, progress) => {
+        mainWindow?.webContents.send('binaries:progress', { id, progress });
+      });
+    } else {
+      // Retry after a delay if not ready yet
+      setTimeout(setupBinaryProgressListener, 500);
+    }
+  };
+  setupBinaryProgressListener();
 
   // ============ WEB SERVER HANDLERS ============
-  if (webServer) {
-    ipcMain.handle('webserver:getStatus', async () => {
-      return webServer.getStatus();
-    });
+  ipcMain.handle('webserver:getStatus', async () => {
+    if (!managers.webServer) return {};
+    return managers.webServer.getStatus();
+  });
 
-    ipcMain.handle('webserver:setServerType', async (event, type) => {
-      return webServer.setServerType(type);
-    });
+  ipcMain.handle('webserver:setServerType', async (event, type) => {
+    if (!managers.webServer) throw new Error('WebServer manager not initialized');
+    return managers.webServer.setServerType(type);
+  });
 
-    ipcMain.handle('webserver:getServerType', async () => {
-      return webServer.getServerType();
-    });
+  ipcMain.handle('webserver:getServerType', async () => {
+    if (!managers.webServer) return 'nginx';
+    return managers.webServer.getServerType();
+  });
 
-    ipcMain.handle('webserver:startProject', async (event, project) => {
-      return webServer.startProject(project);
-    });
+  ipcMain.handle('webserver:startProject', async (event, project) => {
+    if (!managers.webServer) throw new Error('WebServer manager not initialized');
+    return managers.webServer.startProject(project);
+  });
 
-    ipcMain.handle('webserver:stopProject', async (event, projectId) => {
-      return webServer.stopProject(projectId);
-    });
+  ipcMain.handle('webserver:stopProject', async (event, projectId) => {
+    if (!managers.webServer) throw new Error('WebServer manager not initialized');
+    return managers.webServer.stopProject(projectId);
+  });
 
-    ipcMain.handle('webserver:reloadConfig', async () => {
-      return webServer.reloadConfig();
-    });
+  ipcMain.handle('webserver:reloadConfig', async () => {
+    if (!managers.webServer) throw new Error('WebServer manager not initialized');
+    return managers.webServer.reloadConfig();
+  });
 
-    ipcMain.handle('webserver:getRunningProjects', async () => {
-      return webServer.getRunningProjects();
-    });
-  }
+  ipcMain.handle('webserver:getRunningProjects', async () => {
+    if (!managers.webServer) return [];
+    return managers.webServer.getRunningProjects();
+  });
 
   // ============ TERMINAL HANDLERS ============
   const runningProcesses = new Map();

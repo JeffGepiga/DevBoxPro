@@ -60,15 +60,15 @@ function BinaryManager() {
     apache: false,
   });
   
-  // Service versions from backend config
+  // Service versions from backend config (with defaults)
   const [serviceVersions, setServiceVersions] = useState({
-    php: [],
-    mysql: [],
-    mariadb: [],
-    redis: [],
-    nginx: [],
-    apache: [],
-    nodejs: [],
+    php: ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'],
+    mysql: ['8.4', '8.0'],
+    mariadb: ['11.4', '10.11', '10.6'],
+    redis: ['7.4', '7.2'],
+    nginx: ['1.28', '1.26'],
+    apache: ['2.4'],
+    nodejs: ['22', '20', '18'],
   });
 
   // Check for updates state
@@ -112,10 +112,34 @@ function BinaryManager() {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await Promise.all([loadInstalled(), loadDownloadUrls(), loadServiceConfig()]);
+      
+      // Load each independently to prevent one failure from blocking all
+      try {
+        await loadInstalled();
+      } catch (error) {
+        console.error('Error loading installed binaries:', error);
+      }
+      
+      try {
+        await loadDownloadUrls();
+      } catch (error) {
+        console.error('Error loading download URLs:', error);
+      }
+      
+      try {
+        await loadServiceConfig();
+      } catch (error) {
+        console.error('Error loading service config:', error);
+      }
+      
       // Load web server preference
-      const serverType = await window.devbox?.webServer.getServerType();
-      if (serverType) setWebServerType(serverType);
+      try {
+        const serverType = await window.devbox?.webServer.getServerType();
+        if (serverType) setWebServerType(serverType);
+      } catch (error) {
+        console.error('Error loading web server type:', error);
+      }
+      
       setLoading(false);
     };
     init();

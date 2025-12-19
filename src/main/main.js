@@ -148,27 +148,58 @@ function createTray() {
     const fs = require('fs');
     let iconPath;
     
+    // Try multiple possible icon locations
+    const possiblePaths = [];
+    const isWindows = process.platform === 'win32';
+    
+    // On Windows, prefer .ico format for tray
+    const iconFile = isWindows ? 'icon.ico' : 'icon.png';
+    const fallbackFile = 'icon.png';
+    
     if (isDev) {
-      iconPath = path.join(__dirname, '../../build/icon.png');
+      possiblePaths.push(path.join(__dirname, '../../build', iconFile));
+      possiblePaths.push(path.join(__dirname, '../../build', fallbackFile));
+      possiblePaths.push(path.join(__dirname, '../../logo.ico'));
+      possiblePaths.push(path.join(__dirname, '../../resources/icons', iconFile));
     } else {
-      // In production, icon is in the app directory (extraFiles)
-      iconPath = path.join(path.dirname(app.getPath('exe')), 'icon.png');
+      // In production, try several locations
+      possiblePaths.push(path.join(path.dirname(app.getPath('exe')), iconFile));
+      possiblePaths.push(path.join(path.dirname(app.getPath('exe')), fallbackFile));
+      possiblePaths.push(path.join(process.resourcesPath, iconFile));
+      possiblePaths.push(path.join(process.resourcesPath, fallbackFile));
+      possiblePaths.push(path.join(app.getAppPath(), '..', iconFile));
+      possiblePaths.push(path.join(app.getAppPath(), '..', fallbackFile));
     }
     
-    console.log('Tray icon path:', iconPath, 'exists:', fs.existsSync(iconPath));
+    // Find first existing icon
+    iconPath = possiblePaths.find(p => {
+      const exists = fs.existsSync(p);
+      console.log('Checking tray icon path:', p, 'exists:', exists);
+      return exists;
+    });
     
     // Check if tray icon exists, skip tray if not
-    if (!fs.existsSync(iconPath)) {
-      console.log('Tray icon not found at:', iconPath);
+    if (!iconPath) {
+      console.log('Tray icon not found in any location');
       return;
     }
     
+    console.log('Using tray icon:', iconPath);
+    
     // Create native image for better Windows support - resize for tray
     let icon = nativeImage.createFromPath(iconPath);
-    // Resize icon to appropriate tray size (16x16 on Windows)
-    icon = icon.resize({ width: 16, height: 16 });
     
-    console.log('Creating tray with icon, isEmpty:', icon.isEmpty());
+    // Check if icon loaded successfully
+    if (icon.isEmpty()) {
+      console.log('Tray icon loaded but is empty');
+      return;
+    }
+    
+    // Resize icon to appropriate tray size (16x16 on Windows, can be larger on macOS)
+    const traySize = isWindows ? 16 : 22;
+    icon = icon.resize({ width: traySize, height: traySize });
+    
+    console.log('Creating tray with icon');
     tray = new Tray(icon);
 
   const contextMenu = Menu.buildFromTemplate([
@@ -213,10 +244,13 @@ function createTray() {
 }
 
 async function initializeManagers() {
+  console.log('Initializing managers...');
+  const startTime = Date.now();
+  
   const resourcePath = getResourcePath();
   const configStore = new ConfigStore();
 
-  // Initialize managers in order
+  // Initialize managers - create instances first (fast)
   managers.config = configStore;
   managers.log = new LogManager(configStore);
   managers.php = new PhpManager(resourcePath, configStore);
@@ -229,43 +263,76 @@ async function initializeManagers() {
   managers.webServer = new WebServerManager(configStore, managers);
   managers.cli = new CliManager(configStore, managers);
 
-  // Initialize all managers
-  await managers.log.initialize();
-  await managers.php.initialize();
-  await managers.ssl.initialize();
-  await managers.database.initialize();
-  await managers.supervisor.initialize();
-  await managers.project.initialize();
-  await managers.service.initialize();
-  await managers.binaryDownload.initialize();
-  await managers.webServer.initialize();
-  await managers.cli.initialize(resourcePath);
+  // Critical initializations (must complete before UI)
+  await Promise.all([
+    managers.log.initialize(),
+    managers.ssl.initialize(),
+  ]);
 
+  console.log(`Critical init done in ${Date.now() - startTime}ms`);
+  
   return managers;
+}
+
+// Non-critical initializations that can happen after window is shown
+async function initializeManagersDeferred() {
+  const startTime = Date.now();
+  const resourcePath = getResourcePath();
+  
+  try {
+    // These can run in parallel
+    await Promise.all([
+      managers.php.initialize(),
+      managers.database.initialize(),
+      managers.supervisor.initialize(),
+      managers.project.initialize(),
+      managers.service.initialize(),
+      managers.webServer.initialize(),
+    ]);
+    
+    // These depend on others or are slower
+    await managers.binaryDownload.initialize();
+    await managers.cli.initialize(resourcePath);
+    
+    console.log(`Deferred init done in ${Date.now() - startTime}ms`);
+  } catch (error) {
+    console.error('Error in deferred initialization:', error);
+  }
 }
 
 async function startup() {
   try {
     console.log('DevBox Pro starting...');
+    const startTime = Date.now();
 
-    // Initialize all managers
+    // Initialize critical managers only (fast)
     await initializeManagers();
+    console.log(`Managers created in ${Date.now() - startTime}ms`);
 
-    // Create main window
+    // Create main window immediately so user sees the app
     await createWindow();
+    console.log(`Window created in ${Date.now() - startTime}ms`);
 
     // Create system tray
     createTray();
 
     // Setup IPC handlers
     setupIpcHandlers(ipcMain, managers, mainWindow);
+    console.log(`IPC handlers ready in ${Date.now() - startTime}ms`);
 
-    // Auto-start services if enabled
-    const settings = managers.config.get('settings', {});
-    if (settings.autoStartServices) {
-      console.log('Auto-starting services...');
-      await managers.service.startCoreServices();
-    }
+    // Initialize remaining managers in background (don't block UI)
+    initializeManagersDeferred().then(() => {
+      console.log(`Full initialization complete in ${Date.now() - startTime}ms`);
+      
+      // Auto-start services if enabled (after deferred init)
+      const settings = managers.config.get('settings', {});
+      if (settings.autoStartServices) {
+        console.log('Auto-starting services...');
+        managers.service.startCoreServices().catch(err => {
+          console.error('Error auto-starting services:', err);
+        });
+      }
+    });
 
     // Auto-start projects that have autoStart enabled
     try {

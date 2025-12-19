@@ -25,6 +25,10 @@ module.exports = {
       from: 'build/icon.png',
       to: 'icon.png',
     },
+    {
+      from: 'logo.ico',
+      to: 'icon.ico',
+    },
   ],
   extraResources: [
     {

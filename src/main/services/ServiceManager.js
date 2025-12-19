@@ -131,7 +131,6 @@ class ServiceManager extends EventEmitter {
   }
 
   async initialize() {
-    console.log('Initializing ServiceManager...');
 
     // Set initial status for all services
     for (const [key, config] of Object.entries(this.serviceConfigs)) {
@@ -176,11 +175,9 @@ class ServiceManager extends EventEmitter {
     await fs.ensureDir(path.join(dataPath, 'apache'));
     await fs.ensureDir(path.join(dataPath, 'logs'));
 
-    console.log('ServiceManager initialized');
   }
 
   async startCoreServices() {
-    console.log('Starting core services...');
 
     const services = ['mysql', 'redis', 'mailpit', 'phpmyadmin'];
     const results = [];
@@ -197,7 +194,6 @@ class ServiceManager extends EventEmitter {
 
     const startedCount = results.filter(r => r.success).length;
     const notInstalledCount = results.filter(r => r.status === 'not_installed').length;
-    console.log(`Core services started: ${startedCount}/${services.length} (${notInstalledCount} not installed)`);
     return results;
   }
 
@@ -215,7 +211,6 @@ class ServiceManager extends EventEmitter {
     }
 
     const versionSuffix = version ? ` ${version}` : '';
-    console.log(`Starting ${config.name}${versionSuffix}...`);
 
     try {
       switch (serviceName) {
@@ -273,7 +268,6 @@ class ServiceManager extends EventEmitter {
     const version = defaults[serviceName];
 
     if (options.skipGrantTables) {
-      console.log(`Starting ${serviceName} ${version} with skip-grant-tables...`);
       
       if (serviceName === 'mysql') {
         await this.startMySQLWithSkipGrant(version);
@@ -321,8 +315,6 @@ class ServiceManager extends EventEmitter {
     const configPath = path.join(dataPath, 'mysql', version, 'my_skipgrant.cnf');
     await this.createMySQLConfigWithSkipGrant(configPath, dataDir, port, version);
 
-    console.log(`Starting MySQL ${version} with skip-grant-tables on port ${port}...`);
-    
     let proc;
     if (process.platform === 'win32') {
       proc = spawnHidden(mysqldPath, [`--defaults-file=${configPath}`], {
@@ -341,13 +333,11 @@ class ServiceManager extends EventEmitter {
     let mysqlReady = false;
     
     proc.stdout?.on('data', (data) => {
-      const output = data.toString().trim();
-      console.log('[MySQL skip-grant]', output);
+      // Capture but don't log to console
     });
     
     proc.stderr?.on('data', (data) => {
       const output = data.toString().trim();
-      console.log('[MySQL skip-grant stderr]', output);
       // Check for ready message in stderr (MySQL logs to stderr)
       if (output.includes('ready for connections') || output.includes('MySQL is ready')) {
         mysqlReady = true;
@@ -365,7 +355,6 @@ class ServiceManager extends EventEmitter {
     // Just wait for the process to start and give it time to initialize
     await this.waitForNamedPipeReady(`MYSQL_${version.replace(/\./g, '')}_SKIP`, 30000);
     status.status = 'running';
-    console.log(`MySQL ${version} started with skip-grant-tables (named pipe)`);
   }
 
   // Wait for Windows named pipe to be ready
@@ -380,8 +369,6 @@ class ServiceManager extends EventEmitter {
     const net = require('net');
     const fullPipePath = `\\\\.\\pipe\\${pipeName}`;
     
-    console.log(`Waiting for named pipe: ${fullPipePath}`);
-    
     while (Date.now() - startTime < timeout) {
       try {
         await new Promise((resolve, reject) => {
@@ -389,7 +376,6 @@ class ServiceManager extends EventEmitter {
           socket.setTimeout(2000);
           
           socket.on('connect', () => {
-            console.log(`Named pipe ${pipeName} is ready`);
             socket.destroy();
             resolve(true);
           });
@@ -414,7 +400,6 @@ class ServiceManager extends EventEmitter {
     }
     
     // If pipe check timed out, just continue anyway - MySQL might still be working
-    console.log(`Named pipe check timed out, but continuing anyway`);
   }
 
   // Simple wait for port to be accepting connections
@@ -526,8 +511,6 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
     // Create a temporary config with skip-grant-tables
     const configPath = path.join(dataPath, 'mariadb', version, 'my_skipgrant.cnf');
     await this.createMariaDBConfigWithSkipGrant(configPath, dataDir, port, version, mariadbPath);
-
-    console.log(`Starting MariaDB ${version} with skip-grant-tables on port ${port}...`);
     
     let proc;
     if (process.platform === 'win32') {
@@ -544,11 +527,11 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
     }
     
     proc.stdout?.on('data', (data) => {
-      console.log('[MariaDB skip-grant]', data.toString().trim());
+      // Capture but don't log to console
     });
     
     proc.stderr?.on('data', (data) => {
-      console.log('[MariaDB skip-grant stderr]', data.toString().trim());
+      // Capture but don't log to console
     });
     
     this.processes.set(this.getProcessKey('mariadb', version), proc);
@@ -562,7 +545,6 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
     // MariaDB doesn't disable networking with skip-grant-tables, but use pipe for consistency
     await this.waitForNamedPipeReady(`MARIADB_${version.replace(/\./g, '')}_SKIP`, 30000);
     status.status = 'running';
-    console.log(`MariaDB ${version} started with skip-grant-tables (named pipe)`);
   }
 
   async createMariaDBConfigWithSkipGrant(configPath, dataDir, port, version, mariadbPath) {
@@ -620,7 +602,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
     const processKey = this.getProcessKey(serviceName, version);
     const versionSuffix = version ? ` ${version}` : '';
-    console.log(`Stopping ${config.name}${versionSuffix}...`);
 
     const process = this.processes.get(processKey);
     if (process) {
@@ -689,7 +670,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
     // Release standard ports if this web server owned them
     if ((serviceName === 'nginx' || serviceName === 'apache') && this.standardPortOwner === serviceName) {
-      console.log(`${config.name} releasing standard ports (80/443)`);
       this.standardPortOwner = null;
     }
     
@@ -734,19 +714,15 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     // First, stop all running projects
     if (this.managers.project) {
       try {
-        console.log('Stopping all running projects before stopping services...');
         await this.managers.project.stopAllProjects();
-        console.log('All projects stopped');
       } catch (error) {
         console.error('Error stopping projects:', error);
       }
     }
     
     // Stop all tracked processes first
-    console.log('Stopping all tracked processes...');
     for (const [processKey, proc] of this.processes) {
       try {
-        console.log(`Stopping process: ${processKey}`);
         await this.killProcess(proc);
       } catch (error) {
         console.error(`Error stopping process ${processKey}:`, error);
@@ -785,7 +761,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     // Reset port ownership
     this.standardPortOwner = null;
     
-    console.log('All services stopped');
     return results;
   }
 
@@ -813,7 +788,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
           timeout: 5000,
           stdio: 'ignore'
         });
-        console.log(`Killed orphan ${processName} processes`);
       } catch (e) {
         // Ignore - no processes to kill or already dead
       }
@@ -830,7 +804,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       for (const pid of pids) {
         try {
           execSync(`taskkill /F /PID ${pid} 2>nul`, { windowsHide: true, timeout: 5000, stdio: 'ignore' });
-          console.log(`Killed orphan PHP process (PID: ${pid})`);
         } catch (e) {}
       }
     } catch (e) {
@@ -870,12 +843,10 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         httpPort = standardHttp;
         sslPort = standardHttps;
         this.standardPortOwner = 'nginx';
-        console.log(`Nginx claiming standard ports (${httpPort}/${sslPort})`);
       } else {
         // Standard ports not available, use alternate
         httpPort = this.webServerPorts.alternate.http;
         sslPort = this.webServerPorts.alternate.https;
-        console.log(`Standard ports not available, Nginx using alternate ports (${httpPort}/${sslPort})`);
       }
     } else if (this.standardPortOwner === 'nginx') {
       // Nginx already owns standard ports (shouldn't happen, but handle it)
@@ -885,7 +856,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       // Another web server owns standard ports, use alternate
       httpPort = this.webServerPorts.alternate.http;
       sslPort = this.webServerPorts.alternate.https;
-      console.log(`Apache owns standard ports, Nginx using alternate ports (${httpPort}/${sslPort})`);
     }
     
     // Verify chosen ports are available, find alternatives if not
@@ -894,7 +864,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       if (!httpPort) {
         throw new Error(`Could not find available HTTP port for Nginx`);
       }
-      console.log(`Nginx HTTP port in use, using ${httpPort} instead`);
     }
     
     if (!await isPortAvailable(sslPort)) {
@@ -902,7 +871,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       if (!sslPort) {
         throw new Error(`Could not find available HTTPS port for Nginx`);
       }
-      console.log(`Nginx HTTPS port in use, using ${sslPort} instead`);
     }
     
     // Store the actual ports being used
@@ -943,12 +911,10 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         const stdout = configError.stdout || '';
         const message = configError.message || '';
         const errorMsg = `${stderr} ${stdout} ${message}`;
-        console.log('Nginx config test error output:', errorMsg);
         
         // Check for port binding errors (Windows error 10013 = permission denied, 10048 = already in use)
         const portBindError = errorMsg.includes('10013') || errorMsg.includes('10048') || 
                               errorMsg.includes('bind()') || errorMsg.includes('Address already in use');
-        console.log('Is port bind error:', portBindError);
         return { success: false, error: errorMsg, isPortError: portBindError };
       }
     };
@@ -957,9 +923,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     
     // If we got a port binding error, try alternate ports
     if (!testResult.success && testResult.isPortError) {
-      console.log(`Port binding error detected: ${testResult.error}`);
-      console.log(`Current ports: HTTP=${httpPort}, SSL=${sslPort}, trying alternate ports...`);
-      
       // Always try alternate ports on port binding errors
       const newHttpPort = this.webServerPorts.alternate.http;
       const newSslPort = this.webServerPorts.alternate.https;
@@ -987,7 +950,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
           for (const file of files) {
             if (file.endsWith('.conf')) {
               await fs.remove(path.join(sitesDir, file));
-              console.log(`Removed old vhost: ${file}`);
             }
           }
         } catch (e) {
@@ -1006,7 +968,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         this.serviceConfigs.nginx.actualHttpPort = httpPort;
         this.serviceConfigs.nginx.actualSslPort = sslPort;
         
-        console.log(`Nginx now using alternate ports ${httpPort}/${sslPort}`);
         testResult = await testConfig();
       }
     }
@@ -1015,10 +976,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       console.error('Nginx configuration test failed:', testResult.error);
       throw new Error(`Nginx configuration error: ${testResult.error}`);
     }
-    
-    console.log('Nginx configuration test passed');
-
-    console.log(`Starting Nginx on ports ${httpPort} (HTTP) and ${sslPort} (HTTPS)...`);
 
     let proc;
     if (process.platform === 'win32') {
@@ -1043,7 +1000,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       });
 
       proc.on('exit', (code) => {
-        console.log(`Nginx exited with code ${code}`);
         const status = this.serviceStatus.get('nginx');
         if (status.status === 'running') {
           status.status = 'stopped';
@@ -1072,7 +1028,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       });
 
       proc.on('exit', (code) => {
-        console.log(`Nginx exited with code ${code}`);
         const status = this.serviceStatus.get('nginx');
         if (status.status === 'running') {
           status.status = 'stopped';
@@ -1094,7 +1049,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       await this.waitForService('nginx', 10000);
       status.status = 'running';
       status.startedAt = Date.now();
-      console.log(`Nginx ${version} started on port ${httpPort}`);
     } catch (error) {
       console.error(`Nginx ${version} failed to become ready:`, error);
       status.status = 'error';
@@ -1119,17 +1073,13 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
 
     if (!await fs.pathExists(nginxExe)) {
-      console.log('Nginx binary not found, cannot reload');
       return;
     }
 
     const status = this.serviceStatus.get('nginx');
     if (status?.status !== 'running') {
-      console.log('Nginx is not running, skipping reload');
       return;
     }
-
-    console.log('Reloading Nginx configuration...');
 
     return new Promise((resolve, reject) => {
       const proc = spawn(nginxExe, ['-s', 'reload', '-c', confPath, '-p', nginxPath], {
@@ -1139,7 +1089,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
       proc.on('close', (code) => {
         if (code === 0) {
-          console.log('Nginx configuration reloaded successfully');
           resolve();
         } else {
           console.error(`Nginx reload failed with code ${code}`);
@@ -1169,25 +1118,19 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     const confPath = path.join(dataPath, 'apache', 'httpd.conf');
 
     if (!await fs.pathExists(httpdExe)) {
-      console.log('Apache binary not found, cannot reload');
       return;
     }
 
     const status = this.serviceStatus.get('apache');
     if (status?.status !== 'running') {
-      console.log('Apache is not running, skipping reload');
       return;
     }
-
-    console.log('Reloading Apache configuration...');
 
     // On Windows, Apache running as a process (not service) cannot use -k graceful
     // We need to restart it to pick up config changes
     if (process.platform === 'win32') {
       try {
-        console.log('Restarting Apache on Windows to apply config changes...');
         await this.restartService('apache');
-        console.log('Apache restarted successfully');
       } catch (error) {
         console.error('Apache restart failed:', error);
         throw error;
@@ -1201,7 +1144,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
         proc.on('close', (code) => {
           if (code === 0) {
-            console.log('Apache configuration reloaded successfully');
             resolve();
           } else {
             console.error(`Apache reload failed with code ${code}`);
@@ -1311,12 +1253,10 @@ http {
         httpPort = standardHttp;
         httpsPort = standardHttps;
         this.standardPortOwner = 'apache';
-        console.log(`Apache claiming standard ports (${httpPort}/${httpsPort})`);
       } else {
         // Standard ports not available, use alternate
         httpPort = this.webServerPorts.alternate.http;
         httpsPort = this.webServerPorts.alternate.https;
-        console.log(`Standard ports not available, Apache using alternate ports (${httpPort}/${httpsPort})`);
       }
     } else if (this.standardPortOwner === 'apache') {
       // Apache already owns standard ports (shouldn't happen, but handle it)
@@ -1326,7 +1266,6 @@ http {
       // Another web server owns standard ports, use alternate
       httpPort = this.webServerPorts.alternate.http;
       httpsPort = this.webServerPorts.alternate.https;
-      console.log(`Nginx owns standard ports, Apache using alternate ports (${httpPort}/${httpsPort})`);
     }
     
     // Verify chosen ports are available, find alternatives if not
@@ -1335,7 +1274,6 @@ http {
       if (!httpPort) {
         throw new Error(`Could not find available HTTP port for Apache`);
       }
-      console.log(`Apache HTTP port in use, using ${httpPort} instead`);
     }
     
     if (!await isPortAvailable(httpsPort)) {
@@ -1343,7 +1281,6 @@ http {
       if (!httpsPort) {
         throw new Error(`Could not find available HTTPS port for Apache`);
       }
-      console.log(`Apache HTTPS port in use, using ${httpsPort} instead`);
     }
     
     // Store the actual ports being used
@@ -1375,14 +1312,10 @@ http {
       }
     };
 
-    console.log(`Testing Apache configuration...`);
     let testResult = await testConfig();
     
     // If we got a port binding error, try alternate ports
     if (!testResult.success && testResult.isPortError) {
-      console.log(`Port binding error detected: ${testResult.error}`);
-      console.log(`Current ports: HTTP=${httpPort}, HTTPS=${httpsPort}, trying alternate ports...`);
-      
       // Always try alternate ports on port binding errors
       const newHttpPort = this.webServerPorts.alternate.http;
       const newHttpsPort = this.webServerPorts.alternate.https;
@@ -1410,7 +1343,6 @@ http {
           for (const file of files) {
             if (file.endsWith('.conf')) {
               await fs.remove(path.join(vhostsDir, file));
-              console.log(`Removed old vhost: ${file}`);
             }
           }
         } catch (e) {
@@ -1429,7 +1361,6 @@ http {
         this.serviceConfigs.apache.actualHttpPort = httpPort;
         this.serviceConfigs.apache.actualSslPort = httpsPort;
         
-        console.log(`Apache now using alternate ports ${httpPort}/${httpsPort}`);
         testResult = await testConfig();
       }
     }
@@ -1438,10 +1369,6 @@ http {
       console.error('Apache configuration test failed:', testResult.error);
       throw new Error(`Apache configuration error: ${testResult.error}`);
     }
-    
-    console.log('Apache configuration test passed');
-
-    console.log(`Starting Apache on ports ${httpPort} (HTTP) and ${httpsPort} (HTTPS)...`);
     
     const proc = spawn(httpdExe, ['-f', confPath], {
       cwd: apachePath,
@@ -1466,7 +1393,6 @@ http {
     });
 
     proc.on('exit', (code) => {
-      console.log(`Apache exited with code ${code}`);
       const status = this.serviceStatus.get('apache');
       if (status.status === 'running') {
         status.status = 'stopped';
@@ -1488,7 +1414,6 @@ http {
       await this.waitForService('apache', 10000);
       status.status = 'running';
       status.startedAt = Date.now();
-      console.log(`Apache ${version} started on ports ${httpPort} (HTTP) and ${httpsPort} (HTTPS)`);
     } catch (error) {
       console.error(`Apache ${version} failed to become ready:`, error);
       status.status = 'error';
@@ -1578,7 +1503,6 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       if (!port) {
         throw new Error(`Could not find available port for MySQL starting from ${defaultPort}`);
       }
-      console.log(`MySQL port ${defaultPort} in use, using ${port} instead`);
     }
     
     // Store the actual port being used
@@ -1591,7 +1515,6 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     const isInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
 
     if (!isInitialized) {
-      console.log('Initializing MySQL data directory...');
       try {
         await this.initializeMySQLData(mysqlPath, dataDir);
       } catch (error) {
@@ -1608,8 +1531,6 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     // Create MySQL config
     await fs.ensureDir(path.dirname(configPath));
     await this.createMySQLConfig(configPath, dataDir, port, version);
-
-    console.log(`Starting MySQL ${version} server on port ${port}...`);
     
     let proc;
     if (process.platform === 'win32') {
@@ -1620,12 +1541,10 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       });
       
       proc.stdout?.on('data', (data) => {
-        console.log('[MySQL]', data.toString().trim());
         this.managers.log?.service('mysql', data.toString());
       });
 
       proc.stderr?.on('data', (data) => {
-        console.log('[MySQL stderr]', data.toString().trim());
         this.managers.log?.service('mysql', data.toString(), 'error');
       });
       
@@ -1637,7 +1556,6 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       });
 
       proc.on('exit', (code) => {
-        console.log(`MySQL exited with code ${code}`);
         const status = this.serviceStatus.get('mysql');
         if (status.status === 'running') {
           status.status = 'stopped';
@@ -1651,12 +1569,10 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       });
       
       proc.stdout.on('data', (data) => {
-        console.log('[MySQL]', data.toString().trim());
         this.managers.log?.service('mysql', data.toString());
       });
 
       proc.stderr.on('data', (data) => {
-        console.log('[MySQL stderr]', data.toString().trim());
         this.managers.log?.service('mysql', data.toString(), 'error');
       });
       
@@ -1668,7 +1584,6 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       });
 
       proc.on('exit', (code) => {
-        console.log(`MySQL exited with code ${code}`);
         const status = this.serviceStatus.get('mysql');
         if (status.status === 'running') {
           status.status = 'stopped';
@@ -1705,7 +1620,6 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     await fs.emptyDir(dataDir);
 
     return new Promise((resolve, reject) => {
-      console.log('Running MySQL initialization...');
       const proc = spawn(mysqldPath, ['--initialize-insecure', `--datadir=${dataDir}`], {
         cwd: mysqlPath,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -1715,7 +1629,6 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       let stderr = '';
       proc.stderr.on('data', (data) => {
         stderr += data.toString();
-        console.log('[MySQL init]', data.toString().trim());
       });
 
       proc.on('exit', (code) => {
@@ -1806,7 +1719,6 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       if (!port) {
         throw new Error(`Could not find available port for MariaDB starting from ${defaultPort}`);
       }
-      console.log(`MariaDB port ${defaultPort} in use, using ${port} instead`);
     }
     
     // Store the actual port being used
@@ -1816,7 +1728,6 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     const isInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
 
     if (!isInitialized) {
-      console.log('Initializing MariaDB data directory...');
       await this.initializeMariaDBData(mariadbPath, dataDir);
     }
 
@@ -1824,8 +1735,6 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 
     // Create MariaDB config
     await this.createMariaDBConfig(configPath, dataDir, port, version);
-
-    console.log(`Starting MariaDB ${version} server on port ${port}...`);
 
     const proc = spawn(mariadbd, [`--defaults-file=${configPath}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -1849,7 +1758,6 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     });
 
     proc.on('exit', (code) => {
-      console.log(`MariaDB exited with code ${code}`);
       const status = this.serviceStatus.get('mariadb');
       if (status.status === 'running') {
         status.status = 'stopped';
@@ -1870,7 +1778,6 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       await this.waitForService('mariadb', 30000);
       status.status = 'running';
       status.startedAt = Date.now();
-      console.log(`MariaDB ${version} started on port ${port}`);
     } catch (error) {
       console.error(`MariaDB ${version} failed to start:`, error.message);
       status.status = 'error';
@@ -1984,7 +1891,6 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
       if (!port) {
         throw new Error(`Could not find available port for Redis starting from ${defaultPort}`);
       }
-      console.log(`Redis port ${defaultPort} in use, using ${port} instead`);
     }
     
     // Store the actual port being used
@@ -1992,8 +1898,6 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
 
     const configPath = path.join(dataPath, 'redis', version, 'redis.conf');
     await this.createRedisConfig(configPath, dataDir, port, version);
-
-    console.log(`Starting Redis ${version} server on port ${port}...`);
     
     let proc;
     if (process.platform === 'win32') {
@@ -2035,7 +1939,6 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
       await this.waitForService('redis', 10000);
       status.status = 'running';
       status.startedAt = Date.now();
-      console.log(`Redis ${version} started on port ${port}`);
     } catch (error) {
       console.error(`Redis ${version} failed to become ready:`, error);
       status.status = 'error';
@@ -2085,7 +1988,6 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       if (!port) {
         throw new Error(`Could not find available web port for Mailpit starting from ${defaultPort}`);
       }
-      console.log(`Mailpit web port ${defaultPort} in use, using ${port} instead`);
     }
     
     if (!await isPortAvailable(smtpPort)) {
@@ -2093,14 +1995,11 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       if (!smtpPort) {
         throw new Error(`Could not find available SMTP port for Mailpit starting from ${defaultSmtpPort}`);
       }
-      console.log(`Mailpit SMTP port ${defaultSmtpPort} in use, using ${smtpPort} instead`);
     }
     
     // Store the actual ports being used
     this.serviceConfigs.mailpit.actualPort = port;
     this.serviceConfigs.mailpit.actualSmtpPort = smtpPort;
-
-    console.log(`Starting Mailpit on port ${port} (web) and ${smtpPort} (SMTP)...`);
 
     let proc;
     if (process.platform === 'win32') {
@@ -2139,7 +2038,6 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       await this.waitForService('mailpit', 10000);
       status.status = 'running';
       status.startedAt = Date.now();
-      console.log(`Mailpit started on port ${port} (web) and ${smtpPort} (SMTP)`);
     } catch (error) {
       console.error(`Mailpit failed to become ready:`, error);
       status.status = 'error';
@@ -2188,11 +2086,10 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       const extensions = phpManager.getExtensions(defaultPhp);
       const mysqliExt = extensions.find(ext => ext.name === 'mysqli');
       if (mysqliExt && !mysqliExt.enabled) {
-        console.log('Enabling mysqli extension for phpMyAdmin...');
         await phpManager.toggleExtension(defaultPhp, 'mysqli', true);
       }
     } catch (error) {
-      console.warn('Could not check/enable mysqli extension:', error.message);
+      // Ignore - extension may not be available
     }
 
     const phpmyadminPath = path.join(this.resourcePath, 'phpmyadmin');
@@ -2213,7 +2110,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
     const hasDatabaseRunning = mysqlStatus?.status === 'running' || mariadbStatus?.status === 'running';
     
     if (!hasDatabaseRunning) {
-      console.log('No database is running. phpMyAdmin will start but may not be fully functional until a database is started.');
+      // phpMyAdmin will start but may not be fully functional until a database is started
     }
 
     // Find available port dynamically
@@ -2225,7 +2122,6 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       if (!port) {
         throw new Error(`Could not find available port for phpMyAdmin starting from ${defaultPort}`);
       }
-      console.log(`phpMyAdmin port ${defaultPort} in use, using ${port} instead`);
     }
     
     // Store the actual port being used
@@ -2233,8 +2129,6 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
 
     // Get PHP directory for php.ini location
     const phpDir = path.dirname(phpPath);
-
-    console.log(`Starting phpMyAdmin on port ${port}...`);
 
     let proc;
     if (process.platform === 'win32') {
@@ -2272,7 +2166,6 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       await this.waitForService('phpmyadmin', 10000);
       status.status = 'running';
       status.startedAt = Date.now();
-      console.log(`phpMyAdmin started on port ${port}`);
     } catch (error) {
       console.error(`phpMyAdmin failed to become ready:`, error);
       status.status = 'error';
@@ -2383,7 +2276,6 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       try {
         const healthy = await config.healthCheck();
         if (healthy) {
-          console.log(`${config.name} is ready`);
           return true;
         }
       } catch (error) {
