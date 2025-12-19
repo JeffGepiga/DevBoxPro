@@ -1810,6 +1810,189 @@ server {
 
     return { success: true, webServer: newWebServer };
   }
+
+  /**
+   * Scan the projects directory for folders that aren't registered
+   * Returns an array of discovered projects with detected type
+   */
+  async scanUnregisteredProjects() {
+    const settings = this.configStore.get('settings', {});
+    const projectsDir = settings.defaultProjectsPath;
+
+    if (!projectsDir || !(await fs.pathExists(projectsDir))) {
+      console.log('Projects directory not configured or does not exist');
+      return [];
+    }
+
+    // Get all registered project paths (normalized)
+    const registeredPaths = this.getAllProjects().map((p) => 
+      path.normalize(p.path).toLowerCase()
+    );
+
+    const unregistered = [];
+
+    try {
+      const entries = await fs.readdir(projectsDir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+
+        // Skip hidden folders and common non-project folders
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+
+        const fullPath = path.join(projectsDir, entry.name);
+        const normalizedPath = path.normalize(fullPath).toLowerCase();
+
+        // Skip if already registered
+        if (registeredPaths.includes(normalizedPath)) continue;
+
+        // Check if it looks like a PHP project
+        const isPhpProject = await this.looksLikePhpProject(fullPath);
+        if (!isPhpProject) continue;
+
+        // Detect project type
+        const type = await this.detectProjectType(fullPath);
+
+        unregistered.push({
+          name: entry.name,
+          path: fullPath,
+          type,
+        });
+      }
+    } catch (error) {
+      console.error('Error scanning for unregistered projects:', error);
+    }
+
+    console.log(`Found ${unregistered.length} unregistered project(s)`);
+    return unregistered;
+  }
+
+  /**
+   * Check if a folder looks like a PHP project
+   */
+  async looksLikePhpProject(folderPath) {
+    try {
+      // Check for common PHP project indicators
+      const indicators = [
+        'composer.json',
+        'index.php',
+        'wp-config.php',
+        'wp-config-sample.php',
+        'artisan', // Laravel
+        'public/index.php',
+        'bin/console', // Symfony
+      ];
+
+      for (const indicator of indicators) {
+        if (await fs.pathExists(path.join(folderPath, indicator))) {
+          return true;
+        }
+      }
+
+      // Check if there are any .php files in the root
+      const entries = await fs.readdir(folderPath);
+      return entries.some((entry) => entry.endsWith('.php'));
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Register an existing project folder (import without creating new files)
+   */
+  async registerExistingProject(config) {
+    const id = uuidv4();
+    const settings = this.configStore.get('settings', {});
+    const existingProjects = this.configStore.get('projects', []);
+
+    // Find available port
+    const usedPorts = existingProjects.map((p) => p.port);
+    let port = settings.portRangeStart || 8000;
+    while (usedPorts.includes(port)) {
+      port++;
+    }
+
+    // SSL port (443 base + offset)
+    let sslPort = 443;
+    const usedSslPorts = existingProjects.map((p) => p.sslPort).filter(Boolean);
+    while (usedSslPorts.includes(sslPort)) {
+      sslPort++;
+    }
+
+    // Detect project type if not specified
+    const projectType = config.type || (await this.detectProjectType(config.path));
+
+    // Generate domain name from folder name
+    const domainName = `${config.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}.test`;
+
+    const project = {
+      id,
+      name: config.name,
+      path: config.path,
+      type: projectType,
+      phpVersion: config.phpVersion || '8.3',
+      webServer: config.webServer || settings.webServer || 'nginx',
+      port,
+      sslPort,
+      domain: domainName,
+      domains: [domainName],
+      ssl: true,
+      autoStart: false,
+      services: {
+        mysql: config.database === 'mysql',
+        mariadb: config.database === 'mariadb',
+        redis: false,
+        queue: false,
+      },
+      environment: this.getDefaultEnvironment(projectType, config.name, port),
+      supervisor: {
+        workers: 1,
+        processes: [],
+      },
+      createdAt: new Date().toISOString(),
+      lastStarted: null,
+    };
+
+    // Create database for project if database is enabled
+    if (config.database && config.database !== 'none') {
+      const dbName = this.sanitizeDatabaseName(config.name);
+      project.environment.DB_DATABASE = dbName;
+
+      try {
+        await this.managers.database?.createDatabase(dbName);
+      } catch (error) {
+        console.warn('Could not create database:', error.message);
+      }
+    }
+
+    // Create SSL certificate
+    try {
+      await this.managers.ssl?.createCertificate(project.domains);
+    } catch (error) {
+      console.warn('Could not create SSL certificate:', error.message);
+    }
+
+    // Create virtual host configuration
+    try {
+      await this.createVirtualHost(project);
+    } catch (error) {
+      console.warn('Could not create virtual host:', error.message);
+    }
+
+    // Add domain to hosts file
+    try {
+      await this.addToHostsFile(project.domain);
+    } catch (error) {
+      console.warn('Could not update hosts file:', error.message);
+    }
+
+    // Save project
+    existingProjects.push(project);
+    this.configStore.set('projects', existingProjects);
+
+    console.log(`Existing project registered: ${project.name} (${project.id})`);
+    return project;
+  }
 }
 
 module.exports = { ProjectManager };

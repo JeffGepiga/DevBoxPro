@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('devbox', {
     openFolder: (id) => ipcRenderer.invoke('projects:openFolder', id),
     switchWebServer: (id, webServer) => ipcRenderer.invoke('projects:switchWebServer', id, webServer),
     regenerateVhost: (id) => ipcRenderer.invoke('projects:regenerateVhost', id),
+    scanUnregistered: () => ipcRenderer.invoke('projects:scanUnregistered'),
+    registerExisting: (config) => ipcRenderer.invoke('projects:registerExisting', config),
   },
 
   // PHP operations

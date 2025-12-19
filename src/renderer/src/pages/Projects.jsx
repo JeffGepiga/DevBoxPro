@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Link } from 'react-router-dom';
 import {
@@ -13,14 +13,23 @@ import {
   Code,
   Filter,
   RefreshCw,
+  FolderSearch,
+  Download,
+  X,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import clsx from 'clsx';
 
 function Projects() {
-  const { projects, loading, startProject, stopProject, deleteProject } = useApp();
+  const { projects, loading, startProject, stopProject, deleteProject, refreshProjects } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [discoveredProjects, setDiscoveredProjects] = useState([]);
+  const [isScanning, setIsScanning] = useState(false);
+  const [showDiscovered, setShowDiscovered] = useState(true);
+  const [importModal, setImportModal] = useState({ open: false, project: null });
 
   const filteredProjects = projects.filter((project) => {
     const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -36,6 +45,34 @@ function Projects() {
   const handleDelete = async (id, name) => {
     if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
       await deleteProject(id);
+    }
+  };
+
+  const handleScanProjects = async () => {
+    setIsScanning(true);
+    try {
+      const discovered = await window.devbox?.projects.scanUnregistered();
+      setDiscoveredProjects(discovered || []);
+      if (discovered?.length > 0) {
+        setShowDiscovered(true);
+      }
+    } catch (error) {
+      console.error('Failed to scan for projects:', error);
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleImportProject = async (config) => {
+    try {
+      await window.devbox?.projects.registerExisting(config);
+      // Remove from discovered list
+      setDiscoveredProjects((prev) => prev.filter((p) => p.path !== config.path));
+      setImportModal({ open: false, project: null });
+      // Refresh projects list
+      refreshProjects?.();
+    } catch (error) {
+      console.error('Failed to import project:', error);
     }
   };
 
@@ -57,11 +94,68 @@ function Projects() {
             Manage your development projects
           </p>
         </div>
-        <Link to="/projects/new" className="btn-primary">
-          <Plus className="w-4 h-4" />
-          New Project
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleScanProjects}
+            disabled={isScanning}
+            className="btn-secondary"
+          >
+            {isScanning ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <FolderSearch className="w-4 h-4" />
+            )}
+            {isScanning ? 'Scanning...' : 'Scan for Projects'}
+          </button>
+          <Link to="/projects/new" className="btn-primary">
+            <Plus className="w-4 h-4" />
+            New Project
+          </Link>
+        </div>
       </div>
+
+      {/* Discovered Projects Section */}
+      {discoveredProjects.length > 0 && (
+        <div className="mb-6">
+          <div
+            className="card border-2 border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20"
+          >
+            <button
+              onClick={() => setShowDiscovered(!showDiscovered)}
+              className="w-full px-4 py-3 flex items-center justify-between text-left"
+            >
+              <div className="flex items-center gap-3">
+                <FolderSearch className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                <span className="font-medium text-amber-800 dark:text-amber-300">
+                  Discovered Projects ({discoveredProjects.length})
+                </span>
+                <span className="text-sm text-amber-600 dark:text-amber-400">
+                  Found in your projects directory
+                </span>
+              </div>
+              {showDiscovered ? (
+                <ChevronUp className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+              )}
+            </button>
+            
+            {showDiscovered && (
+              <div className="px-4 pb-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {discoveredProjects.map((project) => (
+                    <DiscoveredProjectCard
+                      key={project.path}
+                      project={project}
+                      onImport={() => setImportModal({ open: true, project })}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="card p-4 mb-6">
@@ -136,6 +230,217 @@ function Projects() {
           )}
         </div>
       )}
+
+      {/* Import Project Modal */}
+      {importModal.open && importModal.project && (
+        <ImportProjectModal
+          project={importModal.project}
+          onClose={() => setImportModal({ open: false, project: null })}
+          onImport={handleImportProject}
+        />
+      )}
+    </div>
+  );
+}
+
+function DiscoveredProjectCard({ project, onImport }) {
+  const typeColors = {
+    laravel: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    symfony: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+    wordpress: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    custom: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-amber-200 dark:border-amber-700">
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Folder className="w-5 h-5 text-amber-500" />
+          <span className="font-medium text-gray-900 dark:text-white">{project.name}</span>
+        </div>
+        <span className={clsx('badge text-xs', typeColors[project.type])}>
+          {project.type}
+        </span>
+      </div>
+      <p className="text-xs text-gray-500 dark:text-gray-400 truncate mb-3" title={project.path}>
+        {project.path}
+      </p>
+      <button
+        onClick={onImport}
+        className="w-full btn-sm bg-amber-500 hover:bg-amber-600 text-white"
+      >
+        <Download className="w-4 h-4" />
+        Import Project
+      </button>
+    </div>
+  );
+}
+
+function ImportProjectModal({ project, onClose, onImport }) {
+  const [config, setConfig] = useState({
+    name: project.name,
+    path: project.path,
+    type: project.type,
+    phpVersion: '8.3',
+    webServer: 'nginx',
+    database: 'none',
+  });
+  const [isImporting, setIsImporting] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsImporting(true);
+    try {
+      await onImport(config);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Import Project
+          </h3>
+          <button
+            onClick={onClose}
+            className="btn-ghost btn-icon"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Project Name (read-only, using folder name) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Project Name
+            </label>
+            <input
+              type="text"
+              value={config.name}
+              disabled
+              className="input bg-gray-100 dark:bg-gray-700"
+            />
+            <p className="text-xs text-gray-500 mt-1">Using folder name</p>
+          </div>
+
+          {/* Path (read-only) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Path
+            </label>
+            <input
+              type="text"
+              value={config.path}
+              disabled
+              className="input bg-gray-100 dark:bg-gray-700 text-sm"
+            />
+          </div>
+
+          {/* Project Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Project Type
+            </label>
+            <select
+              value={config.type}
+              onChange={(e) => setConfig({ ...config, type: e.target.value })}
+              className="select"
+            >
+              <option value="laravel">Laravel</option>
+              <option value="symfony">Symfony</option>
+              <option value="wordpress">WordPress</option>
+              <option value="custom">Custom PHP</option>
+            </select>
+          </div>
+
+          {/* PHP Version */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              PHP Version
+            </label>
+            <select
+              value={config.phpVersion}
+              onChange={(e) => setConfig({ ...config, phpVersion: e.target.value })}
+              className="select"
+            >
+              <option value="8.4">PHP 8.4</option>
+              <option value="8.3">PHP 8.3</option>
+              <option value="8.2">PHP 8.2</option>
+              <option value="8.1">PHP 8.1</option>
+              <option value="8.0">PHP 8.0</option>
+              <option value="7.4">PHP 7.4</option>
+            </select>
+          </div>
+
+          {/* Web Server */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Web Server
+            </label>
+            <select
+              value={config.webServer}
+              onChange={(e) => setConfig({ ...config, webServer: e.target.value })}
+              className="select"
+            >
+              <option value="nginx">Nginx</option>
+              <option value="apache">Apache</option>
+            </select>
+          </div>
+
+          {/* Database */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Database
+            </label>
+            <select
+              value={config.database}
+              onChange={(e) => setConfig({ ...config, database: e.target.value })}
+              className="select"
+            >
+              <option value="none">None</option>
+              <option value="mysql">MySQL</option>
+              <option value="mariadb">MariaDB</option>
+            </select>
+            {config.database !== 'none' && (
+              <p className="text-xs text-gray-500 mt-1">
+                A database named "{config.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}" will be created
+              </p>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isImporting}
+              className="btn-primary"
+            >
+              {isImporting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Importing...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Import Project
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

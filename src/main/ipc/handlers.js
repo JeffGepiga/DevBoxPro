@@ -32,6 +32,14 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return project.deleteProject(id);
   });
 
+  ipcMain.handle('projects:scanUnregistered', async () => {
+    return project.scanUnregisteredProjects();
+  });
+
+  ipcMain.handle('projects:registerExisting', async (event, config) => {
+    return project.registerExistingProject(config);
+  });
+
   ipcMain.handle('projects:start', async (event, id) => {
     const result = await project.startProject(id);
     mainWindow?.webContents.send('project:statusChanged', {
