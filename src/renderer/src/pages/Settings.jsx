@@ -681,6 +681,21 @@ function NetworkSettings({ settings, updateSetting }) {
 }
 
 function AppearanceSettings({ settings, updateSetting }) {
+  // Apply theme when setting changes
+  const handleThemeChange = (theme) => {
+    updateSetting('theme', theme);
+    
+    // Apply theme immediately
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const shouldBeDark = theme === 'dark' || (theme === 'system' && prefersDark);
+    
+    if (shouldBeDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="card p-6">
@@ -691,9 +706,9 @@ function AppearanceSettings({ settings, updateSetting }) {
           {['system', 'light', 'dark'].map((theme) => (
             <button
               key={theme}
-              onClick={() => updateSetting('theme', theme)}
+              onClick={() => handleThemeChange(theme)}
               className={clsx(
-                'p-4 rounded-lg border-2 text-center transition-all capitalize',
+                'p-4 rounded-lg border-2 text-center transition-all capitalize text-gray-900 dark:text-white',
                 settings.theme === theme
                   ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
                   : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
@@ -703,6 +718,11 @@ function AppearanceSettings({ settings, updateSetting }) {
             </button>
           ))}
         </div>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-3">
+          {settings.theme === 'system' 
+            ? 'Theme follows your system preference'
+            : `Using ${settings.theme} theme`}
+        </p>
       </div>
     </div>
   );
@@ -768,6 +788,16 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
         </p>
         <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
           Made by <span className="font-semibold">Jeffrey Gepiga</span>
+        </p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-3">
+          Found an issue?{' '}
+          <button
+            onClick={() => window.devbox?.system.openExternal('https://github.com/JeffGepiga/DevBoxPro/issues')}
+            className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 inline-flex items-center gap-1"
+          >
+            Report it on GitHub
+            <ExternalLink className="w-3 h-3" />
+          </button>
         </p>
       </div>
     </div>

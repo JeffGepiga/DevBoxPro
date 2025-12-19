@@ -240,7 +240,7 @@ async function startup() {
 
     // Auto-start projects that have autoStart enabled
     try {
-      const projects = managers.project.getProjects();
+      const projects = managers.project.getAllProjects();
       const autoStartProjects = projects.filter(p => p.autoStart);
       if (autoStartProjects.length > 0) {
         console.log(`Auto-starting ${autoStartProjects.length} project(s)...`);

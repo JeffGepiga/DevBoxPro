@@ -24,8 +24,17 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import PhpIniEditor from '../components/PhpIniEditor';
+import { useApp } from '../context/AppContext';
 
 function BinaryManager() {
+  // Use global state for download progress (persists across navigation)
+  const { 
+    downloadProgress: progress, 
+    downloading, 
+    setDownloading: setDownloadingGlobal,
+    setDownloadProgress: setProgressGlobal,
+  } = useApp();
+  
   const [installed, setInstalled] = useState({
     php: {},
     mysql: {},
@@ -39,8 +48,6 @@ function BinaryManager() {
     composer: false,
   });
   const [downloadUrls, setDownloadUrls] = useState({});
-  const [downloading, setDownloading] = useState({});
-  const [progress, setProgress] = useState({});
   const [loading, setLoading] = useState(true);
   const [webServerType, setWebServerType] = useState('nginx');
   const [phpIniEditor, setPhpIniEditor] = useState({ open: false, version: null });
@@ -107,15 +114,10 @@ function BinaryManager() {
     };
     init();
 
-    // Listen for download progress
+    // Download progress is now handled by AppContext - just refresh installed list on complete
     const unsubscribe = window.devbox?.binaries.onProgress((id, progressData) => {
-      setProgress((prev) => ({ ...prev, [id]: progressData }));
-
-      if (progressData.status === 'completed' || progressData.status === 'error') {
-        setDownloading((prev) => ({ ...prev, [id]: false }));
-        if (progressData.status === 'completed') {
-          loadInstalled();
-        }
+      if (progressData.status === 'completed') {
+        loadInstalled();
       }
     });
 
@@ -137,14 +139,14 @@ function BinaryManager() {
     // Don't start if already downloading
     if (downloading[id]) return;
     
-    setDownloading((prev) => ({ ...prev, [id]: true }));
-    setProgress((prev) => ({ ...prev, [id]: { status: 'starting', progress: 0 } }));
+    setDownloadingGlobal(id, true);
+    setProgressGlobal(id, { status: 'starting', progress: 0 });
 
     // Fire and forget - don't await, let progress events handle updates
     window.devbox?.binaries.downloadPhp(version).catch((error) => {
       console.error(`Error downloading PHP ${version}:`, error);
-      setProgress((prev) => ({ ...prev, [id]: { status: 'error', error: error.message } }));
-      setDownloading((prev) => ({ ...prev, [id]: false }));
+      setProgressGlobal(id, { status: 'error', error: error.message });
+      setDownloadingGlobal(id, false);
     });
   };
 
@@ -154,8 +156,8 @@ function BinaryManager() {
     // Don't start if already downloading
     if (downloading[id]) return;
     
-    setDownloading((prev) => ({ ...prev, [id]: true }));
-    setProgress((prev) => ({ ...prev, [id]: { status: 'starting', progress: 0 } }));
+    setDownloadingGlobal(id, true);
+    setProgressGlobal(id, { status: 'starting', progress: 0 });
 
     // Fire and forget - don't await, let progress events handle updates
     let downloadPromise;
@@ -188,8 +190,8 @@ function BinaryManager() {
     
     downloadPromise?.catch((error) => {
       console.error(`Error downloading ${service}${version ? ' ' + version : ''}:`, error);
-      setProgress((prev) => ({ ...prev, [id]: { status: 'error', error: error.message } }));
-      setDownloading((prev) => ({ ...prev, [id]: false }));
+      setProgressGlobal(id, { status: 'error', error: error.message });
+      setDownloadingGlobal(id, false);
     });
   };
 
@@ -214,8 +216,8 @@ function BinaryManager() {
       const file = e.target.files?.[0];
       if (!file) return;
 
-      setDownloading((prev) => ({ ...prev, apache: true }));
-      setProgress((prev) => ({ ...prev, apache: { status: 'starting', progress: 0 } }));
+      setDownloadingGlobal('apache', true);
+      setProgressGlobal('apache', { status: 'starting', progress: 0 });
 
       try {
         // Get the file path - we need to use the path property
@@ -226,8 +228,8 @@ function BinaryManager() {
         await window.devbox?.binaries.importApache(filePath);
       } catch (error) {
         console.error('Error importing Apache:', error);
-        setProgress((prev) => ({ ...prev, apache: { status: 'error', error: error.message } }));
-        setDownloading((prev) => ({ ...prev, apache: false }));
+        setProgressGlobal('apache', { status: 'error', error: error.message });
+        setDownloadingGlobal('apache', false);
       }
     };
     input.click();
@@ -239,14 +241,14 @@ function BinaryManager() {
     // Don't start if already downloading
     if (downloading[id]) return;
     
-    setDownloading((prev) => ({ ...prev, [id]: true }));
-    setProgress((prev) => ({ ...prev, [id]: { status: 'starting', progress: 0 } }));
+    setDownloadingGlobal(id, true);
+    setProgressGlobal(id, { status: 'starting', progress: 0 });
 
     // Fire and forget - don't await, let progress events handle updates
     window.devbox?.binaries.downloadNodejs(version).catch((error) => {
       console.error(`Error downloading Node.js ${version}:`, error);
-      setProgress((prev) => ({ ...prev, [id]: { status: 'error', error: error.message } }));
-      setDownloading((prev) => ({ ...prev, [id]: false }));
+      setProgressGlobal(id, { status: 'error', error: error.message });
+      setDownloadingGlobal(id, false);
     });
   };
 

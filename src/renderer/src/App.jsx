@@ -99,13 +99,42 @@ function App() {
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
-    // Check system preference
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    setDarkMode(prefersDark);
+    // Load saved theme setting first
+    const loadTheme = async () => {
+      try {
+        const settings = await window.devbox?.settings.getAll();
+        const savedTheme = settings?.settings?.theme || 'system';
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        
+        if (savedTheme === 'dark') {
+          setDarkMode(true);
+        } else if (savedTheme === 'light') {
+          setDarkMode(false);
+        } else {
+          // System preference
+          setDarkMode(prefersDark);
+        }
+      } catch (error) {
+        // Fallback to system preference
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        setDarkMode(prefersDark);
+      }
+    };
+    
+    loadTheme();
 
-    // Listen for changes
+    // Listen for system preference changes (only applies when theme is 'system')
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e) => setDarkMode(e.matches);
+    const handler = async (e) => {
+      try {
+        const settings = await window.devbox?.settings.getAll();
+        if (settings?.settings?.theme === 'system') {
+          setDarkMode(e.matches);
+        }
+      } catch {
+        setDarkMode(e.matches);
+      }
+    };
     mediaQuery.addEventListener('change', handler);
 
     return () => mediaQuery.removeEventListener('change', handler);

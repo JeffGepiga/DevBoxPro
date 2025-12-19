@@ -10,6 +10,8 @@ const initialState = {
   loading: true,
   error: null,
   databaseOperation: null, // { type: 'import'|'export', status, message, dbName }
+  downloadProgress: {}, // { [id]: { status, progress, error } }
+  downloading: {}, // { [id]: boolean }
 };
 
 function appReducer(state, action) {
@@ -47,6 +49,22 @@ function appReducer(state, action) {
       return { ...state, error: action.payload };
     case 'SET_DATABASE_OPERATION':
       return { ...state, databaseOperation: action.payload };
+    case 'SET_DOWNLOAD_PROGRESS':
+      return { 
+        ...state, 
+        downloadProgress: { ...state.downloadProgress, [action.payload.id]: action.payload.progress }
+      };
+    case 'SET_DOWNLOADING':
+      return { 
+        ...state, 
+        downloading: { ...state.downloading, [action.payload.id]: action.payload.value }
+      };
+    case 'CLEAR_DOWNLOAD':
+      const newProgress = { ...state.downloadProgress };
+      const newDownloading = { ...state.downloading };
+      delete newProgress[action.payload];
+      delete newDownloading[action.payload];
+      return { ...state, downloadProgress: newProgress, downloading: newDownloading };
     default:
       return state;
   }
@@ -117,9 +135,19 @@ export function AppProvider({ children }) {
       }
     });
 
+    // Binary download progress listener - persistent across navigation
+    const unsubBinaryProgress = window.devbox?.binaries.onProgress?.((id, progressData) => {
+      dispatch({ type: 'SET_DOWNLOAD_PROGRESS', payload: { id, progress: progressData } });
+      
+      if (progressData.status === 'completed' || progressData.status === 'error') {
+        dispatch({ type: 'SET_DOWNLOADING', payload: { id, value: false } });
+      }
+    });
+
     return () => {
       unsubImport?.();
       unsubExport?.();
+      unsubBinaryProgress?.();
     };
   }, []);
 
@@ -197,6 +225,19 @@ export function AppProvider({ children }) {
     dispatch({ type: 'SET_DATABASE_OPERATION', payload: null });
   }, []);
 
+  // Download actions
+  const setDownloading = useCallback((id, value) => {
+    dispatch({ type: 'SET_DOWNLOADING', payload: { id, value } });
+  }, []);
+
+  const setDownloadProgress = useCallback((id, progress) => {
+    dispatch({ type: 'SET_DOWNLOAD_PROGRESS', payload: { id, progress } });
+  }, []);
+
+  const clearDownload = useCallback((id) => {
+    dispatch({ type: 'CLEAR_DOWNLOAD', payload: id });
+  }, []);
+
   const value = {
     ...state,
     dispatch,
@@ -210,6 +251,9 @@ export function AppProvider({ children }) {
     stopService,
     setDatabaseOperation,
     clearDatabaseOperation,
+    setDownloading,
+    setDownloadProgress,
+    clearDownload,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
