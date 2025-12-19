@@ -47,45 +47,6 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.devbox.pro",
-    "productName": "DevBox Pro",
-    "directories": {
-      "buildResources": "build",
-      "output": "dist"
-    },
-    "files": [
-      "src/main/**/*",
-      "src/shared/**/*",
-      "src/renderer/dist/**/*",
-      "resources/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "resources",
-        "to": "resources",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ],
-      "icon": "build/icon.ico"
-    },
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "icon": "build/icon.icns",
-      "category": "public.app-category.developer-tools"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
+    "extends": "electron-builder.config.js"
   }
 }

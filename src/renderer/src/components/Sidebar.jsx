@@ -14,6 +14,7 @@ import {
   Download,
 } from 'lucide-react';
 import clsx from 'clsx';
+import logoImg from '/logo.png';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -32,7 +33,7 @@ function Sidebar({ darkMode, setDarkMode }) {
       {/* Logo */}
       <div className="h-16 flex items-center px-6 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="DevBox Pro" className="w-8 h-8 rounded-lg" />
+          <img src={logoImg} alt="DevBox Pro" className="w-8 h-8" />
           <span className="text-lg font-bold text-gray-900 dark:text-white">
             DevBox Pro
           </span>

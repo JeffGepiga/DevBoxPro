@@ -13,10 +13,17 @@ module.exports = {
   },
   files: [
     'src/main/**/*',
+    'src/shared/**/*',
     '!src/main/**/*.map',
     {
       from: 'src/renderer/dist',
       to: 'renderer',
+    },
+  ],
+  extraFiles: [
+    {
+      from: 'build/icon.png',
+      to: 'icon.png',
     },
   ],
   extraResources: [
@@ -57,8 +64,7 @@ module.exports = {
         arch: ['x64'],
       },
     ],
-    icon: 'resources/icons/icon.ico',
-    artifactName: '${productName}-${version}-${os}-${arch}.${ext}',
+    icon: 'build/icon.png',
   },
   nsis: {
     oneClick: false,

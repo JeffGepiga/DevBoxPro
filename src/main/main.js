@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, Tray, nativeTheme, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, Tray, nativeTheme, dialog, nativeImage } = require('electron');
 const path = require('path');
 const { ServiceManager } = require('./services/ServiceManager');
 const { ProjectManager } = require('./services/ProjectManager');
@@ -27,7 +27,11 @@ if (!gotTheLock) {
       if (mainWindow.isMinimized()) {
         mainWindow.restore();
       }
+      mainWindow.show();
       mainWindow.focus();
+    } else {
+      // Window was destroyed, recreate it
+      createWindow();
     }
   });
 }
@@ -48,10 +52,21 @@ function getResourcePath() {
 
 async function createWindow() {
   const fs = require('fs');
-  // Try logo.png first, then fallback to build/icon.png
-  let iconPath = path.join(__dirname, '../../logo.png');
-  if (!fs.existsSync(iconPath)) {
+  // Get icon path that works in both dev and production
+  let iconPath;
+  if (isDev) {
     iconPath = path.join(__dirname, '../../build/icon.png');
+  } else {
+    // In production, icon is in the app directory (extraFiles)
+    iconPath = path.join(path.dirname(app.getPath('exe')), 'icon.png');
+  }
+  
+  console.log('Window icon path:', iconPath, 'exists:', fs.existsSync(iconPath));
+  
+  // Create native image for better Windows support
+  let icon;
+  if (fs.existsSync(iconPath)) {
+    icon = nativeImage.createFromPath(iconPath);
   }
   
   mainWindow = new BrowserWindow({
@@ -60,7 +75,7 @@ async function createWindow() {
     minWidth: 1000,
     minHeight: 700,
     title: 'DevBox Pro',
-    icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    icon: icon,
     center: true,
     autoHideMenuBar: true,
     webPreferences: {
@@ -69,7 +84,7 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
     },
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1a1a2e' : '#ffffff',
-    show: true,
+    show: false,
   });
 
   // Load the app
@@ -80,7 +95,10 @@ async function createWindow() {
     // Uncomment the line below to open DevTools automatically in dev mode
     // mainWindow.webContents.openDevTools();
   } else {
-    await mainWindow.loadFile(path.join(__dirname, '../renderer/dist/index.html'));
+    // In production, renderer is at /renderer/index.html in the asar
+    const rendererPath = path.join(app.getAppPath(), 'renderer', 'index.html');
+    console.log('Loading renderer from:', rendererPath);
+    await mainWindow.loadFile(rendererPath);
   }
 
   // Log renderer console messages
@@ -128,19 +146,30 @@ async function createWindow() {
 function createTray() {
   try {
     const fs = require('fs');
-    // Try logo.png first, then fallback to tray-icon.png
-    let iconPath = path.join(__dirname, '../../logo.png');
-    if (!fs.existsSync(iconPath)) {
-      iconPath = path.join(__dirname, '../../build/tray-icon.png');
+    let iconPath;
+    
+    if (isDev) {
+      iconPath = path.join(__dirname, '../../build/icon.png');
+    } else {
+      // In production, icon is in the app directory (extraFiles)
+      iconPath = path.join(path.dirname(app.getPath('exe')), 'icon.png');
     }
+    
+    console.log('Tray icon path:', iconPath, 'exists:', fs.existsSync(iconPath));
     
     // Check if tray icon exists, skip tray if not
     if (!fs.existsSync(iconPath)) {
-      console.log('Tray icon not found, skipping tray creation');
+      console.log('Tray icon not found at:', iconPath);
       return;
     }
     
-    tray = new Tray(iconPath);
+    // Create native image for better Windows support - resize for tray
+    let icon = nativeImage.createFromPath(iconPath);
+    // Resize icon to appropriate tray size (16x16 on Windows)
+    icon = icon.resize({ width: 16, height: 16 });
+    
+    console.log('Creating tray with icon, isEmpty:', icon.isEmpty());
+    tray = new Tray(icon);
 
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -267,9 +296,15 @@ async function startup() {
 app.whenReady().then(startup);
 
 app.on('window-all-closed', async () => {
-  // On macOS, apps typically stay active until explicitly quit
-  if (process.platform !== 'darwin') {
-    // Windows/Linux: perform cleanup when all windows are closed
+  // Don't quit when window is closed - keep app running in tray
+  // The app will only quit when user clicks "Quit" from tray or we set app.isQuitting = true
+  if (process.platform === 'darwin') {
+    // On macOS, apps typically stay active until explicitly quit
+    return;
+  }
+  
+  // On Windows/Linux, only quit if user explicitly requested it
+  if (app.isQuitting) {
     await gracefulShutdown();
     app.quit();
   }
