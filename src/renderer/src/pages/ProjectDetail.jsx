@@ -263,7 +263,7 @@ function ProjectDetail() {
       {activeTab === 'workers' && (
         <WorkersTab processes={processes} projectId={id} onRefresh={loadProcesses} />
       )}
-      {activeTab === 'environment' && <EnvironmentTab project={project} />}
+      {activeTab === 'environment' && <EnvironmentTab project={project} onRefresh={refreshProjects} />}
 
       {/* Danger Zone */}
       <div className="mt-12 pt-8 border-t border-gray-200 dark:border-gray-700">
@@ -872,27 +872,190 @@ function WorkersTab({ processes, projectId, onRefresh }) {
   );
 }
 
-function EnvironmentTab({ project }) {
+function EnvironmentTab({ project, onRefresh }) {
+  const [environment, setEnvironment] = useState(project.environment || {});
+  const [newKey, setNewKey] = useState('');
+  const [newValue, setNewValue] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [saveMessage, setSaveMessage] = useState(null);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  // Check if there are unsaved changes
+  useEffect(() => {
+    const originalEnv = project.environment || {};
+    const hasChanged = JSON.stringify(environment) !== JSON.stringify(originalEnv);
+    setHasChanges(hasChanged);
+  }, [environment, project.environment]);
+
+  const handleValueChange = (key, value) => {
+    setEnvironment((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleAddVariable = () => {
+    if (!newKey.trim()) return;
+    setEnvironment((prev) => ({ ...prev, [newKey.trim()]: newValue }));
+    setNewKey('');
+    setNewValue('');
+  };
+
+  const handleRemoveVariable = (key) => {
+    setEnvironment((prev) => {
+      const updated = { ...prev };
+      delete updated[key];
+      return updated;
+    });
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveMessage(null);
+    try {
+      // Update project with new environment
+      await window.devbox?.projects.update(project.id, { environment });
+      
+      // For Laravel projects, run optimize to apply changes
+      if (project.type === 'laravel') {
+        setIsOptimizing(true);
+        setSaveMessage({ type: 'info', text: 'Running Laravel cache optimization...' });
+        
+        try {
+          // Clear and rebuild all caches
+          await window.devbox?.php.runCommand(project.id, 'php artisan config:clear');
+          await window.devbox?.php.runCommand(project.id, 'php artisan cache:clear');
+          await window.devbox?.php.runCommand(project.id, 'php artisan config:cache');
+          setSaveMessage({ type: 'success', text: 'Environment saved and Laravel caches refreshed!' });
+        } catch (optimizeError) {
+          console.warn('Cache optimization failed:', optimizeError);
+          setSaveMessage({ type: 'warning', text: 'Environment saved, but cache optimization failed. You may need to run "php artisan config:cache" manually.' });
+        }
+        setIsOptimizing(false);
+      } else {
+        setSaveMessage({ type: 'success', text: 'Environment variables saved!' });
+      }
+      
+      // Refresh project data
+      onRefresh?.();
+      setHasChanges(false);
+    } catch (error) {
+      console.error('Failed to save environment:', error);
+      setSaveMessage({ type: 'error', text: `Failed to save: ${error.message}` });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const messageColors = {
+    info: 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400',
+    success: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400',
+    warning: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400',
+    error: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400',
+  };
+
   return (
     <div className="card p-6">
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-        Environment Variables
-      </h3>
-      <div className="space-y-3">
-        {Object.entries(project.environment || {}).map(([key, value]) => (
-          <div key={key} className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-            <span className="font-mono text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[200px]">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Environment Variables
+          </h3>
+          {project.type === 'laravel' && (
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Changes will automatically run Laravel cache optimization
+            </p>
+          )}
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={!hasChanges || isSaving || isOptimizing}
+          className={clsx(
+            'btn-primary',
+            (!hasChanges || isSaving || isOptimizing) && 'opacity-50 cursor-not-allowed'
+          )}
+        >
+          {isSaving || isOptimizing ? (
+            <>
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              {isOptimizing ? 'Optimizing...' : 'Saving...'}
+            </>
+          ) : (
+            'Save Changes'
+          )}
+        </button>
+      </div>
+
+      {/* Save Message */}
+      {saveMessage && (
+        <div className={clsx('p-3 rounded-lg mb-4', messageColors[saveMessage.type])}>
+          {saveMessage.text}
+        </div>
+      )}
+
+      {/* Existing Variables */}
+      <div className="space-y-3 mb-6">
+        {Object.entries(environment).map(([key, value]) => (
+          <div key={key} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <span className="font-mono text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[180px]">
               {key}
             </span>
-            <span className="font-mono text-sm text-gray-500 dark:text-gray-400 truncate">
-              {value || '(empty)'}
-            </span>
+            <input
+              type="text"
+              value={value || ''}
+              onChange={(e) => handleValueChange(key, e.target.value)}
+              className="input flex-1 font-mono text-sm"
+              placeholder="(empty)"
+            />
+            <button
+              onClick={() => handleRemoveVariable(key)}
+              className="btn-ghost btn-icon text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+              title="Remove variable"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
           </div>
         ))}
-        {Object.keys(project.environment || {}).length === 0 && (
-          <p className="text-gray-500 dark:text-gray-400">No environment variables configured</p>
+        {Object.keys(environment).length === 0 && (
+          <p className="text-gray-500 dark:text-gray-400 p-3">No environment variables configured</p>
         )}
       </div>
+
+      {/* Add New Variable */}
+      <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+          Add New Variable
+        </h4>
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            value={newKey}
+            onChange={(e) => setNewKey(e.target.value.toUpperCase())}
+            placeholder="VARIABLE_NAME"
+            className="input font-mono text-sm w-48"
+          />
+          <input
+            type="text"
+            value={newValue}
+            onChange={(e) => setNewValue(e.target.value)}
+            placeholder="value"
+            className="input font-mono text-sm flex-1"
+          />
+          <button
+            onClick={handleAddVariable}
+            disabled={!newKey.trim()}
+            className="btn-secondary"
+          >
+            <Plus className="w-4 h-4" />
+            Add
+          </button>
+        </div>
+      </div>
+
+      {/* Unsaved Changes Warning */}
+      {hasChanges && (
+        <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-amber-700 dark:text-amber-400 text-sm">
+          You have unsaved changes. Click "Save Changes" to apply.
+        </div>
+      )}
     </div>
   );
 }
