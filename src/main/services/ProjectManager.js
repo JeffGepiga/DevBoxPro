@@ -7,6 +7,7 @@ const httpProxy = require('http-proxy');
 const os = require('os');
 const net = require('net');
 const { isPortAvailable, findAvailablePort } = require('../utils/PortUtils');
+const CompatibilityManager = require('./CompatibilityManager');
 
 // Helper function to spawn a process hidden on Windows
 // On Windows, uses regular spawn with windowsHide
@@ -33,6 +34,7 @@ class ProjectManager {
     this.runningProjects = new Map();
     this.projectServers = new Map();
     this.proxy = httpProxy.createProxyServer({});
+    this.compatibilityManager = new CompatibilityManager();
   }
 
   async initialize() {
@@ -44,6 +46,41 @@ class ProjectManager {
     }
 
     console.log('ProjectManager initialized');
+  }
+
+  /**
+   * Ensure CLI is installed and added to PATH
+   * This is called automatically when creating/importing projects
+   */
+  async ensureCliInstalled() {
+    const cli = this.managers.cli;
+    if (!cli) {
+      console.warn('CLI manager not available');
+      return;
+    }
+
+    try {
+      const status = await cli.checkCliInstalled();
+      
+      // Install CLI script if not installed
+      if (!status.installed) {
+        console.log('Installing CLI scripts...');
+        await cli.installCli();
+      }
+
+      // Add to PATH if not already in PATH (Windows only supports auto-add)
+      if (!status.inPath && process.platform === 'win32') {
+        console.log('Adding CLI to PATH...');
+        try {
+          await cli.addToPath();
+          console.log('CLI added to PATH. Restart terminal to use.');
+        } catch (error) {
+          console.warn('Could not add CLI to PATH:', error.message);
+        }
+      }
+    } catch (error) {
+      console.warn('Could not ensure CLI installed:', error.message);
+    }
   }
 
   getAllProjects() {
@@ -94,17 +131,25 @@ class ProjectManager {
       type: projectType,
       phpVersion: config.phpVersion || '8.3',
       webServer: config.webServer || settings.webServer || 'nginx',
+      webServerVersion: config.webServerVersion || '1.28', // Default version
       port,
       sslPort,
       domain: domainName,
       domains: [domainName],
       ssl: config.ssl !== false, // SSL enabled by default
       autoStart: config.autoStart || false,
+      // Service configuration with version support
       services: {
         mysql: config.services?.mysql || false,
+        mysqlVersion: config.services?.mysqlVersion || '8.4',
         mariadb: config.services?.mariadb || false,
+        mariadbVersion: config.services?.mariadbVersion || '11.4',
         redis: config.services?.redis || false,
+        redisVersion: config.services?.redisVersion || '7.4',
         queue: config.services?.queue || false,
+        // Node.js for projects that need it
+        nodejs: config.services?.nodejs || false,
+        nodejsVersion: config.services?.nodejsVersion || '20',
       },
       environment: this.getDefaultEnvironment(projectType, config.name, port),
       supervisor: {
@@ -113,7 +158,28 @@ class ProjectManager {
       },
       createdAt: new Date().toISOString(),
       lastStarted: null,
+      // Compatibility warnings acknowledged by user
+      compatibilityWarningsAcknowledged: config.compatibilityWarningsAcknowledged || false,
     };
+
+    // Check service compatibility and store any warnings with the project
+    const compatibilityConfig = {
+      phpVersion: project.phpVersion,
+      mysqlVersion: project.services.mysql ? project.services.mysqlVersion : null,
+      mariadbVersion: project.services.mariadb ? project.services.mariadbVersion : null,
+      redisVersion: project.services.redis ? project.services.redisVersion : null,
+      nodejsVersion: project.services.nodejs ? project.services.nodejsVersion : null,
+      projectType: project.type,
+    };
+    
+    const compatibility = this.compatibilityManager.checkCompatibility(compatibilityConfig);
+    project.compatibilityWarnings = compatibility.warnings || [];
+    
+    // If there are warnings and user hasn't acknowledged them, return warnings for UI to display
+    if (compatibility.hasIssues && !config.compatibilityWarningsAcknowledged) {
+      // Still create the project but include warnings for the UI to display
+      console.log(`Compatibility warnings for project ${project.name}:`, compatibility.warnings);
+    }
 
     // Create database for project if MySQL or MariaDB is enabled
     if (project.services.mysql || project.services.mariadb) {
@@ -169,6 +235,16 @@ class ProjectManager {
     existingProjects.push(project);
     this.configStore.set('projects', existingProjects);
 
+    // Create .devbox-project.json for CLI tool
+    try {
+      await this.createProjectConfigFile(project);
+    } catch (error) {
+      console.warn('Could not create project config file:', error.message);
+    }
+
+    // Auto-install CLI if not already installed
+    await this.ensureCliInstalled();
+
     // Install fresh framework if requested - run async without blocking
     if (config.installFresh) {
       console.log('[createProject] installFresh is true, mainWindow:', mainWindow ? 'available' : 'not available');
@@ -184,6 +260,31 @@ class ProjectManager {
 
     console.log(`Project created: ${project.name} (${project.id})`);
     return project;
+  }
+
+  /**
+   * Create .devbox-project.json in project directory for CLI tool
+   */
+  async createProjectConfigFile(project) {
+    const configPath = path.join(project.path, '.devbox-project.json');
+    const config = {
+      id: project.id,
+      name: project.name,
+      phpVersion: project.phpVersion,
+      services: {
+        mysql: project.services?.mysql || false,
+        mysqlVersion: project.services?.mysqlVersion || '8.4',
+        mariadb: project.services?.mariadb || false,
+        mariadbVersion: project.services?.mariadbVersion || '11.4',
+        redis: project.services?.redis || false,
+        redisVersion: project.services?.redisVersion || '7.4',
+        nodejs: project.services?.nodejs || false,
+        nodejsVersion: project.services?.nodejsVersion || '20',
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    await fs.writeJson(configPath, config, { spaces: 2 });
+    console.log(`Project config created: ${configPath}`);
   }
 
   // Separate method for background installation
@@ -574,6 +675,13 @@ class ProjectManager {
 
     this.configStore.set('projects', projects);
 
+    // Update .devbox-project.json for CLI tool
+    try {
+      await this.createProjectConfigFile(projects[index]);
+    } catch (error) {
+      console.warn('Could not update project config file:', error.message);
+    }
+
     // Restart if was running
     if (isRunning) {
       await this.startProject(id);
@@ -582,7 +690,7 @@ class ProjectManager {
     return projects[index];
   }
 
-  async deleteProject(id) {
+  async deleteProject(id, deleteFiles = false) {
     const project = this.getProject(id);
     if (!project) {
       throw new Error('Project not found');
@@ -600,13 +708,32 @@ class ProjectManager {
       console.warn('Error removing virtual host:', error.message);
     }
 
+    // Remove domain from hosts file
+    try {
+      await this.removeFromHostsFile(project.domain);
+    } catch (error) {
+      console.warn('Error removing from hosts file:', error.message);
+    }
+
+    // Delete project files if requested
+    if (deleteFiles && project.path) {
+      try {
+        console.log(`Deleting project files at: ${project.path}`);
+        await fs.remove(project.path);
+        console.log(`Project files deleted: ${project.path}`);
+      } catch (error) {
+        console.error('Error deleting project files:', error.message);
+        throw new Error(`Failed to delete project files: ${error.message}`);
+      }
+    }
+
     // Remove project from config
     const projects = this.configStore.get('projects', []);
     const filtered = projects.filter((p) => p.id !== id);
     this.configStore.set('projects', filtered);
 
-    console.log(`Project deleted: ${project.name} (${id})`);
-    return { success: true };
+    console.log(`Project deleted: ${project.name} (${id})${deleteFiles ? ' - files also deleted' : ''}`);
+    return { success: true, filesDeleted: deleteFiles };
   }
 
   async startProject(id) {
@@ -896,27 +1023,31 @@ class ProjectManager {
 
     // Web server is critical - project cannot run without it
     const webServer = project.webServer || 'nginx';
+    const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
     
     const servicesToStart = [];
 
-    // Only start the web server the project needs
+    // Only start the web server the project needs (with version)
     if (webServer === 'nginx') {
-      servicesToStart.push({ name: 'nginx', critical: true });
+      servicesToStart.push({ name: 'nginx', version: webServerVersion, critical: true });
     } else if (webServer === 'apache') {
-      servicesToStart.push({ name: 'apache', critical: true });
+      servicesToStart.push({ name: 'apache', version: webServerVersion, critical: true });
     }
 
-    // Database (mysql or mariadb)
+    // Database (mysql or mariadb) with versions
     if (project.services?.mysql) {
-      servicesToStart.push({ name: 'mysql', critical: false });
+      const mysqlVersion = project.services.mysqlVersion || '8.4';
+      servicesToStart.push({ name: 'mysql', version: mysqlVersion, critical: false });
     }
     if (project.services?.mariadb) {
-      servicesToStart.push({ name: 'mariadb', critical: false });
+      const mariadbVersion = project.services.mariadbVersion || '11.4';
+      servicesToStart.push({ name: 'mariadb', version: mariadbVersion, critical: false });
     }
 
-    // Redis
+    // Redis with version
     if (project.services?.redis) {
-      servicesToStart.push({ name: 'redis', critical: false });
+      const redisVersion = project.services.redisVersion || '7.4';
+      servicesToStart.push({ name: 'redis', version: redisVersion, critical: false });
     }
 
     // Always start mailpit for email testing
@@ -940,9 +1071,18 @@ class ProjectManager {
       try {
         const status = serviceManager.serviceStatus.get(service.name);
         
+        // For versioned services, check if the correct version is running
+        const isVersioned = serviceManager.serviceConfigs[service.name]?.versioned;
+        const requestedVersion = service.version;
+        const runningVersion = status?.version;
+        
+        // Check if we need to start (or start a different version)
+        const needsStart = !status || status.status !== 'running';
+        const needsDifferentVersion = isVersioned && requestedVersion && runningVersion && runningVersion !== requestedVersion;
+        
         // For web servers, check if we should restart to claim standard ports
         if ((service.name === 'nginx' || service.name === 'apache') && 
-            status && status.status === 'running') {
+            status && status.status === 'running' && !needsDifferentVersion) {
           // Check if this web server is on alternate ports but could use standard ports
           const ports = serviceManager.getServicePorts(service.name);
           const isOnAlternatePorts = ports?.httpPort === 8081;
@@ -950,19 +1090,31 @@ class ProjectManager {
           
           if (isOnAlternatePorts && standardPortsAvailable) {
             console.log(`Restarting ${service.name} to claim standard ports (80/443)...`);
-            await serviceManager.restartService(service.name);
+            await serviceManager.restartService(service.name, requestedVersion);
             results.started.push(service.name);
             continue;
           }
         }
         
-        if (status && status.status !== 'running') {
-          console.log(`Auto-starting ${service.name}...`);
-          const result = await serviceManager.startService(service.name);
+        // If a different version is needed, we can run both simultaneously
+        // Check if the requested version is already running
+        if (isVersioned && requestedVersion) {
+          const versionRunning = serviceManager.isVersionRunning(service.name, requestedVersion);
+          if (versionRunning) {
+            console.log(`${service.name} ${requestedVersion} already running`);
+            results.started.push(`${service.name}:${requestedVersion}`);
+            continue;
+          }
+        }
+        
+        if (needsStart || (isVersioned && !serviceManager.isVersionRunning(service.name, requestedVersion))) {
+          console.log(`Auto-starting ${service.name}${requestedVersion ? ' ' + requestedVersion : ''}...`);
+          const result = await serviceManager.startService(service.name, requestedVersion);
           
           // Check if service actually started (could be not_installed)
           if (result.status === 'not_installed') {
-            const errorMsg = `${service.name} is not installed. Please download it from Binary Manager.`;
+            const versionStr = requestedVersion ? ` ${requestedVersion}` : '';
+            const errorMsg = `${service.name}${versionStr} is not installed. Please download it from Binary Manager.`;
             results.failed.push(service.name);
             results.errors.push(errorMsg);
             if (service.critical) {
@@ -970,13 +1122,14 @@ class ProjectManager {
               results.success = false;
             }
           } else if (result.success) {
-            results.started.push(service.name);
+            results.started.push(`${service.name}${requestedVersion ? ':' + requestedVersion : ''}`);
           }
         } else if (status && status.status === 'running') {
-          results.started.push(service.name);
+          results.started.push(`${service.name}${runningVersion ? ':' + runningVersion : ''}`);
         }
       } catch (error) {
-        const errorMsg = `Failed to start ${service.name}: ${error.message}`;
+        const versionStr = service.version ? ` ${service.version}` : '';
+        const errorMsg = `Failed to start ${service.name}${versionStr}: ${error.message}`;
         console.warn(errorMsg);
         results.failed.push(service.name);
         results.errors.push(errorMsg);
@@ -2001,8 +2154,106 @@ server {
     existingProjects.push(project);
     this.configStore.set('projects', existingProjects);
 
+    // Create .devbox-project.json for CLI tool
+    try {
+      await this.createProjectConfigFile(project);
+    } catch (error) {
+      console.warn('Could not create project config file:', error.message);
+    }
+
+    // Auto-install CLI if not already installed
+    await this.ensureCliInstalled();
+
     console.log(`Existing project registered: ${project.name} (${project.id})`);
     return project;
+  }
+
+  /**
+   * Check compatibility of service versions
+   * @param {Object} config - Configuration with version info
+   * @returns {Object} Compatibility check result with warnings
+   */
+  checkCompatibility(config) {
+    return this.compatibilityManager.checkCompatibility(config);
+  }
+
+  /**
+   * Get compatibility rules for display
+   * @returns {Array} List of compatibility rules
+   */
+  getCompatibilityRules() {
+    return this.compatibilityManager.getAllRules();
+  }
+
+  /**
+   * Get project service versions summary
+   * @param {string} id - Project ID
+   * @returns {Object} Service versions info
+   */
+  getProjectServiceVersions(id) {
+    const project = this.getProject(id);
+    if (!project) {
+      return null;
+    }
+
+    return {
+      phpVersion: project.phpVersion,
+      webServer: project.webServer,
+      webServerVersion: project.webServerVersion || '1.28',
+      mysql: project.services?.mysql ? project.services.mysqlVersion || '8.4' : null,
+      mariadb: project.services?.mariadb ? project.services.mariadbVersion || '11.4' : null,
+      redis: project.services?.redis ? project.services.redisVersion || '7.4' : null,
+      nodejs: project.services?.nodejs ? project.services.nodejsVersion || '20' : null,
+      compatibilityWarnings: project.compatibilityWarnings || [],
+    };
+  }
+
+  /**
+   * Update service versions for a project
+   * @param {string} id - Project ID
+   * @param {Object} versions - New version configuration
+   * @returns {Object} Updated project
+   */
+  async updateProjectServiceVersions(id, versions) {
+    const project = this.getProject(id);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+
+    const updates = {};
+
+    // Update individual version fields
+    if (versions.phpVersion !== undefined) {
+      updates.phpVersion = versions.phpVersion;
+    }
+    if (versions.webServerVersion !== undefined) {
+      updates.webServerVersion = versions.webServerVersion;
+    }
+    if (versions.services) {
+      updates.services = {
+        ...project.services,
+        ...versions.services,
+      };
+    }
+
+    // Check compatibility of new configuration
+    const compatConfig = {
+      phpVersion: updates.phpVersion || project.phpVersion,
+      mysqlVersion: (updates.services?.mysql ?? project.services?.mysql) 
+        ? (updates.services?.mysqlVersion || project.services?.mysqlVersion) : null,
+      mariadbVersion: (updates.services?.mariadb ?? project.services?.mariadb)
+        ? (updates.services?.mariadbVersion || project.services?.mariadbVersion) : null,
+      redisVersion: (updates.services?.redis ?? project.services?.redis)
+        ? (updates.services?.redisVersion || project.services?.redisVersion) : null,
+      nodejsVersion: (updates.services?.nodejs ?? project.services?.nodejs)
+        ? (updates.services?.nodejsVersion || project.services?.nodejsVersion) : null,
+      projectType: project.type,
+    };
+
+    const compatibility = this.compatibilityManager.checkCompatibility(compatConfig);
+    updates.compatibilityWarnings = compatibility.warnings || [];
+
+    return this.updateProject(id, updates);
   }
 }
 

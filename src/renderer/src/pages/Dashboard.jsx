@@ -12,103 +12,169 @@ import {
   Cpu,
   HardDrive,
   Activity,
+  Database,
+  Mail,
+  Server,
+  Box,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 
+// Service icons mapping (ports and versions come from backend)
+const SERVICE_ICONS = {
+  mysql: Database,
+  mariadb: Database,
+  redis: HardDrive,
+  nginx: Globe,
+  apache: Box,
+  mailpit: Mail,
+  phpmyadmin: Server,
+};
+
 function Dashboard() {
   const { projects, services, resourceUsage, loading, startProject, stopProject, refreshServices, refreshProjects } = useApp();
+  const [binariesStatus, setBinariesStatus] = useState({});
+  const [runningVersions, setRunningVersions] = useState({});
+  const [serviceConfig, setServiceConfig] = useState({
+    versions: {},
+    portOffsets: {},
+    defaultPorts: {},
+    serviceInfo: {},
+  });
+
+  // Load service configuration from backend
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const config = await window.devbox?.binaries.getServiceConfig();
+        if (config) {
+          setServiceConfig(config);
+        }
+      } catch (err) {
+        console.error('Error loading service config:', err);
+      }
+    };
+    loadConfig();
+  }, []);
 
   // Auto-refresh on mount and set up polling for real-time updates
   useEffect(() => {
-    // Refresh immediately when the dashboard is shown
     refreshServices();
     refreshProjects();
 
-    // Set up polling interval for real-time updates (every 5 seconds)
     const intervalId = setInterval(() => {
       refreshServices();
       refreshProjects();
     }, 5000);
 
-    // Cleanup interval on unmount
     return () => clearInterval(intervalId);
   }, [refreshServices, refreshProjects]);
+
+  // Load binaries status
+  useEffect(() => {
+    const loadBinariesStatus = async () => {
+      try {
+        const status = await window.devbox?.binaries.getStatus();
+        setBinariesStatus(status || {});
+      } catch (err) {
+        console.error('Error loading binaries status:', err);
+      }
+    };
+    
+    loadBinariesStatus();
+    const intervalId = setInterval(loadBinariesStatus, 5000);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  // Load running versions
+  useEffect(() => {
+    const loadRunningVersions = async () => {
+      try {
+        const running = await window.devbox?.services.getRunningVersions();
+        setRunningVersions(running || {});
+      } catch (err) {
+        console.error('Failed to get running versions:', err);
+      }
+    };
+    
+    loadRunningVersions();
+    const intervalId = setInterval(loadRunningVersions, 5000);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  // Build SERVICE_INFO dynamically from config
+  const SERVICE_INFO = useMemo(() => ({
+    mysql: { name: 'MySQL', icon: SERVICE_ICONS.mysql, color: 'blue', defaultPort: serviceConfig.defaultPorts.mysql || 3306 },
+    mariadb: { name: 'MariaDB', icon: SERVICE_ICONS.mariadb, color: 'teal', defaultPort: serviceConfig.defaultPorts.mariadb || 3306 },
+    redis: { name: 'Redis', icon: SERVICE_ICONS.redis, color: 'red', defaultPort: serviceConfig.defaultPorts.redis || 6379 },
+    nginx: { name: 'Nginx', icon: SERVICE_ICONS.nginx, color: 'green', defaultPort: serviceConfig.defaultPorts.nginx || 80 },
+    apache: { name: 'Apache', icon: SERVICE_ICONS.apache, color: 'orange', defaultPort: serviceConfig.defaultPorts.apache || 8081 },
+    mailpit: { name: 'Mailpit', icon: SERVICE_ICONS.mailpit, color: 'green', defaultPort: serviceConfig.defaultPorts.mailpit || 8025 },
+    phpmyadmin: { name: 'phpMyAdmin', icon: SERVICE_ICONS.phpmyadmin, color: 'orange', defaultPort: serviceConfig.defaultPorts.phpmyadmin || 8080 },
+  }), [serviceConfig.defaultPorts]);
+
+  // Helper to get installed versions for a service
+  const getInstalledVersions = (serviceName) => {
+    const serviceStatus = binariesStatus?.[serviceName];
+    if (!serviceStatus || typeof serviceStatus !== 'object') return [];
+    return Object.entries(serviceStatus)
+      .filter(([v, status]) => status?.installed === true)
+      .map(([v]) => v);
+  };
+
+  // Get the port for a service version
+  const getServicePort = (serviceName, version) => {
+    const info = SERVICE_INFO[serviceName];
+    if (!info) return null;
+    
+    const basePort = info.defaultPort;
+    const offset = serviceConfig.portOffsets[serviceName]?.[version] || 0;
+    return basePort + offset;
+  };
 
   // Get running projects
   const runningProjects = useMemo(() => {
     return projects.filter(p => p.isRunning);
   }, [projects]);
 
-  // Determine required services based on running projects
-  const requiredServices = useMemo(() => {
-    const required = new Set();
+  // Build service cards for dashboard
+  const serviceCards = useMemo(() => {
+    const cards = [];
+    const versionedServices = ['mysql', 'mariadb', 'redis'];
+    const simpleServices = ['mailpit', 'phpmyadmin'];
     
-    for (const project of runningProjects) {
-      // Web server
-      const webServer = project.webServer || 'nginx';
-      required.add(webServer);
+    // Add versioned service cards
+    for (const name of versionedServices) {
+      const installedVersions = getInstalledVersions(name);
+      const serviceRunningVersions = runningVersions[name] || [];
       
-      // Database
-      if (project.services?.mysql) required.add('mysql');
-      if (project.services?.mariadb) required.add('mariadb');
-      
-      // Other services
-      if (project.services?.redis) required.add('redis');
-      
-      // Always include mailpit and phpmyadmin if any project is running
-      required.add('mailpit');
-      if (project.services?.mysql || project.services?.mariadb) {
-        required.add('phpmyadmin');
+      for (const version of installedVersions) {
+        const isRunning = serviceRunningVersions.includes(version);
+        cards.push({
+          type: 'version',
+          serviceName: name,
+          version,
+          isRunning,
+          port: getServicePort(name, version),
+        });
       }
     }
     
-    return required;
-  }, [runningProjects]);
-
-  // Define core services (static definition to ensure they're always available)
-  const coreServiceNames = useMemo(() => ({
-    nginx: { name: 'Nginx' },
-    apache: { name: 'Apache' },
-    mysql: { name: 'MySQL' },
-    mariadb: { name: 'MariaDB' },
-    redis: { name: 'Redis' },
-    mailpit: { name: 'Mailpit' },
-    phpmyadmin: { name: 'phpMyAdmin' },
-  }), []);
-
-  // Filter services to show only those required by running projects
-  // Always base on static definition and merge with backend status
-  const filteredServices = useMemo(() => {
-    const result = {};
-    
-    if (runningProjects.length === 0) {
-      // No running projects - show core services (without web server)
-      for (const [name, info] of Object.entries(coreServiceNames)) {
-        if (name === 'nginx' || name === 'apache') continue;
-        // Merge static info with backend status
-        result[name] = {
-          ...info,
-          ...(services[name] || { status: 'stopped' }),
-        };
-      }
-    } else {
-      // Show only services required by running projects
-      for (const name of requiredServices) {
-        if (coreServiceNames[name]) {
-          // Merge static info with backend status
-          result[name] = {
-            ...coreServiceNames[name],
-            ...(services[name] || { status: 'stopped' }),
-          };
-        }
-      }
+    // Add simple service cards
+    for (const name of simpleServices) {
+      const isRunning = services[name]?.status === 'running';
+      cards.push({
+        type: 'simple',
+        serviceName: name,
+        isRunning,
+        port: services[name]?.port || SERVICE_INFO[name]?.defaultPort,
+      });
     }
     
-    return result;
-  }, [coreServiceNames, services, runningProjects, requiredServices]);
+    return cards;
+  }, [binariesStatus, runningVersions, services]);
 
-  const runningServices = Object.values(filteredServices).filter((s) => s.status === 'running');
+  const runningServices = serviceCards.filter(c => c.isRunning);
 
   if (loading) {
     return (
@@ -198,12 +264,22 @@ function Dashboard() {
             </Link>
           </div>
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
-            {Object.entries(filteredServices).map(([name, service]) => (
-              <ServiceRow key={name} name={name} service={service} />
+            {serviceCards.slice(0, 6).map((card) => (
+              <ServiceRow 
+                key={card.type === 'version' ? `${card.serviceName}-${card.version}` : card.serviceName}
+                serviceName={card.serviceName}
+                version={card.type === 'version' ? card.version : null}
+                isRunning={card.isRunning}
+                port={card.port}
+                serviceInfo={SERVICE_INFO}
+              />
             ))}
-            {Object.keys(filteredServices).length === 0 && (
+            {serviceCards.length === 0 && (
               <div className="p-6 text-center text-gray-500 dark:text-gray-400">
-                <p>{runningProjects.length === 0 ? 'Start a project to see active services' : 'No services required'}</p>
+                <p>No services installed</p>
+                <Link to="/binaries" className="text-primary-600 hover:text-primary-700 mt-2 inline-block">
+                  Install services from Binaries
+                </Link>
               </div>
             )}
           </div>
@@ -355,22 +431,24 @@ function ProjectRow({ project, onStart, onStop }) {
   );
 }
 
-function ServiceRow({ name, service }) {
-  const isRunning = service.status === 'running';
+function ServiceRow({ serviceName, version, isRunning, port, serviceInfo }) {
+  const info = serviceInfo?.[serviceName];
+  const Icon = info?.icon || Server;
+  const displayName = version ? `${info?.name || serviceName} v${version}` : (info?.name || serviceName);
 
   return (
     <div className="p-4 flex items-center justify-between">
       <div className="flex items-center gap-3">
         <div className={isRunning ? 'status-running' : 'status-stopped'} />
         <div>
-          <p className="font-medium text-gray-900 dark:text-white">{service.name}</p>
+          <p className="font-medium text-gray-900 dark:text-white">{displayName}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Port: {service.port}
+            Port: {port}
           </p>
         </div>
       </div>
       <span className={clsx('badge', isRunning ? 'badge-success' : 'badge-neutral')}>
-        {service.status}
+        {isRunning ? 'running' : 'stopped'}
       </span>
     </div>
   );

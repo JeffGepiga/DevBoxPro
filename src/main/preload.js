@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('devbox', {
     getById: (id) => ipcRenderer.invoke('projects:getById', id),
     create: (config) => ipcRenderer.invoke('projects:create', config),
     update: (id, config) => ipcRenderer.invoke('projects:update', id, config),
-    delete: (id) => ipcRenderer.invoke('projects:delete', id),
+    delete: (id, deleteFiles) => ipcRenderer.invoke('projects:delete', id, deleteFiles),
     start: (id) => ipcRenderer.invoke('projects:start', id),
     stop: (id) => ipcRenderer.invoke('projects:stop', id),
     restart: (id) => ipcRenderer.invoke('projects:restart', id),
@@ -21,6 +21,11 @@ contextBridge.exposeInMainWorld('devbox', {
     regenerateVhost: (id) => ipcRenderer.invoke('projects:regenerateVhost', id),
     scanUnregistered: () => ipcRenderer.invoke('projects:scanUnregistered'),
     registerExisting: (config) => ipcRenderer.invoke('projects:registerExisting', config),
+    // Service version operations
+    getServiceVersions: (id) => ipcRenderer.invoke('projects:getServiceVersions', id),
+    updateServiceVersions: (id, versions) => ipcRenderer.invoke('projects:updateServiceVersions', id, versions),
+    checkCompatibility: (config) => ipcRenderer.invoke('projects:checkCompatibility', config),
+    getCompatibilityRules: () => ipcRenderer.invoke('projects:getCompatibilityRules'),
   },
 
   // PHP operations
@@ -35,12 +40,14 @@ contextBridge.exposeInMainWorld('devbox', {
   // Service operations
   services: {
     getStatus: () => ipcRenderer.invoke('services:getStatus'),
-    start: (service) => ipcRenderer.invoke('services:start', service),
-    stop: (service) => ipcRenderer.invoke('services:stop', service),
-    restart: (service) => ipcRenderer.invoke('services:restart', service),
+    start: (service, version) => ipcRenderer.invoke('services:start', service, version),
+    stop: (service, version) => ipcRenderer.invoke('services:stop', service, version),
+    restart: (service, version) => ipcRenderer.invoke('services:restart', service, version),
     startAll: () => ipcRenderer.invoke('services:startAll'),
     stopAll: () => ipcRenderer.invoke('services:stopAll'),
     getResourceUsage: () => ipcRenderer.invoke('services:getResourceUsage'),
+    getRunningVersions: (service) => ipcRenderer.invoke('services:getRunningVersions', service),
+    isVersionRunning: (service, version) => ipcRenderer.invoke('services:isVersionRunning', service, version),
   },
 
   // Database operations
@@ -90,6 +97,18 @@ contextBridge.exposeInMainWorld('devbox', {
     streamLogs: (projectId) => ipcRenderer.invoke('logs:streamLogs', projectId),
   },
 
+  // CLI operations
+  cli: {
+    getStatus: () => ipcRenderer.invoke('cli:getStatus'),
+    getAlias: () => ipcRenderer.invoke('cli:getAlias'),
+    setAlias: (alias) => ipcRenderer.invoke('cli:setAlias', alias),
+    install: () => ipcRenderer.invoke('cli:install'),
+    addToPath: () => ipcRenderer.invoke('cli:addToPath'),
+    getInstructions: () => ipcRenderer.invoke('cli:getInstructions'),
+    syncProjectConfigs: () => ipcRenderer.invoke('cli:syncProjectConfigs'),
+    createProjectConfig: (projectId) => ipcRenderer.invoke('cli:createProjectConfig', projectId),
+  },
+
   // Settings operations
   settings: {
     get: (key) => ipcRenderer.invoke('settings:get', key),
@@ -132,22 +151,26 @@ contextBridge.exposeInMainWorld('devbox', {
   binaries: {
     getInstalled: () => ipcRenderer.invoke('binaries:getInstalled'),
     getStatus: () => ipcRenderer.invoke('binaries:getStatus'),
+    getAvailableVersions: () => ipcRenderer.invoke('binaries:getAvailableVersions'),
+    getServiceConfig: () => ipcRenderer.invoke('binaries:getServiceConfig'),
     getDownloadUrls: () => ipcRenderer.invoke('binaries:getDownloadUrls'),
     downloadPhp: (version) => ipcRenderer.invoke('binaries:downloadPhp', version),
-    downloadMysql: () => ipcRenderer.invoke('binaries:downloadMysql'),
-    downloadMariadb: () => ipcRenderer.invoke('binaries:downloadMariadb'),
-    downloadRedis: () => ipcRenderer.invoke('binaries:downloadRedis'),
+    downloadMysql: (version) => ipcRenderer.invoke('binaries:downloadMysql', version),
+    downloadMariadb: (version) => ipcRenderer.invoke('binaries:downloadMariadb', version),
+    downloadRedis: (version) => ipcRenderer.invoke('binaries:downloadRedis', version),
     downloadMailpit: () => ipcRenderer.invoke('binaries:downloadMailpit'),
     downloadPhpMyAdmin: () => ipcRenderer.invoke('binaries:downloadPhpMyAdmin'),
-    downloadNginx: () => ipcRenderer.invoke('binaries:downloadNginx'),
-    downloadApache: () => ipcRenderer.invoke('binaries:downloadApache'),
+    downloadNginx: (version) => ipcRenderer.invoke('binaries:downloadNginx', version),
+    downloadApache: (version) => ipcRenderer.invoke('binaries:downloadApache', version),
     importApache: (filePath) => ipcRenderer.invoke('binaries:importApache', filePath),
+    importBinary: (serviceName, version, filePath) => ipcRenderer.invoke('binaries:import', serviceName, version, filePath),
     openApacheDownloadPage: () => ipcRenderer.invoke('binaries:openApacheDownloadPage'),
     downloadNodejs: (version) => ipcRenderer.invoke('binaries:downloadNodejs', version),
     downloadComposer: () => ipcRenderer.invoke('binaries:downloadComposer'),
     runComposer: (projectPath, command, phpVersion) => ipcRenderer.invoke('binaries:runComposer', projectPath, command, phpVersion),
     runNpm: (projectPath, command, nodeVersion) => ipcRenderer.invoke('binaries:runNpm', projectPath, command, nodeVersion),
     remove: (type, version) => ipcRenderer.invoke('binaries:remove', type, version),
+    scanCustomVersions: () => ipcRenderer.invoke('binaries:scanCustomVersions'),
     getPhpIni: (version) => ipcRenderer.invoke('binaries:getPhpIni', version),
     savePhpIni: (version, content) => ipcRenderer.invoke('binaries:savePhpIni', version, content),
     resetPhpIni: (version) => ipcRenderer.invoke('binaries:resetPhpIni', version),

@@ -11,13 +11,16 @@ const AdmZip = require('adm-zip');
 const { exec, spawn } = require('child_process');
 const { Worker } = require('worker_threads');
 
+// Import centralized service configuration
+const { SERVICE_VERSIONS, VERSION_PORT_OFFSETS, DEFAULT_PORTS } = require('../../shared/serviceConfig');
+
 class BinaryDownloadManager {
   constructor() {
     this.resourcesPath = path.join(app.getPath('userData'), 'resources');
     this.downloadProgress = new Map();
     this.listeners = new Set();
     
-    // Download URLs for each binary
+    // Download URLs for each binary - ALL services now support multiple versions
     // PHP versions updated from https://windows.php.net/download/ on 2025-01
     this.downloads = {
       php: {
@@ -30,6 +33,7 @@ class BinaryDownloadManager {
             url: 'https://github.com/shivammathur/php-builder/releases/download/8.4.16/php-8.4.16-darwin-arm64.tar.gz',
             filename: 'php-8.4.16-darwin-arm64.tar.gz',
           },
+          label: 'Latest',
         },
         '8.3': {
           win: {
@@ -40,6 +44,7 @@ class BinaryDownloadManager {
             url: 'https://github.com/shivammathur/php-builder/releases/download/8.3.29/php-8.3.29-darwin-arm64.tar.gz',
             filename: 'php-8.3.29-darwin-arm64.tar.gz',
           },
+          label: 'LTS',
         },
         '8.2': {
           win: {
@@ -70,6 +75,7 @@ class BinaryDownloadManager {
             url: 'https://github.com/shivammathur/php-builder/releases/download/8.0.30/php-8.0.30-darwin-arm64.tar.gz',
             filename: 'php-8.0.30-darwin-arm64.tar.gz',
           },
+          label: 'Legacy',
         },
         '7.4': {
           win: {
@@ -80,37 +86,127 @@ class BinaryDownloadManager {
             url: 'https://github.com/shivammathur/php-builder/releases/download/7.4.33/php-7.4.33-darwin-arm64.tar.gz',
             filename: 'php-7.4.33-darwin-arm64.tar.gz',
           },
+          label: 'Legacy',
         },
       },
+      // MySQL - Multiple versions for compatibility
       mysql: {
-        win: {
-          url: 'https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.7-winx64.zip',
-          filename: 'mysql-8.4.7-winx64.zip',
+        '8.4': {
+          win: {
+            url: 'https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.7-winx64.zip',
+            filename: 'mysql-8.4.7-winx64.zip',
+          },
+          mac: {
+            url: 'https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.7-macos14-arm64.tar.gz',
+            filename: 'mysql-8.4.7-macos14-arm64.tar.gz',
+          },
+          label: 'Latest',
+          defaultPort: 3306,
         },
-        mac: {
-          url: 'https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.7-macos14-arm64.tar.gz',
-          filename: 'mysql-8.4.7-macos14-arm64.tar.gz',
+        '8.0': {
+          win: {
+            url: 'https://cdn.mysql.com/Downloads/MySQL-8.0/mysql-8.0.44-winx64.zip',
+            filename: 'mysql-8.0.44-winx64.zip',
+          },
+          mac: {
+            url: 'https://cdn.mysql.com/Downloads/MySQL-8.0/mysql-8.0.44-macos14-arm64.tar.gz',
+            filename: 'mysql-8.0.44-macos14-arm64.tar.gz',
+          },
+          label: 'LTS',
+          defaultPort: 3307,
+        },
+        '5.7': {
+          win: {
+            url: 'https://cdn.mysql.com/Downloads/MySQL-5.7/mysql-5.7.44-winx64.zip',
+            filename: 'mysql-5.7.44-winx64.zip',
+          },
+          mac: {
+            url: 'https://cdn.mysql.com/Downloads/MySQL-5.7/mysql-5.7.44-macos14-x86_64.tar.gz',
+            filename: 'mysql-5.7.44-macos14-x86_64.tar.gz',
+          },
+          label: 'Legacy',
+          defaultPort: 3308,
         },
       },
+      // MariaDB - Multiple versions
       mariadb: {
-        win: {
-          url: 'https://archive.mariadb.org/mariadb-11.4.9/winx64-packages/mariadb-11.4.9-winx64.zip',
-          filename: 'mariadb-11.4.9-winx64.zip',
+        '11.4': {
+          win: {
+            url: 'https://archive.mariadb.org/mariadb-11.4.9/winx64-packages/mariadb-11.4.9-winx64.zip',
+            filename: 'mariadb-11.4.9-winx64.zip',
+          },
+          mac: {
+            url: 'https://archive.mariadb.org/mariadb-11.4.9/bintar-darwin-arm64/mariadb-11.4.9-macos14-arm64.tar.gz',
+            filename: 'mariadb-11.4.9-macos14-arm64.tar.gz',
+          },
+          label: 'Latest',
+          defaultPort: 3310,
         },
-        mac: {
-          url: 'https://archive.mariadb.org/mariadb-11.4.9/bintar-darwin-arm64/mariadb-11.4.9-macos14-arm64.tar.gz',
-          filename: 'mariadb-11.4.9-macos14-arm64.tar.gz',
+        '10.11': {
+          win: {
+            url: 'https://archive.mariadb.org/mariadb-10.11.10/winx64-packages/mariadb-10.11.10-winx64.zip',
+            filename: 'mariadb-10.11.10-winx64.zip',
+          },
+          mac: {
+            url: 'https://archive.mariadb.org/mariadb-10.11.10/bintar-darwin-arm64/mariadb-10.11.10-macos14-arm64.tar.gz',
+            filename: 'mariadb-10.11.10-macos14-arm64.tar.gz',
+          },
+          label: 'LTS',
+          defaultPort: 3311,
+        },
+        '10.6': {
+          win: {
+            url: 'https://archive.mariadb.org/mariadb-10.6.21/winx64-packages/mariadb-10.6.21-winx64.zip',
+            filename: 'mariadb-10.6.21-winx64.zip',
+          },
+          mac: {
+            url: 'https://archive.mariadb.org/mariadb-10.6.21/bintar-darwin-arm64/mariadb-10.6.21-macos14-arm64.tar.gz',
+            filename: 'mariadb-10.6.21-macos14-arm64.tar.gz',
+          },
+          label: 'Legacy',
+          defaultPort: 3312,
         },
       },
+      // Redis - Multiple versions
       redis: {
-        win: {
-          url: 'https://github.com/tporadowski/redis/releases/download/v5.0.14.1/Redis-x64-5.0.14.1.zip',
-          filename: 'Redis-x64-5.0.14.1.zip',
+        '7.4': {
+          win: {
+            url: 'https://github.com/redis-windows/redis-windows/releases/download/7.4.3/Redis-7.4.3-Windows-x64.zip',
+            filename: 'Redis-7.4.3-Windows-x64.zip',
+          },
+          mac: {
+            url: 'https://github.com/redis/redis/archive/refs/tags/7.4.1.tar.gz',
+            filename: 'redis-7.4.1.tar.gz',
+            note: 'Requires compilation on macOS',
+          },
+          label: 'Latest',
+          defaultPort: 6379,
         },
-        mac: {
-          url: 'https://github.com/redis/redis/archive/refs/tags/7.4.1.tar.gz',
-          filename: 'redis-7.4.1.tar.gz',
-          note: 'Requires compilation on macOS',
+        '7.2': {
+          win: {
+            url: 'https://github.com/redis-windows/redis-windows/releases/download/7.2.7/Redis-7.2.7-Windows-x64.zip',
+            filename: 'Redis-7.2.7-Windows-x64.zip',
+          },
+          mac: {
+            url: 'https://github.com/redis/redis/archive/refs/tags/7.2.7.tar.gz',
+            filename: 'redis-7.2.7.tar.gz',
+            note: 'Requires compilation on macOS',
+          },
+          label: 'LTS',
+          defaultPort: 6380,
+        },
+        '5.0': {
+          win: {
+            url: 'https://github.com/tporadowski/redis/releases/download/v5.0.14.1/Redis-x64-5.0.14.1.zip',
+            filename: 'Redis-x64-5.0.14.1.zip',
+          },
+          mac: {
+            url: 'https://github.com/redis/redis/archive/refs/tags/5.0.14.tar.gz',
+            filename: 'redis-5.0.14.tar.gz',
+            note: 'Requires compilation on macOS',
+          },
+          label: 'Legacy',
+          defaultPort: 6381,
         },
       },
       mailpit: {
@@ -129,37 +225,69 @@ class BinaryDownloadManager {
           filename: 'phpMyAdmin-5.2.3-all-languages.zip',
         },
       },
+      // Nginx - Multiple versions
       nginx: {
-        win: {
-          url: 'https://nginx.org/download/nginx-1.28.0.zip',
-          filename: 'nginx-1.28.0.zip',
+        '1.28': {
+          win: {
+            url: 'https://nginx.org/download/nginx-1.28.0.zip',
+            filename: 'nginx-1.28.0.zip',
+          },
+          mac: {
+            url: 'https://nginx.org/download/nginx-1.28.0.tar.gz',
+            filename: 'nginx-1.28.0.tar.gz',
+            altInstall: 'brew install nginx',
+          },
+          label: 'Latest',
+          defaultPort: 80,
         },
-        mac: {
-          url: 'https://nginx.org/download/nginx-1.28.0.tar.gz',
-          filename: 'nginx-1.28.0.tar.gz',
-          // Note: On macOS, nginx is best installed via Homebrew
-          altInstall: 'brew install nginx',
+        '1.26': {
+          win: {
+            url: 'https://nginx.org/download/nginx-1.26.3.zip',
+            filename: 'nginx-1.26.3.zip',
+          },
+          mac: {
+            url: 'https://nginx.org/download/nginx-1.26.3.tar.gz',
+            filename: 'nginx-1.26.3.tar.gz',
+            altInstall: 'brew install nginx@1.26',
+          },
+          label: 'Stable',
+          defaultPort: 8080,
+        },
+        '1.24': {
+          win: {
+            url: 'https://nginx.org/download/nginx-1.24.0.zip',
+            filename: 'nginx-1.24.0.zip',
+          },
+          mac: {
+            url: 'https://nginx.org/download/nginx-1.24.0.tar.gz',
+            filename: 'nginx-1.24.0.tar.gz',
+          },
+          label: 'Legacy',
+          defaultPort: 8081,
         },
       },
+      // Apache - Multiple versions (manual import supported)
       apache: {
-        win: {
-          // Note: Apache Lounge blocks automated downloads
-          // Users may need to download manually from https://www.apachelounge.com/download/
-          url: 'https://www.apachelounge.com/download/VS17/binaries/httpd-2.4.62-240904-win64-VS17.zip',
-          fallbackUrls: [
-            'https://www.apachelounge.com/download/VS17/binaries/httpd-2.4.61-240703-win64-VS17.zip',
-          ],
-          filename: 'httpd-2.4.62-win64-VS17.zip',
-          manualDownloadUrl: 'https://www.apachelounge.com/download/',
-          manualDownloadNote: 'Apache Lounge may block automated downloads. If the download fails, please download manually.',
-        },
-        mac: {
-          // Apache comes pre-installed on macOS, but we provide the option
-          url: 'https://dlcdn.apache.org/httpd/httpd-2.4.63.tar.gz',
-          filename: 'httpd-2.4.63.tar.gz',
-          altInstall: 'brew install httpd',
+        '2.4': {
+          win: {
+            url: 'https://www.apachelounge.com/download/VS17/binaries/httpd-2.4.62-240904-win64-VS17.zip',
+            fallbackUrls: [
+              'https://www.apachelounge.com/download/VS17/binaries/httpd-2.4.61-240703-win64-VS17.zip',
+            ],
+            filename: 'httpd-2.4.62-win64-VS17.zip',
+            manualDownloadUrl: 'https://www.apachelounge.com/download/',
+            manualDownloadNote: 'Apache Lounge may block automated downloads. If the download fails, please download manually.',
+          },
+          mac: {
+            url: 'https://dlcdn.apache.org/httpd/httpd-2.4.63.tar.gz',
+            filename: 'httpd-2.4.63.tar.gz',
+            altInstall: 'brew install httpd',
+          },
+          label: 'Latest',
+          defaultPort: 80,
         },
       },
+      // Node.js - Multiple versions
       nodejs: {
         '22': {
           win: {
@@ -170,6 +298,7 @@ class BinaryDownloadManager {
             url: 'https://nodejs.org/dist/v22.12.0/node-v22.12.0-darwin-arm64.tar.gz',
             filename: 'node-v22.12.0-darwin-arm64.tar.gz',
           },
+          label: 'Current',
         },
         '20': {
           win: {
@@ -180,6 +309,7 @@ class BinaryDownloadManager {
             url: 'https://nodejs.org/dist/v20.18.1/node-v20.18.1-darwin-arm64.tar.gz',
             filename: 'node-v20.18.1-darwin-arm64.tar.gz',
           },
+          label: 'LTS',
         },
         '18': {
           win: {
@@ -190,6 +320,18 @@ class BinaryDownloadManager {
             url: 'https://nodejs.org/dist/v18.20.5/node-v18.20.5-darwin-arm64.tar.gz',
             filename: 'node-v18.20.5-darwin-arm64.tar.gz',
           },
+          label: 'Maintenance',
+        },
+        '16': {
+          win: {
+            url: 'https://nodejs.org/dist/v16.20.2/node-v16.20.2-win-x64.zip',
+            filename: 'node-v16.20.2-win-x64.zip',
+          },
+          mac: {
+            url: 'https://nodejs.org/dist/v16.20.2/node-v16.20.2-darwin-arm64.tar.gz',
+            filename: 'node-v16.20.2-darwin-arm64.tar.gz',
+          },
+          label: 'Legacy',
         },
       },
       composer: {
@@ -199,6 +341,10 @@ class BinaryDownloadManager {
         },
       },
     };
+
+    // Version metadata for UI display and compatibility checks
+    // Uses centralized configuration from shared/serviceConfig.js
+    this.versionMeta = { ...SERVICE_VERSIONS };
   }
 
   getPlatform() {
@@ -321,38 +467,52 @@ class BinaryDownloadManager {
     const platform = this.getPlatform();
     const installed = {
       php: {},
-      mysql: false,
-      mariadb: false,
-      redis: false,
+      mysql: {},
+      mariadb: {},
+      redis: {},
       mailpit: false,
       phpmyadmin: false,
-      nginx: false,
-      apache: false,
+      nginx: {},
+      apache: {},
       nodejs: {},
       composer: false,
     };
 
     // Check PHP versions
-    for (const version of ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4']) {
+    for (const version of this.versionMeta.php) {
       const phpPath = path.join(this.resourcesPath, 'php', version, platform);
       const phpExe = platform === 'win' ? 'php.exe' : 'php';
       installed.php[version] = await fs.pathExists(path.join(phpPath, phpExe));
     }
+    // Also scan for custom PHP versions
+    await this.scanCustomVersions('php', installed.php, platform, platform === 'win' ? 'php.exe' : 'php');
 
-    // Check MySQL
-    const mysqlPath = path.join(this.resourcesPath, 'mysql', platform, 'bin');
-    const mysqlExe = platform === 'win' ? 'mysqld.exe' : 'mysqld';
-    installed.mysql = await fs.pathExists(path.join(mysqlPath, mysqlExe));
+    // Check MySQL versions
+    for (const version of this.versionMeta.mysql) {
+      const mysqlPath = path.join(this.resourcesPath, 'mysql', version, platform, 'bin');
+      const mysqlExe = platform === 'win' ? 'mysqld.exe' : 'mysqld';
+      installed.mysql[version] = await fs.pathExists(path.join(mysqlPath, mysqlExe));
+    }
+    // Also scan for custom MySQL versions
+    await this.scanCustomVersions('mysql', installed.mysql, platform, platform === 'win' ? 'bin/mysqld.exe' : 'bin/mysqld');
 
-    // Check MariaDB
-    const mariadbPath = path.join(this.resourcesPath, 'mariadb', platform, 'bin');
-    const mariadbExe = platform === 'win' ? 'mariadbd.exe' : 'mariadbd';
-    installed.mariadb = await fs.pathExists(path.join(mariadbPath, mariadbExe));
+    // Check MariaDB versions
+    for (const version of this.versionMeta.mariadb) {
+      const mariadbPath = path.join(this.resourcesPath, 'mariadb', version, platform, 'bin');
+      const mariadbExe = platform === 'win' ? 'mariadbd.exe' : 'mariadbd';
+      installed.mariadb[version] = await fs.pathExists(path.join(mariadbPath, mariadbExe));
+    }
+    // Also scan for custom MariaDB versions
+    await this.scanCustomVersions('mariadb', installed.mariadb, platform, platform === 'win' ? 'bin/mariadbd.exe' : 'bin/mariadbd');
 
-    // Check Redis
-    const redisPath = path.join(this.resourcesPath, 'redis', platform);
-    const redisExe = platform === 'win' ? 'redis-server.exe' : 'redis-server';
-    installed.redis = await fs.pathExists(path.join(redisPath, redisExe));
+    // Check Redis versions
+    for (const version of this.versionMeta.redis) {
+      const redisPath = path.join(this.resourcesPath, 'redis', version, platform);
+      const redisExe = platform === 'win' ? 'redis-server.exe' : 'redis-server';
+      installed.redis[version] = await fs.pathExists(path.join(redisPath, redisExe));
+    }
+    // Also scan for custom Redis versions
+    await this.scanCustomVersions('redis', installed.redis, platform, platform === 'win' ? 'redis-server.exe' : 'redis-server');
 
     // Check Mailpit
     const mailpitPath = path.join(this.resourcesPath, 'mailpit', platform);
@@ -363,28 +523,59 @@ class BinaryDownloadManager {
     const pmaPath = path.join(this.resourcesPath, 'phpmyadmin', 'index.php');
     installed.phpmyadmin = await fs.pathExists(pmaPath);
 
-    // Check Nginx
-    const nginxPath = path.join(this.resourcesPath, 'nginx', platform);
-    const nginxExe = platform === 'win' ? 'nginx.exe' : 'nginx';
-    installed.nginx = await fs.pathExists(path.join(nginxPath, nginxExe));
+    // Check Nginx versions
+    for (const version of this.versionMeta.nginx) {
+      const nginxPath = path.join(this.resourcesPath, 'nginx', version, platform);
+      const nginxExe = platform === 'win' ? 'nginx.exe' : 'nginx';
+      installed.nginx[version] = await fs.pathExists(path.join(nginxPath, nginxExe));
+    }
+    // Also scan for custom Nginx versions
+    await this.scanCustomVersions('nginx', installed.nginx, platform, platform === 'win' ? 'nginx.exe' : 'nginx');
 
-    // Check Apache
-    const apachePath = path.join(this.resourcesPath, 'apache', platform);
-    const apacheExe = platform === 'win' ? 'bin/httpd.exe' : 'bin/httpd';
-    installed.apache = await fs.pathExists(path.join(apachePath, apacheExe));
+    // Check Apache versions
+    for (const version of this.versionMeta.apache) {
+      const apachePath = path.join(this.resourcesPath, 'apache', version, platform);
+      const apacheExe = platform === 'win' ? 'bin/httpd.exe' : 'bin/httpd';
+      installed.apache[version] = await fs.pathExists(path.join(apachePath, apacheExe));
+    }
+    // Also scan for custom Apache versions
+    await this.scanCustomVersions('apache', installed.apache, platform, platform === 'win' ? 'bin/httpd.exe' : 'bin/httpd');
 
     // Check Node.js versions
-    for (const version of ['18', '20', '22']) {
+    for (const version of this.versionMeta.nodejs) {
       const nodePath = path.join(this.resourcesPath, 'nodejs', version, platform);
       const nodeExe = platform === 'win' ? 'node.exe' : 'bin/node';
       installed.nodejs[version] = await fs.pathExists(path.join(nodePath, nodeExe));
     }
+    // Also scan for custom Node.js versions
+    await this.scanCustomVersions('nodejs', installed.nodejs, platform, platform === 'win' ? 'node.exe' : 'bin/node');
 
     // Check Composer
     const composerPath = path.join(this.resourcesPath, 'composer', 'composer.phar');
     installed.composer = await fs.pathExists(composerPath);
 
     return installed;
+  }
+
+  // Scan for custom imported versions not in the predefined list
+  async scanCustomVersions(serviceName, installedObj, platform, exePath) {
+    try {
+      const serviceDir = path.join(this.resourcesPath, serviceName);
+      if (!await fs.pathExists(serviceDir)) return;
+
+      const dirs = await fs.readdir(serviceDir);
+      for (const dir of dirs) {
+        // Skip if already checked (predefined version) or if it's the platform folder (old structure)
+        if (installedObj[dir] !== undefined || dir === 'win' || dir === 'mac') continue;
+
+        const fullPath = path.join(serviceDir, dir, platform, exePath);
+        if (await fs.pathExists(fullPath)) {
+          installedObj[dir] = true;
+        }
+      }
+    } catch (error) {
+      console.warn(`Error scanning custom ${serviceName} versions:`, error.message);
+    }
   }
 
   async downloadFile(url, destPath, id) {
@@ -708,20 +899,20 @@ extension=${extPrefix}gd${extSuffix}
     await fs.writeFile(iniPath, iniContent);
   }
 
-  async downloadMysql() {
-    const id = 'mysql';
+  async downloadMysql(version = '8.4') {
+    const id = `mysql-${version}`;
     const platform = this.getPlatform();
-    const downloadInfo = this.downloads.mysql[platform];
+    const downloadInfo = this.downloads.mysql[version]?.[platform];
 
     if (!downloadInfo) {
-      throw new Error(`MySQL not available for ${platform}`);
+      throw new Error(`MySQL ${version} not available for ${platform}`);
     }
 
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
 
       const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
-      const extractPath = path.join(this.resourcesPath, 'mysql', platform);
+      const extractPath = path.join(this.resourcesPath, 'mysql', version, platform);
 
       await fs.remove(extractPath);
       await fs.ensureDir(extractPath);
@@ -731,27 +922,27 @@ extension=${extPrefix}gd${extSuffix}
       await fs.remove(downloadPath);
 
       this.emitProgress(id, { status: 'completed', progress: 100 });
-      return { success: true };
+      return { success: true, version };
     } catch (error) {
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
   }
 
-  async downloadMariadb() {
-    const id = 'mariadb';
+  async downloadMariadb(version = '11.4') {
+    const id = `mariadb-${version}`;
     const platform = this.getPlatform();
-    const downloadInfo = this.downloads.mariadb[platform];
+    const downloadInfo = this.downloads.mariadb[version]?.[platform];
 
     if (!downloadInfo) {
-      throw new Error(`MariaDB not available for ${platform}`);
+      throw new Error(`MariaDB ${version} not available for ${platform}`);
     }
 
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
 
       const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
-      const extractPath = path.join(this.resourcesPath, 'mariadb', platform);
+      const extractPath = path.join(this.resourcesPath, 'mariadb', version, platform);
 
       await fs.remove(extractPath);
       await fs.ensureDir(extractPath);
@@ -761,27 +952,27 @@ extension=${extPrefix}gd${extSuffix}
       await fs.remove(downloadPath);
 
       this.emitProgress(id, { status: 'completed', progress: 100 });
-      return { success: true };
+      return { success: true, version };
     } catch (error) {
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
   }
 
-  async downloadRedis() {
-    const id = 'redis';
+  async downloadRedis(version = '7.4') {
+    const id = `redis-${version}`;
     const platform = this.getPlatform();
-    const downloadInfo = this.downloads.redis[platform];
+    const downloadInfo = this.downloads.redis[version]?.[platform];
 
     if (!downloadInfo) {
-      throw new Error(`Redis not available for ${platform}`);
+      throw new Error(`Redis ${version} not available for ${platform}`);
     }
 
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
 
       const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
-      const extractPath = path.join(this.resourcesPath, 'redis', platform);
+      const extractPath = path.join(this.resourcesPath, 'redis', version, platform);
 
       await fs.remove(extractPath);
       await fs.ensureDir(extractPath);
@@ -791,7 +982,7 @@ extension=${extPrefix}gd${extSuffix}
       await fs.remove(downloadPath);
 
       this.emitProgress(id, { status: 'completed', progress: 100 });
-      return { success: true };
+      return { success: true, version };
     } catch (error) {
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
@@ -879,20 +1070,20 @@ $cfg['ServerDefault'] = 1;
     await fs.writeFile(path.join(pmaPath, 'config.inc.php'), configContent);
   }
 
-  async downloadNginx() {
-    const id = 'nginx';
+  async downloadNginx(version = '1.28') {
+    const id = `nginx-${version}`;
     const platform = this.getPlatform();
-    const downloadInfo = this.downloads.nginx[platform];
+    const downloadInfo = this.downloads.nginx[version]?.[platform];
 
     if (!downloadInfo) {
-      throw new Error(`Nginx not available for ${platform}`);
+      throw new Error(`Nginx ${version} not available for ${platform}`);
     }
 
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
 
       const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
-      const extractPath = path.join(this.resourcesPath, 'nginx', platform);
+      const extractPath = path.join(this.resourcesPath, 'nginx', version, platform);
 
       await fs.remove(extractPath);
       await fs.ensureDir(extractPath);
@@ -906,7 +1097,7 @@ $cfg['ServerDefault'] = 1;
       await fs.remove(downloadPath);
 
       this.emitProgress(id, { status: 'completed', progress: 100 });
-      return { success: true };
+      return { success: true, version };
     } catch (error) {
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
@@ -981,20 +1172,20 @@ server {
     await fs.ensureDir(path.join(nginxPath, 'logs'));
   }
 
-  async downloadApache() {
-    const id = 'apache';
+  async downloadApache(version = '2.4') {
+    const id = `apache-${version}`;
     const platform = this.getPlatform();
-    const downloadInfo = this.downloads.apache[platform];
+    const downloadInfo = this.downloads.apache[version]?.[platform];
 
     if (!downloadInfo) {
-      throw new Error(`Apache not available for ${platform}`);
+      throw new Error(`Apache ${version} not available for ${platform}`);
     }
 
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
 
       const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
-      const extractPath = path.join(this.resourcesPath, 'apache', platform);
+      const extractPath = path.join(this.resourcesPath, 'apache', version, platform);
 
       await fs.remove(extractPath);
       await fs.ensureDir(extractPath);
@@ -1047,15 +1238,15 @@ server {
       await fs.remove(downloadPath);
 
       this.emitProgress(id, { status: 'completed', progress: 100 });
-      return { success: true };
+      return { success: true, version };
     } catch (error) {
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
   }
 
-  async importApache(filePath) {
-    const id = 'apache';
+  async importApache(filePath, version = '2.4') {
+    const id = `apache-${version}`;
     const platform = this.getPlatform();
     
     try {
@@ -1072,7 +1263,7 @@ server {
         throw new Error('Invalid ZIP file. Please download the correct Apache ZIP from Apache Lounge.');
       }
       
-      const extractPath = path.join(this.resourcesPath, 'apache', platform);
+      const extractPath = path.join(this.resourcesPath, 'apache', version, platform);
       
       await fs.remove(extractPath);
       await fs.ensureDir(extractPath);
@@ -1099,7 +1290,7 @@ server {
       await this.createApacheConfig(extractPath);
       
       this.emitProgress(id, { status: 'completed', progress: 100 });
-      return { success: true };
+      return { success: true, version };
     } catch (error) {
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
@@ -1192,15 +1383,21 @@ AddType application/x-httpd-php-source .phps
     const platform = this.getPlatform();
     let targetPath;
 
-    if (type === 'php' && version) {
-      targetPath = path.join(this.resourcesPath, 'php', version, platform);
-    } else if (type === 'nodejs' && version) {
-      targetPath = path.join(this.resourcesPath, 'nodejs', version, platform);
+    // All versioned services now use version/platform structure
+    if (version) {
+      if (['php', 'nodejs', 'mysql', 'mariadb', 'redis', 'nginx', 'apache'].includes(type)) {
+        targetPath = path.join(this.resourcesPath, type, version, platform);
+      } else {
+        targetPath = path.join(this.resourcesPath, type, version);
+      }
     } else if (type === 'phpmyadmin') {
       targetPath = path.join(this.resourcesPath, 'phpmyadmin');
     } else if (type === 'composer') {
       targetPath = path.join(this.resourcesPath, 'composer');
+    } else if (type === 'mailpit') {
+      targetPath = path.join(this.resourcesPath, 'mailpit', platform);
     } else {
+      // Fallback for unversioned services
       targetPath = path.join(this.resourcesPath, type, platform);
     }
 
@@ -1212,26 +1409,180 @@ AddType application/x-httpd-php-source .phps
     const platform = this.getPlatform();
     const urls = {
       php: {},
-      mysql: this.downloads.mysql[platform],
-      mariadb: this.downloads.mariadb[platform],
-      redis: this.downloads.redis[platform],
+      mysql: {},
+      mariadb: {},
+      redis: {},
       mailpit: this.downloads.mailpit[platform],
       phpmyadmin: this.downloads.phpmyadmin.all,
-      nginx: this.downloads.nginx[platform],
-      apache: this.downloads.apache[platform],
+      nginx: {},
+      apache: {},
       nodejs: {},
       composer: this.downloads.composer.all,
     };
 
+    // PHP versions
     for (const version of Object.keys(this.downloads.php)) {
-      urls.php[version] = this.downloads.php[version][platform];
+      urls.php[version] = {
+        ...this.downloads.php[version][platform],
+        label: this.downloads.php[version].label,
+      };
     }
 
+    // MySQL versions
+    for (const version of Object.keys(this.downloads.mysql)) {
+      urls.mysql[version] = {
+        ...this.downloads.mysql[version][platform],
+        label: this.downloads.mysql[version].label,
+        defaultPort: this.downloads.mysql[version].defaultPort,
+      };
+    }
+
+    // MariaDB versions
+    for (const version of Object.keys(this.downloads.mariadb)) {
+      urls.mariadb[version] = {
+        ...this.downloads.mariadb[version][platform],
+        label: this.downloads.mariadb[version].label,
+        defaultPort: this.downloads.mariadb[version].defaultPort,
+      };
+    }
+
+    // Redis versions
+    for (const version of Object.keys(this.downloads.redis)) {
+      urls.redis[version] = {
+        ...this.downloads.redis[version][platform],
+        label: this.downloads.redis[version].label,
+        defaultPort: this.downloads.redis[version].defaultPort,
+      };
+    }
+
+    // Nginx versions
+    for (const version of Object.keys(this.downloads.nginx)) {
+      urls.nginx[version] = {
+        ...this.downloads.nginx[version][platform],
+        label: this.downloads.nginx[version].label,
+        defaultPort: this.downloads.nginx[version].defaultPort,
+      };
+    }
+
+    // Apache versions
+    for (const version of Object.keys(this.downloads.apache)) {
+      urls.apache[version] = {
+        ...this.downloads.apache[version][platform],
+        label: this.downloads.apache[version].label,
+        defaultPort: this.downloads.apache[version].defaultPort,
+      };
+    }
+
+    // Node.js versions
     for (const version of Object.keys(this.downloads.nodejs)) {
-      urls.nodejs[version] = this.downloads.nodejs[version][platform];
+      urls.nodejs[version] = {
+        ...this.downloads.nodejs[version][platform],
+        label: this.downloads.nodejs[version].label,
+      };
     }
 
     return urls;
+  }
+
+  // Get available versions for a service
+  getAvailableVersions(serviceName) {
+    return this.versionMeta[serviceName] || [];
+  }
+
+  // Get version metadata including labels
+  getVersionMeta() {
+    const meta = {};
+    for (const [service, versions] of Object.entries(this.versionMeta)) {
+      meta[service] = versions.map(version => {
+        const info = this.downloads[service]?.[version];
+        return {
+          version,
+          label: info?.label || null,
+          defaultPort: info?.defaultPort || null,
+        };
+      });
+    }
+    return meta;
+  }
+
+  // Generic import method for custom binaries
+  async importBinary(serviceName, version, filePath) {
+    const id = `${serviceName}-${version}`;
+    const platform = this.getPlatform();
+    
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+      
+      // Validate file exists
+      if (!await fs.pathExists(filePath)) {
+        throw new Error('File not found: ' + filePath);
+      }
+      
+      // Validate it's a valid archive
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext === '.zip') {
+        const isValid = await this.validateZipFile(filePath);
+        if (!isValid) {
+          throw new Error('Invalid ZIP file.');
+        }
+      } else if (!filePath.endsWith('.tar.gz') && ext !== '.tgz') {
+        throw new Error('Unsupported archive format. Please use .zip or .tar.gz');
+      }
+      
+      const extractPath = path.join(this.resourcesPath, serviceName, version, platform);
+      
+      await fs.remove(extractPath);
+      await fs.ensureDir(extractPath);
+      
+      this.emitProgress(id, { status: 'extracting', progress: 50 });
+      
+      await this.extractArchive(filePath, extractPath, id);
+      
+      // Handle special folder structures
+      await this.normalizeExtractedStructure(serviceName, extractPath);
+      
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true, version, path: extractPath };
+    } catch (error) {
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  }
+
+  // Normalize extracted folder structure (handle nested folders)
+  async normalizeExtractedStructure(serviceName, extractPath) {
+    // Check for common nested folder patterns
+    const contents = await fs.readdir(extractPath);
+    
+    if (contents.length === 1) {
+      const singleItem = contents[0];
+      const singlePath = path.join(extractPath, singleItem);
+      const stat = await fs.stat(singlePath);
+      
+      if (stat.isDirectory()) {
+        // Move contents up if there's only a single directory
+        const innerContents = await fs.readdir(singlePath);
+        for (const item of innerContents) {
+          const srcPath = path.join(singlePath, item);
+          const destPath = path.join(extractPath, item);
+          await fs.move(srcPath, destPath, { overwrite: true });
+        }
+        await fs.remove(singlePath);
+        console.log(`[Import] Normalized folder structure for ${serviceName}`);
+      }
+    }
+    
+    // Handle Apache-specific "Apache24" folder
+    const apache24Path = path.join(extractPath, 'Apache24');
+    if (await fs.pathExists(apache24Path)) {
+      const innerContents = await fs.readdir(apache24Path);
+      for (const item of innerContents) {
+        const srcPath = path.join(apache24Path, item);
+        const destPath = path.join(extractPath, item);
+        await fs.move(srcPath, destPath, { overwrite: true });
+      }
+      await fs.remove(apache24Path);
+    }
   }
 
   // Download and install Node.js

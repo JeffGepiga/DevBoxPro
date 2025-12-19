@@ -9,6 +9,7 @@ const { DatabaseManager } = require('./services/DatabaseManager');
 const { LogManager } = require('./services/LogManager');
 const BinaryDownloadManager = require('./services/BinaryDownloadManager');
 const { WebServerManager } = require('./services/WebServerManager');
+const CliManager = require('./services/CliManager');
 const { ConfigStore } = require('./utils/ConfigStore');
 const { setupIpcHandlers } = require('./ipc/handlers');
 
@@ -197,6 +198,7 @@ async function initializeManagers() {
   managers.project = new ProjectManager(configStore, managers);
   managers.binaryDownload = new BinaryDownloadManager();
   managers.webServer = new WebServerManager(configStore, managers);
+  managers.cli = new CliManager(configStore, managers);
 
   // Initialize all managers
   await managers.log.initialize();
@@ -208,6 +210,7 @@ async function initializeManagers() {
   await managers.service.initialize();
   await managers.binaryDownload.initialize();
   await managers.webServer.initialize();
+  await managers.cli.initialize(resourcePath);
 
   return managers;
 }

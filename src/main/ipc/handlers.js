@@ -3,6 +3,16 @@ const { app } = require('electron');
 const path = require('path');
 const fs = require('fs-extra');
 
+// Import centralized service configuration
+const { 
+  SERVICE_VERSIONS, 
+  VERSION_PORT_OFFSETS, 
+  DEFAULT_PORTS, 
+  SERVICE_INFO,
+  getServicePort,
+  getDefaultVersion 
+} = require('../../shared/serviceConfig');
+
 function setupIpcHandlers(ipcMain, managers, mainWindow) {
   const { config, project, php, service, database, ssl, supervisor, log } = managers;
 
@@ -28,8 +38,8 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return project.updateProject(id, projectConfig);
   });
 
-  ipcMain.handle('projects:delete', async (event, id) => {
-    return project.deleteProject(id);
+  ipcMain.handle('projects:delete', async (event, id, deleteFiles) => {
+    return project.deleteProject(id, deleteFiles);
   });
 
   ipcMain.handle('projects:scanUnregistered', async () => {
@@ -135,6 +145,23 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return { success: true };
   });
 
+  // Project service version handlers
+  ipcMain.handle('projects:getServiceVersions', async (event, id) => {
+    return project.getProjectServiceVersions(id);
+  });
+
+  ipcMain.handle('projects:updateServiceVersions', async (event, id, versions) => {
+    return project.updateProjectServiceVersions(id, versions);
+  });
+
+  ipcMain.handle('projects:checkCompatibility', async (event, config) => {
+    return project.checkCompatibility(config);
+  });
+
+  ipcMain.handle('projects:getCompatibilityRules', async () => {
+    return project.getCompatibilityRules();
+  });
+
   // ============ PHP HANDLERS ============
   ipcMain.handle('php:getVersions', async () => {
     return php.getAvailableVersions();
@@ -159,26 +186,28 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return service.getAllServicesStatus();
   });
 
-  ipcMain.handle('services:start', async (event, serviceName) => {
-    const result = await service.startService(serviceName);
+  ipcMain.handle('services:start', async (event, serviceName, version = null) => {
+    const result = await service.startService(serviceName, version);
     mainWindow?.webContents.send('service:statusChanged', {
       service: serviceName,
+      version,
       status: 'running',
     });
     return result;
   });
 
-  ipcMain.handle('services:stop', async (event, serviceName) => {
-    const result = await service.stopService(serviceName);
+  ipcMain.handle('services:stop', async (event, serviceName, version = null) => {
+    const result = await service.stopService(serviceName, version);
     mainWindow?.webContents.send('service:statusChanged', {
       service: serviceName,
+      version,
       status: 'stopped',
     });
     return result;
   });
 
-  ipcMain.handle('services:restart', async (event, serviceName) => {
-    return service.restartService(serviceName);
+  ipcMain.handle('services:restart', async (event, serviceName, version = null) => {
+    return service.restartService(serviceName, version);
   });
 
   ipcMain.handle('services:startAll', async () => {
@@ -191,6 +220,35 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('services:getResourceUsage', async () => {
     return service.getResourceUsage();
+  });
+
+  // Get running versions for a service (or all services if no name provided)
+  ipcMain.handle('services:getRunningVersions', async (event, serviceName) => {
+    if (serviceName) {
+      const versions = service.getRunningVersions(serviceName);
+      // Convert Map to object for IPC
+      const result = {};
+      for (const [version, info] of versions) {
+        result[version] = info;
+      }
+      return result;
+    } else {
+      // Return all running versions for all services
+      const allVersions = service.getAllRunningVersions();
+      const result = {};
+      for (const [svcName, versions] of allVersions) {
+        result[svcName] = [];
+        for (const [version, info] of versions) {
+          result[svcName].push(version);
+        }
+      }
+      return result;
+    }
+  });
+
+  // Check if a specific version is running
+  ipcMain.handle('services:isVersionRunning', async (event, serviceName, version) => {
+    return service.isVersionRunning(serviceName, version);
   });
 
   // ============ DATABASE HANDLERS ============
@@ -433,31 +491,71 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     ipcMain.handle('binaries:getStatus', async () => {
       const installed = await binaryDownload.getInstalledBinaries();
       
-      // Transform to a more detailed status format
+      // Transform to a more detailed status format for versioned services
       const status = {
         php: {},
-        mysql: { installed: installed.mysql },
-        mariadb: { installed: installed.mariadb },
-        redis: { installed: installed.redis },
+        mysql: {},       // Now versioned
+        mariadb: {},     // Now versioned
+        redis: {},       // Now versioned
         mailpit: { installed: installed.mailpit },
         phpmyadmin: { installed: installed.phpmyadmin },
-        nginx: { installed: installed.nginx },
-        apache: { installed: installed.apache },
+        nginx: {},       // Now versioned
+        apache: {},      // Now versioned
         nodejs: {},
         composer: { installed: installed.composer },
       };
 
       // Transform PHP versions
-      for (const [version, isInstalled] of Object.entries(installed.php)) {
+      for (const [version, isInstalled] of Object.entries(installed.php || {})) {
         status.php[version] = { installed: isInstalled };
       }
 
       // Transform Node.js versions
-      for (const [version, isInstalled] of Object.entries(installed.nodejs)) {
+      for (const [version, isInstalled] of Object.entries(installed.nodejs || {})) {
         status.nodejs[version] = { installed: isInstalled };
       }
 
+      // Transform MySQL versions
+      for (const [version, isInstalled] of Object.entries(installed.mysql || {})) {
+        status.mysql[version] = { installed: isInstalled };
+      }
+
+      // Transform MariaDB versions
+      for (const [version, isInstalled] of Object.entries(installed.mariadb || {})) {
+        status.mariadb[version] = { installed: isInstalled };
+      }
+
+      // Transform Redis versions
+      for (const [version, isInstalled] of Object.entries(installed.redis || {})) {
+        status.redis[version] = { installed: isInstalled };
+      }
+
+      // Transform Nginx versions
+      for (const [version, isInstalled] of Object.entries(installed.nginx || {})) {
+        status.nginx[version] = { installed: isInstalled };
+      }
+
+      // Transform Apache versions
+      for (const [version, isInstalled] of Object.entries(installed.apache || {})) {
+        status.apache[version] = { installed: isInstalled };
+      }
+
       return status;
+    });
+
+    // Get available versions for each service
+    ipcMain.handle('binaries:getAvailableVersions', async () => {
+      return binaryDownload.getVersionMeta();
+    });
+
+    // Get full service configuration (versions, ports, offsets)
+    ipcMain.handle('binaries:getServiceConfig', async () => {
+      return {
+        versions: SERVICE_VERSIONS,
+        portOffsets: VERSION_PORT_OFFSETS,
+        defaultPorts: DEFAULT_PORTS,
+        serviceInfo: SERVICE_INFO,
+      };
     });
 
     ipcMain.handle('binaries:getDownloadUrls', async () => {
@@ -468,16 +566,16 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       return binaryDownload.downloadPhp(version);
     });
 
-    ipcMain.handle('binaries:downloadMysql', async () => {
-      return binaryDownload.downloadMysql();
+    ipcMain.handle('binaries:downloadMysql', async (event, version) => {
+      return binaryDownload.downloadMysql(version);
     });
 
-    ipcMain.handle('binaries:downloadMariadb', async () => {
-      return binaryDownload.downloadMariadb();
+    ipcMain.handle('binaries:downloadMariadb', async (event, version) => {
+      return binaryDownload.downloadMariadb(version);
     });
 
-    ipcMain.handle('binaries:downloadRedis', async () => {
-      return binaryDownload.downloadRedis();
+    ipcMain.handle('binaries:downloadRedis', async (event, version) => {
+      return binaryDownload.downloadRedis(version);
     });
 
     ipcMain.handle('binaries:downloadMailpit', async () => {
@@ -488,16 +586,21 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       return binaryDownload.downloadPhpMyAdmin();
     });
 
-    ipcMain.handle('binaries:downloadNginx', async () => {
-      return binaryDownload.downloadNginx();
+    ipcMain.handle('binaries:downloadNginx', async (event, version) => {
+      return binaryDownload.downloadNginx(version);
     });
 
-    ipcMain.handle('binaries:downloadApache', async () => {
-      return binaryDownload.downloadApache();
+    ipcMain.handle('binaries:downloadApache', async (event, version) => {
+      return binaryDownload.downloadApache(version);
     });
 
     ipcMain.handle('binaries:importApache', async (event, filePath) => {
       return binaryDownload.importApache(filePath);
+    });
+
+    // Generic binary import for any service
+    ipcMain.handle('binaries:import', async (event, serviceName, version, filePath) => {
+      return binaryDownload.importBinary(serviceName, version, filePath);
     });
 
     ipcMain.handle('binaries:openApacheDownloadPage', async () => {
@@ -524,6 +627,11 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
     ipcMain.handle('binaries:remove', async (event, type, version) => {
       return binaryDownload.removeBinary(type, version);
+    });
+
+    // Scan for custom imported versions
+    ipcMain.handle('binaries:scanCustomVersions', async () => {
+      return binaryDownload.scanCustomVersions();
     });
 
     // PHP.ini handlers
@@ -737,6 +845,48 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       return { success: true };
     }
     return { success: false };
+  });
+
+  // ============ CLI HANDLERS ============
+  ipcMain.handle('cli:getStatus', async () => {
+    if (!managers.cli) return { installed: false, inPath: false };
+    return managers.cli.checkCliInstalled();
+  });
+
+  ipcMain.handle('cli:getAlias', async () => {
+    if (!managers.cli) return 'dvp';
+    return managers.cli.getAlias();
+  });
+
+  ipcMain.handle('cli:setAlias', async (event, alias) => {
+    if (!managers.cli) throw new Error('CLI manager not initialized');
+    return managers.cli.setAlias(alias);
+  });
+
+  ipcMain.handle('cli:install', async () => {
+    if (!managers.cli) throw new Error('CLI manager not initialized');
+    return managers.cli.installCli();
+  });
+
+  ipcMain.handle('cli:addToPath', async () => {
+    if (!managers.cli) throw new Error('CLI manager not initialized');
+    return managers.cli.addToPath();
+  });
+
+  ipcMain.handle('cli:getInstructions', async () => {
+    if (!managers.cli) throw new Error('CLI manager not initialized');
+    const cliPath = managers.cli.getCliPath();
+    return managers.cli.getInstallInstructions(cliPath);
+  });
+
+  ipcMain.handle('cli:syncProjectConfigs', async () => {
+    if (!managers.cli) throw new Error('CLI manager not initialized');
+    return managers.cli.syncAllProjectConfigs();
+  });
+
+  ipcMain.handle('cli:createProjectConfig', async (event, projectId) => {
+    if (!managers.cli) throw new Error('CLI manager not initialized');
+    return managers.cli.createProjectConfig(projectId);
   });
 
   // Resource monitoring interval

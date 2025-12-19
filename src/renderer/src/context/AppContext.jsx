@@ -122,8 +122,8 @@ export function AppProvider({ children }) {
     return project;
   }, []);
 
-  const deleteProject = useCallback(async (id) => {
-    await window.devbox?.projects.delete(id);
+  const deleteProject = useCallback(async (id, deleteFiles = false) => {
+    await window.devbox?.projects.delete(id, deleteFiles);
     dispatch({ type: 'REMOVE_PROJECT', payload: id });
   }, []);
 
@@ -151,13 +151,13 @@ export function AppProvider({ children }) {
     }
   }, [refreshProjects]);
 
-  const startService = useCallback(async (name) => {
-    await window.devbox?.services.start(name);
+  const startService = useCallback(async (name, version = null) => {
+    await window.devbox?.services.start(name, version);
     await refreshServices();
   }, [refreshServices]);
 
-  const stopService = useCallback(async (name) => {
-    await window.devbox?.services.stop(name);
+  const stopService = useCallback(async (name, version = null) => {
+    await window.devbox?.services.stop(name, version);
     await refreshServices();
   }, [refreshServices]);
 

@@ -5,6 +5,9 @@ const { EventEmitter } = require('events');
 const { app } = require('electron');
 const { isPortAvailable, findAvailablePort } = require('../utils/PortUtils');
 
+// Import centralized service configuration
+const { SERVICE_VERSIONS, VERSION_PORT_OFFSETS, DEFAULT_PORTS } = require('../../shared/serviceConfig');
+
 // Helper function to spawn a process hidden on Windows
 // On Windows, uses regular spawn with windowsHide and shell option
 // The shell option with windowsHide helps prevent console window flashing
@@ -33,8 +36,9 @@ class ServiceManager extends EventEmitter {
     this.resourcePath = resourcePath;
     this.configStore = configStore;
     this.managers = managers;
-    this.processes = new Map();
+    this.processes = new Map(); // key format: 'serviceName' or 'serviceName-version'
     this.serviceStatus = new Map();
+    this.runningVersions = new Map(); // Track running versions per service type
 
     // Track which web server owns the standard ports (80/443)
     // First web server to start gets these ports
@@ -46,51 +50,84 @@ class ServiceManager extends EventEmitter {
       alternate: { http: 8081, https: 8444 },
     };
 
-    // Service definitions
+    // Port assignments for versioned services
+    // Uses centralized configuration from shared/serviceConfig.js
+    this.versionPortOffsets = { ...VERSION_PORT_OFFSETS };
+
+    // Service definitions (using centralized default ports)
     this.serviceConfigs = {
       nginx: {
         name: 'Nginx',
-        defaultPort: 80,
+        defaultPort: DEFAULT_PORTS.nginx || 80,
         sslPort: 443,
         alternatePort: 8081,
         alternateSslPort: 8444,
         healthCheck: this.checkNginxHealth.bind(this),
+        versioned: true,
       },
       apache: {
         name: 'Apache',
-        defaultPort: 80,
+        defaultPort: DEFAULT_PORTS.apache || 8081,
         sslPort: 443,
-        alternatePort: 8081,
-        alternateSslPort: 8444,
+        alternatePort: 8082,
+        alternateSslPort: 8445,
         healthCheck: this.checkApacheHealth.bind(this),
+        versioned: true,
       },
       mysql: {
         name: 'MySQL',
-        defaultPort: 3306,
+        defaultPort: DEFAULT_PORTS.mysql || 3306,
         healthCheck: this.checkMySqlHealth.bind(this),
+        versioned: true,
       },
       mariadb: {
         name: 'MariaDB',
-        defaultPort: 3306,
+        defaultPort: DEFAULT_PORTS.mariadb || 3306,
         healthCheck: this.checkMariaDbHealth.bind(this),
+        versioned: true,
       },
       redis: {
         name: 'Redis',
-        defaultPort: 6379,
+        defaultPort: DEFAULT_PORTS.redis || 6379,
         healthCheck: this.checkRedisHealth.bind(this),
+        versioned: true,
       },
       mailpit: {
         name: 'Mailpit',
-        defaultPort: 8025,
-        smtpPort: 1025,
+        defaultPort: DEFAULT_PORTS.mailpit || 8025,
+        smtpPort: DEFAULT_PORTS.mailpitSmtp || 1025,
         healthCheck: this.checkMailpitHealth.bind(this),
+        versioned: false,
       },
       phpmyadmin: {
         name: 'phpMyAdmin',
-        defaultPort: 8080,
+        defaultPort: DEFAULT_PORTS.phpmyadmin || 8080,
         healthCheck: this.checkPhpMyAdminHealth.bind(this),
+        versioned: false,
       },
     };
+  }
+
+  // Get process key for Map storage
+  getProcessKey(serviceName, version) {
+    if (version) {
+      return `${serviceName}-${version}`;
+    }
+    return serviceName;
+  }
+
+  // Get port for a specific service version
+  getVersionPort(serviceName, version, basePort) {
+    const offsets = this.versionPortOffsets[serviceName];
+    if (offsets && version && offsets[version] !== undefined) {
+      return basePort + offsets[version];
+    }
+    // For unknown versions (custom imports), calculate offset from version string
+    if (version) {
+      const customOffset = 10 + (version.charCodeAt(0) % 10);
+      return basePort + customOffset;
+    }
+    return basePort;
   }
 
   async initialize() {
@@ -106,14 +143,35 @@ class ServiceManager extends EventEmitter {
         uptime: null,
         memory: 0,
         cpu: 0,
+        version: null,
+        versioned: config.versioned || false,
       });
+      
+      // Initialize running versions tracker
+      if (config.versioned) {
+        this.runningVersions.set(key, new Map()); // version -> { port, pid, startedAt }
+      }
     }
 
-    // Ensure data directories exist
+    // Ensure data directories exist for versioned services
     const dataPath = path.join(app.getPath('userData'), 'data');
-    await fs.ensureDir(path.join(dataPath, 'mysql', 'data'));
-    await fs.ensureDir(path.join(dataPath, 'mariadb', 'data'));
-    await fs.ensureDir(path.join(dataPath, 'redis'));
+    
+    // MySQL version directories
+    for (const version of (SERVICE_VERSIONS.mysql || [])) {
+      await fs.ensureDir(path.join(dataPath, 'mysql', version, 'data'));
+    }
+    
+    // MariaDB version directories
+    for (const version of (SERVICE_VERSIONS.mariadb || [])) {
+      await fs.ensureDir(path.join(dataPath, 'mariadb', version, 'data'));
+    }
+    
+    // Redis version directories
+    for (const version of (SERVICE_VERSIONS.redis || [])) {
+      await fs.ensureDir(path.join(dataPath, 'redis', version));
+    }
+    
+    // Nginx and Apache config directories
     await fs.ensureDir(path.join(dataPath, 'nginx'));
     await fs.ensureDir(path.join(dataPath, 'apache'));
     await fs.ensureDir(path.join(dataPath, 'logs'));
@@ -143,30 +201,38 @@ class ServiceManager extends EventEmitter {
     return results;
   }
 
-  async startService(serviceName) {
+  async startService(serviceName, version = null) {
     const config = this.serviceConfigs[serviceName];
     if (!config) {
       throw new Error(`Unknown service: ${serviceName}`);
     }
 
-    console.log(`Starting ${config.name}...`);
+    // For versioned services, version is required (or use default)
+    if (config.versioned && !version) {
+      // Use first available version as default
+      const defaults = { mysql: '8.4', mariadb: '11.4', redis: '7.4', nginx: '1.28', apache: '2.4' };
+      version = defaults[serviceName];
+    }
+
+    const versionSuffix = version ? ` ${version}` : '';
+    console.log(`Starting ${config.name}${versionSuffix}...`);
 
     try {
       switch (serviceName) {
         case 'nginx':
-          await this.startNginx();
+          await this.startNginx(version);
           break;
         case 'apache':
-          await this.startApache();
+          await this.startApache(version);
           break;
         case 'mysql':
-          await this.startMySQL();
+          await this.startMySQL(version);
           break;
         case 'mariadb':
-          await this.startMariaDB();
+          await this.startMariaDB(version);
           break;
         case 'redis':
-          await this.startRedis();
+          await this.startRedis(version);
           break;
         case 'mailpit':
           await this.startMailpit();
@@ -182,12 +248,13 @@ class ServiceManager extends EventEmitter {
       if (status.status !== 'not_installed') {
         status.status = 'running';
         status.startedAt = new Date();
-        this.emit('serviceStarted', serviceName);
+        status.version = version;
+        this.emit('serviceStarted', serviceName, version);
       }
 
-      return { success: status.status === 'running', service: serviceName, status: status.status };
+      return { success: status.status === 'running', service: serviceName, version, status: status.status };
     } catch (error) {
-      console.error(`Failed to start ${config.name}:`, error);
+      console.error(`Failed to start ${config.name}${versionSuffix}:`, error);
       const status = this.serviceStatus.get(serviceName);
       status.status = 'error';
       status.error = error.message;
@@ -195,25 +262,41 @@ class ServiceManager extends EventEmitter {
     }
   }
 
-  async stopService(serviceName) {
+  async stopService(serviceName, version = null) {
     const config = this.serviceConfigs[serviceName];
     if (!config) {
       throw new Error(`Unknown service: ${serviceName}`);
     }
 
-    console.log(`Stopping ${config.name}...`);
+    // Get version from current status if not provided
+    if (config.versioned && !version) {
+      const status = this.serviceStatus.get(serviceName);
+      version = status?.version;
+    }
 
-    const process = this.processes.get(serviceName);
+    const processKey = this.getProcessKey(serviceName, version);
+    const versionSuffix = version ? ` ${version}` : '';
+    console.log(`Stopping ${config.name}${versionSuffix}...`);
+
+    const process = this.processes.get(processKey);
     if (process) {
       await this.killProcess(process);
-      this.processes.delete(serviceName);
+      this.processes.delete(processKey);
+    }
+    
+    // Remove from running versions tracker
+    if (config.versioned && version) {
+      const versions = this.runningVersions.get(serviceName);
+      if (versions) {
+        versions.delete(version);
+      }
     }
     
     // For Nginx on Windows, also try to stop gracefully and kill any remaining workers
     if (serviceName === 'nginx' && require('os').platform() === 'win32') {
       try {
         const platform = 'win';
-        const nginxPath = path.join(this.resourcePath, 'nginx', platform);
+        const nginxPath = this.getNginxPath(version);
         const nginxExe = path.join(nginxPath, 'nginx.exe');
         const dataPath = path.join(app.getPath('userData'), 'data');
         const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
@@ -276,9 +359,10 @@ class ServiceManager extends EventEmitter {
     status.status = 'stopped';
     status.pid = null;
     status.startedAt = null;
-    this.emit('serviceStopped', serviceName);
+    status.version = null;
+    this.emit('serviceStopped', serviceName, version);
 
-    return { success: true, service: serviceName };
+    return { success: true, service: serviceName, version };
   }
 
   async restartService(serviceName) {
@@ -327,17 +411,17 @@ class ServiceManager extends EventEmitter {
   }
 
   // Nginx
-  async startNginx() {
+  async startNginx(version = '1.28') {
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    const nginxPath = path.join(this.resourcePath, 'nginx', platform);
+    const nginxPath = this.getNginxPath(version);
     const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'nginx');
     
     // Check if Nginx binary exists
     if (!await fs.pathExists(nginxExe)) {
-      console.log('Nginx binary not found. Please download Nginx from the Binary Manager.');
+      console.log(`Nginx ${version} binary not found. Please download Nginx from the Binary Manager.`);
       const status = this.serviceStatus.get('nginx');
       status.status = 'not_installed';
-      status.error = 'Nginx binary not found. Please download from Binary Manager.';
+      status.error = `Nginx ${version} binary not found. Please download from Binary Manager.`;
       return;
     }
 
@@ -568,19 +652,40 @@ class ServiceManager extends EventEmitter {
       });
     }
 
-    this.processes.set('nginx', proc);
+    this.processes.set(this.getProcessKey('nginx', version), proc);
     const status = this.serviceStatus.get('nginx');
     status.port = httpPort;
     status.sslPort = sslPort;
+    status.version = version;
+    
+    // Track this version as running
+    this.runningVersions.get('nginx').set(version, { port: httpPort, sslPort, startedAt: new Date() });
 
     // Wait for Nginx to be ready
-    await this.waitForService('nginx', 10000);
+    try {
+      await this.waitForService('nginx', 10000);
+      status.status = 'running';
+      status.startedAt = Date.now();
+      console.log(`Nginx ${version} started on port ${httpPort}`);
+    } catch (error) {
+      console.error(`Nginx ${version} failed to become ready:`, error);
+      status.status = 'error';
+      status.error = `Nginx ${version} failed to start properly: ${error.message}`;
+      this.runningVersions.get('nginx').delete(version);
+      throw error;
+    }
   }
 
   // Reload Nginx configuration without stopping
-  async reloadNginx() {
+  async reloadNginx(version = null) {
+    // Get version from status if not provided
+    if (!version) {
+      const status = this.serviceStatus.get('nginx');
+      version = status?.version || '1.28';
+    }
+    
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    const nginxPath = path.join(this.resourcePath, 'nginx', platform);
+    const nginxPath = this.getNginxPath(version);
     const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'sbin/nginx');
     const dataPath = path.join(app.getPath('userData'), 'data');
     const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
@@ -622,9 +727,15 @@ class ServiceManager extends EventEmitter {
   }
 
   // Reload Apache configuration without stopping
-  async reloadApache() {
+  async reloadApache(version = null) {
+    // Get version from status if not provided
+    if (!version) {
+      const status = this.serviceStatus.get('apache');
+      version = status?.version || '2.4';
+    }
+    
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    const apachePath = path.join(this.resourcePath, 'apache', platform);
+    const apachePath = this.getApachePath(version);
     const httpdExe = path.join(apachePath, 'bin', process.platform === 'win32' ? 'httpd.exe' : 'httpd');
     const dataPath = path.join(app.getPath('userData'), 'data');
     const confPath = path.join(dataPath, 'apache', 'httpd.conf');
@@ -735,17 +846,17 @@ http {
   }
 
   // Apache
-  async startApache() {
+  async startApache(version = '2.4') {
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    const apachePath = path.join(this.resourcePath, 'apache', platform);
+    const apachePath = this.getApachePath(version);
     const httpdExe = path.join(apachePath, 'bin', process.platform === 'win32' ? 'httpd.exe' : 'httpd');
     
     // Check if Apache binary exists
     if (!await fs.pathExists(httpdExe)) {
-      console.log('Apache binary not found. Please download Apache from the Binary Manager.');
+      console.log(`Apache ${version} binary not found. Please download Apache from the Binary Manager.`);
       const status = this.serviceStatus.get('apache');
       status.status = 'not_installed';
-      status.error = 'Apache binary not found. Please download from Binary Manager.';
+      status.error = `Apache ${version} binary not found. Please download from Binary Manager.`;
       return;
     }
 
@@ -934,16 +1045,29 @@ http {
       }
     });
 
-    this.processes.set('apache', proc);
+    this.processes.set(this.getProcessKey('apache', version), proc);
     const status = this.serviceStatus.get('apache');
     status.pid = proc.pid;
     status.port = httpPort;
     status.sslPort = httpsPort;
+    status.version = version;
+    
+    // Track this version as running
+    this.runningVersions.get('apache').set(version, { port: httpPort, sslPort: httpsPort, startedAt: new Date() });
 
     // Wait for Apache to be ready
-    await this.waitForService('apache', 10000);
-    
-    console.log(`Apache started on ports ${httpPort} (HTTP) and ${httpsPort} (HTTPS)`);
+    try {
+      await this.waitForService('apache', 10000);
+      status.status = 'running';
+      status.startedAt = Date.now();
+      console.log(`Apache ${version} started on ports ${httpPort} (HTTP) and ${httpsPort} (HTTPS)`);
+    } catch (error) {
+      console.error(`Apache ${version} failed to become ready:`, error);
+      status.status = 'error';
+      status.error = `Apache ${version} failed to start properly: ${error.message}`;
+      this.runningVersions.get('apache').delete(version);
+      throw error;
+    }
   }
 
   async createApacheConfig(apachePath, confPath, logsPath, httpPort = 8081, httpsPort = 8444) {
@@ -998,16 +1122,16 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
   }
 
   // MySQL
-  async startMySQL() {
-    const mysqlPath = this.getMySQLPath();
+  async startMySQL(version = '8.4') {
+    const mysqlPath = this.getMySQLPath(version);
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
     
     // Check if MySQL binary exists
     if (!await fs.pathExists(mysqldPath)) {
-      console.log('MySQL binary not found. Please download MySQL from the Binary Manager.');
+      console.log(`MySQL ${version} binary not found. Please download MySQL from the Binary Manager.`);
       const status = this.serviceStatus.get('mysql');
       status.status = 'not_installed';
-      status.error = 'MySQL binary not found. Please download from Binary Manager.';
+      status.error = `MySQL ${version} binary not found. Please download from Binary Manager.`;
       return;
     }
 
@@ -1015,10 +1139,10 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     await this.killOrphanMySQLProcesses();
 
     const dataPath = path.join(app.getPath('userData'), 'data');
-    const dataDir = path.join(dataPath, 'mysql', 'data');
+    const dataDir = path.join(dataPath, 'mysql', version, 'data');
     
-    // Find available port dynamically
-    const defaultPort = this.serviceConfigs.mysql.defaultPort;
+    // Find available port dynamically based on version
+    const defaultPort = this.getVersionPort('mysql', version, this.serviceConfigs.mysql.defaultPort);
     let port = defaultPort;
     
     if (!await isPortAvailable(port)) {
@@ -1051,13 +1175,13 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       }
     }
 
-    const configPath = path.join(dataPath, 'mysql', 'my.cnf');
+    const configPath = path.join(dataPath, 'mysql', version, 'my.cnf');
 
     // Create MySQL config
     await fs.ensureDir(path.dirname(configPath));
-    await this.createMySQLConfig(configPath, dataDir, port);
+    await this.createMySQLConfig(configPath, dataDir, port, version);
 
-    console.log(`Starting MySQL server on port ${port}...`);
+    console.log(`Starting MySQL ${version} server on port ${port}...`);
     
     let proc;
     if (process.platform === 'win32') {
@@ -1124,21 +1248,29 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       });
     }
     
-    this.processes.set('mysql', proc);
+    this.processes.set(this.getProcessKey('mysql', version), proc);
     const status = this.serviceStatus.get('mysql');
     status.port = port;
+    status.version = version;
+    
+    // Track this version as running
+    this.runningVersions.get('mysql').set(version, { port, startedAt: new Date() });
 
     // Wait for MySQL to be ready
     try {
       await this.waitForService('mysql', 30000);
+      status.status = 'running';
+      status.startedAt = Date.now();
     } catch (error) {
-      console.error('MySQL failed to start:', error.message);
+      console.error(`MySQL ${version} failed to start:`, error.message);
       status.status = 'error';
       status.error = 'Failed to start within timeout. Check logs for details.';
+      // Clean up the runningVersions entry on failure
+      this.runningVersions.get('mysql').delete(version);
     }
   }
 
-  async initializeMySQLData(mysqlPath, dataDir) {
+  async initializeMySQLData(mysqlPath, dataDir, version = '8.4') {
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
 
     // Ensure data directory is empty before initialization
@@ -1168,26 +1300,31 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     });
   }
 
-  async createMySQLConfig(configPath, dataDir, port) {
+  async createMySQLConfig(configPath, dataDir, port, version = '8.4') {
     const isWindows = process.platform === 'win32';
+    const mysqlPath = this.getMySQLPath(version);
     
     let config;
     if (isWindows) {
-      // Windows-specific config for MySQL 8.4
+      // Windows-specific config for MySQL
       // Note: skip-grant-tables causes skip_networking=ON in MySQL 8.4, so we don't use it
       // Instead, MySQL is initialized with --initialize-insecure which creates root without password
+      // Disable problematic components that may fail to load on Windows
       config = `[mysqld]
-basedir=${this.getMySQLPath().replace(/\\/g, '/')}
+basedir=${mysqlPath.replace(/\\/g, '/')}
 datadir=${dataDir.replace(/\\/g, '/')}
 port=${port}
 bind-address=0.0.0.0
 enable-named-pipe=ON
-socket=MYSQL
+socket=MYSQL_${version.replace(/\./g, '')}
 pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
 innodb_buffer_pool_size=128M
 innodb_redo_log_capacity=100M
 max_connections=100
+# Disable components that may fail to load
+loose-mysqlx=0
+skip-log-bin
 
 [client]
 port=${port}
@@ -1212,17 +1349,17 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
   }
 
   // MariaDB
-  async startMariaDB() {
+  async startMariaDB(version = '11.4') {
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    const mariadbPath = path.join(this.resourcePath, 'mariadb', platform);
+    const mariadbPath = this.getMariaDBPath(version);
     const mariadbd = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
     
     // Check if MariaDB binary exists
     if (!await fs.pathExists(mariadbd)) {
-      console.log('MariaDB binary not found. Please download MariaDB from the Binary Manager.');
+      console.log(`MariaDB ${version} binary not found. Please download MariaDB from the Binary Manager.`);
       const status = this.serviceStatus.get('mariadb');
       status.status = 'not_installed';
-      status.error = 'MariaDB binary not found. Please download from Binary Manager.';
+      status.error = `MariaDB ${version} binary not found. Please download from Binary Manager.`;
       return;
     }
 
@@ -1230,10 +1367,10 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     await this.killOrphanMariaDBProcesses();
 
     const dataPath = path.join(app.getPath('userData'), 'data');
-    const dataDir = path.join(dataPath, 'mariadb', 'data');
+    const dataDir = path.join(dataPath, 'mariadb', version, 'data');
     
-    // Find available port dynamically
-    const defaultPort = this.serviceConfigs.mariadb.defaultPort;
+    // Find available port dynamically based on version
+    const defaultPort = this.getVersionPort('mariadb', version, this.serviceConfigs.mariadb.defaultPort);
     let port = defaultPort;
     
     if (!await isPortAvailable(port)) {
@@ -1255,12 +1392,12 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       await this.initializeMariaDBData(mariadbPath, dataDir);
     }
 
-    const configPath = path.join(dataPath, 'mariadb', 'my.cnf');
+    const configPath = path.join(dataPath, 'mariadb', version, 'my.cnf');
 
     // Create MariaDB config
-    await this.createMariaDBConfig(configPath, dataDir, port);
+    await this.createMariaDBConfig(configPath, dataDir, port, version);
 
-    console.log(`Starting MariaDB server on port ${port}...`);
+    console.log(`Starting MariaDB ${version} server on port ${port}...`);
 
     const proc = spawn(mariadbd, [`--defaults-file=${configPath}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -1291,16 +1428,30 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       }
     });
 
-    this.processes.set('mariadb', proc);
+    this.processes.set(this.getProcessKey('mariadb', version), proc);
     const status = this.serviceStatus.get('mariadb');
     status.pid = proc.pid;
     status.port = port;
+    status.version = version;
+    
+    // Track this version as running
+    this.runningVersions.get('mariadb').set(version, { port, startedAt: new Date() });
 
     // Wait for MariaDB to be ready
-    await this.waitForService('mariadb', 30000);
+    try {
+      await this.waitForService('mariadb', 30000);
+      status.status = 'running';
+      status.startedAt = Date.now();
+      console.log(`MariaDB ${version} started on port ${port}`);
+    } catch (error) {
+      console.error(`MariaDB ${version} failed to start:`, error.message);
+      status.status = 'error';
+      status.error = 'Failed to start within timeout. Check logs for details.';
+      this.runningVersions.get('mariadb').delete(version);
+    }
   }
 
-  async initializeMariaDBData(mariadbPath, dataDir) {
+  async initializeMariaDBData(mariadbPath, dataDir, version = '11.4') {
     // MariaDB uses mysql_install_db or mariadb-install-db
     const installDb = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadb-install-db.exe' : 'mariadb-install-db');
     
@@ -1328,27 +1479,29 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     });
   }
 
-  async createMariaDBConfig(configPath, dataDir, port) {
+  async createMariaDBConfig(configPath, dataDir, port, version = '11.4') {
     await fs.ensureDir(path.dirname(configPath));
     const isWindows = process.platform === 'win32';
+    const mariadbPath = this.getMariaDBPath(version);
     
     let config;
     if (isWindows) {
       // Windows-specific config - no socket, use TCP/IP and named pipe
       // Use unique named pipe name to avoid conflict with MySQL
       config = `[mysqld]
+basedir=${mariadbPath.replace(/\\/g, '/')}
 datadir=${dataDir.replace(/\\/g, '/')}
 port=${port}
 skip-grant-tables
 bind-address=127.0.0.1
 enable_named_pipe=ON
-socket=MARIADB
+socket=MARIADB_${version.replace(/\./g, '')}
 pid-file=${path.join(dataDir, 'mariadb.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
 
 [client]
 port=${port}
-socket=MARIADB
+socket=MARIADB_${version.replace(/\./g, '')}
 `;
     } else {
       // Unix/macOS config with socket
@@ -1372,8 +1525,8 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
   }
 
   // Redis
-  async startRedis() {
-    const redisPath = this.getRedisPath();
+  async startRedis(version = '7.4') {
+    const redisPath = this.getRedisPath(version);
     const redisServerPath = path.join(
       redisPath,
       process.platform === 'win32' ? 'redis-server.exe' : 'redis-server'
@@ -1381,17 +1534,21 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
 
     // Check if Redis binary exists
     if (!await fs.pathExists(redisServerPath)) {
-      console.log('Redis binary not found. Please download Redis from the Binary Manager.');
+      console.log(`Redis ${version} binary not found. Please download Redis from the Binary Manager.`);
       const status = this.serviceStatus.get('redis');
       status.status = 'not_installed';
-      status.error = 'Redis binary not found. Please download from Binary Manager.';
+      status.error = `Redis ${version} binary not found. Please download from Binary Manager.`;
       return;
     }
 
     const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataDir = path.join(dataPath, 'redis', version, 'data');
     
-    // Find available port dynamically
-    const defaultPort = this.serviceConfigs.redis.defaultPort;
+    // Ensure data directory exists
+    await fs.ensureDir(dataDir);
+    
+    // Find available port dynamically based on version
+    const defaultPort = this.getVersionPort('redis', version, this.serviceConfigs.redis.defaultPort);
     let port = defaultPort;
     
     if (!await isPortAvailable(port)) {
@@ -1405,10 +1562,10 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
     // Store the actual port being used
     this.serviceConfigs.redis.actualPort = port;
 
-    const configPath = path.join(dataPath, 'redis', 'redis.conf');
-    await this.createRedisConfig(configPath, dataPath, port);
+    const configPath = path.join(dataPath, 'redis', version, 'redis.conf');
+    await this.createRedisConfig(configPath, dataDir, port, version);
 
-    console.log(`Starting Redis server on port ${port}...`);
+    console.log(`Starting Redis ${version} server on port ${port}...`);
     
     let proc;
     if (process.platform === 'win32') {
@@ -1438,21 +1595,38 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
       });
     }
 
-    this.processes.set('redis', proc);
+    this.processes.set(this.getProcessKey('redis', version), proc);
     const status = this.serviceStatus.get('redis');
     status.port = port;
+    status.version = version;
+    
+    // Track this version as running
+    this.runningVersions.get('redis').set(version, { port, startedAt: new Date() });
 
-    await this.waitForService('redis', 10000);
+    try {
+      await this.waitForService('redis', 10000);
+      status.status = 'running';
+      status.startedAt = Date.now();
+      console.log(`Redis ${version} started on port ${port}`);
+    } catch (error) {
+      console.error(`Redis ${version} failed to become ready:`, error);
+      status.status = 'error';
+      status.error = `Redis ${version} failed to start properly: ${error.message}`;
+      this.runningVersions.get('redis').delete(version);
+      throw error;
+    }
   }
 
-  async createRedisConfig(configPath, dataPath, port) {
+  async createRedisConfig(configPath, dataDir, port, version = '7.4') {
+    await fs.ensureDir(path.dirname(configPath));
     const config = `
 port ${port}
 bind 127.0.0.1
 daemonize no
-dir ${path.join(dataPath, 'redis').replace(/\\/g, '/')}
+dir ${dataDir.replace(/\\/g, '/')}
 appendonly yes
 appendfilename "appendonly.aof"
+dbfilename dump_${version.replace(/\./g, '')}.rdb
 `;
     await fs.writeFile(configPath, config);
   }
@@ -1533,7 +1707,17 @@ appendfilename "appendonly.aof"
     status.port = port;
     status.smtpPort = smtpPort;
 
-    await this.waitForService('mailpit', 10000);
+    try {
+      await this.waitForService('mailpit', 10000);
+      status.status = 'running';
+      status.startedAt = Date.now();
+      console.log(`Mailpit started on port ${port} (web) and ${smtpPort} (SMTP)`);
+    } catch (error) {
+      console.error(`Mailpit failed to become ready:`, error);
+      status.status = 'error';
+      status.error = `Mailpit failed to start properly: ${error.message}`;
+      throw error;
+    }
   }
 
   // phpMyAdmin (using built-in PHP server)
@@ -1659,23 +1843,81 @@ appendfilename "appendonly.aof"
     const status = this.serviceStatus.get('phpmyadmin');
     status.port = port;
 
-    await this.waitForService('phpmyadmin', 10000);
+    try {
+      await this.waitForService('phpmyadmin', 10000);
+      status.status = 'running';
+      status.startedAt = Date.now();
+      console.log(`phpMyAdmin started on port ${port}`);
+    } catch (error) {
+      console.error(`phpMyAdmin failed to become ready:`, error);
+      status.status = 'error';
+      status.error = `phpMyAdmin failed to start properly: ${error.message}`;
+      throw error;
+    }
   }
 
-  // Utility methods
-  getMySQLPath() {
+  // Utility methods - Path helpers for versioned services
+  getNginxPath(version = '1.28') {
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    return path.join(this.resourcePath, 'mysql', platform);
+    return path.join(this.resourcePath, 'nginx', version, platform);
   }
 
-  getRedisPath() {
+  getApachePath(version = '2.4') {
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    return path.join(this.resourcePath, 'redis', platform);
+    return path.join(this.resourcePath, 'apache', version, platform);
+  }
+
+  getMySQLPath(version = '8.4') {
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    return path.join(this.resourcePath, 'mysql', version, platform);
+  }
+
+  getMariaDBPath(version = '11.4') {
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    return path.join(this.resourcePath, 'mariadb', version, platform);
+  }
+
+  getRedisPath(version = '7.4') {
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    return path.join(this.resourcePath, 'redis', version, platform);
   }
 
   getMailpitPath() {
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     return path.join(this.resourcePath, 'mailpit', platform);
+  }
+
+  getPhpMyAdminPath() {
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    return path.join(this.resourcePath, 'phpmyadmin', platform);
+  }
+
+  /**
+   * Get all running versions for a service
+   * @param {string} serviceName - The service name
+   * @returns {Map} - Map of version -> { port, startedAt }
+   */
+  getRunningVersions(serviceName) {
+    return this.runningVersions.get(serviceName) || new Map();
+  }
+
+  /**
+   * Get all running versions for all services
+   * @returns {Map} - Map of serviceName -> Map of version -> { port, startedAt }
+   */
+  getAllRunningVersions() {
+    return this.runningVersions;
+  }
+
+  /**
+   * Check if a specific version of a service is running
+   * @param {string} serviceName - The service name
+   * @param {string} version - The version to check
+   * @returns {boolean}
+   */
+  isVersionRunning(serviceName, version) {
+    const versions = this.runningVersions.get(serviceName);
+    return versions ? versions.has(version) : false;
   }
 
   async killOrphanMySQLProcesses() {

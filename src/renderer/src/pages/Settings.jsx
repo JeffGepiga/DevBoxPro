@@ -14,6 +14,11 @@ import {
   Upload,
   RotateCcw,
   Check,
+  Terminal,
+  Copy,
+  CheckCircle,
+  AlertCircle,
+  ExternalLink,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -79,6 +84,7 @@ function Settings() {
 
   const tabs = [
     { id: 'general', label: 'General', icon: Server },
+    { id: 'cli', label: 'CLI Tool', icon: Code },
     { id: 'network', label: 'Network', icon: Globe },
     { id: 'php', label: 'PHP', icon: Code },
     { id: 'appearance', label: 'Appearance', icon: Palette },
@@ -149,6 +155,9 @@ function Settings() {
         <div className="flex-1">
           {activeTab === 'general' && (
             <GeneralSettings settings={localSettings} updateSetting={updateSetting} />
+          )}
+          {activeTab === 'cli' && (
+            <CliSettings settings={localSettings} updateSetting={updateSetting} />
           )}
           {activeTab === 'network' && (
             <NetworkSettings settings={localSettings} updateSetting={updateSetting} />
@@ -270,6 +279,299 @@ function GeneralSettings({ settings, updateSetting }) {
           <option value="atom">Atom</option>
         </select>
       </div>
+    </div>
+  );
+}
+
+function CliSettings({ settings, updateSetting }) {
+  const [cliStatus, setCliStatus] = useState(null);
+  const [alias, setAlias] = useState('dvp');
+  const [instructions, setInstructions] = useState(null);
+  const [installing, setInstalling] = useState(false);
+  const [addingToPath, setAddingToPath] = useState(false);
+  const [syncingConfigs, setSyncingConfigs] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  // Load CLI status and alias
+  useEffect(() => {
+    const loadCliInfo = async () => {
+      try {
+        const status = await window.devbox?.cli?.getStatus();
+        setCliStatus(status);
+        
+        const currentAlias = await window.devbox?.cli?.getAlias();
+        setAlias(currentAlias || 'dvp');
+        
+        const instr = await window.devbox?.cli?.getInstructions();
+        setInstructions(instr);
+      } catch (error) {
+        console.error('Error loading CLI info:', error);
+      }
+    };
+    loadCliInfo();
+  }, []);
+
+  const handleInstallCli = async () => {
+    setInstalling(true);
+    setMessage(null);
+    try {
+      const result = await window.devbox?.cli?.install();
+      setMessage({ type: 'success', text: `CLI tool installed successfully! Alias: ${result.alias}` });
+      
+      // Refresh status
+      const status = await window.devbox?.cli?.getStatus();
+      setCliStatus(status);
+      const instr = await window.devbox?.cli?.getInstructions();
+      setInstructions(instr);
+    } catch (error) {
+      setMessage({ type: 'error', text: `Failed to install CLI: ${error.message}` });
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const handleAddToPath = async () => {
+    setAddingToPath(true);
+    setMessage(null);
+    try {
+      const result = await window.devbox?.cli?.addToPath();
+      setMessage({ type: 'success', text: result.message + ' ' + result.note });
+      
+      // Refresh status
+      const status = await window.devbox?.cli?.getStatus();
+      setCliStatus(status);
+    } catch (error) {
+      setMessage({ type: 'error', text: `Failed to add to PATH: ${error.message}` });
+    } finally {
+      setAddingToPath(false);
+    }
+  };
+
+  const handleSaveAlias = async () => {
+    try {
+      await window.devbox?.cli?.setAlias(alias);
+      setMessage({ type: 'success', text: `Alias changed to "${alias}". Please reinstall the CLI tool.` });
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message });
+    }
+  };
+
+  const handleSyncConfigs = async () => {
+    setSyncingConfigs(true);
+    setMessage(null);
+    try {
+      const results = await window.devbox?.cli?.syncProjectConfigs();
+      const success = results.filter(r => r.success).length;
+      const failed = results.filter(r => !r.success).length;
+      setMessage({ 
+        type: failed > 0 ? 'warning' : 'success', 
+        text: `Synced ${success} project(s)${failed > 0 ? `, ${failed} failed` : ''}`
+      });
+    } catch (error) {
+      setMessage({ type: 'error', text: `Failed to sync configs: ${error.message}` });
+    } finally {
+      setSyncingConfigs(false);
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* CLI Info Card */}
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+          <Terminal className="w-5 h-5" />
+          CLI Tool
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Use the CLI tool to run PHP, Node.js, Composer, and npm commands with project-specific versions from any terminal or editor.
+        </p>
+
+        {/* Status */}
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-sm text-gray-600 dark:text-gray-400">Status:</span>
+          {cliStatus?.installed ? (
+            <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+              <CheckCircle className="w-4 h-4" />
+              Installed
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+              <AlertCircle className="w-4 h-4" />
+              Not installed
+            </span>
+          )}
+          {cliStatus?.installed && (
+            <>
+              <span className="text-gray-300 dark:text-gray-600">|</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">In PATH:</span>
+              {cliStatus?.inPath ? (
+                <span className="text-green-600 dark:text-green-400">Yes</span>
+              ) : (
+                <span className="text-amber-600 dark:text-amber-400">No</span>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Message */}
+        {message && (
+          <div className={clsx(
+            'p-3 rounded-lg mb-4 text-sm',
+            message.type === 'success' && 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400',
+            message.type === 'error' && 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400',
+            message.type === 'warning' && 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400'
+          )}>
+            {message.text}
+          </div>
+        )}
+
+        {/* Buttons */}
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={handleInstallCli}
+            disabled={installing}
+            className="btn-primary"
+          >
+            {installing ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            {cliStatus?.installed ? 'Reinstall CLI' : 'Install CLI'}
+          </button>
+          
+          {cliStatus?.installed && !cliStatus?.inPath && (
+            <button
+              onClick={handleAddToPath}
+              disabled={addingToPath}
+              className="btn-secondary"
+            >
+              {addingToPath ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <ExternalLink className="w-4 h-4" />
+              )}
+              Add to PATH
+            </button>
+          )}
+
+          <button
+            onClick={handleSyncConfigs}
+            disabled={syncingConfigs}
+            className="btn-secondary"
+          >
+            {syncingConfigs ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            Sync Project Configs
+          </button>
+        </div>
+      </div>
+
+      {/* Alias Configuration */}
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          Command Alias
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Customize the command alias used in your terminal. Default is <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">dvp</code>.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={alias}
+            onChange={(e) => setAlias(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+            className="input w-40"
+            placeholder="dvp"
+          />
+          <button
+            onClick={handleSaveAlias}
+            disabled={!alias || alias === cliStatus?.alias}
+            className="btn-secondary"
+          >
+            <Save className="w-4 h-4" />
+            Save
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+          After changing the alias, reinstall the CLI tool.
+        </p>
+      </div>
+
+      {/* Usage Examples */}
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          Usage Examples
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Navigate to your project folder and use these commands:
+        </p>
+        <div className="space-y-2">
+          {[
+            { cmd: `${alias} php artisan migrate`, desc: 'Run Laravel Artisan with project PHP version' },
+            { cmd: `${alias} php artisan optimize`, desc: 'Optimize Laravel with correct PHP' },
+            { cmd: `${alias} composer install`, desc: 'Install Composer dependencies' },
+            { cmd: `${alias} npm install`, desc: 'Install npm packages with project Node.js' },
+            { cmd: `${alias} npm run dev`, desc: 'Run npm scripts' },
+          ].map(({ cmd, desc }) => (
+            <div key={cmd} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <div>
+                <code className="text-sm font-mono text-gray-800 dark:text-gray-200">{cmd}</code>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{desc}</p>
+              </div>
+              <button
+                onClick={() => copyToClipboard(cmd)}
+                className="btn-ghost btn-sm"
+                title="Copy to clipboard"
+              >
+                {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Manual PATH Instructions */}
+      {instructions && !cliStatus?.inPath && (
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Manual PATH Setup
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            If automatic PATH setup doesn't work, follow these steps:
+          </p>
+          <ol className="list-decimal list-inside space-y-2 text-sm text-gray-700 dark:text-gray-300">
+            {instructions.manual?.map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+          {instructions.powershell && (
+            <div className="mt-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Or run this PowerShell command:</p>
+              <div className="flex items-center gap-2 p-3 bg-gray-900 rounded-lg">
+                <code className="text-sm font-mono text-green-400 flex-1 overflow-x-auto">
+                  {instructions.powershell}
+                </code>
+                <button
+                  onClick={() => copyToClipboard(instructions.powershell)}
+                  className="btn-ghost btn-sm text-gray-400 hover:text-white"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

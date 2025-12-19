@@ -18,23 +18,23 @@ import {
   FolderOpen,
   FileText,
   Settings,
+  Upload,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import clsx from 'clsx';
 import PhpIniEditor from '../components/PhpIniEditor';
 
-const PHP_VERSIONS = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
-const NODE_VERSIONS = ['22', '20', '18'];
-
 function BinaryManager() {
   const [installed, setInstalled] = useState({
     php: {},
-    mysql: false,
-    mariadb: false,
-    redis: false,
+    mysql: {},
+    mariadb: {},
+    redis: {},
     mailpit: false,
     phpmyadmin: false,
-    nginx: false,
-    apache: false,
+    nginx: {},
+    apache: {},
     nodejs: {},
     composer: false,
   });
@@ -44,6 +44,24 @@ function BinaryManager() {
   const [loading, setLoading] = useState(true);
   const [webServerType, setWebServerType] = useState('nginx');
   const [phpIniEditor, setPhpIniEditor] = useState({ open: false, version: null });
+  const [expandedSections, setExpandedSections] = useState({
+    mysql: false,
+    mariadb: false,
+    redis: false,
+    nginx: false,
+    apache: false,
+  });
+  
+  // Service versions from backend config
+  const [serviceVersions, setServiceVersions] = useState({
+    php: [],
+    mysql: [],
+    mariadb: [],
+    redis: [],
+    nginx: [],
+    apache: [],
+    nodejs: [],
+  });
 
   const loadInstalled = useCallback(async () => {
     try {
@@ -67,10 +85,21 @@ function BinaryManager() {
     }
   }, []);
 
+  const loadServiceConfig = useCallback(async () => {
+    try {
+      const config = await window.devbox?.binaries.getServiceConfig();
+      if (config?.versions) {
+        setServiceVersions(config.versions);
+      }
+    } catch (error) {
+      console.error('Error loading service config:', error);
+    }
+  }, []);
+
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await Promise.all([loadInstalled(), loadDownloadUrls()]);
+      await Promise.all([loadInstalled(), loadDownloadUrls(), loadServiceConfig()]);
       // Load web server preference
       const serverType = await window.devbox?.webServer.getServerType();
       if (serverType) setWebServerType(serverType);
@@ -91,7 +120,7 @@ function BinaryManager() {
     });
 
     return () => unsubscribe?.();
-  }, [loadInstalled, loadDownloadUrls]);
+  }, [loadInstalled, loadDownloadUrls, loadServiceConfig]);
 
   const handleSetWebServer = async (type) => {
     try {
@@ -119,24 +148,26 @@ function BinaryManager() {
     });
   };
 
-  const handleDownloadService = async (service) => {
-    // Don't start if already downloading
-    if (downloading[service]) return;
+  const handleDownloadService = async (service, version = null) => {
+    const id = version ? `${service}-${version}` : service;
     
-    setDownloading((prev) => ({ ...prev, [service]: true }));
-    setProgress((prev) => ({ ...prev, [service]: { status: 'starting', progress: 0 } }));
+    // Don't start if already downloading
+    if (downloading[id]) return;
+    
+    setDownloading((prev) => ({ ...prev, [id]: true }));
+    setProgress((prev) => ({ ...prev, [id]: { status: 'starting', progress: 0 } }));
 
     // Fire and forget - don't await, let progress events handle updates
     let downloadPromise;
     switch (service) {
       case 'mysql':
-        downloadPromise = window.devbox?.binaries.downloadMysql();
+        downloadPromise = window.devbox?.binaries.downloadMysql(version);
         break;
       case 'mariadb':
-        downloadPromise = window.devbox?.binaries.downloadMariadb();
+        downloadPromise = window.devbox?.binaries.downloadMariadb(version);
         break;
       case 'redis':
-        downloadPromise = window.devbox?.binaries.downloadRedis();
+        downloadPromise = window.devbox?.binaries.downloadRedis(version);
         break;
       case 'mailpit':
         downloadPromise = window.devbox?.binaries.downloadMailpit();
@@ -145,10 +176,10 @@ function BinaryManager() {
         downloadPromise = window.devbox?.binaries.downloadPhpMyAdmin();
         break;
       case 'nginx':
-        downloadPromise = window.devbox?.binaries.downloadNginx();
+        downloadPromise = window.devbox?.binaries.downloadNginx(version);
         break;
       case 'apache':
-        downloadPromise = window.devbox?.binaries.downloadApache();
+        downloadPromise = window.devbox?.binaries.downloadApache(version);
         break;
       case 'composer':
         downloadPromise = window.devbox?.binaries.downloadComposer();
@@ -156,10 +187,14 @@ function BinaryManager() {
     }
     
     downloadPromise?.catch((error) => {
-      console.error(`Error downloading ${service}:`, error);
-      setProgress((prev) => ({ ...prev, [service]: { status: 'error', error: error.message } }));
-      setDownloading((prev) => ({ ...prev, [service]: false }));
+      console.error(`Error downloading ${service}${version ? ' ' + version : ''}:`, error);
+      setProgress((prev) => ({ ...prev, [id]: { status: 'error', error: error.message } }));
+      setDownloading((prev) => ({ ...prev, [id]: false }));
     });
+  };
+
+  const toggleSection = (section) => {
+    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
   const handleOpenApacheDownloadPage = async () => {
@@ -298,25 +333,39 @@ function BinaryManager() {
     );
   }
 
-  const services = [
+  // Helper to check if any version of a service is installed
+  const hasAnyVersionInstalled = (service) => {
+    const versions = installed[service];
+    if (typeof versions === 'boolean') return versions;
+    return Object.values(versions || {}).some(Boolean);
+  };
+
+  // Helper to get installed versions count
+  const getInstalledVersionsCount = (service) => {
+    const versions = installed[service];
+    if (typeof versions === 'boolean') return versions ? 1 : 0;
+    return Object.values(versions || {}).filter(Boolean).length;
+  };
+
+  const versionedServices = [
     {
       id: 'mysql',
       name: 'MySQL',
-      description: 'MySQL 8.4 database server',
+      description: 'MySQL database server',
       icon: Database,
-      installed: installed.mysql,
-      url: downloadUrls.mysql?.url,
-      size: '~290 MB',
+      versions: serviceVersions.mysql,
+      defaultVersion: serviceVersions.mysql[0] || '8.4',
+      sizes: { '8.4': '~290 MB', '8.0': '~280 MB', '5.7': '~250 MB' },
       category: 'database',
     },
     {
       id: 'mariadb',
       name: 'MariaDB',
-      description: 'MariaDB 11.4 database server (MySQL compatible)',
+      description: 'MariaDB database server (MySQL compatible)',
       icon: Database,
-      installed: installed.mariadb,
-      url: downloadUrls.mariadb?.url,
-      size: '~90 MB',
+      versions: serviceVersions.mariadb,
+      defaultVersion: serviceVersions.mariadb[0] || '11.4',
+      sizes: { '11.4': '~90 MB', '10.11': '~85 MB', '10.6': '~80 MB' },
       category: 'database',
     },
     {
@@ -324,11 +373,14 @@ function BinaryManager() {
       name: 'Redis',
       description: 'Redis in-memory data store',
       icon: Server,
-      installed: installed.redis,
-      url: downloadUrls.redis?.url,
-      size: '~5 MB',
+      versions: serviceVersions.redis,
+      defaultVersion: serviceVersions.redis[0] || '7.4',
+      sizes: { '7.4': '~5 MB', '7.2': '~5 MB', '6.2': '~4 MB' },
       category: 'cache',
     },
+  ];
+
+  const simpleServices = [
     {
       id: 'mailpit',
       name: 'Mailpit',
@@ -355,20 +407,21 @@ function BinaryManager() {
     {
       id: 'nginx',
       name: 'Nginx',
-      description: 'High-performance web server & reverse proxy (v1.28.0)',
+      description: 'High-performance web server & reverse proxy',
       icon: Zap,
-      installed: installed.nginx,
-      url: downloadUrls.nginx?.url,
-      size: '~2 MB',
+      versions: serviceVersions.nginx,
+      defaultVersion: serviceVersions.nginx[0] || '1.28',
+      sizes: { '1.28': '~2 MB', '1.26': '~2 MB', '1.24': '~2 MB' },
     },
     {
       id: 'apache',
       name: 'Apache',
-      description: 'Web server with mod_php support (manual download)',
+      description: 'Web server (manual download for Windows)',
       icon: Globe,
-      installed: installed.apache,
-      url: downloadUrls.apache?.url,
-      size: '~60 MB',
+      versions: serviceVersions.apache,
+      defaultVersion: serviceVersions.apache[0] || '2.4',
+      sizes: { '2.4': '~60 MB' },
+      requiresManualDownload: true,
     },
   ];
 
@@ -445,7 +498,7 @@ function BinaryManager() {
           PHP Versions
         </h2>
         <div className="grid gap-3">
-          {PHP_VERSIONS.map((version) => {
+          {(serviceVersions.php || []).map((version) => {
             const id = `php-${version}`;
             const isInstalled = installed.php[version];
             const isDownloading = downloading[id];
@@ -599,119 +652,291 @@ function BinaryManager() {
 
         <div className="grid gap-3">
           {webServers.map((server) => {
-            const isDownloading = downloading[server.id];
+            const installedCount = getInstalledVersionsCount(server.id);
+            const hasInstalled = installedCount > 0;
             const isSelected = webServerType === server.id;
+            const isExpanded = expandedSections[server.id];
 
             return (
               <div
                 key={server.id}
                 className={clsx(
-                  'card p-4 flex items-center justify-between',
+                  'card overflow-hidden',
                   isSelected && 'ring-2 ring-green-500 ring-offset-2 dark:ring-offset-gray-900'
                 )}
               >
-                <div className="flex items-center gap-4">
-                  <div
-                    className={clsx(
-                      'w-12 h-12 rounded-lg flex items-center justify-center',
-                      server.installed
-                        ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
-                    )}
-                  >
-                    <server.icon className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                      {server.name}
-                      {isSelected && (
-                        <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
-                          Active
-                        </span>
+                {/* Server Header */}
+                <div
+                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                  onClick={() => toggleSection(server.id)}
+                >
+                  <div className="flex items-center gap-4">
+                    <div
+                      className={clsx(
+                        'w-12 h-12 rounded-lg flex items-center justify-center',
+                        hasInstalled
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
                       )}
-                    </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {server.description} • {server.size}
-                    </p>
+                    >
+                      <server.icon className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                        {server.name}
+                        {isSelected && (
+                          <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
+                            Active
+                          </span>
+                        )}
+                        {hasInstalled && (
+                          <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
+                            {installedCount} version{installedCount > 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {server.description}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isExpanded ? (
+                      <ChevronUp className="w-5 h-5 text-gray-400" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 text-gray-400" />
+                    )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  {isDownloading ? (
-                    getProgressDisplay(server.id)
-                  ) : server.installed ? (
-                    <>
-                      <span className="badge-success flex items-center gap-1">
-                        <Check className="w-3 h-3" />
-                        Installed
-                      </span>
-                      <button
-                        onClick={() => handleRemove(server.id)}
-                        className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                        title="Remove"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </>
-                  ) : server.id === 'apache' ? (
-                    // Special handling for Apache - manual download required
-                    <>
-                      <button
-                        onClick={handleOpenApacheDownloadPage}
-                        className="btn-secondary flex items-center gap-2"
-                        title="Open Apache Lounge download page"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                        Download Page
-                      </button>
-                      <button
-                        onClick={handleImportApache}
-                        className="btn-primary flex items-center gap-2"
-                        title="Import downloaded Apache ZIP"
-                      >
-                        <FolderOpen className="w-4 h-4" />
-                        Import ZIP
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      {server.url && (
-                        <a
-                          href={server.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn-icon text-gray-400 hover:text-gray-600"
-                          title="View download source"
+                {/* Version List (Expandable) */}
+                {isExpanded && (
+                  <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30">
+                    {server.versions.map((version) => {
+                      const id = `${server.id}-${version}`;
+                      const isInstalled = installed[server.id]?.[version];
+                      const isDownloading = downloading[id];
+                      const isDefault = version === server.defaultVersion;
+
+                      return (
+                        <div
+                          key={version}
+                          className="p-3 flex items-center justify-between border-b last:border-b-0 border-gray-200 dark:border-gray-700"
                         >
-                          <ExternalLink className="w-4 h-4" />
-                        </a>
-                      )}
-                      <button
-                        onClick={() => handleDownloadService(server.id)}
-                        className="btn-primary"
-                      >
-                        <Download className="w-4 h-4" />
-                        Download
-                      </button>
-                    </>
-                  )}
-                </div>
+                          <div className="flex items-center gap-3">
+                            <span className={clsx(
+                              'w-10 h-8 rounded flex items-center justify-center font-mono text-sm',
+                              isInstalled
+                                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                                : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                            )}>
+                              {version}
+                            </span>
+                            <div>
+                              <span className="text-sm text-gray-700 dark:text-gray-300">
+                                {server.name} {version}
+                              </span>
+                              {isDefault && (
+                                <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
+                                  Latest
+                                </span>
+                              )}
+                              <span className="ml-2 text-xs text-gray-500">
+                                {server.sizes?.[version] || '~50 MB'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isDownloading ? (
+                              getProgressDisplay(id)
+                            ) : isInstalled ? (
+                              <>
+                                <span className="badge-success flex items-center gap-1 text-xs">
+                                  <Check className="w-3 h-3" />
+                                  Installed
+                                </span>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleRemove(server.id, version); }}
+                                  className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                  title="Remove"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </>
+                            ) : server.requiresManualDownload ? (
+                              <>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleOpenApacheDownloadPage(); }}
+                                  className="btn-secondary text-sm px-2 py-1 flex items-center gap-1"
+                                  title="Open Apache Lounge download page"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  Download
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleImportApache(); }}
+                                  className="btn-primary text-sm px-2 py-1 flex items-center gap-1"
+                                  title="Import downloaded Apache ZIP"
+                                >
+                                  <Upload className="w-3 h-3" />
+                                  Import
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDownloadService(server.id, version); }}
+                                className="btn-primary text-sm px-3 py-1"
+                              >
+                                <Download className="w-3 h-3" />
+                                Download
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* Services */}
+      {/* Services (Versioned) */}
       <div className="mb-8">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
           <span className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
             <Server className="w-4 h-4 text-blue-600 dark:text-blue-400" />
           </span>
           Services
+          <span className="text-xs font-normal text-gray-500 ml-2">
+            (Multiple versions can be installed)
+          </span>
         </h2>
         <div className="grid gap-3">
-          {services.map((service) => {
+          {/* Versioned Services (MySQL, MariaDB, Redis) */}
+          {versionedServices.map((service) => {
+            const installedCount = getInstalledVersionsCount(service.id);
+            const hasInstalled = installedCount > 0;
+            const isExpanded = expandedSections[service.id];
+
+            return (
+              <div key={service.id} className="card overflow-hidden">
+                {/* Service Header */}
+                <div
+                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                  onClick={() => toggleSection(service.id)}
+                >
+                  <div className="flex items-center gap-4">
+                    <div
+                      className={clsx(
+                        'w-12 h-12 rounded-lg flex items-center justify-center',
+                        hasInstalled
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
+                      )}
+                    >
+                      <service.icon className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                        {service.name}
+                        {hasInstalled && (
+                          <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
+                            {installedCount} version{installedCount > 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {service.description}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isExpanded ? (
+                      <ChevronUp className="w-5 h-5 text-gray-400" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 text-gray-400" />
+                    )}
+                  </div>
+                </div>
+
+                {/* Version List (Expandable) */}
+                {isExpanded && (
+                  <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30">
+                    {service.versions.map((version) => {
+                      const id = `${service.id}-${version}`;
+                      const isInstalled = installed[service.id]?.[version];
+                      const isDownloading = downloading[id];
+                      const isDefault = version === service.defaultVersion;
+
+                      return (
+                        <div
+                          key={version}
+                          className="p-3 flex items-center justify-between border-b last:border-b-0 border-gray-200 dark:border-gray-700"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className={clsx(
+                              'w-8 h-8 rounded flex items-center justify-center font-mono text-sm',
+                              isInstalled
+                                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                                : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                            )}>
+                              {version}
+                            </span>
+                            <div>
+                              <span className="text-sm text-gray-700 dark:text-gray-300">
+                                {service.name} {version}
+                              </span>
+                              {isDefault && (
+                                <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
+                                  Latest
+                                </span>
+                              )}
+                              <span className="ml-2 text-xs text-gray-500">
+                                {service.sizes?.[version] || '~50 MB'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isDownloading ? (
+                              getProgressDisplay(id)
+                            ) : isInstalled ? (
+                              <>
+                                <span className="badge-success flex items-center gap-1 text-xs">
+                                  <Check className="w-3 h-3" />
+                                  Installed
+                                </span>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleRemove(service.id, version); }}
+                                  className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                  title="Remove"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDownloadService(service.id, version); }}
+                                className="btn-primary text-sm px-3 py-1"
+                              >
+                                <Download className="w-3 h-3" />
+                                Download
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Simple Services (Mailpit, phpMyAdmin) */}
+          {simpleServices.map((service) => {
             const isDownloading = downloading[service.id];
 
             return (
@@ -798,7 +1023,7 @@ function BinaryManager() {
           </span>
         </h2>
         <div className="grid gap-3">
-          {NODE_VERSIONS.map((version) => {
+          {(serviceVersions.nodejs || []).map((version) => {
             const id = `nodejs-${version}`;
             const isInstalled = installed.nodejs?.[version];
             const isDownloading = downloading[id];

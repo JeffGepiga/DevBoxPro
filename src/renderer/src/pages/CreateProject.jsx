@@ -47,8 +47,6 @@ const PROJECT_TYPES = [
   },
 ];
 
-const PHP_VERSIONS = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
-
 const WIZARD_STEPS = [
   { id: 'type', title: 'Project Type', icon: Folder },
   { id: 'details', title: 'Details', icon: Settings },
@@ -69,6 +67,11 @@ function CreateProject() {
   const [createdProject, setCreatedProject] = useState(null);
   const [defaultProjectsPath, setDefaultProjectsPath] = useState('');
   const [pathManuallySet, setPathManuallySet] = useState(false);
+  const [serviceConfig, setServiceConfig] = useState({
+    versions: { php: [], mysql: [], mariadb: [], redis: [], nginx: [], apache: [], nodejs: [] },
+    portOffsets: {},
+    defaultPorts: {},
+  });
   const [binariesStatus, setBinariesStatus] = useState({
     loading: true,
     php: [],
@@ -86,14 +89,19 @@ function CreateProject() {
     installFresh: true, // Install fresh Laravel/WordPress
     services: {
       mysql: true,
+      mysqlVersion: '8.4',
       mariadb: false,
+      mariadbVersion: '11.4',
       redis: false,
+      redisVersion: '7.4',
       queue: false,
     },
     domain: '',
     ssl: true,
     webServer: 'nginx', // 'nginx' or 'apache'
+    webServerVersion: '1.28',
   });
+  const [compatibilityWarnings, setCompatibilityWarnings] = useState([]);
 
   // Load default projects path from settings
   useEffect(() => {
@@ -109,6 +117,21 @@ function CreateProject() {
       }
     };
     loadDefaultPath();
+  }, []);
+
+  // Load service configuration
+  useEffect(() => {
+    const loadServiceConfig = async () => {
+      try {
+        const config = await window.devbox?.binaries.getServiceConfig();
+        if (config) {
+          setServiceConfig(config);
+        }
+      } catch (error) {
+        console.error('Error loading service config:', error);
+      }
+    };
+    loadServiceConfig();
   }, []);
 
   // Auto-generate path when name changes (if path wasn't manually set)
@@ -185,23 +208,59 @@ function CreateProject() {
       try {
         const status = await window.devbox?.binaries.getStatus();
         if (status) {
+          // PHP versions
           const phpVersions = Object.entries(status.php || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+          
+          // MySQL versions
+          const mysqlVersions = Object.entries(status.mysql || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+          
+          // MariaDB versions
+          const mariadbVersions = Object.entries(status.mariadb || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+          
+          // Redis versions
+          const redisVersions = Object.entries(status.redis || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+          
+          // Nginx versions
+          const nginxVersions = Object.entries(status.nginx || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+          
+          // Apache versions
+          const apacheVersions = Object.entries(status.apache || {})
             .filter(([_, info]) => info.installed)
             .map(([version]) => version);
           
           setBinariesStatus({
             loading: false,
             php: phpVersions,
-            nginx: status.nginx?.installed || false,
-            apache: status.apache?.installed || false,
-            mysql: status.mysql?.installed || false,
-            mariadb: status.mariadb?.installed || false,
-            redis: status.redis?.installed || false,
+            mysql: mysqlVersions,
+            mariadb: mariadbVersions,
+            redis: redisVersions,
+            nginx: nginxVersions,
+            apache: apacheVersions,
           });
 
-          // Set default PHP version to first available
+          // Set default versions to first available
+          const updates = {};
           if (phpVersions.length > 0 && !phpVersions.includes(formData.phpVersion)) {
-            updateFormData({ phpVersion: phpVersions[0] });
+            updates.phpVersion = phpVersions[0];
+          }
+          if (mysqlVersions.length > 0 && !mysqlVersions.includes(formData.services.mysqlVersion)) {
+            updates.services = { ...formData.services, mysqlVersion: mysqlVersions[0] };
+          }
+          if (nginxVersions.length > 0 && !nginxVersions.includes(formData.webServerVersion) && formData.webServer === 'nginx') {
+            updates.webServerVersion = nginxVersions[0];
+          }
+          if (Object.keys(updates).length > 0) {
+            updateFormData(updates);
           }
         } else {
           setBinariesStatus(prev => ({ ...prev, loading: false }));
@@ -214,9 +273,33 @@ function CreateProject() {
     checkBinaries();
   }, []);
 
+  // Check compatibility when form changes
+  useEffect(() => {
+    const checkCompat = async () => {
+      try {
+        const config = {
+          phpVersion: formData.phpVersion,
+          mysqlVersion: formData.services.mysql ? formData.services.mysqlVersion : null,
+          mariadbVersion: formData.services.mariadb ? formData.services.mariadbVersion : null,
+          redisVersion: formData.services.redis ? formData.services.redisVersion : null,
+          projectType: formData.type,
+        };
+        const result = await window.devbox?.projects.checkCompatibility(config);
+        if (result?.warnings) {
+          setCompatibilityWarnings(result.warnings);
+        } else {
+          setCompatibilityWarnings([]);
+        }
+      } catch (error) {
+        console.error('Error checking compatibility:', error);
+      }
+    };
+    checkCompat();
+  }, [formData.phpVersion, formData.services, formData.type]);
+
   // Check if required binaries are available
   const hasRequiredBinaries = () => {
-    return binariesStatus.php.length > 0 && (binariesStatus.nginx || binariesStatus.apache);
+    return binariesStatus.php.length > 0 && (binariesStatus.nginx.length > 0 || binariesStatus.apache.length > 0);
   };
 
   const updateFormData = (updates) => {
@@ -449,13 +532,24 @@ function CreateProject() {
             availablePhpVersions={binariesStatus.php}
             setPathManuallySet={setPathManuallySet}
             defaultProjectsPath={defaultProjectsPath}
+            serviceConfig={serviceConfig}
           />
         )}
         {currentStep === 2 && (
-          <StepServices formData={formData} updateFormData={updateFormData} binariesStatus={binariesStatus} />
+          <StepServices 
+            formData={formData} 
+            updateFormData={updateFormData} 
+            binariesStatus={binariesStatus} 
+            serviceConfig={serviceConfig}
+          />
         )}
         {currentStep === 3 && (
-          <StepDomain formData={formData} updateFormData={updateFormData} />
+          <StepDomain 
+            formData={formData} 
+            updateFormData={updateFormData} 
+            binariesStatus={binariesStatus}
+            serviceConfig={serviceConfig}
+          />
         )}
         {currentStep === 4 && <StepReview formData={formData} />}
       </div>
@@ -551,11 +645,12 @@ function StepProjectType({ formData, updateFormData }) {
   );
 }
 
-function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersions, setPathManuallySet, defaultProjectsPath }) {
-  // Use available versions if provided, otherwise fall back to all versions
+function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersions, setPathManuallySet, defaultProjectsPath, serviceConfig }) {
+  // Use available versions if provided, otherwise fall back to config versions
+  const allPhpVersions = serviceConfig?.versions?.php || [];
   const phpVersions = availablePhpVersions && availablePhpVersions.length > 0 
-    ? PHP_VERSIONS.filter(v => availablePhpVersions.includes(v))
-    : PHP_VERSIONS;
+    ? allPhpVersions.filter(v => availablePhpVersions.includes(v))
+    : allPhpVersions;
   return (
     <div>
       <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
@@ -652,11 +747,34 @@ function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersi
 
 function StepServices({ formData, updateFormData, binariesStatus }) {
   const toggleService = (service) => {
-    // Allow both MySQL and MariaDB - they use dynamic port allocation
+    // For database services (mysql/mariadb), make selection mutually exclusive
+    if (service === 'mysql' || service === 'mariadb') {
+      const otherDb = service === 'mysql' ? 'mariadb' : 'mysql';
+      const isEnabling = !formData.services[service];
+      
+      updateFormData({
+        services: {
+          ...formData.services,
+          [service]: isEnabling,
+          // If enabling this database, disable the other one
+          ...(isEnabling ? { [otherDb]: false } : {}),
+        },
+      });
+    } else {
+      updateFormData({
+        services: {
+          ...formData.services,
+          [service]: !formData.services[service],
+        },
+      });
+    }
+  };
+
+  const updateServiceVersion = (service, version) => {
     updateFormData({
       services: {
         ...formData.services,
-        [service]: !formData.services[service],
+        [`${service}Version`]: version,
       },
     });
   };
@@ -668,7 +786,7 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
       name: 'MySQL',
       description: 'Relational database for data storage',
       icon: '🗄️',
-      installed: binariesStatus?.mysql,
+      versions: binariesStatus?.mysql || [],
       isDatabase: true,
     },
     {
@@ -676,7 +794,7 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
       name: 'MariaDB',
       description: 'MySQL-compatible database with extra features',
       icon: '🗃️',
-      installed: binariesStatus?.mariadb,
+      versions: binariesStatus?.mariadb || [],
       isDatabase: true,
     },
     {
@@ -684,7 +802,7 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
       name: 'Redis',
       description: 'In-memory cache and session storage',
       icon: '⚡',
-      installed: binariesStatus?.redis,
+      versions: binariesStatus?.redis || [],
     },
     {
       id: 'queue',
@@ -692,20 +810,20 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
       description: 'Background job processing (Laravel)',
       icon: '⚙️',
       laravelOnly: true,
-      installed: true, // Always available if Laravel is selected
+      versions: ['enabled'], // Always available if Laravel is selected
     },
   ];
 
-  // Filter to show only installed services
+  // Filter to show only services with at least one version installed
   const services = allServices.filter(service => {
     // Queue worker is always available for Laravel projects
     if (service.id === 'queue') return true;
-    // Show service if installed
-    return service.installed;
+    // Show service if any versions installed
+    return service.versions && service.versions.length > 0;
   });
 
   // Check if any database is available
-  const hasDatabaseOptions = binariesStatus?.mysql || binariesStatus?.mariadb;
+  const hasDatabaseOptions = (binariesStatus?.mysql?.length > 0) || (binariesStatus?.mariadb?.length > 0);
 
   return (
     <div>
@@ -713,7 +831,7 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
         Configure Services
       </h2>
       <p className="text-gray-500 dark:text-gray-400 mb-6">
-        Select the services you need for this project
+        Select the services and versions you need for this project
       </p>
 
       {/* Database Section */}
@@ -724,24 +842,106 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
             Database
             <span className="text-xs font-normal text-gray-500">(select one)</span>
           </h3>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3">
             {services.filter(s => s.isDatabase).map((service) => (
-              <button
+              <div
                 key={service.id}
-                onClick={() => toggleService(service.id)}
                 className={clsx(
-                  'p-4 rounded-xl border-2 text-left transition-all flex items-center gap-3',
+                  'p-4 rounded-xl border-2 transition-all',
                   formData.services[service.id]
                     ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                    : 'border-gray-200 dark:border-gray-700'
                 )}
+              >
+                <button
+                  onClick={() => toggleService(service.id)}
+                  className="w-full flex items-center gap-3 text-left"
+                >
+                  <div className="text-2xl">{service.icon}</div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900 dark:text-white">
+                      {service.name}
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {service.description}
+                    </p>
+                  </div>
+                  <div
+                    className={clsx(
+                      'w-6 h-6 rounded-full border-2 flex items-center justify-center',
+                      formData.services[service.id]
+                        ? 'border-green-500 bg-green-500'
+                        : 'border-gray-300 dark:border-gray-600'
+                    )}
+                  >
+                    {formData.services[service.id] && (
+                      <Check className="w-4 h-4 text-white" />
+                    )}
+                  </div>
+                </button>
+                {/* Version selector - shown when service is enabled */}
+                {formData.services[service.id] && service.versions.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                    <label className="text-xs text-gray-500 mb-2 block">Version</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {service.versions.map(version => (
+                        <button
+                          key={version}
+                          onClick={(e) => { e.stopPropagation(); updateServiceVersion(service.id, version); }}
+                          className={clsx(
+                            'px-3 py-1 rounded text-sm font-medium transition-all',
+                            formData.services[`${service.id}Version`] === version
+                              ? 'bg-green-500 text-white'
+                              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                          )}
+                        >
+                          {version}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Other Services Section */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+          <Settings className="w-4 h-4" />
+          Additional Services
+        </h3>
+        {services.filter(s => !s.isDatabase).map((service) => {
+          const disabled = service.laravelOnly && formData.type !== 'laravel';
+
+          return (
+            <div
+              key={service.id}
+              className={clsx(
+                'p-4 rounded-xl border-2 transition-all',
+                disabled
+                  ? 'opacity-50 cursor-not-allowed border-gray-200 dark:border-gray-700'
+                  : formData.services[service.id]
+                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+              )}
+            >
+              <button
+                onClick={() => !disabled && toggleService(service.id)}
+                disabled={disabled}
+                className="w-full flex items-center gap-4 text-left"
               >
                 <div className="text-2xl">{service.icon}</div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-gray-900 dark:text-white">
                     {service.name}
+                    {service.laravelOnly && (
+                      <span className="ml-2 text-xs text-gray-500">(Laravel only)</span>
+                    )}
                   </h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
                     {service.description}
                   </p>
                 </div>
@@ -758,65 +958,35 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
                   )}
                 </div>
               </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Other Services Section */}
-      <div className="space-y-4">
-        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-          <Settings className="w-4 h-4" />
-          Additional Services
-        </h3>
-        {services.filter(s => !s.isDatabase).map((service) => {
-          const disabled = service.laravelOnly && formData.type !== 'laravel';
-
-          return (
-            <button
-              key={service.id}
-              onClick={() => !disabled && toggleService(service.id)}
-              disabled={disabled}
-              className={clsx(
-                'w-full p-4 rounded-xl border-2 text-left transition-all flex items-center gap-4',
-                disabled
-                  ? 'opacity-50 cursor-not-allowed border-gray-200 dark:border-gray-700'
-                  : formData.services[service.id]
-                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+              {/* Version selector for Redis */}
+              {service.id === 'redis' && formData.services[service.id] && service.versions.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                  <label className="text-xs text-gray-500 mb-2 block">Version</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {service.versions.map(version => (
+                      <button
+                        key={version}
+                        onClick={(e) => { e.stopPropagation(); updateServiceVersion(service.id, version); }}
+                        className={clsx(
+                          'px-3 py-1 rounded text-sm font-medium transition-all',
+                          formData.services[`${service.id}Version`] === version
+                            ? 'bg-green-500 text-white'
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                        )}
+                      >
+                        {version}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
-            >
-              <div className="text-2xl">{service.icon}</div>
-              <div className="flex-1">
-                <h3 className="font-semibold text-gray-900 dark:text-white">
-                  {service.name}
-                  {service.laravelOnly && (
-                    <span className="ml-2 text-xs text-gray-500">(Laravel only)</span>
-                  )}
-                </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {service.description}
-                </p>
-              </div>
-              <div
-                className={clsx(
-                  'w-6 h-6 rounded-full border-2 flex items-center justify-center',
-                  formData.services[service.id]
-                    ? 'border-green-500 bg-green-500'
-                    : 'border-gray-300 dark:border-gray-600'
-                )}
-              >
-                {formData.services[service.id] && (
-                  <Check className="w-4 h-4 text-white" />
-                )}
-              </div>
-            </button>
+            </div>
           );
         })}
       </div>
 
       {/* No services warning */}
-      {!hasDatabaseOptions && !binariesStatus?.redis && (
+      {!hasDatabaseOptions && !(binariesStatus?.redis?.length > 0) && (
         <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl">
           <p className="text-sm text-yellow-700 dark:text-yellow-300">
             <AlertTriangle className="w-4 h-4 inline mr-2" />
@@ -828,7 +998,7 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
   );
 }
 
-function StepDomain({ formData, updateFormData }) {
+function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig }) {
   const suggestedDomain = formData.name
     ? `${formData.name.toLowerCase().replace(/\s+/g, '-')}.test`
     : '';

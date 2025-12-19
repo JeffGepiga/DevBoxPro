@@ -22,6 +22,8 @@ import {
   Trash2,
   Server,
   Layers,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -38,6 +40,10 @@ function ProjectDetail() {
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [actionError, setActionError] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteFiles, setDeleteFiles] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Update tab from URL params
   useEffect(() => {
@@ -106,11 +112,31 @@ function ProjectDetail() {
     }
   };
 
-  const handleDelete = async () => {
-    if (window.confirm(`Are you sure you want to delete "${project.name}"?`)) {
-      await deleteProject(id);
+  const handleDeleteClick = () => {
+    setShowDeleteModal(true);
+    setDeleteConfirmText('');
+    setDeleteFiles(false);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deleteConfirmText !== 'delete') return;
+    
+    setIsDeleting(true);
+    try {
+      await deleteProject(id, deleteFiles);
       navigate('/projects');
+    } catch (err) {
+      setActionError(err.message || 'Failed to delete project');
+      setShowDeleteModal(false);
+    } finally {
+      setIsDeleting(false);
     }
+  };
+
+  const handleDeleteCancel = () => {
+    setShowDeleteModal(false);
+    setDeleteConfirmText('');
+    setDeleteFiles(false);
   };
 
   if (loading) {
@@ -273,16 +299,112 @@ function ProjectDetail() {
             <div>
               <p className="font-medium text-gray-900 dark:text-white">Delete Project</p>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                This will remove the project from DevBox Pro (files will not be deleted)
+                Remove the project from DevBox Pro. You can optionally delete the project files.
               </p>
             </div>
-            <button onClick={handleDelete} className="btn-danger">
+            <button onClick={handleDeleteClick} className="btn-danger">
               <Trash2 className="w-4 h-4" />
               Delete Project
             </button>
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 rounded-full bg-red-100 dark:bg-red-900/30">
+                  <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Delete Project
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    This action cannot be undone
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  <strong>Project:</strong> {project.name}
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  {project.path}
+                </p>
+              </div>
+
+              {/* Delete files option */}
+              <label className="flex items-start gap-3 p-3 mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={deleteFiles}
+                  onChange={(e) => setDeleteFiles(e.target.checked)}
+                  className="mt-0.5 rounded border-red-300 text-red-600 focus:ring-red-500"
+                />
+                <div>
+                  <p className="font-medium text-red-700 dark:text-red-400">
+                    Also delete project files
+                  </p>
+                  <p className="text-xs text-red-600 dark:text-red-500 mt-1">
+                    ⚠️ This will permanently delete all files in the project folder!
+                  </p>
+                </div>
+              </label>
+
+              {/* Confirmation input */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Type <span className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">delete</span> to confirm:
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value.toLowerCase())}
+                  placeholder="delete"
+                  className="input w-full"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+              <button
+                onClick={handleDeleteCancel}
+                className="btn-secondary"
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deleteConfirmText !== 'delete' || isDeleting}
+                className={clsx(
+                  'btn-danger',
+                  deleteConfirmText !== 'delete' && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    {deleteFiles ? 'Delete Project & Files' : 'Delete Project'}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -293,8 +415,14 @@ function OverviewTab({ project, processes, refreshProjects }) {
   const [binariesStatus, setBinariesStatus] = useState({});
   const [savingSettings, setSavingSettings] = useState(false);
   const [pendingChanges, setPendingChanges] = useState({});
+  const [versionOptions, setVersionOptions] = useState({
+    mysql: [],
+    mariadb: [],
+    redis: [],
+    nodejs: [],
+  });
   
-  // Load available PHP versions and binaries status
+  // Load available PHP versions, binaries status, and service config
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -303,6 +431,17 @@ function OverviewTab({ project, processes, refreshProjects }) {
         
         const status = await window.devbox?.binaries.getStatus();
         setBinariesStatus(status || {});
+        
+        // Load service config for version options
+        const config = await window.devbox?.binaries.getServiceConfig();
+        if (config?.versions) {
+          setVersionOptions({
+            mysql: config.versions.mysql || [],
+            mariadb: config.versions.mariadb || [],
+            redis: config.versions.redis || [],
+            nodejs: config.versions.nodejs || [],
+          });
+        }
       } catch (error) {
         console.error('Error loading data:', error);
       }
@@ -363,6 +502,29 @@ function OverviewTab({ project, processes, refreshProjects }) {
     }
   };
   
+  const handleServiceVersionChange = (serviceName, version) => {
+    const currentServices = getEffectiveValue('services');
+    const versionKey = `${serviceName}Version`;
+    const originalVersion = project.services?.[versionKey];
+    
+    let newServices = { ...currentServices, [versionKey]: version };
+    
+    // Check if version matches original
+    if (version === originalVersion) {
+      // Remove from pending if it matches original
+      const hasOtherServiceChanges = Object.keys(newServices).some(key => {
+        if (key === versionKey) return false;
+        return newServices[key] !== (project.services?.[key] || false);
+      });
+      
+      if (!hasOtherServiceChanges && !pendingChanges.services) {
+        return; // No changes needed
+      }
+    }
+    
+    setPendingChanges({ ...pendingChanges, services: newServices });
+  };
+  
   const handleWebServerChange = (newServer) => {
     if (newServer === project.webServer) {
       const { webServer, ...rest } = pendingChanges;
@@ -412,11 +574,18 @@ function OverviewTab({ project, processes, refreshProjects }) {
     setPendingChanges({});
   };
 
+  // Helper to check if any version of a service is installed
+  const isAnyVersionInstalled = (serviceStatus) => {
+    if (!serviceStatus || typeof serviceStatus !== 'object') return false;
+    return Object.values(serviceStatus).some(v => v?.installed === true);
+  };
+
   // Service definitions - databases first (mutually exclusive), then others
   const serviceDefinitions = [
-    { id: 'mysql', name: 'MySQL', icon: '🗄️', installed: binariesStatus?.mysql, isDatabase: true },
-    { id: 'mariadb', name: 'MariaDB', icon: '🗃️', installed: binariesStatus?.mariadb, isDatabase: true },
-    { id: 'redis', name: 'Redis', icon: '⚡', installed: binariesStatus?.redis },
+    { id: 'mysql', name: 'MySQL', icon: '🗄️', installed: isAnyVersionInstalled(binariesStatus?.mysql), isDatabase: true, hasVersions: true },
+    { id: 'mariadb', name: 'MariaDB', icon: '🗃️', installed: isAnyVersionInstalled(binariesStatus?.mariadb), isDatabase: true, hasVersions: true },
+    { id: 'redis', name: 'Redis', icon: '⚡', installed: isAnyVersionInstalled(binariesStatus?.redis), hasVersions: true },
+    { id: 'nodejs', name: 'Node.js', icon: '🟢', installed: isAnyVersionInstalled(binariesStatus?.nodejs), hasVersions: true },
     { id: 'queue', name: 'Queue Worker', icon: '📋', installed: true }, // Always available for Laravel
   ];
 
@@ -576,13 +745,13 @@ function OverviewTab({ project, processes, refreshProjects }) {
         )}
       </div>
 
-      {/* Services - Now with toggle buttons */}
+      {/* Services - Now with toggle buttons and version selectors */}
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Services
         </h3>
         <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-          Note: Only one database (MySQL or MariaDB) can be active at a time
+          Note: Only one database (MySQL or MariaDB) can be active at a time. Select specific versions for legacy app compatibility.
         </p>
         <div className="space-y-3">
           {serviceDefinitions.map((service) => {
@@ -591,57 +760,90 @@ function OverviewTab({ project, processes, refreshProjects }) {
             const isInstalled = service.installed;
             const isChanged = pendingChanges.services && 
               pendingChanges.services[service.id] !== (project.services?.[service.id] || false);
+            const currentVersion = effectiveServices[`${service.id}Version`] || versionOptions[service.id]?.[0];
+            const versionChanged = pendingChanges.services?.[`${service.id}Version`] !== undefined &&
+              pendingChanges.services[`${service.id}Version`] !== project.services?.[`${service.id}Version`];
             
             return (
-              <button
+              <div
                 key={service.id}
-                onClick={() => isInstalled && handleServiceToggle(service.id)}
-                disabled={!isInstalled}
                 className={clsx(
-                  'w-full p-3 rounded-lg border-2 text-left transition-all flex items-center justify-between',
+                  'p-3 rounded-lg border-2 transition-all',
                   isEnabled
                     ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
                     : 'border-gray-200 dark:border-gray-700',
-                  !isInstalled && 'opacity-50 cursor-not-allowed',
-                  isInstalled && 'hover:border-gray-300 dark:hover:border-gray-600'
+                  !isInstalled && 'opacity-50'
                 )}
               >
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">{service.icon}</span>
-                  <div>
-                    <span className={clsx(
-                      'font-medium',
-                      isEnabled ? 'text-green-700 dark:text-green-400' : 'text-gray-700 dark:text-gray-300'
-                    )}>
-                      {service.name}
-                    </span>
-                    {!isInstalled && (
-                      <span className="text-xs text-gray-500 dark:text-gray-400 block">
-                        Not installed
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => isInstalled && handleServiceToggle(service.id)}
+                    disabled={!isInstalled}
+                    className="flex items-center gap-3 text-left flex-1"
+                  >
+                    <span className="text-xl">{service.icon}</span>
+                    <div>
+                      <span className={clsx(
+                        'font-medium',
+                        isEnabled ? 'text-green-700 dark:text-green-400' : 'text-gray-700 dark:text-gray-300'
+                      )}>
+                        {service.name}
                       </span>
+                      {!isInstalled && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400 block">
+                          Not installed
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-3">
+                    {(isChanged || versionChanged) && (
+                      <span className="text-xs text-yellow-600 dark:text-yellow-400">Modified</span>
                     )}
+                    {/* Version selector for services that support it */}
+                    {service.hasVersions && isEnabled && (
+                      <select
+                        value={currentVersion}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          handleServiceVersionChange(service.id, e.target.value);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="input py-1 px-2 text-xs w-20"
+                      >
+                        {versionOptions[service.id]?.map((v) => {
+                          // Check installed status from binariesStatus (not availableVersions)
+                          const isVersionInstalled = binariesStatus?.[service.id]?.[v]?.installed === true;
+                          return (
+                            <option key={v} value={v} disabled={!isVersionInstalled}>
+                              {v} {!isVersionInstalled ? '(not installed)' : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    )}
+                    <button
+                      onClick={() => isInstalled && handleServiceToggle(service.id)}
+                      disabled={!isInstalled}
+                      className={clsx(
+                        'w-10 h-6 rounded-full transition-colors relative',
+                        isEnabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600',
+                        !isInstalled && 'cursor-not-allowed'
+                      )}
+                    >
+                      <div className={clsx(
+                        'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
+                        isEnabled ? 'translate-x-5' : 'translate-x-1'
+                      )} />
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {isChanged && (
-                    <span className="text-xs text-yellow-600 dark:text-yellow-400">Modified</span>
-                  )}
-                  <div className={clsx(
-                    'w-10 h-6 rounded-full transition-colors relative',
-                    isEnabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
-                  )}>
-                    <div className={clsx(
-                      'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                      isEnabled ? 'translate-x-5' : 'translate-x-1'
-                    )} />
-                  </div>
-                </div>
-              </button>
+              </div>
             );
           })}
         </div>
         <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-          Click to toggle services. Changes will take effect after saving and restarting.
+          Click to toggle services. Select version for legacy app support. Changes will take effect after saving and restarting.
         </p>
       </div>
 
