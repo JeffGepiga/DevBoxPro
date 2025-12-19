@@ -5,14 +5,25 @@ const fs = require('fs-extra');
 
 class ConfigStore {
   constructor() {
-    this.store = new Store({
-      name: 'devbox-pro-config',
-      defaults: this.getDefaults(),
-    });
+    try {
+      this.store = new Store({
+        name: 'devbox-pro-config',
+        defaults: this.getDefaults(),
+      });
 
-    // Ensure data directory exists
-    const dataPath = this.get('dataPath');
-    fs.ensureDirSync(dataPath);
+      // Ensure data directory exists
+      const dataPath = this.get('dataPath');
+      try {
+        fs.ensureDirSync(dataPath);
+      } catch (err) {
+        console.error('[ConfigStore] Failed to create data directory:', dataPath, err.message);
+      }
+    } catch (err) {
+      console.error('[ConfigStore] Failed to initialize store:', err);
+      // Create a fallback in-memory store
+      this._fallbackData = this.getDefaults();
+      this.store = null;
+    }
   }
 
   getDefaults() {
@@ -45,16 +56,41 @@ class ConfigStore {
   }
 
   get(key, defaultValue = undefined) {
+    if (!this.store) {
+      // Fallback mode
+      const keys = key.split('.');
+      let value = this._fallbackData;
+      for (const k of keys) {
+        if (value && typeof value === 'object' && k in value) {
+          value = value[k];
+        } else {
+          return defaultValue;
+        }
+      }
+      return value !== undefined ? value : defaultValue;
+    }
     const value = this.store.get(key);
     return value !== undefined ? value : defaultValue;
   }
 
   set(key, value) {
+    if (!this.store) {
+      // Fallback mode - set in memory
+      const keys = key.split('.');
+      let obj = this._fallbackData;
+      for (let i = 0; i < keys.length - 1; i++) {
+        if (!(keys[i] in obj)) obj[keys[i]] = {};
+        obj = obj[keys[i]];
+      }
+      obj[keys[keys.length - 1]] = value;
+      return value;
+    }
     this.store.set(key, value);
     return value;
   }
 
   delete(key) {
+    if (!this.store) return;
     this.store.delete(key);
   }
 

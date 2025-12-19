@@ -288,12 +288,7 @@ async function startup() {
     createTray();
 
     // Setup IPC handlers
-    try {
-      setupIpcHandlers(ipcMain, managers, mainWindow);
-      console.log('[Main] IPC handlers setup complete');
-    } catch (err) {
-      console.error('[Main] Failed to setup IPC handlers:', err);
-    }
+    setupIpcHandlers(ipcMain, managers, mainWindow);
 
     // Initialize remaining managers in background (don't block UI)
     initializeManagersDeferred().then(() => {
@@ -323,7 +318,8 @@ async function startup() {
       console.error('Error auto-starting projects:', err);
     }
   } catch (error) {
-    console.error('Failed to start DevBox Pro:', error);
+    earlyLog(`Failed to start DevBox Pro: ${error.message}`);
+    earlyLog(error.stack);
   }
 }
 

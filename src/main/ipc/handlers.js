@@ -1,7 +1,11 @@
+console.log('[IPC] Loading handlers.js module...');
+
 const { dialog, shell } = require('electron');
 const { app } = require('electron');
 const path = require('path');
 const fs = require('fs-extra');
+
+console.log('[IPC] Core modules loaded, loading serviceConfig...');
 
 // Import centralized service configuration
 const { 
@@ -13,7 +17,10 @@ const {
   getDefaultVersion 
 } = require('../../shared/serviceConfig');
 
+console.log('[IPC] serviceConfig loaded successfully');
+
 function setupIpcHandlers(ipcMain, managers, mainWindow) {
+  console.log('[IPC] Setting up IPC handlers...');
   const { config, project, php, service, database, ssl, supervisor, log } = managers;
 
   // ============ PROJECT HANDLERS ============
@@ -519,6 +526,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   // ============ BINARY DOWNLOAD HANDLERS ============
   // Note: binaryDownload may not be initialized immediately, access via managers object
+  console.log('[IPC] Registering binary download handlers...');
   
   ipcMain.handle('binaries:getInstalled', async () => {
     if (!managers.binaryDownload) return {};
@@ -535,6 +543,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     if (!managers.binaryDownload) throw new Error('Binary manager not initialized yet');
     return managers.binaryDownload.checkForUpdates();
   });
+  console.log('[IPC] Registered binaries:checkForUpdates handler');
 
   // Apply updates from remote config
   ipcMain.handle('binaries:applyUpdates', async () => {
