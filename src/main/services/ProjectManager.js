@@ -417,9 +417,16 @@ class ProjectManager {
         const project = this.configStore.get('projects', []).find(p => p.path === projectPath);
         if (project) {
           const dbName = this.sanitizeDatabaseName(projectName);
+          // Get database credentials from settings
+          const dbInfo = this.managers.database?.getDatabaseInfo() || {};
+          const dbUser = dbInfo.user || 'root';
+          const dbPassword = dbInfo.password || '';
+          const dbPort = dbInfo.port || 3306;
+          
           envContent = envContent.replace(/^DB_DATABASE=.*/m, `DB_DATABASE=${dbName}`);
-          envContent = envContent.replace(/^DB_USERNAME=.*/m, `DB_USERNAME=root`);
-          envContent = envContent.replace(/^DB_PASSWORD=.*/m, `DB_PASSWORD=`);
+          envContent = envContent.replace(/^DB_USERNAME=.*/m, `DB_USERNAME=${dbUser}`);
+          envContent = envContent.replace(/^DB_PASSWORD=.*/m, `DB_PASSWORD=${dbPassword}`);
+          envContent = envContent.replace(/^DB_PORT=.*/m, `DB_PORT=${dbPort}`);
         }
         
         await fs.writeFile(envPath, envContent);
@@ -1060,7 +1067,13 @@ class ProjectManager {
     };
 
     switch (projectType) {
-      case 'laravel':
+      case 'laravel': {
+        // Get database credentials from settings
+        const dbInfo = this.managers?.database?.getDatabaseInfo() || {};
+        const dbUser = dbInfo.user || 'root';
+        const dbPassword = dbInfo.password || '';
+        const dbPort = dbInfo.port || 3306;
+        
         return {
           ...baseEnv,
           APP_NAME: projectName,
@@ -1068,10 +1081,10 @@ class ProjectManager {
           APP_URL: `http://localhost:${port}`,
           DB_CONNECTION: 'mysql',
           DB_HOST: '127.0.0.1',
-          DB_PORT: '3306',
+          DB_PORT: String(dbPort),
           DB_DATABASE: this.sanitizeDatabaseName(projectName),
-          DB_USERNAME: 'root',
-          DB_PASSWORD: '',
+          DB_USERNAME: dbUser,
+          DB_PASSWORD: dbPassword,
           CACHE_DRIVER: 'redis',
           QUEUE_CONNECTION: 'redis',
           SESSION_DRIVER: 'redis',
@@ -1081,13 +1094,22 @@ class ProjectManager {
           MAIL_HOST: '127.0.0.1',
           MAIL_PORT: '1025',
         };
+      }
 
-      case 'symfony':
+      case 'symfony': {
+        // Get database credentials from settings
+        const dbInfo = this.managers?.database?.getDatabaseInfo() || {};
+        const dbUser = dbInfo.user || 'root';
+        const dbPassword = dbInfo.password || '';
+        const dbPort = dbInfo.port || 3306;
+        const dbName = this.sanitizeDatabaseName(projectName);
+        
         return {
           ...baseEnv,
-          DATABASE_URL: `mysql://root:@127.0.0.1:3306/${this.sanitizeDatabaseName(projectName)}`,
+          DATABASE_URL: `mysql://${dbUser}:${dbPassword}@127.0.0.1:${dbPort}/${dbName}`,
           MAILER_DSN: 'smtp://127.0.0.1:1025',
         };
+      }
 
       case 'wordpress':
         return {

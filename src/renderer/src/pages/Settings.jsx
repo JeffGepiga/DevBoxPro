@@ -279,6 +279,41 @@ function NetworkSettings({ settings, updateSetting }) {
     <div className="space-y-6">
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          Database Credentials
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          These credentials will be used for new projects and .env configuration
+        </p>
+        <div className="space-y-4">
+          <div>
+            <label className="label">Database Username</label>
+            <input
+              type="text"
+              value={settings.dbUser || 'root'}
+              onChange={(e) => updateSetting('dbUser', e.target.value)}
+              className="input w-64"
+              placeholder="root"
+            />
+          </div>
+
+          <div>
+            <label className="label">Database Password</label>
+            <input
+              type="password"
+              value={settings.dbPassword || ''}
+              onChange={(e) => updateSetting('dbPassword', e.target.value)}
+              className="input w-64"
+              placeholder="Leave empty for no password"
+            />
+            <p className="text-sm text-gray-500 mt-1">
+              Note: This updates the setting for new projects. Use the Databases page to change the actual database password.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Port Configuration
         </h3>
         <div className="space-y-4">
