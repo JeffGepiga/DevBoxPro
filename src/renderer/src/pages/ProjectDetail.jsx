@@ -20,6 +20,8 @@ import {
   Cpu,
   Plus,
   Trash2,
+  Server,
+  Layers,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -27,7 +29,7 @@ function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { projects, startProject, stopProject, deleteProject } = useApp();
+  const { projects, startProject, stopProject, deleteProject, refreshProjects } = useApp();
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'overview');
   const [project, setProject] = useState(null);
   const [logs, setLogs] = useState([]);
@@ -245,7 +247,7 @@ function ProjectDetail() {
 
       {/* Tab Content */}
       {activeTab === 'overview' && (
-        <OverviewTab project={project} processes={processes} />
+        <OverviewTab project={project} processes={processes} refreshProjects={refreshProjects} />
       )}
       {activeTab === 'terminal' && (
         <div className="h-[500px]">
@@ -285,26 +287,169 @@ function ProjectDetail() {
   );
 }
 
-function OverviewTab({ project, processes }) {
+function OverviewTab({ project, processes, refreshProjects }) {
   const runningProcesses = processes.filter((p) => p.isRunning);
-  const [switchingServer, setSwitchingServer] = useState(false);
-
-  const handleSwitchWebServer = async (newServer) => {
-    if (project.webServer === newServer) return;
-    
-    setSwitchingServer(true);
-    try {
-      await window.devbox?.projects.switchWebServer(project.id, newServer);
-    } catch (error) {
-      console.error('Error switching web server:', error);
-      alert('Failed to switch web server: ' + error.message);
-    } finally {
-      setSwitchingServer(false);
+  const [phpVersions, setPhpVersions] = useState([]);
+  const [binariesStatus, setBinariesStatus] = useState({});
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [pendingChanges, setPendingChanges] = useState({});
+  
+  // Load available PHP versions and binaries status
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const versions = await window.devbox?.php.getVersions();
+        setPhpVersions(versions || []);
+        
+        const status = await window.devbox?.binaries.getStatus();
+        setBinariesStatus(status || {});
+      } catch (error) {
+        console.error('Error loading data:', error);
+      }
+    };
+    loadData();
+  }, []);
+  
+  // Check if there are pending changes
+  const hasPendingChanges = Object.keys(pendingChanges).length > 0;
+  
+  // Get effective value (pending change or current project value)
+  const getEffectiveValue = (key) => {
+    if (key in pendingChanges) return pendingChanges[key];
+    if (key === 'services') return project.services || {};
+    return project[key];
+  };
+  
+  const handlePhpVersionChange = (newVersion) => {
+    if (newVersion === project.phpVersion) {
+      const { phpVersion, ...rest } = pendingChanges;
+      setPendingChanges(rest);
+    } else {
+      setPendingChanges({ ...pendingChanges, phpVersion: newVersion });
     }
   };
+  
+  const handleServiceToggle = (serviceName) => {
+    const currentServices = getEffectiveValue('services');
+    let newServices = { ...currentServices };
+    
+    // For databases, make them mutually exclusive
+    if (serviceName === 'mysql' || serviceName === 'mariadb') {
+      const isEnabling = !currentServices[serviceName];
+      if (isEnabling) {
+        // Disable the other database
+        newServices.mysql = serviceName === 'mysql';
+        newServices.mariadb = serviceName === 'mariadb';
+      } else {
+        // Just disable this one
+        newServices[serviceName] = false;
+      }
+    } else {
+      // For other services, just toggle
+      newServices[serviceName] = !currentServices[serviceName];
+    }
+    
+    // Check if services match original
+    const originalServices = project.services || {};
+    const hasServiceChanges = Object.keys(newServices).some(
+      key => newServices[key] !== (originalServices[key] || false)
+    );
+    
+    if (!hasServiceChanges) {
+      const { services, ...rest } = pendingChanges;
+      setPendingChanges(rest);
+    } else {
+      setPendingChanges({ ...pendingChanges, services: newServices });
+    }
+  };
+  
+  const handleWebServerChange = (newServer) => {
+    if (newServer === project.webServer) {
+      const { webServer, ...rest } = pendingChanges;
+      setPendingChanges(rest);
+    } else {
+      setPendingChanges({ ...pendingChanges, webServer: newServer });
+    }
+  };
+  
+  const handleSaveChanges = async () => {
+    if (!hasPendingChanges) return;
+    
+    setSavingSettings(true);
+    try {
+      // If web server is changing, use switchWebServer API
+      if (pendingChanges.webServer) {
+        await window.devbox?.projects.switchWebServer(project.id, pendingChanges.webServer);
+      }
+      
+      // Update other project settings
+      const { webServer, ...otherChanges } = pendingChanges;
+      if (Object.keys(otherChanges).length > 0) {
+        await window.devbox?.projects.update(project.id, otherChanges);
+      }
+      
+      // Clear pending changes
+      setPendingChanges({});
+      
+      // Refresh projects to get updated data
+      await refreshProjects?.();
+      
+      // If project is running, ask to restart
+      if (project.isRunning) {
+        if (window.confirm('Settings saved! Do you want to restart the project to apply changes?')) {
+          await window.devbox?.projects.restart(project.id);
+        }
+      }
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      alert('Failed to save settings: ' + error.message);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+  
+  const handleDiscardChanges = () => {
+    setPendingChanges({});
+  };
+
+  // Service definitions - databases first (mutually exclusive), then others
+  const serviceDefinitions = [
+    { id: 'mysql', name: 'MySQL', icon: '🗄️', installed: binariesStatus?.mysql, isDatabase: true },
+    { id: 'mariadb', name: 'MariaDB', icon: '🗃️', installed: binariesStatus?.mariadb, isDatabase: true },
+    { id: 'redis', name: 'Redis', icon: '⚡', installed: binariesStatus?.redis },
+    { id: 'queue', name: 'Queue Worker', icon: '📋', installed: true }, // Always available for Laravel
+  ];
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className="space-y-6">
+      {/* Pending Changes Banner */}
+      {hasPendingChanges && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-yellow-600 dark:text-yellow-400">⚠️</span>
+            <span className="text-sm text-yellow-700 dark:text-yellow-300">
+              You have unsaved changes
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDiscardChanges}
+              className="btn-secondary text-sm py-1 px-3"
+            >
+              Discard
+            </button>
+            <button
+              onClick={handleSaveChanges}
+              disabled={savingSettings}
+              className="btn-primary text-sm py-1 px-3"
+            >
+              {savingSettings ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      )}
+      
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Project Info */}
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
@@ -317,10 +462,18 @@ function OverviewTab({ project, processes }) {
               {project.type}
             </dd>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between items-center">
             <dt className="text-gray-500 dark:text-gray-400">PHP Version</dt>
-            <dd className="font-medium text-gray-900 dark:text-white">
-              {project.phpVersion}
+            <dd>
+              <select
+                value={getEffectiveValue('phpVersion')}
+                onChange={(e) => handlePhpVersionChange(e.target.value)}
+                className="input py-1 px-2 text-sm w-24"
+              >
+                {phpVersions.map((v) => (
+                  <option key={v.version} value={v.version}>{v.version}</option>
+                ))}
+              </select>
             </dd>
           </div>
           <div className="flex justify-between">
@@ -378,80 +531,118 @@ function OverviewTab({ project, processes }) {
           Web Server
         </h3>
         <div className="grid grid-cols-2 gap-4">
-          <button
-            onClick={() => handleSwitchWebServer('nginx')}
-            disabled={switchingServer}
-            className={clsx(
-              'p-4 rounded-lg border-2 text-left transition-all',
-              project.webServer === 'nginx'
-                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-xl">🟢</span>
-              <span className="font-medium text-gray-900 dark:text-white">Nginx</span>
-            </div>
-            {project.webServer === 'nginx' && (
-              <span className="text-xs text-primary-600 dark:text-primary-400 mt-1 block">Active</span>
-            )}
-          </button>
-          <button
-            onClick={() => handleSwitchWebServer('apache')}
-            disabled={switchingServer}
-            className={clsx(
-              'p-4 rounded-lg border-2 text-left transition-all',
-              project.webServer === 'apache'
-                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-xl">🔴</span>
-              <span className="font-medium text-gray-900 dark:text-white">Apache</span>
-            </div>
-            {project.webServer === 'apache' && (
-              <span className="text-xs text-primary-600 dark:text-primary-400 mt-1 block">Active</span>
-            )}
-          </button>
+          {['nginx', 'apache'].map((server) => {
+            const effectiveServer = getEffectiveValue('webServer');
+            const isSelected = effectiveServer === server;
+            const isChanged = pendingChanges.webServer && pendingChanges.webServer !== project.webServer;
+            
+            return (
+              <button
+                key={server}
+                onClick={() => handleWebServerChange(server)}
+                className={clsx(
+                  'p-4 rounded-lg border-2 text-left transition-all',
+                  isSelected
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  {server === 'nginx' ? (
+                    <Server className="w-5 h-5 text-green-500" />
+                  ) : (
+                    <Layers className="w-5 h-5 text-orange-500" />
+                  )}
+                  <span className="font-medium text-gray-900 dark:text-white capitalize">{server}</span>
+                </div>
+                {isSelected && (
+                  <span className={clsx(
+                    'text-xs mt-1 block',
+                    isChanged && effectiveServer === server
+                      ? 'text-yellow-600 dark:text-yellow-400'
+                      : 'text-primary-600 dark:text-primary-400'
+                  )}>
+                    {isChanged && effectiveServer === server ? 'Will switch to this' : 'Active'}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
-        {switchingServer && (
-          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-            Switching web server...
+        {pendingChanges.webServer && (
+          <p className="mt-3 text-xs text-yellow-600 dark:text-yellow-400">
+            Web server will change after saving
           </p>
         )}
       </div>
 
-      {/* Services */}
+      {/* Services - Now with toggle buttons */}
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Enabled Services
+          Services
         </h3>
-        <div className="grid grid-cols-2 gap-4">
-          {Object.entries(project.services || {}).map(([service, enabled]) => (
-            <div
-              key={service}
-              className={clsx(
-                'p-3 rounded-lg border',
-                enabled
-                  ? 'border-green-200 bg-green-50 dark:border-green-900/50 dark:bg-green-900/20'
-                  : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800'
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <Database className={clsx('w-4 h-4', enabled ? 'text-green-600' : 'text-gray-400')} />
-                <span
-                  className={clsx(
-                    'text-sm font-medium capitalize',
-                    enabled ? 'text-green-700 dark:text-green-400' : 'text-gray-500'
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+          Note: Only one database (MySQL or MariaDB) can be active at a time
+        </p>
+        <div className="space-y-3">
+          {serviceDefinitions.map((service) => {
+            const effectiveServices = getEffectiveValue('services');
+            const isEnabled = effectiveServices[service.id] || false;
+            const isInstalled = service.installed;
+            const isChanged = pendingChanges.services && 
+              pendingChanges.services[service.id] !== (project.services?.[service.id] || false);
+            
+            return (
+              <button
+                key={service.id}
+                onClick={() => isInstalled && handleServiceToggle(service.id)}
+                disabled={!isInstalled}
+                className={clsx(
+                  'w-full p-3 rounded-lg border-2 text-left transition-all flex items-center justify-between',
+                  isEnabled
+                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                    : 'border-gray-200 dark:border-gray-700',
+                  !isInstalled && 'opacity-50 cursor-not-allowed',
+                  isInstalled && 'hover:border-gray-300 dark:hover:border-gray-600'
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">{service.icon}</span>
+                  <div>
+                    <span className={clsx(
+                      'font-medium',
+                      isEnabled ? 'text-green-700 dark:text-green-400' : 'text-gray-700 dark:text-gray-300'
+                    )}>
+                      {service.name}
+                    </span>
+                    {!isInstalled && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400 block">
+                        Not installed
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {isChanged && (
+                    <span className="text-xs text-yellow-600 dark:text-yellow-400">Modified</span>
                   )}
-                >
-                  {service}
-                </span>
-              </div>
-            </div>
-          ))}
+                  <div className={clsx(
+                    'w-10 h-6 rounded-full transition-colors relative',
+                    isEnabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
+                  )}>
+                    <div className={clsx(
+                      'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
+                      isEnabled ? 'translate-x-5' : 'translate-x-1'
+                    )} />
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
+        <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+          Click to toggle services. Changes will take effect after saving and restarting.
+        </p>
       </div>
 
       {/* Workers Summary */}
@@ -471,6 +662,7 @@ function OverviewTab({ project, processes }) {
           <Cpu className="w-12 h-12 text-gray-300 dark:text-gray-600" />
         </div>
       </div>
+    </div>
     </div>
   );
 }

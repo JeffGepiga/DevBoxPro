@@ -5,6 +5,8 @@ const { spawn, exec } = require('child_process');
 const http = require('http');
 const httpProxy = require('http-proxy');
 const os = require('os');
+const net = require('net');
+const { isPortAvailable, findAvailablePort } = require('../utils/PortUtils');
 
 // Helper function to spawn a process hidden on Windows
 // On Windows, uses regular spawn with windowsHide
@@ -629,20 +631,24 @@ class ProjectManager {
       const phpFpmPort = 9000 + (parseInt(project.id.slice(-4), 16) % 1000);
 
       let phpCgiProcess = null;
+      let actualPhpFpmPort = phpFpmPort;
       
       // Only start PHP-CGI process for Nginx (uses FastCGI)
       // Apache uses Action/AddHandler CGI approach - invokes PHP-CGI directly per request
       const webServer = project.webServer || 'nginx';
       if (webServer === 'nginx') {
-        phpCgiProcess = await this.startPhpCgi(project, phpFpmPort);
+        const phpCgiResult = await this.startPhpCgi(project, phpFpmPort);
+        phpCgiProcess = phpCgiResult.process;
+        actualPhpFpmPort = phpCgiResult.port;
       }
       
       // Regenerate virtual host config to ensure correct port
-      await this.createVirtualHost(project);
+      // Pass the actual PHP-CGI port in case it differs from the calculated one
+      await this.createVirtualHost(project, actualPhpFpmPort);
 
       this.runningProjects.set(id, {
         phpCgiProcess: phpCgiProcess,
-        phpFpmPort: phpFpmPort,
+        phpFpmPort: actualPhpFpmPort,
         startedAt: new Date(),
       });
 
@@ -682,12 +688,23 @@ class ProjectManager {
       throw new Error(`PHP-CGI not found for PHP ${phpVersion}. Please ensure php-cgi is available.`);
     }
 
-    console.log(`Starting PHP-CGI ${phpVersion} on port ${port}...`);
+    // Check if port is available, find alternative if not
+    let actualPort = port;
+    if (!await isPortAvailable(port)) {
+      console.log(`PHP-CGI port ${port} is in use, finding alternative...`);
+      actualPort = await findAvailablePort(port, 100);
+      if (!actualPort) {
+        throw new Error(`Could not find available port for PHP-CGI (starting from ${port})`);
+      }
+      console.log(`PHP-CGI will use port ${actualPort} instead`);
+    }
+
+    console.log(`Starting PHP-CGI ${phpVersion} on port ${actualPort}...`);
 
     let phpCgiProcess;
     if (process.platform === 'win32') {
       // On Windows, use spawnHidden to run without a console window
-      phpCgiProcess = spawnHidden(phpCgiPath, ['-b', `127.0.0.1:${port}`], {
+      phpCgiProcess = spawnHidden(phpCgiPath, ['-b', `127.0.0.1:${actualPort}`], {
         cwd: project.path,
         env: {
           ...process.env,
@@ -714,7 +731,7 @@ class ProjectManager {
         console.log(`PHP-CGI for ${project.name} exited with code ${code}`);
       });
     } else {
-      phpCgiProcess = spawn(phpCgiPath, ['-b', `127.0.0.1:${port}`], {
+      phpCgiProcess = spawn(phpCgiPath, ['-b', `127.0.0.1:${actualPort}`], {
         cwd: project.path,
         env: {
           ...process.env,
@@ -743,11 +760,24 @@ class ProjectManager {
       });
     }
 
-    // Wait a moment for PHP-CGI to start
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Wait for PHP-CGI to be ready (check if port is listening)
+    const maxWait = 5000;
+    const startTime = Date.now();
+    let isListening = false;
+    
+    while (Date.now() - startTime < maxWait && !isListening) {
+      isListening = !await isPortAvailable(actualPort);
+      if (!isListening) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+    
+    if (!isListening) {
+      console.warn(`PHP-CGI may not have started properly on port ${actualPort}`);
+    }
 
-    console.log(`PHP-CGI started for ${project.name} on port ${port}`);
-    return phpCgiProcess;
+    console.log(`PHP-CGI started for ${project.name} on port ${actualPort}`);
+    return { process: phpCgiProcess, port: actualPort };
   }
 
   async stopProject(id) {
@@ -1111,11 +1141,11 @@ class ProjectManager {
   }
 
   // Create virtual host configuration for the project
-  async createVirtualHost(project) {
+  async createVirtualHost(project, phpFpmPort = null) {
     const webServer = project.webServer || this.configStore.get('settings.webServer', 'nginx');
     
     if (webServer === 'nginx') {
-      await this.createNginxVhost(project);
+      await this.createNginxVhost(project, phpFpmPort);
       // Reload nginx to pick up config changes
       try {
         await this.managers.service?.reloadNginx();
@@ -1136,7 +1166,7 @@ class ProjectManager {
   }
 
   // Create Nginx virtual host
-  async createNginxVhost(project) {
+  async createNginxVhost(project, overridePhpFpmPort = null) {
     const { app } = require('electron');
     const dataPath = path.join(app.getPath('userData'), 'data');
     const resourcesPath = path.join(app.getPath('userData'), 'resources');
@@ -1152,13 +1182,16 @@ class ProjectManager {
     // Ensure document root exists
     await fs.ensureDir(documentRoot);
     
-    const phpFpmPort = 9000 + (parseInt(project.id.slice(-4), 16) % 1000);
+    // Use override port if provided, otherwise calculate default
+    const phpFpmPort = overridePhpFpmPort || (9000 + (parseInt(project.id.slice(-4), 16) % 1000));
     
     // Get dynamic ports from ServiceManager
     const serviceManager = this.managers.service;
     const nginxPorts = serviceManager?.getServicePorts('nginx');
     const httpPort = nginxPorts?.httpPort || 80;
     const httpsPort = nginxPorts?.sslPort || 443;
+
+    console.log(`Creating Nginx vhost for ${project.domain} with PHP-CGI on port ${phpFpmPort}`);
 
     // Generate nginx config with both HTTP and HTTPS
     // PHP-CGI runs on phpFpmPort for FastCGI
@@ -1693,15 +1726,65 @@ server {
       throw new Error('Project not found');
     }
 
-    // Remove old vhost config
+    const oldWebServer = project.webServer || 'nginx';
+    
+    // If same web server, nothing to do
+    if (oldWebServer === newWebServer) {
+      return { success: true, webServer: newWebServer, message: 'Already using this web server' };
+    }
+
+    const wasRunning = this.runningProjects.has(projectId);
+    
+    // Stop the project if running
+    if (wasRunning) {
+      await this.stopProject(projectId);
+    }
+
+    // Remove old vhost config from OLD web server
     await this.removeVirtualHost(project);
 
-    // Update project
-    project.webServer = newWebServer;
-    await this.updateProject(projectId, { webServer: newWebServer });
+    // Check if any other projects are still using the old web server
+    const allProjects = this.configStore.get('projects', []);
+    const otherProjectsOnOldServer = allProjects.filter(p => 
+      p.id !== projectId && 
+      (p.webServer || 'nginx') === oldWebServer &&
+      this.runningProjects.has(p.id)
+    );
+    
+    // If no other projects use the old web server, stop it to free up ports
+    if (otherProjectsOnOldServer.length === 0) {
+      console.log(`No other projects using ${oldWebServer}, stopping it to free ports...`);
+      try {
+        await this.managers.service?.stopService(oldWebServer);
+        // Wait for ports to be fully released
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.warn(`Could not stop ${oldWebServer}:`, error.message);
+      }
+    } else {
+      console.log(`${otherProjectsOnOldServer.length} other project(s) still using ${oldWebServer}, keeping it running`);
+    }
 
-    // Create new vhost config
+    // Update project with new web server
+    const projects = this.configStore.get('projects', []);
+    const index = projects.findIndex((p) => p.id === projectId);
+    if (index !== -1) {
+      projects[index] = {
+        ...projects[index],
+        webServer: newWebServer,
+        updatedAt: new Date().toISOString(),
+      };
+      this.configStore.set('projects', projects);
+    }
+    project.webServer = newWebServer;
+
+    // Create new vhost config BEFORE starting the new web server
     await this.createVirtualHost(project);
+
+    // Restart if was running
+    if (wasRunning) {
+      await this.startProject(projectId);
+    }
 
     return { success: true, webServer: newWebServer };
   }

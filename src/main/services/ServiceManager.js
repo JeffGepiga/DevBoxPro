@@ -265,6 +265,12 @@ class ServiceManager extends EventEmitter {
       console.log(`${config.name} releasing standard ports (80/443)`);
       this.standardPortOwner = null;
     }
+    
+    // Clear actual port values so they get recalculated on next start
+    if (serviceName === 'nginx' || serviceName === 'apache') {
+      delete config.actualHttpPort;
+      delete config.actualSslPort;
+    }
 
     const status = this.serviceStatus.get(serviceName);
     status.status = 'stopped';
@@ -405,6 +411,27 @@ class ServiceManager extends EventEmitter {
 
     // Always recreate config with current ports
     await this.createNginxConfig(confPath, logsPath, httpPort, sslPort);
+
+    // Test Nginx configuration before starting
+    try {
+      const { execSync } = require('child_process');
+      execSync(`"${nginxExe}" -t -c "${confPath}" -p "${nginxPath}"`, { 
+        cwd: nginxPath,
+        windowsHide: true,
+        timeout: 10000,
+        encoding: 'utf8'
+      });
+      console.log('Nginx configuration test passed');
+    } catch (configError) {
+      console.error('Nginx configuration test failed:', configError.message);
+      if (configError.stderr) {
+        console.error('Nginx config error details:', configError.stderr);
+      }
+      if (configError.stdout) {
+        console.error('Nginx config output:', configError.stdout);
+      }
+      throw new Error(`Nginx configuration error: ${configError.stderr || configError.message}`);
+    }
 
     console.log(`Starting Nginx on ports ${httpPort} (HTTP) and ${sslPort} (HTTPS)...`);
 
@@ -1638,6 +1665,49 @@ appendfilename "appendonly.aof"
       return null;
     }
     
+    // If actual ports are set, use those
+    if (config.actualHttpPort) {
+      return {
+        httpPort: config.actualHttpPort,
+        sslPort: config.actualSslPort || config.sslPort,
+      };
+    }
+    
+    // For web servers, predict ports based on port ownership
+    if (serviceName === 'nginx' || serviceName === 'apache') {
+      // Check who owns standard ports
+      if (this.standardPortOwner === null) {
+        // No one owns yet - check if the OTHER web server is running
+        const otherServer = serviceName === 'nginx' ? 'apache' : 'nginx';
+        const otherStatus = this.serviceStatus.get(otherServer);
+        if (otherStatus?.status === 'running') {
+          // Other server is running, use alternate ports
+          return {
+            httpPort: this.webServerPorts.alternate.http,
+            sslPort: this.webServerPorts.alternate.https,
+          };
+        }
+        // No other server running, assume we'll get standard ports
+        return {
+          httpPort: this.webServerPorts.standard.http,
+          sslPort: this.webServerPorts.standard.https,
+        };
+      } else if (this.standardPortOwner === serviceName) {
+        // We own standard ports
+        return {
+          httpPort: this.webServerPorts.standard.http,
+          sslPort: this.webServerPorts.standard.https,
+        };
+      } else {
+        // Other server owns standard ports, we get alternate
+        return {
+          httpPort: this.webServerPorts.alternate.http,
+          sslPort: this.webServerPorts.alternate.https,
+        };
+      }
+    }
+    
+    // For non-web servers, use default ports
     return {
       httpPort: config.actualHttpPort || config.defaultPort,
       sslPort: config.actualSslPort || config.sslPort,
