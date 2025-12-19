@@ -318,8 +318,6 @@ async function startup() {
       console.error('Error auto-starting projects:', err);
     }
   } catch (error) {
-    earlyLog(`Failed to start DevBox Pro: ${error.message}`);
-    earlyLog(error.stack);
   }
 }
 
