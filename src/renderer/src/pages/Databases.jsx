@@ -13,6 +13,8 @@ import {
   Key,
   Settings,
   ChevronDown,
+  Play,
+  Square,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -23,13 +25,14 @@ function Databases() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [newDbName, setNewDbName] = useState('');
-  const [activeDatabaseType, setActiveDatabaseType] = useState('mysql');
+  const [selectedDatabase, setSelectedDatabase] = useState(null); // { type: 'mysql', version: '8.4' }
   const [dbInfo, setDbInfo] = useState(null);
   const [binariesStatus, setBinariesStatus] = useState(null);
   const [servicesStatus, setServicesStatus] = useState({});
   const [resetForm, setResetForm] = useState({ user: 'root', password: '' });
   const [resetting, setResetting] = useState(false);
-  const [startingService, setStartingService] = useState(false);
+  const [startingVersion, setStartingVersion] = useState(null); // 'mysql-8.4' or null
+  const [stoppingVersion, setStoppingVersion] = useState(null);
   const [serviceError, setServiceError] = useState(null);
 
   useEffect(() => {
@@ -40,10 +43,10 @@ function Databases() {
   }, []);
 
   useEffect(() => {
-    if (activeDatabaseType) {
+    if (selectedDatabase) {
       loadDatabases();
     }
-  }, [activeDatabaseType, servicesStatus]);
+  }, [selectedDatabase, servicesStatus]);
 
   const loadServicesStatus = async () => {
     try {
@@ -57,27 +60,52 @@ function Databases() {
   const loadInitialData = async () => {
     setLoading(true);
     try {
-      const [dbType, status, info, services] = await Promise.all([
-        window.devbox?.database.getActiveDatabaseType(),
+      const [status, info, services] = await Promise.all([
         window.devbox?.binaries.getStatus(),
         window.devbox?.database.getDatabaseInfo(),
         window.devbox?.services.getStatus(),
       ]);
-      setActiveDatabaseType(dbType || 'mysql');
       setBinariesStatus(status);
       setDbInfo(info);
       setServicesStatus(services || {});
       setResetForm({ user: info?.user || 'root', password: '' });
+      
+      // Auto-select first running database, or first installed one
+      const mysqlRunning = services?.mysql?.status === 'running' ? services.mysql.version : null;
+      const mariadbRunning = services?.mariadb?.status === 'running' ? services.mariadb.version : null;
+      
+      if (mysqlRunning) {
+        setSelectedDatabase({ type: 'mysql', version: mysqlRunning });
+      } else if (mariadbRunning) {
+        setSelectedDatabase({ type: 'mariadb', version: mariadbRunning });
+      } else {
+        // Select first installed version
+        const mysqlVersions = status?.mysql ? Object.entries(status.mysql).filter(([_, v]) => v?.installed).map(([ver]) => ver) : [];
+        const mariadbVersions = status?.mariadb ? Object.entries(status.mariadb).filter(([_, v]) => v?.installed).map(([ver]) => ver) : [];
+        if (mysqlVersions.length > 0) {
+          setSelectedDatabase({ type: 'mysql', version: mysqlVersions[0] });
+        } else if (mariadbVersions.length > 0) {
+          setSelectedDatabase({ type: 'mariadb', version: mariadbVersions[0] });
+        }
+      }
     } catch (error) {
       console.error('Error loading initial data:', error);
     }
-    await loadDatabases();
+    setLoading(false);
   };
 
   const loadDatabases = async () => {
-    // Check if the active database service is running
-    const serviceStatus = servicesStatus[activeDatabaseType];
-    if (serviceStatus?.status !== 'running') {
+    if (!selectedDatabase) {
+      setDatabases([]);
+      setLoading(false);
+      return;
+    }
+    
+    // Check if the selected database version is running
+    const serviceStatus = servicesStatus[selectedDatabase.type];
+    const isRunning = serviceStatus?.status === 'running' && serviceStatus?.version === selectedDatabase.version;
+    
+    if (!isRunning) {
       setDatabases([]);
       setLoading(false);
       return;
@@ -97,35 +125,48 @@ function Databases() {
     }
   };
 
-  const handleSwitchDatabase = async (dbType) => {
-    if (dbType === activeDatabaseType) return;
-    
+  const handleSelectDatabase = async (type, version) => {
+    setSelectedDatabase({ type, version });
+    // Update active database type for queries
     try {
-      await window.devbox?.database.setActiveDatabaseType(dbType);
-      setActiveDatabaseType(dbType);
+      await window.devbox?.database.setActiveDatabaseType(type);
       setServiceError(null);
-      // Reload databases after switching
-      await loadDatabases();
     } catch (error) {
       console.error('Error switching database:', error);
-      alert('Failed to switch database type: ' + error.message);
     }
   };
 
-  const handleStartService = async () => {
-    setStartingService(true);
+  const handleStartVersion = async (type, version) => {
+    const key = `${type}-${version}`;
+    setStartingVersion(key);
     setServiceError(null);
     try {
-      await window.devbox?.services.start(activeDatabaseType);
-      // Wait a moment for service to fully start
+      await window.devbox?.services.start(type, version);
       await new Promise(resolve => setTimeout(resolve, 1500));
       await loadServicesStatus();
-      await loadDatabases();
+      // Auto-select this database after starting
+      setSelectedDatabase({ type, version });
+      await window.devbox?.database.setActiveDatabaseType(type);
     } catch (error) {
       console.error('Error starting service:', error);
-      setServiceError(`Failed to start ${activeDatabaseType}: ${error.message}`);
+      setServiceError(`Failed to start ${type} ${version}: ${error.message}`);
     } finally {
-      setStartingService(false);
+      setStartingVersion(null);
+    }
+  };
+
+  const handleStopVersion = async (type, version) => {
+    const key = `${type}-${version}`;
+    setStoppingVersion(key);
+    try {
+      await window.devbox?.services.stop(type, version);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await loadServicesStatus();
+    } catch (error) {
+      console.error('Error stopping service:', error);
+      setServiceError(`Failed to stop ${type} ${version}: ${error.message}`);
+    } finally {
+      setStoppingVersion(null);
     }
   };
 
@@ -225,13 +266,34 @@ function Databases() {
   const userDatabases = filteredDatabases.filter((db) => !db.isSystem);
   const systemDatabases = filteredDatabases.filter((db) => db.isSystem);
 
-  const mysqlInstalled = binariesStatus?.mysql?.installed;
-  const mariadbInstalled = binariesStatus?.mariadb?.installed;
-  const dbTypeLabel = activeDatabaseType === 'mysql' ? 'MySQL' : 'MariaDB';
-  const currentServiceStatus = servicesStatus[activeDatabaseType];
-  const isServiceRunning = currentServiceStatus?.status === 'running';
+  // Get installed versions for each database type
+  const getInstalledVersions = (service) => {
+    if (!binariesStatus?.[service]) return [];
+    return Object.entries(binariesStatus[service])
+      .filter(([_, v]) => v?.installed)
+      .map(([version]) => version)
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+  };
+  
+  const mysqlVersions = getInstalledVersions('mysql');
+  const mariadbVersions = getInstalledVersions('mariadb');
+  
+  // Build list of all installed database versions
+  const installedDatabases = [
+    ...mysqlVersions.map(v => ({ type: 'mysql', version: v, label: `MySQL ${v}` })),
+    ...mariadbVersions.map(v => ({ type: 'mariadb', version: v, label: `MariaDB ${v}` })),
+  ];
+  
+  // Check if selected database version is running
+  const isSelectedRunning = selectedDatabase && 
+    servicesStatus[selectedDatabase.type]?.status === 'running' &&
+    servicesStatus[selectedDatabase.type]?.version === selectedDatabase.version;
+  
+  const selectedLabel = selectedDatabase 
+    ? `${selectedDatabase.type === 'mysql' ? 'MySQL' : 'MariaDB'} ${selectedDatabase.version}`
+    : 'No database installed';
 
-  if (loading && !databases.length && isServiceRunning) {
+  if (loading && !binariesStatus) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
@@ -246,14 +308,14 @@ function Databases() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Databases</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            Manage your {dbTypeLabel} databases
+            Manage your MySQL and MariaDB databases
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button 
             onClick={openPhpMyAdmin} 
             className="btn-secondary"
-            disabled={!isServiceRunning}
+            disabled={!isSelectedRunning}
           >
             <ExternalLink className="w-4 h-4" />
             phpMyAdmin
@@ -261,7 +323,7 @@ function Databases() {
           <button 
             onClick={() => setShowCreateModal(true)} 
             className="btn-primary"
-            disabled={!isServiceRunning}
+            disabled={!isSelectedRunning}
           >
             <Plus className="w-4 h-4" />
             New Database
@@ -269,99 +331,160 @@ function Databases() {
         </div>
       </div>
 
-      {/* Database Type Switcher & Credentials */}
-      <div className="card p-4 mb-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Database Engine:</span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleSwitchDatabase('mysql')}
-                disabled={!mysqlInstalled}
-                className={clsx(
-                  'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                  activeDatabaseType === 'mysql'
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600',
-                  !mysqlInstalled && 'opacity-50 cursor-not-allowed'
-                )}
-              >
-                MySQL
-                {!mysqlInstalled && <span className="text-xs ml-1">(not installed)</span>}
-              </button>
-              <button
-                onClick={() => handleSwitchDatabase('mariadb')}
-                disabled={!mariadbInstalled}
-                className={clsx(
-                  'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                  activeDatabaseType === 'mariadb'
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600',
-                  !mariadbInstalled && 'opacity-50 cursor-not-allowed'
-                )}
-              >
-                MariaDB
-                {!mariadbInstalled && <span className="text-xs ml-1">(not installed)</span>}
-              </button>
-            </div>
-          </div>
-          <button
-            onClick={() => setShowResetModal(true)}
-            className="btn-secondary"
-          >
-            <Key className="w-4 h-4" />
-            Reset Credentials
-          </button>
+      {/* Installed Database Versions */}
+      {installedDatabases.length === 0 ? (
+        <div className="card p-12 text-center mb-6">
+          <Database className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+            No Database Installed
+          </h3>
+          <p className="text-gray-500 dark:text-gray-400">
+            Install MySQL or MariaDB from the Binary Manager to get started.
+          </p>
         </div>
-        {dbInfo && (
-          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex items-center gap-6 text-sm text-gray-600 dark:text-gray-400">
-            <span><strong>Host:</strong> {dbInfo.host}</span>
-            <span><strong>Port:</strong> {dbInfo.port}</span>
-            <span><strong>User:</strong> {dbInfo.user}</span>
-            <span><strong>Password:</strong> {dbInfo.password ? '••••••' : '(empty)'}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Service Not Running Warning */}
-      {!isServiceRunning && (
-        <div className="card p-6 mb-6 border-2 border-yellow-400 dark:border-yellow-600 bg-yellow-50 dark:bg-yellow-900/20">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-800 rounded-full flex items-center justify-center">
-                <Database className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-900 dark:text-white">
-                  {dbTypeLabel} is not running
-                </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Start the {dbTypeLabel} service to view and manage databases
-                </p>
-                {serviceError && (
-                  <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                    {serviceError}
-                  </p>
-                )}
-              </div>
-            </div>
+      ) : (
+        <div className="card p-4 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Installed Database Engines
+            </span>
             <button
-              onClick={handleStartService}
-              disabled={startingService}
-              className="btn-primary"
+              onClick={() => setShowResetModal(true)}
+              className="btn-ghost btn-sm"
+              disabled={!isSelectedRunning}
             >
-              {startingService ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  Starting...
-                </>
-              ) : (
-                <>
-                  <Database className="w-4 h-4" />
-                  Start {dbTypeLabel}
-                </>
-              )}
+              <Key className="w-4 h-4" />
+              Reset Credentials
             </button>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {installedDatabases.map((db) => {
+              const serviceStatus = servicesStatus[db.type];
+              const isRunning = serviceStatus?.status === 'running' && serviceStatus?.version === db.version;
+              const isSelected = selectedDatabase?.type === db.type && selectedDatabase?.version === db.version;
+              const versionKey = `${db.type}-${db.version}`;
+              const isStarting = startingVersion === versionKey;
+              const isStopping = stoppingVersion === versionKey;
+              const port = isRunning ? serviceStatus?.port : null;
+              
+              return (
+                <div
+                  key={versionKey}
+                  onClick={() => handleSelectDatabase(db.type, db.version)}
+                  className={clsx(
+                    'p-3 rounded-lg border-2 cursor-pointer transition-all',
+                    isSelected
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600',
+                  )}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Database className={clsx(
+                        'w-5 h-5',
+                        db.type === 'mysql' ? 'text-blue-500' : 'text-teal-500'
+                      )} />
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        {db.label}
+                      </span>
+                    </div>
+                    {isRunning && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">
+                        Running
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    {isRunning ? (
+                      <>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          Port: {port}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStopVersion(db.type, db.version);
+                          }}
+                          disabled={isStopping}
+                          className="btn-ghost btn-sm text-red-500 hover:text-red-600"
+                        >
+                          {isStopping ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Square className="w-3 h-3" />
+                          )}
+                          <span className="text-xs">Stop</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xs text-gray-400 dark:text-gray-500">
+                          Stopped
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartVersion(db.type, db.version);
+                          }}
+                          disabled={isStarting}
+                          className="btn-ghost btn-sm text-green-500 hover:text-green-600"
+                        >
+                          {isStarting ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Play className="w-3 h-3" />
+                          )}
+                          <span className="text-xs">Start</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          {/* Connection info for selected running database */}
+          {isSelectedRunning && dbInfo && (
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-6 text-sm text-gray-600 dark:text-gray-400">
+                <span><strong>Host:</strong> {dbInfo.host}</span>
+                <span><strong>Port:</strong> {dbInfo.port}</span>
+                <span><strong>User:</strong> {dbInfo.user}</span>
+                <span><strong>Password:</strong> {dbInfo.password ? '••••••' : '(empty)'}</span>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                <HardDrive className="w-3 h-3 inline mr-1" />
+                Each version has its own isolated data directory.
+              </p>
+            </div>
+          )}
+          
+          {serviceError && (
+            <p className="text-sm text-red-600 dark:text-red-400 mt-3">
+              {serviceError}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Not Running Notice */}
+      {selectedDatabase && !isSelectedRunning && installedDatabases.length > 0 && (
+        <div className="card p-6 mb-6 border-2 border-yellow-400 dark:border-yellow-600 bg-yellow-50 dark:bg-yellow-900/20">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-800 rounded-full flex items-center justify-center">
+              <Database className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white">
+                {selectedLabel} is not running
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Click the Start button on the database version above to view and manage its databases.
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -401,8 +524,8 @@ function Databases() {
           <div className="card p-12 text-center">
             <Database className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
             <p className="text-gray-500 dark:text-gray-400">
-              {databases.length === 0
-                ? `No databases found. Make sure ${dbTypeLabel} is running.`
+              {!isSelectedRunning
+                ? `Start ${selectedLabel} to view databases.`
                 : 'No user databases yet'}
             </p>
           </div>
@@ -438,7 +561,7 @@ function Databases() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="card p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              Create Database
+              Create Database in {selectedLabel}
             </h3>
             <div className="mb-4">
               <label className="label">Database Name</label>
@@ -481,7 +604,7 @@ function Databases() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="card p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              Reset {dbTypeLabel} Credentials
+              Reset {selectedLabel} Credentials
             </h3>
             <div className="space-y-4">
               <div>

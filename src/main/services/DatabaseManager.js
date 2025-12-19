@@ -20,10 +20,11 @@ class DatabaseManager {
   async initialize() {
     console.log('Initializing DatabaseManager...');
 
+    // Note: Actual per-version data directories (e.g., data/mysql/8.4/data) 
+    // are created by ServiceManager when starting each version.
+    // We just ensure the base backup directories exist here.
     const dataPath = path.join(app.getPath('userData'), 'data');
-    await fs.ensureDir(path.join(dataPath, 'mysql', 'data'));
     await fs.ensureDir(path.join(dataPath, 'mysql', 'backups'));
-    await fs.ensureDir(path.join(dataPath, 'mariadb', 'data'));
     await fs.ensureDir(path.join(dataPath, 'mariadb', 'backups'));
 
     console.log('DatabaseManager initialized');

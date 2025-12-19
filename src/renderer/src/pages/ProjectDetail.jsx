@@ -427,19 +427,30 @@ function OverviewTab({ project, processes, refreshProjects }) {
     const loadData = async () => {
       try {
         const versions = await window.devbox?.php.getVersions();
-        setPhpVersions(versions || []);
+        // Only show installed PHP versions
+        const installedVersions = (versions || []).filter(v => v.available);
+        setPhpVersions(installedVersions);
         
         const status = await window.devbox?.binaries.getStatus();
         setBinariesStatus(status || {});
         
-        // Load service config for version options
+        // Load service config and filter to only installed versions
         const config = await window.devbox?.binaries.getServiceConfig();
-        if (config?.versions) {
+        if (config?.versions && status) {
+          // Filter to only installed versions for each service
+          const getInstalledVersions = (service) => {
+            if (!status[service]) return [];
+            return Object.entries(status[service])
+              .filter(([_, v]) => v?.installed)
+              .map(([version]) => version)
+              .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+          };
+          
           setVersionOptions({
-            mysql: config.versions.mysql || [],
-            mariadb: config.versions.mariadb || [],
-            redis: config.versions.redis || [],
-            nodejs: config.versions.nodejs || [],
+            mysql: getInstalledVersions('mysql'),
+            mariadb: getInstalledVersions('mariadb'),
+            redis: getInstalledVersions('redis'),
+            nodejs: getInstalledVersions('nodejs'),
           });
         }
       } catch (error) {
@@ -633,16 +644,40 @@ function OverviewTab({ project, processes, refreshProjects }) {
           </div>
           <div className="flex justify-between items-center">
             <dt className="text-gray-500 dark:text-gray-400">PHP Version</dt>
-            <dd>
-              <select
-                value={getEffectiveValue('phpVersion')}
-                onChange={(e) => handlePhpVersionChange(e.target.value)}
-                className="input py-1 px-2 text-sm w-24"
-              >
-                {phpVersions.map((v) => (
-                  <option key={v.version} value={v.version}>{v.version}</option>
-                ))}
-              </select>
+            <dd className="flex items-center gap-2">
+              {(() => {
+                const currentVersion = getEffectiveValue('phpVersion');
+                const isCurrentInstalled = phpVersions.some(v => v.version === currentVersion);
+                const displayVersions = isCurrentInstalled 
+                  ? phpVersions 
+                  : [{ version: currentVersion, notInstalled: true }, ...phpVersions];
+                
+                return (
+                  <>
+                    <select
+                      value={currentVersion}
+                      onChange={(e) => handlePhpVersionChange(e.target.value)}
+                      className={clsx(
+                        "input py-1 px-2 text-sm w-24",
+                        !isCurrentInstalled && "border-red-500 dark:border-red-500"
+                      )}
+                    >
+                      {displayVersions.map((v) => (
+                        <option 
+                          key={v.version} 
+                          value={v.version}
+                          className={v.notInstalled ? 'text-red-500' : ''}
+                        >
+                          {v.version}{v.notInstalled ? ' (not installed)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {!isCurrentInstalled && (
+                      <AlertTriangle className="w-4 h-4 text-red-500" title="PHP version not installed" />
+                    )}
+                  </>
+                );
+              })()}
             </dd>
           </div>
           <div className="flex justify-between">

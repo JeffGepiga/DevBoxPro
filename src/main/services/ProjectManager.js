@@ -754,6 +754,14 @@ class ProjectManager {
     this.managers.log?.project(id, `Domain: ${project.domain}, Path: ${project.path}`);
 
     try {
+      // Validate required binaries before starting
+      const missingBinaries = await this.validateProjectBinaries(project);
+      if (missingBinaries.length > 0) {
+        const errorMsg = `Missing required binaries: ${missingBinaries.join(', ')}. Please install them from the Binary Manager.`;
+        this.managers.log?.project(id, `ERROR: ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+
       // Start required services first
       const serviceResult = await this.startProjectServices(project);
       
@@ -817,16 +825,94 @@ class ProjectManager {
     }
   }
 
+  /**
+   * Validate that all required binaries for a project are installed
+   */
+  async validateProjectBinaries(project) {
+    const missing = [];
+    
+    // Check PHP version
+    const phpVersion = project.phpVersion || '8.3';
+    const phpVersions = this.managers.php?.phpVersions || {};
+    if (!phpVersions[phpVersion]?.available) {
+      missing.push(`PHP ${phpVersion}`);
+    }
+    
+    // Check web server
+    const webServer = project.webServer || 'nginx';
+    const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
+    const webServerPath = path.join(
+      this.resourcePath, 
+      webServer, 
+      webServerVersion, 
+      process.platform === 'win32' ? 'win' : 'mac'
+    );
+    if (!await fs.pathExists(webServerPath)) {
+      missing.push(`${webServer === 'nginx' ? 'Nginx' : 'Apache'} ${webServerVersion}`);
+    }
+    
+    // Check MySQL if enabled
+    if (project.services?.mysql) {
+      const mysqlVersion = project.services.mysqlVersion || '8.4';
+      const mysqlPath = path.join(
+        this.resourcePath,
+        'mysql',
+        mysqlVersion,
+        process.platform === 'win32' ? 'win' : 'mac'
+      );
+      if (!await fs.pathExists(mysqlPath)) {
+        missing.push(`MySQL ${mysqlVersion}`);
+      }
+    }
+    
+    // Check MariaDB if enabled
+    if (project.services?.mariadb) {
+      const mariadbVersion = project.services.mariadbVersion || '11.4';
+      const mariadbPath = path.join(
+        this.resourcePath,
+        'mariadb',
+        mariadbVersion,
+        process.platform === 'win32' ? 'win' : 'mac'
+      );
+      if (!await fs.pathExists(mariadbPath)) {
+        missing.push(`MariaDB ${mariadbVersion}`);
+      }
+    }
+    
+    // Check Redis if enabled
+    if (project.services?.redis) {
+      const redisVersion = project.services.redisVersion || '7.4';
+      const redisPath = path.join(
+        this.resourcePath,
+        'redis',
+        redisVersion,
+        process.platform === 'win32' ? 'win' : 'mac'
+      );
+      if (!await fs.pathExists(redisPath)) {
+        missing.push(`Redis ${redisVersion}`);
+      }
+    }
+    
+    return missing;
+  }
+
   // Start PHP-CGI process for FastCGI
   async startPhpCgi(project, port) {
     const phpVersion = project.phpVersion || '8.3';
+    
+    // Check if PHP version is available
+    const phpVersions = this.managers.php?.phpVersions || {};
+    if (!phpVersions[phpVersion]?.available) {
+      throw new Error(`PHP ${phpVersion} is not installed. Please install it from the Binary Manager.`);
+    }
+    
     const phpPath = this.managers.php.getPhpBinaryPath(phpVersion);
     const phpDir = path.dirname(phpPath);
     const phpCgiPath = path.join(phpDir, process.platform === 'win32' ? 'php-cgi.exe' : 'php-cgi');
     
     // Check if php-cgi exists
     if (!await fs.pathExists(phpCgiPath)) {
-      throw new Error(`PHP-CGI not found for PHP ${phpVersion}. Please ensure php-cgi is available.`);
+      throw new Error(`PHP-CGI not found for PHP ${phpVersion}. The PHP installation may be incomplete. Please reinstall PHP ${phpVersion} from the Binary Manager.`);
     }
 
     // Check if port is available, find alternative if not
