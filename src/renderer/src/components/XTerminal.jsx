@@ -131,7 +131,7 @@ const XTerminal = forwardRef(({
       
       let escapeSequence = '';
       
-      terminal.onData((data) => {
+      terminal.onData(async (data) => {
         // Handle escape sequences for arrow keys
         if (escapeSequence.length > 0 || data === '\x1b') {
           escapeSequence += data;
@@ -196,8 +196,11 @@ const XTerminal = forwardRef(({
           terminal.write('\r\n');
           
           if (isRunningCommand.current && runningProcessId.current) {
-            // Send input to running process
-            window.devbox?.terminal?.sendInput?.(runningProcessId.current, commandBuffer.current + '\n');
+            // Send input to running process (include the typed text + newline)
+            const inputText = commandBuffer.current + '\n';
+            console.log('Sending input to process:', runningProcessId.current, 'Input:', JSON.stringify(inputText));
+            const result = await window.devbox?.terminal?.sendInput?.(runningProcessId.current, inputText);
+            console.log('sendInput result:', result);
             commandBuffer.current = '';
           } else {
             const command = commandBuffer.current.trim();
@@ -226,12 +229,14 @@ const XTerminal = forwardRef(({
           terminal.write('^C\r\n');
           commandBuffer.current = '';
           historyIndex.current = -1;
+          
+          // Cancel running command
+          if (isRunningCommand.current && runningProcessId.current) {
+            window.devbox?.terminal?.cancelCommand?.(runningProcessId.current);
+          }
+          
           isRunningCommand.current = false;
           runningProcessId.current = null;
-          // Cancel running command
-          if (projectId) {
-            window.devbox?.terminal?.cancelCommand?.(projectId);
-          }
           writePrompt(terminal, projectPath);
         } else if (code >= 32) { // Printable characters
           commandBuffer.current += data;

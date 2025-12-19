@@ -73,6 +73,7 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
   const [commandHistory, setCommandHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [copied, setCopied] = useState(false);
+  const [waitingForInput, setWaitingForInput] = useState(false);
   const outputRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -97,6 +98,12 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
       if (!data || !data.projectId) return;
       if (data.projectId === projectId) {
         addOutput(data.text, data.type || 'stdout');
+        
+        // Detect if command is waiting for input (prompts typically end with ? or :)
+        const text = data.text || '';
+        if (text.includes('?') || text.includes('(yes/no)') || text.includes('(y/n)') || text.includes('[yes]') || text.includes('[no]')) {
+          setWaitingForInput(true);
+        }
       }
     };
 
@@ -112,8 +119,34 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
     setOutput((prev) => [...prev, { text, type, timestamp }]);
   }, []);
 
+  const sendInputToProcess = async (input) => {
+    if (!input.trim()) return;
+    
+    // Show input in output
+    addOutput(`> ${input}`, 'command');
+    setCommand('');
+    
+    try {
+      const result = await window.devbox?.terminal?.sendInput(projectId, input + '\n');
+      if (!result?.success) {
+        console.warn('Failed to send input to process');
+      }
+    } catch (error) {
+      addOutput(`Error sending input: ${error.message}`, 'error');
+    }
+    
+    setWaitingForInput(false);
+    inputRef.current?.focus();
+  };
+
   const runCommand = async (cmd) => {
-    if (!cmd.trim() || isRunning) return;
+    if (!cmd.trim()) return;
+    
+    // If a command is running and waiting for input, send input instead
+    if (isRunning) {
+      await sendInputToProcess(cmd);
+      return;
+    }
 
     // Add to history
     setCommandHistory((prev) => [cmd, ...prev.slice(0, 49)]);
@@ -123,6 +156,7 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
     addOutput(`$ ${cmd}`, 'command');
     setCommand('');
     setIsRunning(true);
+    setWaitingForInput(false);
 
     try {
       const result = await window.devbox?.terminal?.runCommand(projectId, cmd, {
@@ -143,6 +177,7 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
       addOutput(error.message, 'error');
     } finally {
       setIsRunning(false);
+      setWaitingForInput(false);
       inputRef.current?.focus();
     }
   };
@@ -153,18 +188,20 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
       runCommand(command);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      if (commandHistory.length > 0) {
+      // Only navigate history when not running
+      if (!isRunning && commandHistory.length > 0) {
         const newIndex = Math.min(historyIndex + 1, commandHistory.length - 1);
         setHistoryIndex(newIndex);
         setCommand(commandHistory[newIndex]);
       }
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (historyIndex > 0) {
+      // Only navigate history when not running
+      if (!isRunning && historyIndex > 0) {
         const newIndex = historyIndex - 1;
         setHistoryIndex(newIndex);
         setCommand(commandHistory[newIndex]);
-      } else {
+      } else if (!isRunning) {
         setHistoryIndex(-1);
         setCommand('');
       }
@@ -174,6 +211,7 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
         window.devbox?.terminal?.cancelCommand(projectId);
         addOutput('^C', 'error');
         setIsRunning(false);
+        setWaitingForInput(false);
       }
     }
   };
@@ -286,22 +324,21 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
 
       {/* Input */}
       <div className="flex items-center gap-2 px-4 py-3 bg-gray-800 border-t border-gray-700">
-        <span className="text-green-400 font-mono">$</span>
+        <span className="text-green-400 font-mono">{isRunning ? '>' : '$'}</span>
         <input
           ref={inputRef}
           type="text"
           value={command}
           onChange={(e) => setCommand(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={isRunning}
-          placeholder={isRunning ? 'Running...' : 'Type a command...'}
-          className="flex-1 bg-transparent text-gray-100 font-mono text-sm outline-none placeholder-gray-500 disabled:opacity-50"
+          placeholder={isRunning ? (waitingForInput ? 'Type your answer...' : 'Type to send input to running command...') : 'Type a command...'}
+          className="flex-1 bg-transparent text-gray-100 font-mono text-sm outline-none placeholder-gray-500"
           autoComplete="off"
           spellCheck="false"
         />
         <button
           onClick={() => runCommand(command)}
-          disabled={!command.trim() || isRunning}
+          disabled={!command.trim()}
           className="p-1.5 text-gray-400 hover:text-green-400 disabled:opacity-50 disabled:hover:text-gray-400 transition-colors"
         >
           <Play className="w-4 h-4" />
