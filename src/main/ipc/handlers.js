@@ -512,6 +512,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       return binaryDownload.getInstalledBinaries();
     });
 
+    ipcMain.handle('binaries:getActiveDownloads', async () => {
+      return binaryDownload.getActiveDownloads();
+    });
+
     ipcMain.handle('binaries:getStatus', async () => {
       const installed = await binaryDownload.getInstalledBinaries();
       

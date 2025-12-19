@@ -141,8 +141,28 @@ export function AppProvider({ children }) {
       
       if (progressData.status === 'completed' || progressData.status === 'error') {
         dispatch({ type: 'SET_DOWNLOADING', payload: { id, value: false } });
+        // Clear from state after a short delay
+        setTimeout(() => {
+          dispatch({ type: 'CLEAR_DOWNLOAD', payload: id });
+        }, 2000);
       }
     });
+
+    // Sync with backend's active downloads on load (in case app was restarted during download)
+    const syncActiveDownloads = async () => {
+      try {
+        const activeDownloads = await window.devbox?.binaries.getActiveDownloads();
+        if (activeDownloads && Object.keys(activeDownloads).length > 0) {
+          for (const [id, progress] of Object.entries(activeDownloads)) {
+            dispatch({ type: 'SET_DOWNLOADING', payload: { id, value: true } });
+            dispatch({ type: 'SET_DOWNLOAD_PROGRESS', payload: { id, progress } });
+          }
+        }
+      } catch (error) {
+        console.error('Error syncing active downloads:', error);
+      }
+    };
+    syncActiveDownloads();
 
     return () => {
       unsubImport?.();

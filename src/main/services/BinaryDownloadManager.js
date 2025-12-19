@@ -461,6 +461,24 @@ class BinaryDownloadManager {
   emitProgress(id, progress) {
     this.downloadProgress.set(id, progress);
     this.listeners.forEach((cb) => cb(id, progress));
+    
+    // Clean up completed/errored downloads after emitting
+    if (progress.status === 'completed' || progress.status === 'error') {
+      setTimeout(() => {
+        this.downloadProgress.delete(id);
+      }, 1000);
+    }
+  }
+
+  // Get currently active downloads (in progress, not completed/errored)
+  getActiveDownloads() {
+    const active = {};
+    for (const [id, progress] of this.downloadProgress.entries()) {
+      if (progress.status !== 'completed' && progress.status !== 'error') {
+        active[id] = progress;
+      }
+    }
+    return active;
   }
 
   async getInstalledBinaries() {

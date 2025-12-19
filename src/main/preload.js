@@ -163,6 +163,7 @@ contextBridge.exposeInMainWorld('devbox', {
   // Binary download operations
   binaries: {
     getInstalled: () => ipcRenderer.invoke('binaries:getInstalled'),
+    getActiveDownloads: () => ipcRenderer.invoke('binaries:getActiveDownloads'),
     getStatus: () => ipcRenderer.invoke('binaries:getStatus'),
     getAvailableVersions: () => ipcRenderer.invoke('binaries:getAvailableVersions'),
     getServiceConfig: () => ipcRenderer.invoke('binaries:getServiceConfig'),
