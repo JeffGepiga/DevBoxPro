@@ -168,6 +168,8 @@ contextBridge.exposeInMainWorld('devbox', {
     getAvailableVersions: () => ipcRenderer.invoke('binaries:getAvailableVersions'),
     getServiceConfig: () => ipcRenderer.invoke('binaries:getServiceConfig'),
     getDownloadUrls: () => ipcRenderer.invoke('binaries:getDownloadUrls'),
+    checkForUpdates: () => ipcRenderer.invoke('binaries:checkForUpdates'),
+    applyUpdates: () => ipcRenderer.invoke('binaries:applyUpdates'),
     downloadPhp: (version) => ipcRenderer.invoke('binaries:downloadPhp', version),
     downloadMysql: (version) => ipcRenderer.invoke('binaries:downloadMysql', version),
     downloadMariadb: (version) => ipcRenderer.invoke('binaries:downloadMariadb', version),

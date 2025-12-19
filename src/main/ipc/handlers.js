@@ -516,6 +516,16 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       return binaryDownload.getActiveDownloads();
     });
 
+    // Check for binary updates from remote GitHub config
+    ipcMain.handle('binaries:checkForUpdates', async () => {
+      return binaryDownload.checkForUpdates();
+    });
+
+    // Apply updates from remote config
+    ipcMain.handle('binaries:applyUpdates', async () => {
+      return binaryDownload.applyUpdates();
+    });
+
     ipcMain.handle('binaries:getStatus', async () => {
       const installed = await binaryDownload.getInstalledBinaries();
       

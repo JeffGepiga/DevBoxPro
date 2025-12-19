@@ -1,0 +1,333 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2024-12-19",
+  "php": {
+    "versions": ["8.4", "8.3", "8.2", "8.1", "8.0", "7.4"],
+    "downloads": {
+      "8.4": {
+        "win": {
+          "url": "https://windows.php.net/downloads/releases/php-8.4.16-nts-Win32-vs17-x64.zip",
+          "filename": "php-8.4.16-nts-Win32-vs17-x64.zip"
+        },
+        "mac": {
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.4.16/php-8.4.16-darwin-arm64.tar.gz",
+          "filename": "php-8.4.16-darwin-arm64.tar.gz"
+        },
+        "label": "Latest"
+      },
+      "8.3": {
+        "win": {
+          "url": "https://windows.php.net/downloads/releases/php-8.3.29-nts-Win32-vs16-x64.zip",
+          "filename": "php-8.3.29-nts-Win32-vs16-x64.zip"
+        },
+        "mac": {
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.3.29/php-8.3.29-darwin-arm64.tar.gz",
+          "filename": "php-8.3.29-darwin-arm64.tar.gz"
+        },
+        "label": "LTS"
+      },
+      "8.2": {
+        "win": {
+          "url": "https://windows.php.net/downloads/releases/php-8.2.30-nts-Win32-vs16-x64.zip",
+          "filename": "php-8.2.30-nts-Win32-vs16-x64.zip"
+        },
+        "mac": {
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.2.30/php-8.2.30-darwin-arm64.tar.gz",
+          "filename": "php-8.2.30-darwin-arm64.tar.gz"
+        }
+      },
+      "8.1": {
+        "win": {
+          "url": "https://windows.php.net/downloads/releases/php-8.1.34-nts-Win32-vs16-x64.zip",
+          "filename": "php-8.1.34-nts-Win32-vs16-x64.zip"
+        },
+        "mac": {
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.1.34/php-8.1.34-darwin-arm64.tar.gz",
+          "filename": "php-8.1.34-darwin-arm64.tar.gz"
+        }
+      },
+      "8.0": {
+        "win": {
+          "url": "https://windows.php.net/downloads/releases/archives/php-8.0.30-nts-Win32-vs16-x64.zip",
+          "filename": "php-8.0.30-nts-Win32-vs16-x64.zip"
+        },
+        "mac": {
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.0.30/php-8.0.30-darwin-arm64.tar.gz",
+          "filename": "php-8.0.30-darwin-arm64.tar.gz"
+        },
+        "label": "Legacy"
+      },
+      "7.4": {
+        "win": {
+          "url": "https://windows.php.net/downloads/releases/archives/php-7.4.33-nts-Win32-vc15-x64.zip",
+          "filename": "php-7.4.33-nts-Win32-vc15-x64.zip"
+        },
+        "mac": {
+          "url": "https://github.com/shivammathur/php-builder/releases/download/7.4.33/php-7.4.33-darwin-arm64.tar.gz",
+          "filename": "php-7.4.33-darwin-arm64.tar.gz"
+        },
+        "label": "Legacy"
+      }
+    }
+  },
+  "mysql": {
+    "versions": ["8.4", "8.0", "5.7"],
+    "downloads": {
+      "8.4": {
+        "win": {
+          "url": "https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.7-winx64.zip",
+          "filename": "mysql-8.4.7-winx64.zip"
+        },
+        "mac": {
+          "url": "https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.7-macos14-arm64.tar.gz",
+          "filename": "mysql-8.4.7-macos14-arm64.tar.gz"
+        },
+        "label": "Latest"
+      },
+      "8.0": {
+        "win": {
+          "url": "https://cdn.mysql.com/Downloads/MySQL-8.0/mysql-8.0.42-winx64.zip",
+          "filename": "mysql-8.0.42-winx64.zip"
+        },
+        "mac": {
+          "url": "https://cdn.mysql.com/Downloads/MySQL-8.0/mysql-8.0.42-macos14-arm64.tar.gz",
+          "filename": "mysql-8.0.42-macos14-arm64.tar.gz"
+        },
+        "label": "LTS"
+      },
+      "5.7": {
+        "win": {
+          "url": "https://cdn.mysql.com/Downloads/MySQL-5.7/mysql-5.7.44-winx64.zip",
+          "filename": "mysql-5.7.44-winx64.zip"
+        },
+        "mac": {
+          "url": "https://cdn.mysql.com/Downloads/MySQL-5.7/mysql-5.7.44-macos10.14-x86_64.tar.gz",
+          "filename": "mysql-5.7.44-macos10.14-x86_64.tar.gz"
+        },
+        "label": "Legacy"
+      }
+    }
+  },
+  "mariadb": {
+    "versions": ["11.4", "10.11", "10.6"],
+    "downloads": {
+      "11.4": {
+        "win": {
+          "url": "https://archive.mariadb.org/mariadb-11.4.5/winx64-packages/mariadb-11.4.5-winx64.zip",
+          "filename": "mariadb-11.4.5-winx64.zip"
+        },
+        "mac": {
+          "url": "https://archive.mariadb.org/mariadb-11.4.5/bintar-darwin-arm64/mariadb-11.4.5-macos-arm64.tar.gz",
+          "filename": "mariadb-11.4.5-macos-arm64.tar.gz"
+        },
+        "label": "Latest"
+      },
+      "10.11": {
+        "win": {
+          "url": "https://archive.mariadb.org/mariadb-10.11.11/winx64-packages/mariadb-10.11.11-winx64.zip",
+          "filename": "mariadb-10.11.11-winx64.zip"
+        },
+        "mac": {
+          "url": "https://archive.mariadb.org/mariadb-10.11.11/bintar-darwin-arm64/mariadb-10.11.11-macos-arm64.tar.gz",
+          "filename": "mariadb-10.11.11-macos-arm64.tar.gz"
+        },
+        "label": "LTS"
+      },
+      "10.6": {
+        "win": {
+          "url": "https://archive.mariadb.org/mariadb-10.6.22/winx64-packages/mariadb-10.6.22-winx64.zip",
+          "filename": "mariadb-10.6.22-winx64.zip"
+        },
+        "mac": {
+          "url": "https://archive.mariadb.org/mariadb-10.6.22/bintar-darwin-arm64/mariadb-10.6.22-macos-arm64.tar.gz",
+          "filename": "mariadb-10.6.22-macos-arm64.tar.gz"
+        },
+        "label": "LTS"
+      }
+    }
+  },
+  "redis": {
+    "versions": ["7.4", "7.2", "6.2"],
+    "downloads": {
+      "7.4": {
+        "win": {
+          "url": "https://github.com/redis-windows/redis-windows/releases/download/7.4.3/Redis-7.4.3-Windows-x64-msys2.zip",
+          "filename": "Redis-7.4.3-Windows-x64-msys2.zip"
+        },
+        "mac": {
+          "url": "https://github.com/redis/redis/archive/refs/tags/7.4.3.tar.gz",
+          "filename": "redis-7.4.3.tar.gz",
+          "requiresBuild": true
+        },
+        "label": "Latest"
+      },
+      "7.2": {
+        "win": {
+          "url": "https://github.com/redis-windows/redis-windows/releases/download/7.2.8/Redis-7.2.8-Windows-x64-msys2.zip",
+          "filename": "Redis-7.2.8-Windows-x64-msys2.zip"
+        },
+        "mac": {
+          "url": "https://github.com/redis/redis/archive/refs/tags/7.2.8.tar.gz",
+          "filename": "redis-7.2.8.tar.gz",
+          "requiresBuild": true
+        },
+        "label": "LTS"
+      },
+      "6.2": {
+        "win": {
+          "url": "https://github.com/redis-windows/redis-windows/releases/download/6.2.16/Redis-6.2.16-Windows-x64-msys2.zip",
+          "filename": "Redis-6.2.16-Windows-x64-msys2.zip"
+        },
+        "mac": {
+          "url": "https://github.com/redis/redis/archive/refs/tags/6.2.16.tar.gz",
+          "filename": "redis-6.2.16.tar.gz",
+          "requiresBuild": true
+        },
+        "label": "Legacy LTS"
+      }
+    }
+  },
+  "nginx": {
+    "versions": ["1.28", "1.26", "1.24"],
+    "downloads": {
+      "1.28": {
+        "win": {
+          "url": "https://nginx.org/download/nginx-1.28.0.zip",
+          "filename": "nginx-1.28.0.zip"
+        },
+        "mac": {
+          "url": "https://nginx.org/download/nginx-1.28.0.tar.gz",
+          "filename": "nginx-1.28.0.tar.gz",
+          "requiresBuild": true
+        },
+        "label": "Mainline"
+      },
+      "1.26": {
+        "win": {
+          "url": "https://nginx.org/download/nginx-1.26.3.zip",
+          "filename": "nginx-1.26.3.zip"
+        },
+        "mac": {
+          "url": "https://nginx.org/download/nginx-1.26.3.tar.gz",
+          "filename": "nginx-1.26.3.tar.gz",
+          "requiresBuild": true
+        },
+        "label": "Stable"
+      },
+      "1.24": {
+        "win": {
+          "url": "https://nginx.org/download/nginx-1.24.0.zip",
+          "filename": "nginx-1.24.0.zip"
+        },
+        "mac": {
+          "url": "https://nginx.org/download/nginx-1.24.0.tar.gz",
+          "filename": "nginx-1.24.0.tar.gz",
+          "requiresBuild": true
+        },
+        "label": "Legacy Stable"
+      }
+    }
+  },
+  "apache": {
+    "versions": ["2.4"],
+    "downloads": {
+      "2.4": {
+        "win": {
+          "url": "manual",
+          "downloadPage": "https://www.apachelounge.com/download/",
+          "filename": "httpd-2.4.x-win64-VSxx.zip"
+        },
+        "mac": {
+          "url": "builtin",
+          "note": "Apache is pre-installed on macOS"
+        }
+      }
+    }
+  },
+  "nodejs": {
+    "versions": ["22", "20", "18", "16"],
+    "downloads": {
+      "22": {
+        "win": {
+          "url": "https://nodejs.org/dist/v22.16.0/node-v22.16.0-win-x64.zip",
+          "filename": "node-v22.16.0-win-x64.zip"
+        },
+        "mac": {
+          "url": "https://nodejs.org/dist/v22.16.0/node-v22.16.0-darwin-arm64.tar.gz",
+          "filename": "node-v22.16.0-darwin-arm64.tar.gz"
+        },
+        "label": "Current"
+      },
+      "20": {
+        "win": {
+          "url": "https://nodejs.org/dist/v20.19.2/node-v20.19.2-win-x64.zip",
+          "filename": "node-v20.19.2-win-x64.zip"
+        },
+        "mac": {
+          "url": "https://nodejs.org/dist/v20.19.2/node-v20.19.2-darwin-arm64.tar.gz",
+          "filename": "node-v20.19.2-darwin-arm64.tar.gz"
+        },
+        "label": "LTS"
+      },
+      "18": {
+        "win": {
+          "url": "https://nodejs.org/dist/v18.20.8/node-v18.20.8-win-x64.zip",
+          "filename": "node-v18.20.8-win-x64.zip"
+        },
+        "mac": {
+          "url": "https://nodejs.org/dist/v18.20.8/node-v18.20.8-darwin-arm64.tar.gz",
+          "filename": "node-v18.20.8-darwin-arm64.tar.gz"
+        },
+        "label": "Maintenance LTS"
+      },
+      "16": {
+        "win": {
+          "url": "https://nodejs.org/dist/v16.20.2/node-v16.20.2-win-x64.zip",
+          "filename": "node-v16.20.2-win-x64.zip"
+        },
+        "mac": {
+          "url": "https://nodejs.org/dist/v16.20.2/node-v16.20.2-darwin-arm64.tar.gz",
+          "filename": "node-v16.20.2-darwin-arm64.tar.gz"
+        },
+        "label": "Legacy"
+      }
+    }
+  },
+  "mailpit": {
+    "versions": ["latest"],
+    "downloads": {
+      "latest": {
+        "win": {
+          "url": "https://github.com/axllent/mailpit/releases/latest/download/mailpit-windows-amd64.zip",
+          "filename": "mailpit-windows-amd64.zip"
+        },
+        "mac": {
+          "url": "https://github.com/axllent/mailpit/releases/latest/download/mailpit-darwin-arm64.tar.gz",
+          "filename": "mailpit-darwin-arm64.tar.gz"
+        }
+      }
+    }
+  },
+  "phpmyadmin": {
+    "versions": ["latest"],
+    "downloads": {
+      "latest": {
+        "all": {
+          "url": "https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.zip",
+          "filename": "phpMyAdmin-latest-all-languages.zip"
+        }
+      }
+    }
+  },
+  "composer": {
+    "versions": ["latest"],
+    "downloads": {
+      "latest": {
+        "all": {
+          "url": "https://getcomposer.org/download/latest-stable/composer.phar",
+          "filename": "composer.phar"
+        }
+      }
+    }
+  }
+}

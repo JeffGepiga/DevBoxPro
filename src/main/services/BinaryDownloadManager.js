@@ -14,6 +14,9 @@ const { Worker } = require('worker_threads');
 // Import centralized service configuration
 const { SERVICE_VERSIONS, VERSION_PORT_OFFSETS, DEFAULT_PORTS } = require('../../shared/serviceConfig');
 
+// Remote config URL - fetches binary versions and download URLs from GitHub
+const REMOTE_CONFIG_URL = 'https://raw.githubusercontent.com/JeffGepiga/DevBoxPro/main/config/binaries.json';
+
 class BinaryDownloadManager {
   constructor() {
     this.resourcesPath = path.join(app.getPath('userData'), 'resources');
@@ -345,10 +348,144 @@ class BinaryDownloadManager {
     // Version metadata for UI display and compatibility checks
     // Uses centralized configuration from shared/serviceConfig.js
     this.versionMeta = { ...SERVICE_VERSIONS };
+    
+    // Track remote config state
+    this.remoteConfig = null;
+    this.lastRemoteCheck = null;
+    
+    // Local config cache path - persists updates between app restarts
+    this.localConfigPath = path.join(app.getPath('userData'), 'binaries-config.json');
   }
 
   getPlatform() {
     return process.platform === 'win32' ? 'win' : 'mac';
+  }
+
+  // Fetch remote config from GitHub to check for binary updates
+  async checkForUpdates() {
+    try {
+      console.log('Checking for binary updates from GitHub...');
+      
+      const remoteConfig = await this.fetchRemoteConfig();
+      if (!remoteConfig) {
+        return { success: false, error: 'Failed to fetch remote config' };
+      }
+
+      this.remoteConfig = remoteConfig;
+      this.lastRemoteCheck = new Date().toISOString();
+
+      // Compare versions and find updates
+      const updates = this.compareConfigs(remoteConfig);
+      
+      return {
+        success: true,
+        configVersion: remoteConfig.version,
+        lastUpdated: remoteConfig.lastUpdated,
+        updates,
+        hasUpdates: updates.length > 0
+      };
+    } catch (error) {
+      console.error('Error checking for updates:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Fetch remote config JSON from GitHub
+  async fetchRemoteConfig() {
+    return new Promise((resolve, reject) => {
+      https.get(REMOTE_CONFIG_URL, {
+        headers: { 'User-Agent': 'DevBoxPro' }
+      }, (res) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode}: Failed to fetch config`));
+          return;
+        }
+
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const config = JSON.parse(data);
+            resolve(config);
+          } catch (e) {
+            reject(new Error('Invalid JSON in remote config'));
+          }
+        });
+      }).on('error', reject);
+    });
+  }
+
+  // Compare remote config with current downloads to find updates
+  compareConfigs(remoteConfig) {
+    const updates = [];
+    const platform = this.getPlatform();
+
+    for (const [serviceName, serviceData] of Object.entries(remoteConfig)) {
+      if (serviceName === 'version' || serviceName === 'lastUpdated') continue;
+      
+      const currentService = this.downloads[serviceName];
+      if (!currentService) continue;
+
+      const remoteDownloads = serviceData.downloads || {};
+      
+      for (const [version, versionData] of Object.entries(remoteDownloads)) {
+        const currentVersion = currentService[version];
+        const remotePlatformData = versionData[platform] || versionData.all;
+        
+        if (!remotePlatformData || remotePlatformData.url === 'manual' || remotePlatformData.url === 'builtin') {
+          continue;
+        }
+
+        if (!currentVersion) {
+          // New version available
+          updates.push({
+            service: serviceName,
+            version,
+            type: 'new_version',
+            label: versionData.label || null,
+            newUrl: remotePlatformData.url,
+            newFilename: remotePlatformData.filename
+          });
+        } else {
+          const currentPlatformData = currentVersion[platform] || currentVersion.all;
+          if (currentPlatformData && remotePlatformData.url !== currentPlatformData.url) {
+            // Updated download URL (likely new patch version)
+            updates.push({
+              service: serviceName,
+              version,
+              type: 'updated',
+              label: versionData.label || currentVersion.label || null,
+              oldFilename: currentPlatformData.filename,
+              newFilename: remotePlatformData.filename,
+              newUrl: remotePlatformData.url
+            });
+          }
+        }
+      }
+    }
+
+    return updates;
+  }
+
+  // Apply remote config updates to the downloads object and save to disk
+  async applyUpdates() {
+    if (!this.remoteConfig) {
+      return { success: false, error: 'No remote config loaded. Run checkForUpdates first.' };
+    }
+
+    try {
+      // Apply config to in-memory downloads
+      const appliedCount = await this.applyConfigToDownloads(this.remoteConfig);
+      
+      // Save to local cache for persistence
+      await this.saveCachedConfig(this.remoteConfig);
+
+      console.log(`Applied ${appliedCount} binary config updates`);
+      return { success: true, appliedCount };
+    } catch (error) {
+      console.error('Error applying updates:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   async initialize() {
@@ -365,8 +502,97 @@ class BinaryDownloadManager {
     await fs.ensureDir(path.join(this.resourcesPath, 'composer'));
     await fs.ensureDir(path.join(this.resourcesPath, 'downloads'));
     
+    // Load cached config from previous updates
+    await this.loadCachedConfig();
+    
     // Enable extensions in existing PHP installations
     await this.enablePhpExtensions();
+  }
+
+  // Load cached binary config from local storage
+  async loadCachedConfig() {
+    try {
+      if (await fs.pathExists(this.localConfigPath)) {
+        const cachedData = await fs.readJson(this.localConfigPath);
+        
+        if (cachedData && cachedData.config) {
+          console.log(`Loading cached binary config (version: ${cachedData.config.version}, saved: ${cachedData.savedAt})`);
+          
+          // Apply cached config
+          this.remoteConfig = cachedData.config;
+          await this.applyConfigToDownloads(cachedData.config);
+          
+          return true;
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load cached binary config:', error.message);
+    }
+    return false;
+  }
+
+  // Save config to local cache
+  async saveCachedConfig(config) {
+    try {
+      const cacheData = {
+        savedAt: new Date().toISOString(),
+        config: config
+      };
+      await fs.writeJson(this.localConfigPath, cacheData, { spaces: 2 });
+      console.log('Saved binary config to local cache');
+      return true;
+    } catch (error) {
+      console.error('Failed to save binary config cache:', error.message);
+      return false;
+    }
+  }
+
+  // Apply config object to downloads (shared logic for load and apply)
+  async applyConfigToDownloads(config) {
+    const platform = this.getPlatform();
+    let appliedCount = 0;
+
+    for (const [serviceName, serviceData] of Object.entries(config)) {
+      if (serviceName === 'version' || serviceName === 'lastUpdated') continue;
+      
+      if (!this.downloads[serviceName]) {
+        this.downloads[serviceName] = {};
+      }
+
+      const remoteDownloads = serviceData.downloads || {};
+      
+      for (const [version, versionData] of Object.entries(remoteDownloads)) {
+        const remotePlatformData = versionData[platform] || versionData.all;
+        
+        if (!remotePlatformData || remotePlatformData.url === 'manual' || remotePlatformData.url === 'builtin') {
+          continue;
+        }
+
+        // Update or create version entry
+        if (!this.downloads[serviceName][version]) {
+          this.downloads[serviceName][version] = {};
+        }
+
+        const targetKey = versionData.all ? 'all' : platform;
+        this.downloads[serviceName][version][targetKey] = {
+          url: remotePlatformData.url,
+          filename: remotePlatformData.filename
+        };
+        
+        if (versionData.label) {
+          this.downloads[serviceName][version].label = versionData.label;
+        }
+
+        appliedCount++;
+      }
+
+      // Update version meta
+      if (serviceData.versions && Array.isArray(serviceData.versions)) {
+        this.versionMeta[serviceName] = serviceData.versions;
+      }
+    }
+
+    return appliedCount;
   }
 
   // Enable common extensions in all installed PHP versions

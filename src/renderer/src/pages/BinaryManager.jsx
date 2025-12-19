@@ -21,6 +21,7 @@ import {
   Upload,
   ChevronDown,
   ChevronUp,
+  CloudCog,
 } from 'lucide-react';
 import clsx from 'clsx';
 import PhpIniEditor from '../components/PhpIniEditor';
@@ -69,6 +70,11 @@ function BinaryManager() {
     apache: [],
     nodejs: [],
   });
+
+  // Check for updates state
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [updateResult, setUpdateResult] = useState(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
 
   const loadInstalled = useCallback(async () => {
     try {
@@ -197,6 +203,41 @@ function BinaryManager() {
 
   const toggleSection = (section) => {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  // Check for binary updates from GitHub
+  const handleCheckForUpdates = async () => {
+    setCheckingUpdates(true);
+    setUpdateResult(null);
+    
+    try {
+      const result = await window.devbox?.binaries.checkForUpdates();
+      setUpdateResult(result);
+      
+      if (result?.success) {
+        setShowUpdateModal(true);
+      }
+    } catch (error) {
+      console.error('Error checking for updates:', error);
+      setUpdateResult({ success: false, error: error.message });
+    } finally {
+      setCheckingUpdates(false);
+    }
+  };
+
+  // Apply updates from remote config
+  const handleApplyUpdates = async () => {
+    try {
+      const result = await window.devbox?.binaries.applyUpdates();
+      if (result?.success) {
+        // Reload download URLs and service config
+        await Promise.all([loadDownloadUrls(), loadServiceConfig()]);
+        setShowUpdateModal(false);
+        setUpdateResult(null);
+      }
+    } catch (error) {
+      console.error('Error applying updates:', error);
+    }
   };
 
   const handleOpenApacheDownloadPage = async () => {
@@ -440,13 +481,124 @@ function BinaryManager() {
         onClose={() => setPhpIniEditor({ open: false, version: null })}
       />
 
+      {/* Update Available Modal */}
+      {showUpdateModal && updateResult?.success && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full mx-4 overflow-hidden">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <CloudCog className="w-5 h-5 text-blue-500" />
+                Binary Updates Available
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Config version: {updateResult.configVersion} • Last updated: {updateResult.lastUpdated}
+              </p>
+            </div>
+            
+            <div className="p-6 max-h-80 overflow-y-auto">
+              {updateResult.hasUpdates ? (
+                <div className="space-y-3">
+                  {updateResult.updates.map((update, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                    >
+                      <div>
+                        <span className="font-medium text-gray-900 dark:text-white capitalize">
+                          {update.service} {update.version}
+                        </span>
+                        {update.label && (
+                          <span className="ml-2 text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">
+                            {update.label}
+                          </span>
+                        )}
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {update.type === 'new_version' ? 'New version available' : `Updated: ${update.newFilename}`}
+                        </p>
+                      </div>
+                      <span className={clsx(
+                        "text-xs px-2 py-1 rounded",
+                        update.type === 'new_version' 
+                          ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
+                          : "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
+                      )}>
+                        {update.type === 'new_version' ? 'NEW' : 'UPDATE'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                  <p className="text-gray-600 dark:text-gray-300">All binaries are up to date!</p>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 bg-gray-50 dark:bg-gray-700/50 flex justify-end gap-3">
+              <button
+                onClick={() => setShowUpdateModal(false)}
+                className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+              >
+                Close
+              </button>
+              {updateResult.hasUpdates && (
+                <button
+                  onClick={handleApplyUpdates}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Apply Updates
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Binary Manager</h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-1">
-          Download and manage required binaries for DevBox Pro
-        </p>
+      <div className="mb-8 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Binary Manager</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">
+            Download and manage required binaries for DevBox Pro
+          </p>
+        </div>
+        <button
+          onClick={handleCheckForUpdates}
+          disabled={checkingUpdates}
+          className={clsx(
+            "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
+            checkingUpdates
+              ? "bg-gray-100 dark:bg-gray-700 text-gray-400 cursor-not-allowed"
+              : "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50"
+          )}
+        >
+          {checkingUpdates ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Checking...
+            </>
+          ) : (
+            <>
+              <CloudCog className="w-4 h-4" />
+              Check for Updates
+            </>
+          )}
+        </button>
       </div>
+
+      {/* Update Check Error */}
+      {updateResult && !updateResult.success && (
+        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+            <span className="text-red-800 dark:text-red-200">
+              Failed to check for updates: {updateResult.error}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Active Downloads Banner */}
       {activeDownloadCount > 0 && (

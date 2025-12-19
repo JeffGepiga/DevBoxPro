@@ -92,7 +92,7 @@ async function createWindow() {
     console.log('Loading dev URL: http://localhost:3000');
     await mainWindow.loadURL('http://localhost:3000');
     console.log('Dev URL loaded');
-    // Uncomment the line below to open DevTools automatically in dev mode
+    // Uncomment to open DevTools in dev mode
     // mainWindow.webContents.openDevTools();
   } else {
     // In production, renderer is at /renderer/index.html in the asar
