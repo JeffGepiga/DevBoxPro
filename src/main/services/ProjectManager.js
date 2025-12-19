@@ -830,6 +830,9 @@ class ProjectManager {
    */
   async validateProjectBinaries(project) {
     const missing = [];
+    const { app } = require('electron');
+    const resourcePath = this.configStore.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
     
     // Check PHP version
     const phpVersion = project.phpVersion || '8.3';
@@ -841,12 +844,7 @@ class ProjectManager {
     // Check web server
     const webServer = project.webServer || 'nginx';
     const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
-    const webServerPath = path.join(
-      this.resourcePath, 
-      webServer, 
-      webServerVersion, 
-      process.platform === 'win32' ? 'win' : 'mac'
-    );
+    const webServerPath = path.join(resourcePath, webServer, webServerVersion, platform);
     if (!await fs.pathExists(webServerPath)) {
       missing.push(`${webServer === 'nginx' ? 'Nginx' : 'Apache'} ${webServerVersion}`);
     }
@@ -854,12 +852,7 @@ class ProjectManager {
     // Check MySQL if enabled
     if (project.services?.mysql) {
       const mysqlVersion = project.services.mysqlVersion || '8.4';
-      const mysqlPath = path.join(
-        this.resourcePath,
-        'mysql',
-        mysqlVersion,
-        process.platform === 'win32' ? 'win' : 'mac'
-      );
+      const mysqlPath = path.join(resourcePath, 'mysql', mysqlVersion, platform);
       if (!await fs.pathExists(mysqlPath)) {
         missing.push(`MySQL ${mysqlVersion}`);
       }
@@ -868,12 +861,7 @@ class ProjectManager {
     // Check MariaDB if enabled
     if (project.services?.mariadb) {
       const mariadbVersion = project.services.mariadbVersion || '11.4';
-      const mariadbPath = path.join(
-        this.resourcePath,
-        'mariadb',
-        mariadbVersion,
-        process.platform === 'win32' ? 'win' : 'mac'
-      );
+      const mariadbPath = path.join(resourcePath, 'mariadb', mariadbVersion, platform);
       if (!await fs.pathExists(mariadbPath)) {
         missing.push(`MariaDB ${mariadbVersion}`);
       }
@@ -882,12 +870,7 @@ class ProjectManager {
     // Check Redis if enabled
     if (project.services?.redis) {
       const redisVersion = project.services.redisVersion || '7.4';
-      const redisPath = path.join(
-        this.resourcePath,
-        'redis',
-        redisVersion,
-        process.platform === 'win32' ? 'win' : 'mac'
-      );
+      const redisPath = path.join(resourcePath, 'redis', redisVersion, platform);
       if (!await fs.pathExists(redisPath)) {
         missing.push(`Redis ${redisVersion}`);
       }

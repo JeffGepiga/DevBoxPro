@@ -9,33 +9,43 @@
 
 **A powerful, cross-platform local development server for PHP developers**
 
-DevBox Pro is a standalone desktop application that provides everything you need for PHP development - multiple PHP versions, MySQL, Redis, Mailpit, and more - all bundled in a single, easy-to-use application. No Docker required!
+DevBox Pro is a standalone desktop application that provides everything you need for PHP development - multiple PHP versions, MySQL/MariaDB, Redis, Mailpit, and more - all bundled in a single, easy-to-use application. No Docker required!
 
 ---
 
 ## ✨ Features
 
 ### 🐘 Multi-PHP Version Support
-- **PHP 7.4, 8.0, 8.1, 8.2, 8.3** - Run any version side by side
-- Per-project PHP version selection
-- Easy extension management per version
+- **PHP 7.4, 8.0, 8.1, 8.2, 8.3, 8.4** - Run any version side by side
+- Per-project PHP version selection with compatibility validation
+- Easy extension management per version with php.ini editor
 - Pre-configured for optimal performance
 
 ### 🌐 Web Server Options
-- **Nginx** - High-performance, low memory footprint (recommended)
-- **Apache** - Full .htaccess support, mod_rewrite included
+- **Nginx 1.26, 1.28** - High-performance, low memory footprint (recommended)
+- **Apache 2.4** - Full .htaccess support, mod_rewrite included
+- Multi-version support - run different versions per project
 - Automatic virtual host creation
 - HTTP & HTTPS support for every project
 
 ### 📦 Embedded Services
-| Service | Description |
-|---------|-------------|
-| **MySQL 8.0** | Powerful relational database |
-| **Redis** | In-memory cache & session storage |
-| **Mailpit** | Email testing with SMTP server |
-| **phpMyAdmin** | Web-based database management |
-| **Node.js** | v18, v20 (LTS), v22 support |
-| **Composer** | PHP dependency manager |
+| Service | Versions | Description |
+|---------|----------|-------------|
+| **MySQL** | 8.0, 8.4 | Powerful relational database |
+| **MariaDB** | 10.11, 11.4 | MySQL-compatible, open source |
+| **Redis** | 7.2, 7.4 | In-memory cache & session storage |
+| **Mailpit** | Latest | Email testing with SMTP server |
+| **phpMyAdmin** | Latest | Web-based database management |
+| **Node.js** | 18, 20 (LTS), 22 | JavaScript runtime |
+| **Composer** | Latest | PHP dependency manager |
+
+### 💾 Database Management
+- **Multi-version support** - Run MySQL 8.0 and MariaDB 11.4 simultaneously
+- **Per-version data isolation** - Each version has its own data directory
+- **Database import/export** with .gz compression support
+- **Progress tracking** for import/export operations
+- **phpMyAdmin integration** for web-based management
+- **Automatic database creation** per project
 
 ### 🔐 SSL & Security
 - Automatic SSL certificate generation
@@ -48,6 +58,24 @@ DevBox Pro is a standalone desktop application that provides everything you need
 - **Symfony** - Console commands, Doctrine integration
 - **WordPress** - WP-CLI ready, Multisite support
 - **Custom PHP** - Works with any PHP application
+
+### 🔧 Binary Manager
+- **Download individual components** - Only install what you need
+- **Multi-version management** - Keep multiple versions installed
+- **One-click updates** - Easy version upgrades
+- **Import custom binaries** - Use your own compiled versions
+
+### 📊 Logging & Monitoring
+- **Real-time log streaming** per project and service
+- **Color-coded log levels** (info, warning, error)
+- **Log file rotation** and cleanup
+- **Service resource monitoring**
+
+### ⚙️ Project Configuration
+- **Service version selection** per project
+- **Compatibility validation** - Warns about incompatible combinations
+- **Binary validation** - Checks required binaries before project start
+- **php.ini editor** - Customize PHP settings per version
 
 ---
 
@@ -115,8 +143,8 @@ DevBox Pro is a standalone desktop application that provides everything you need
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/devbox-pro.git
-cd devbox-pro
+git clone https://github.com/JeffGepiga/DevBoxPro.git
+cd DevBoxPro
 
 # Install dependencies
 npm install
@@ -134,32 +162,51 @@ npm run dist
 ### Project Structure
 
 ```
-devbox-pro/
+DevBoxPro/
 ├── src/
 │   ├── main/                    # Electron main process
 │   │   ├── services/
 │   │   │   ├── PhpManager.js        # PHP version management
 │   │   │   ├── ProjectManager.js    # Project lifecycle
-│   │   │   ├── ServiceManager.js    # MySQL, Redis, etc.
+│   │   │   ├── ServiceManager.js    # MySQL, MariaDB, Redis, etc.
+│   │   │   ├── DatabaseManager.js   # Database operations (CRUD, import/export)
 │   │   │   ├── SslManager.js        # SSL certificates
 │   │   │   ├── WebServerManager.js  # Nginx/Apache
 │   │   │   ├── BinaryDownloadManager.js  # Binary downloads
+│   │   │   ├── LogManager.js        # Log management
+│   │   │   ├── SupervisorManager.js # Process supervisor
 │   │   │   └── ...
 │   │   ├── ipc/
 │   │   │   └── handlers.js      # IPC communication
+│   │   ├── utils/
+│   │   │   └── ConfigStore.js   # Configuration storage
 │   │   ├── preload.js           # Preload script
 │   │   └── main.js              # Main entry
 │   │
 │   └── renderer/                # React frontend
 │       ├── src/
 │       │   ├── components/      # Reusable components
+│       │   │   ├── Sidebar.jsx
+│       │   │   ├── PhpIniEditor.jsx
+│       │   │   ├── ProjectTerminal.jsx
+│       │   │   └── ...
 │       │   ├── pages/           # Page components
+│       │   │   ├── Dashboard.jsx
+│       │   │   ├── Projects.jsx
+│       │   │   ├── ProjectDetail.jsx
+│       │   │   ├── Databases.jsx
+│       │   │   ├── Services.jsx
+│       │   │   ├── BinaryManager.jsx
+│       │   │   ├── Settings.jsx
+│       │   │   └── ...
 │       │   ├── context/         # React context
+│       │   │   └── AppContext.jsx
 │       │   └── App.jsx          # Root component
 │       └── index.html
 │
-├── resources/                   # App resources
-├── electron.vite.config.mjs     # Vite config for Electron
+├── resources/                   # App resources (icons, configs)
+├── build/                       # Build resources
+├── electron-builder.config.js   # Electron builder config
 ├── package.json
 └── README.MD
 ```
@@ -174,10 +221,15 @@ devbox-pro/
 |---------|-------------|
 | PHP Projects | 8000+ (auto-assigned) |
 | MySQL | 3306 |
+| MariaDB | 3306 (or 3307 if MySQL is running) |
 | Redis | 6379 |
 | Mailpit SMTP | 1025 |
 | Mailpit Web | 8025 |
 | phpMyAdmin | 8080 |
+| Nginx HTTP | 80 |
+| Nginx HTTPS | 443 |
+| Apache HTTP | 80 (or 8081 if Nginx is on 80) |
+| Apache HTTPS | 443 |
 
 ### Environment Variables
 
@@ -222,13 +274,19 @@ MAIL_PORT=1025
 
 ## 📋 Roadmap
 
-- [x] Multi-PHP version support
-- [x] MySQL & Redis integration  
-- [x] Nginx & Apache web servers
+- [x] Multi-PHP version support (7.4 - 8.4)
+- [x] MySQL & MariaDB multi-version support
+- [x] Redis multi-version integration  
+- [x] Nginx & Apache multi-version web servers
 - [x] Automatic SSL certificates
 - [x] Virtual host management
-- [x] Node.js & npm support
+- [x] Node.js & npm multi-version support
 - [x] Composer integration
+- [x] Database import/export with compression
+- [x] Per-project service version selection
+- [x] Binary validation before project start
+- [x] php.ini editor
+- [x] Real-time log streaming
 - [ ] Docker container support
 - [ ] PostgreSQL support
 - [ ] MongoDB support
@@ -259,8 +317,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 💬 Support
 
 - 📧 Email: support@devboxpro.dev
-- 🐛 Issues: [GitHub Issues](https://github.com/yourusername/devbox-pro/issues)
-- 💬 Discussions: [GitHub Discussions](https://github.com/yourusername/devbox-pro/discussions)
+- 🐛 Issues: [GitHub Issues](https://github.com/JeffGepiga/DevBoxPro/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/JeffGepiga/DevBoxPro/discussions)
 
 ---
 

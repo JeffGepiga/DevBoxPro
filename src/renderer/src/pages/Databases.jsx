@@ -20,8 +20,10 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { useApp } from '../context/AppContext';
 
 function Databases() {
+  const { databaseOperation, setDatabaseOperation, clearDatabaseOperation } = useApp();
   const [databases, setDatabases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -37,28 +39,12 @@ function Databases() {
   const [startingVersion, setStartingVersion] = useState(null); // 'mysql-8.4' or null
   const [stoppingVersion, setStoppingVersion] = useState(null);
   const [serviceError, setServiceError] = useState(null);
-  const [operationProgress, setOperationProgress] = useState(null); // { type: 'import'|'export', status, message, dbName }
 
   useEffect(() => {
     loadInitialData();
     // Poll service status every 3 seconds
     const interval = setInterval(loadServicesStatus, 3000);
     return () => clearInterval(interval);
-  }, []);
-
-  // Listen for import/export progress
-  useEffect(() => {
-    const unsubImport = window.devbox?.database.onImportProgress?.((progress) => {
-      setOperationProgress(prev => prev?.type === 'import' ? { ...prev, ...progress } : prev);
-    });
-    const unsubExport = window.devbox?.database.onExportProgress?.((progress) => {
-      setOperationProgress(prev => prev?.type === 'export' ? { ...prev, ...progress } : prev);
-    });
-    
-    return () => {
-      unsubImport?.();
-      unsubExport?.();
-    };
   }, []);
 
   useEffect(() => {
@@ -251,17 +237,13 @@ function Databases() {
       });
 
       if (filePath) {
-        setOperationProgress({ type: 'export', status: 'starting', message: 'Starting export...', dbName: name });
+        setDatabaseOperation({ type: 'export', status: 'starting', message: 'Starting export...', dbName: name });
         await window.devbox?.database.exportDatabase(name, filePath);
-        // Progress will be updated via the progress listener
-        // Auto-close success message after 3 seconds
-        setTimeout(() => {
-          setOperationProgress(prev => prev?.status === 'complete' ? null : prev);
-        }, 3000);
+        // Progress will be updated via the global context listener
       }
     } catch (error) {
       console.error('Error exporting database:', error);
-      setOperationProgress({ type: 'export', status: 'error', message: error.message, dbName: name });
+      setDatabaseOperation({ type: 'export', status: 'error', message: error.message, dbName: name });
     }
   };
 
@@ -272,18 +254,14 @@ function Databases() {
       ]);
 
       if (filePath) {
-        setOperationProgress({ type: 'import', status: 'starting', message: 'Starting import...', dbName: name });
+        setDatabaseOperation({ type: 'import', status: 'starting', message: 'Starting import...', dbName: name });
         await window.devbox?.database.importDatabase(name, filePath);
-        // Progress will be updated via the progress listener
+        // Progress will be updated via the global context listener
         loadDatabases();
-        // Auto-close success message after 3 seconds
-        setTimeout(() => {
-          setOperationProgress(prev => prev?.status === 'complete' ? null : prev);
-        }, 3000);
       }
     } catch (error) {
       console.error('Error importing database:', error);
-      setOperationProgress({ type: 'import', status: 'error', message: error.message, dbName: name });
+      setDatabaseOperation({ type: 'import', status: 'error', message: error.message, dbName: name });
     }
   };
 
@@ -367,40 +345,40 @@ function Databases() {
       </div>
 
       {/* Operation Progress Notification */}
-      {operationProgress && (
+      {databaseOperation && (
         <div className={clsx(
           'card p-4 mb-6 border-2 flex items-center justify-between',
-          operationProgress.status === 'error' 
+          databaseOperation.status === 'error' 
             ? 'border-red-400 bg-red-50 dark:bg-red-900/20' 
-            : operationProgress.status === 'complete'
+            : databaseOperation.status === 'complete'
             ? 'border-green-400 bg-green-50 dark:bg-green-900/20'
             : 'border-blue-400 bg-blue-50 dark:bg-blue-900/20'
         )}>
           <div className="flex items-center gap-3">
-            {operationProgress.status === 'error' ? (
+            {databaseOperation.status === 'error' ? (
               <AlertCircle className="w-5 h-5 text-red-500" />
-            ) : operationProgress.status === 'complete' ? (
+            ) : databaseOperation.status === 'complete' ? (
               <CheckCircle className="w-5 h-5 text-green-500" />
             ) : (
               <RefreshCw className="w-5 h-5 text-blue-500 animate-spin" />
             )}
             <div>
               <p className="font-medium text-gray-900 dark:text-white">
-                {operationProgress.type === 'export' ? 'Exporting' : 'Importing'} {operationProgress.dbName}
+                {databaseOperation.type === 'export' ? 'Exporting' : 'Importing'} {databaseOperation.dbName}
               </p>
               <p className={clsx(
                 'text-sm',
-                operationProgress.status === 'error' 
+                databaseOperation.status === 'error' 
                   ? 'text-red-600 dark:text-red-400' 
                   : 'text-gray-500 dark:text-gray-400'
               )}>
-                {operationProgress.message}
+                {databaseOperation.message}
               </p>
             </div>
           </div>
-          {(operationProgress.status === 'complete' || operationProgress.status === 'error') && (
+          {(databaseOperation.status === 'complete' || databaseOperation.status === 'error') && (
             <button
-              onClick={() => setOperationProgress(null)}
+              onClick={clearDatabaseOperation}
               className="btn-ghost btn-sm"
             >
               <X className="w-4 h-4" />

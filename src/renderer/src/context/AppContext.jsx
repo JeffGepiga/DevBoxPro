@@ -9,6 +9,7 @@ const initialState = {
   settings: {},
   loading: true,
   error: null,
+  databaseOperation: null, // { type: 'import'|'export', status, message, dbName }
 };
 
 function appReducer(state, action) {
@@ -44,6 +45,8 @@ function appReducer(state, action) {
       return { ...state, loading: action.payload };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
+    case 'SET_DATABASE_OPERATION':
+      return { ...state, databaseOperation: action.payload };
     default:
       return state;
   }
@@ -93,6 +96,31 @@ export function AppProvider({ children }) {
     window.devbox.on('resource:update', (data) => {
       dispatch({ type: 'SET_RESOURCE_USAGE', payload: data });
     });
+
+    // Database import/export progress listeners
+    const unsubImport = window.devbox?.database.onImportProgress?.((progress) => {
+      dispatch({ type: 'SET_DATABASE_OPERATION', payload: { type: 'import', ...progress } });
+      // Auto-clear on complete after 5 seconds
+      if (progress.status === 'complete') {
+        setTimeout(() => {
+          dispatch({ type: 'SET_DATABASE_OPERATION', payload: null });
+        }, 5000);
+      }
+    });
+    const unsubExport = window.devbox?.database.onExportProgress?.((progress) => {
+      dispatch({ type: 'SET_DATABASE_OPERATION', payload: { type: 'export', ...progress } });
+      // Auto-clear on complete after 5 seconds
+      if (progress.status === 'complete') {
+        setTimeout(() => {
+          dispatch({ type: 'SET_DATABASE_OPERATION', payload: null });
+        }, 5000);
+      }
+    });
+
+    return () => {
+      unsubImport?.();
+      unsubExport?.();
+    };
   }, []);
 
   // Actions
@@ -161,6 +189,14 @@ export function AppProvider({ children }) {
     await refreshServices();
   }, [refreshServices]);
 
+  const setDatabaseOperation = useCallback((operation) => {
+    dispatch({ type: 'SET_DATABASE_OPERATION', payload: operation });
+  }, []);
+
+  const clearDatabaseOperation = useCallback(() => {
+    dispatch({ type: 'SET_DATABASE_OPERATION', payload: null });
+  }, []);
+
   const value = {
     ...state,
     dispatch,
@@ -172,6 +208,8 @@ export function AppProvider({ children }) {
     stopProject,
     startService,
     stopService,
+    setDatabaseOperation,
+    clearDatabaseOperation,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

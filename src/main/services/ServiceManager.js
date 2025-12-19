@@ -1862,17 +1862,14 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       return;
     }
 
-    // Check if MySQL is running - phpMyAdmin needs MySQL to work
+    // Check if MySQL or MariaDB is running - phpMyAdmin needs a database to work
+    // Don't auto-start any database - let the user/project control which one runs
     const mysqlStatus = this.serviceStatus.get('mysql');
-    if (mysqlStatus.status !== 'running') {
-      console.log('MySQL is not running. Starting MySQL first...');
-      try {
-        await this.startMySQL();
-        // Wait a bit for MySQL to fully initialize
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      } catch (error) {
-        console.warn('Could not start MySQL automatically:', error.message);
-      }
+    const mariadbStatus = this.serviceStatus.get('mariadb');
+    const hasDatabaseRunning = mysqlStatus?.status === 'running' || mariadbStatus?.status === 'running';
+    
+    if (!hasDatabaseRunning) {
+      console.log('No database is running. phpMyAdmin will start but may not be fully functional until a database is started.');
     }
 
     // Find available port dynamically
@@ -2132,9 +2129,17 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
   getAllServicesStatus() {
     const result = {};
     for (const [key, status] of this.serviceStatus) {
+      let uptime = null;
+      if (status.startedAt) {
+        // Handle both Date objects and ISO strings
+        const startedAtTime = status.startedAt instanceof Date 
+          ? status.startedAt.getTime() 
+          : new Date(status.startedAt).getTime();
+        uptime = Date.now() - startedAtTime;
+      }
       result[key] = {
         ...status,
-        uptime: status.startedAt ? Date.now() - status.startedAt.getTime() : null,
+        uptime,
       };
     }
     return result;
