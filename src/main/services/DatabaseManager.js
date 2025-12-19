@@ -504,26 +504,24 @@ class DatabaseManager {
    * Drop all tables in a database (for clean import)
    */
   async dropAllTables(databaseName) {
-    const safeName = this.sanitizeName(databaseName);
-    
     try {
       // Get list of all tables
       const tables = await this.getTables(databaseName);
       
       if (tables.length === 0) {
-        console.log(`No tables to drop in ${safeName}`);
+        console.log(`No tables to drop in ${databaseName}`);
         return;
       }
       
-      console.log(`Dropping ${tables.length} tables in ${safeName}...`);
+      console.log(`Dropping ${tables.length} tables in ${databaseName}...`);
       
       // Disable foreign key checks to avoid constraint issues
-      await this.runDbQuery('SET FOREIGN_KEY_CHECKS = 0', safeName);
+      await this.runDbQuery('SET FOREIGN_KEY_CHECKS = 0', databaseName);
       
       // Drop each table
       for (const table of tables) {
         try {
-          await this.runDbQuery(`DROP TABLE IF EXISTS \`${table}\``, safeName);
+          await this.runDbQuery(`DROP TABLE IF EXISTS \`${table}\``, databaseName);
           console.log(`Dropped table: ${table}`);
         } catch (error) {
           console.warn(`Warning: Could not drop table ${table}: ${error.message}`);
@@ -531,35 +529,33 @@ class DatabaseManager {
       }
       
       // Re-enable foreign key checks
-      await this.runDbQuery('SET FOREIGN_KEY_CHECKS = 1', safeName);
+      await this.runDbQuery('SET FOREIGN_KEY_CHECKS = 1', databaseName);
       
-      console.log(`All tables dropped from ${safeName}`);
+      console.log(`All tables dropped from ${databaseName}`);
     } catch (error) {
-      console.error(`Error dropping tables in ${safeName}:`, error);
+      console.error(`Error dropping tables in ${databaseName}:`, error);
       throw error;
     }
   }
 
   async getTables(databaseName) {
-    const safeName = this.sanitizeName(databaseName);
-    const result = await this.runDbQuery('SHOW TABLES', safeName);
+    const result = await this.runDbQuery('SHOW TABLES', databaseName);
     return result.map((row) => row[0]);
   }
 
   async getTableStructure(databaseName, tableName) {
-    const safeName = this.sanitizeName(databaseName);
-    const safeTable = this.sanitizeName(tableName);
-    const result = await this.runDbQuery(`DESCRIBE \`${safeTable}\``, safeName);
+    const result = await this.runDbQuery(`DESCRIBE \`${tableName}\``, databaseName);
     return result;
   }
 
   async getDatabaseSize(databaseName) {
-    const safeName = this.sanitizeName(databaseName);
+    // Use escaped name in the query string for safety
+    const escapedName = databaseName.replace(/'/g, "''");
     const query = `
       SELECT 
         SUM(data_length + index_length) as size
       FROM information_schema.tables 
-      WHERE table_schema = '${safeName}'
+      WHERE table_schema = '${escapedName}'
     `;
     const result = await this.runDbQuery(query);
     return parseInt(result[0]?.[0] || 0, 10);

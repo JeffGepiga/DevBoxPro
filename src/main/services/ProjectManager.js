@@ -78,8 +78,27 @@ class ProjectManager {
           console.warn('Could not add CLI to PATH:', error.message);
         }
       }
+
+      // Sync projects file for CLI
+      await this.syncCliProjectsFile();
     } catch (error) {
       console.warn('Could not ensure CLI installed:', error.message);
+    }
+  }
+
+  /**
+   * Sync the projects.json file used by CLI scripts
+   */
+  async syncCliProjectsFile() {
+    const cli = this.managers.cli;
+    if (!cli) {
+      return;
+    }
+
+    try {
+      await cli.syncProjectsFile();
+    } catch (error) {
+      console.warn('Could not sync CLI projects file:', error.message);
     }
   }
 
@@ -235,13 +254,6 @@ class ProjectManager {
     existingProjects.push(project);
     this.configStore.set('projects', existingProjects);
 
-    // Create .devbox-project.json for CLI tool
-    try {
-      await this.createProjectConfigFile(project);
-    } catch (error) {
-      console.warn('Could not create project config file:', error.message);
-    }
-
     // Auto-install CLI if not already installed
     await this.ensureCliInstalled();
 
@@ -260,31 +272,6 @@ class ProjectManager {
 
     console.log(`Project created: ${project.name} (${project.id})`);
     return project;
-  }
-
-  /**
-   * Create .devbox-project.json in project directory for CLI tool
-   */
-  async createProjectConfigFile(project) {
-    const configPath = path.join(project.path, '.devbox-project.json');
-    const config = {
-      id: project.id,
-      name: project.name,
-      phpVersion: project.phpVersion,
-      services: {
-        mysql: project.services?.mysql || false,
-        mysqlVersion: project.services?.mysqlVersion || '8.4',
-        mariadb: project.services?.mariadb || false,
-        mariadbVersion: project.services?.mariadbVersion || '11.4',
-        redis: project.services?.redis || false,
-        redisVersion: project.services?.redisVersion || '7.4',
-        nodejs: project.services?.nodejs || false,
-        nodejsVersion: project.services?.nodejsVersion || '20',
-      },
-      updatedAt: new Date().toISOString(),
-    };
-    await fs.writeJson(configPath, config, { spaces: 2 });
-    console.log(`Project config created: ${configPath}`);
   }
 
   // Separate method for background installation
@@ -675,12 +662,8 @@ class ProjectManager {
 
     this.configStore.set('projects', projects);
 
-    // Update .devbox-project.json for CLI tool
-    try {
-      await this.createProjectConfigFile(projects[index]);
-    } catch (error) {
-      console.warn('Could not update project config file:', error.message);
-    }
+    // Sync CLI projects file
+    await this.syncCliProjectsFile();
 
     // Restart if was running
     if (isRunning) {
@@ -731,6 +714,9 @@ class ProjectManager {
     const projects = this.configStore.get('projects', []);
     const filtered = projects.filter((p) => p.id !== id);
     this.configStore.set('projects', filtered);
+
+    // Sync CLI projects file
+    await this.syncCliProjectsFile();
 
     console.log(`Project deleted: ${project.name} (${id})${deleteFiles ? ' - files also deleted' : ''}`);
     return { success: true, filesDeleted: deleteFiles };
@@ -2248,13 +2234,6 @@ server {
     // Save project
     existingProjects.push(project);
     this.configStore.set('projects', existingProjects);
-
-    // Create .devbox-project.json for CLI tool
-    try {
-      await this.createProjectConfigFile(project);
-    } catch (error) {
-      console.warn('Could not create project config file:', error.message);
-    }
 
     // Auto-install CLI if not already installed
     await this.ensureCliInstalled();

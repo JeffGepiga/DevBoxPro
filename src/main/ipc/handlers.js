@@ -895,12 +895,13 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('cli:syncProjectConfigs', async () => {
     if (!managers.cli) throw new Error('CLI manager not initialized');
-    return managers.cli.syncAllProjectConfigs();
-  });
-
-  ipcMain.handle('cli:createProjectConfig', async (event, projectId) => {
-    if (!managers.cli) throw new Error('CLI manager not initialized');
-    return managers.cli.createProjectConfig(projectId);
+    
+    // Get projects count and sync
+    const projects = managers.cli.configStore.get('projects', []);
+    await managers.cli.syncProjectsFile();
+    
+    // Return array format for UI compatibility
+    return projects.map(p => ({ id: p.id, success: true }));
   });
 
   // Resource monitoring interval

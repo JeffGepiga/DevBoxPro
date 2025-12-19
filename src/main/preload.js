@@ -116,7 +116,6 @@ contextBridge.exposeInMainWorld('devbox', {
     addToPath: () => ipcRenderer.invoke('cli:addToPath'),
     getInstructions: () => ipcRenderer.invoke('cli:getInstructions'),
     syncProjectConfigs: () => ipcRenderer.invoke('cli:syncProjectConfigs'),
-    createProjectConfig: (projectId) => ipcRenderer.invoke('cli:createProjectConfig', projectId),
   },
 
   // Settings operations

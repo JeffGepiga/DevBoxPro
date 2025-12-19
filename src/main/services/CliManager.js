@@ -56,6 +56,41 @@ class CliManager {
   }
 
   /**
+   * Get the path to the central projects mapping file
+   */
+  getProjectsFilePath() {
+    return path.join(this.getCliPath(), 'projects.json');
+  }
+
+  /**
+   * Sync all projects to the central projects.json file
+   * This file is used by the CLI scripts to find project configs
+   */
+  async syncProjectsFile() {
+    const cliPath = this.getCliPath();
+    await fs.ensureDir(cliPath);
+
+    const projects = this.configStore.get('projects', []);
+    const projectMappings = {};
+
+    for (const project of projects) {
+      const normalizedPath = path.normalize(project.path);
+      projectMappings[normalizedPath] = {
+        id: project.id,
+        name: project.name,
+        phpVersion: project.phpVersion || '8.3',
+        nodejsVersion: project.services?.nodejs ? (project.services.nodejsVersion || '20') : null,
+      };
+    }
+
+    const projectsFilePath = this.getProjectsFilePath();
+    await fs.writeJson(projectsFilePath, projectMappings, { spaces: 2 });
+    console.log(`Projects file synced: ${projectsFilePath}`);
+
+    return projectsFilePath;
+  }
+
+  /**
    * Get project configuration for a given path
    */
   getProjectForPath(projectPath) {
@@ -216,6 +251,9 @@ class CliManager {
     
     await fs.ensureDir(cliPath);
 
+    // Sync projects to the central projects.json file
+    await this.syncProjectsFile();
+
     if (process.platform === 'win32') {
       await this.installWindowsCli(alias, cliPath);
     } else {
@@ -234,6 +272,7 @@ class CliManager {
    */
   async installWindowsCli(alias, cliPath) {
     const resourcesPath = this.resourcesPath;
+    const projectsFilePath = this.getProjectsFilePath().replace(/\\/g, '\\\\');
     
     // Create the batch script
     const batchContent = `@echo off
@@ -243,6 +282,7 @@ REM DevBox Pro CLI Wrapper
 REM This script routes commands through DevBox Pro to use project-specific versions
 
 set "DEVBOX_RESOURCES=${resourcesPath.replace(/\\/g, '\\\\')}"
+set "DEVBOX_PROJECTS=${projectsFilePath}"
 
 REM Get current directory
 set "CURRENT_DIR=%CD%"
@@ -267,52 +307,36 @@ if "%~1"=="" (
     exit /b 0
 )
 
-REM Find project config file
-set "PROJECT_CONFIG="
-set "CHECK_DIR=%CURRENT_DIR%"
-
-:find_project
-if exist "%CHECK_DIR%\\.devbox-project.json" (
-    set "PROJECT_CONFIG=%CHECK_DIR%\\.devbox-project.json"
-    goto :found_project
+REM Check if projects.json exists
+if not exist "%DEVBOX_PROJECTS%" (
+    echo Warning: DevBox Pro projects file not found.
+    echo Please open DevBox Pro and ensure CLI is installed.
+    echo Running command with system defaults...
+    %*
+    exit /b %ERRORLEVEL%
 )
 
-REM Go up one directory
-for %%I in ("%CHECK_DIR%\\..") do set "PARENT_DIR=%%~fI"
-if "%PARENT_DIR%"=="%CHECK_DIR%" goto :no_project
-set "CHECK_DIR=%PARENT_DIR%"
-goto :find_project
-
-:no_project
-REM Try to use DevBox Pro's data to find project
-REM Fall back to system commands
-echo Warning: Not in a DevBox Pro project directory
-echo Running command with system defaults...
-%*
-exit /b %ERRORLEVEL%
-
-:found_project
-REM Parse project config to get versions (simplified - reads from DevBox data)
-REM The actual execution happens through electron's IPC
-
-REM For now, execute through the DevBox Pro app if it's running
-REM Otherwise fall back to trying to find the binaries directly
-
+REM Find matching project by checking if current path starts with any project path
 set "PHP_VERSION=8.3"
-set "NODE_VERSION=20"
+set "NODE_VERSION="
+set "FOUND_PROJECT="
 
-REM Try to read from project config (basic parsing)
-for /f "tokens=2 delims=:," %%a in ('type "%PROJECT_CONFIG%" ^| findstr "phpVersion"') do (
-    set "PHP_VERSION=%%~a"
-    set "PHP_VERSION=!PHP_VERSION: =!"
-    set "PHP_VERSION=!PHP_VERSION:"=!"
+REM Use PowerShell to parse JSON and find matching project
+for /f "usebackq tokens=1,2 delims=|" %%a in (\`powershell -NoProfile -Command "$projects = Get-Content '%DEVBOX_PROJECTS%' | ConvertFrom-Json; $currentDir = '%CURRENT_DIR%'.ToLower().Replace('/', '\\\\'); foreach ($prop in $projects.PSObject.Properties) { $projPath = $prop.Name.ToLower().Replace('/', '\\\\'); if ($currentDir.StartsWith($projPath) -or $currentDir -eq $projPath) { Write-Host \\"$($prop.Value.phpVersion)|$($prop.Value.nodejsVersion)\\"; break } }"\`) do (
+    set "PHP_VERSION=%%a"
+    set "NODE_VERSION=%%b"
+    set "FOUND_PROJECT=1"
 )
 
-for /f "tokens=2 delims=:," %%a in ('type "%PROJECT_CONFIG%" ^| findstr "nodejsVersion"') do (
-    set "NODE_VERSION=%%~a"
-    set "NODE_VERSION=!NODE_VERSION: =!"
-    set "NODE_VERSION=!NODE_VERSION:"=!"
+if not defined FOUND_PROJECT (
+    echo Warning: Not in a DevBox Pro project directory
+    echo Running command with system defaults...
+    %*
+    exit /b %ERRORLEVEL%
 )
+
+REM Handle "null" node version from JSON
+if "!NODE_VERSION!"=="null" set "NODE_VERSION="
 
 REM Set up paths based on detected versions
 set "PHP_PATH=%DEVBOX_RESOURCES%\\php\\%PHP_VERSION%\\win"
@@ -352,6 +376,10 @@ if /i "%CMD%"=="composer" (
 )
 
 if /i "%CMD%"=="node" (
+    if not defined NODE_VERSION (
+        echo Node.js is not enabled for this project.
+        exit /b 1
+    )
     if exist "%NODE_PATH%\\node.exe" (
         "%NODE_PATH%\\node.exe" %1 %2 %3 %4 %5 %6 %7 %8 %9
     ) else (
@@ -362,6 +390,10 @@ if /i "%CMD%"=="node" (
 )
 
 if /i "%CMD%"=="npm" (
+    if not defined NODE_VERSION (
+        echo npm is not enabled for this project. Enable Node.js in project settings.
+        exit /b 1
+    )
     if exist "%NODE_PATH%\\npm.cmd" (
         call "%NODE_PATH%\\npm.cmd" %1 %2 %3 %4 %5 %6 %7 %8 %9
     ) else (
@@ -372,6 +404,10 @@ if /i "%CMD%"=="npm" (
 )
 
 if /i "%CMD%"=="npx" (
+    if not defined NODE_VERSION (
+        echo npx is not enabled for this project. Enable Node.js in project settings.
+        exit /b 1
+    )
     if exist "%NODE_PATH%\\npx.cmd" (
         call "%NODE_PATH%\\npx.cmd" %1 %2 %3 %4 %5 %6 %7 %8 %9
     ) else (
@@ -398,6 +434,7 @@ exit /b %ERRORLEVEL%
    */
   async installUnixCli(alias, cliPath) {
     const resourcesPath = this.resourcesPath;
+    const projectsFilePath = this.getProjectsFilePath();
     const platform = process.platform === 'darwin' ? 'mac' : 'linux';
     
     const shellContent = `#!/bin/bash
@@ -406,6 +443,7 @@ exit /b %ERRORLEVEL%
 # This script routes commands through DevBox Pro to use project-specific versions
 
 DEVBOX_RESOURCES="${resourcesPath}"
+DEVBOX_PROJECTS="${projectsFilePath}"
 CURRENT_DIR="$(pwd)"
 
 # Show help if no arguments
@@ -428,33 +466,46 @@ if [ $# -eq 0 ]; then
     exit 0
 fi
 
-# Find project config file by walking up the directory tree
-find_project_config() {
-    local dir="$1"
-    while [ "$dir" != "/" ]; do
-        if [ -f "$dir/.devbox-project.json" ]; then
-            echo "$dir/.devbox-project.json"
-            return 0
-        fi
-        dir="$(dirname "$dir")"
-    done
-    return 1
-}
-
-PROJECT_CONFIG=$(find_project_config "$CURRENT_DIR")
-
-if [ -z "$PROJECT_CONFIG" ]; then
-    echo "Warning: Not in a DevBox Pro project directory"
+# Check if projects.json exists
+if [ ! -f "$DEVBOX_PROJECTS" ]; then
+    echo "Warning: DevBox Pro projects file not found."
+    echo "Please open DevBox Pro and ensure CLI is installed."
     echo "Running command with system defaults..."
     exec "$@"
 fi
 
-# Parse versions from config (simple grep-based parsing)
-PHP_VERSION=$(grep -o '"phpVersion"[[:space:]]*:[[:space:]]*"[^"]*"' "$PROJECT_CONFIG" | cut -d'"' -f4)
-NODE_VERSION=$(grep -o '"nodejsVersion"[[:space:]]*:[[:space:]]*"[^"]*"' "$PROJECT_CONFIG" | cut -d'"' -f4)
+# Find matching project by checking if current path starts with any project path
+CURRENT_DIR_LOWER=$(echo "$CURRENT_DIR" | tr '[:upper:]' '[:lower:]')
+
+# Use python/node/jq to parse JSON and find matching project
+if command -v python3 &> /dev/null; then
+    read PHP_VERSION NODE_VERSION < <(python3 -c "
+import json
+import os
+current_dir = '$CURRENT_DIR_LOWER'
+with open('$DEVBOX_PROJECTS', 'r') as f:
+    projects = json.load(f)
+for proj_path, config in projects.items():
+    proj_path_lower = proj_path.lower()
+    if current_dir.startswith(proj_path_lower) or current_dir == proj_path_lower:
+        php = config.get('phpVersion', '8.3')
+        node = config.get('nodejsVersion') or ''
+        print(f'{php} {node}')
+        break
+else:
+    print('8.3 ')
+" 2>/dev/null)
+elif command -v jq &> /dev/null; then
+    # Fallback to jq if available
+    PHP_VERSION=$(jq -r 'to_entries[] | select(.key | ascii_downcase | startswith("'"$CURRENT_DIR_LOWER"'")) | .value.phpVersion // "8.3"' "$DEVBOX_PROJECTS" 2>/dev/null | head -1)
+    NODE_VERSION=$(jq -r 'to_entries[] | select(.key | ascii_downcase | startswith("'"$CURRENT_DIR_LOWER"'")) | .value.nodejsVersion // ""' "$DEVBOX_PROJECTS" 2>/dev/null | head -1)
+else
+    echo "Warning: python3 or jq required to parse project config."
+    echo "Running command with system defaults..."
+    exec "$@"
+fi
 
 PHP_VERSION=\${PHP_VERSION:-8.3}
-NODE_VERSION=\${NODE_VERSION:-20}
 
 # Set up paths
 PHP_PATH="$DEVBOX_RESOURCES/php/$PHP_VERSION/${platform}"
@@ -483,6 +534,10 @@ case "$CMD" in
         fi
         ;;
     node)
+        if [ -z "$NODE_VERSION" ]; then
+            echo "Node.js is not enabled for this project."
+            exit 1
+        fi
         if [ -x "$NODE_PATH/node" ]; then
             exec "$NODE_PATH/node" "$@"
         else
@@ -491,6 +546,10 @@ case "$CMD" in
         fi
         ;;
     npm)
+        if [ -z "$NODE_VERSION" ]; then
+            echo "npm is not enabled for this project. Enable Node.js in project settings."
+            exit 1
+        fi
         if [ -x "$NODE_PATH/npm" ]; then
             export PATH="$NODE_PATH:$PATH"
             exec "$NODE_PATH/npm" "$@"
@@ -500,6 +559,10 @@ case "$CMD" in
         fi
         ;;
     npx)
+        if [ -z "$NODE_VERSION" ]; then
+            echo "npx is not enabled for this project. Enable Node.js in project settings."
+            exit 1
+        fi
         if [ -x "$NODE_PATH/npx" ]; then
             export PATH="$NODE_PATH:$PATH"
             exec "$NODE_PATH/npx" "$@"
@@ -522,60 +585,6 @@ esac
     
     console.log(`CLI script installed at: ${scriptPath}`);
     return scriptPath;
-  }
-
-  /**
-   * Create project-specific config file in project directory
-   */
-  async createProjectConfig(projectId) {
-    const projects = this.configStore.get('projects', []);
-    const project = projects.find(p => p.id === projectId);
-    
-    if (!project) {
-      throw new Error('Project not found');
-    }
-
-    const configPath = path.join(project.path, '.devbox-project.json');
-    const config = {
-      id: project.id,
-      name: project.name,
-      phpVersion: project.phpVersion,
-      services: {
-        mysql: project.services?.mysql || false,
-        mysqlVersion: project.services?.mysqlVersion || '8.4',
-        mariadb: project.services?.mariadb || false,
-        mariadbVersion: project.services?.mariadbVersion || '11.4',
-        redis: project.services?.redis || false,
-        redisVersion: project.services?.redisVersion || '7.4',
-        nodejs: project.services?.nodejs || false,
-        nodejsVersion: project.services?.nodejsVersion || '20',
-      },
-      createdAt: new Date().toISOString(),
-    };
-
-    await fs.writeJson(configPath, config, { spaces: 2 });
-    console.log(`Project config created: ${configPath}`);
-    
-    return configPath;
-  }
-
-  /**
-   * Sync all projects to create/update their .devbox-project.json files
-   */
-  async syncAllProjectConfigs() {
-    const projects = this.configStore.get('projects', []);
-    const results = [];
-
-    for (const project of projects) {
-      try {
-        await this.createProjectConfig(project.id);
-        results.push({ id: project.id, success: true });
-      } catch (error) {
-        results.push({ id: project.id, success: false, error: error.message });
-      }
-    }
-
-    return results;
   }
 
   /**
