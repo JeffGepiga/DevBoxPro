@@ -365,8 +365,8 @@ class DatabaseManager {
     
     const result = await this.runDbQuery('SHOW DATABASES');
     return result.map((row) => ({
-      name: row.Database,
-      isSystem: ['information_schema', 'mysql', 'performance_schema', 'sys'].includes(row.Database),
+      name: (row.Database || '').trim(),
+      isSystem: ['information_schema', 'mysql', 'performance_schema', 'sys'].includes((row.Database || '').trim()),
     }));
   }
 
@@ -432,7 +432,7 @@ class DatabaseManager {
         // If clean mode, drop all existing tables first
         if (mode === 'clean') {
           progressCallback?.({ status: 'cleaning', message: 'Dropping existing tables...' });
-          await this.dropAllTables(databaseName);
+          await this.dropAllTables(safeName);
         }
 
         let sqlContent;
@@ -472,8 +472,8 @@ class DatabaseManager {
           args.push(`-p${password}`);
         }
         
-        // Use original database name - MySQL accepts most names when properly used
-        args.push(databaseName);
+        // Use sanitized database name (trimmed and safe)
+        args.push(safeName);
 
         const proc = spawn(clientPath, args, {
           stdio: ['pipe', 'pipe', 'pipe'],

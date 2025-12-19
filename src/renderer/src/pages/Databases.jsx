@@ -228,9 +228,11 @@ function Databases() {
 
   const handleExportDatabase = async (name) => {
     try {
+      // Sanitize database name for use in filename (trim and remove invalid characters)
+      const safeName = name.trim().replace(/[<>:"/\\|?*\r\n]/g, '_');
       // Use save dialog for export
       const filePath = await window.devbox?.system.saveFile({
-        defaultPath: `${name}_backup_${new Date().toISOString().slice(0,10)}.sql.gz`,
+        defaultPath: `${safeName}_backup_${new Date().toISOString().slice(0,10)}.sql.gz`,
         filters: [
           { name: 'Compressed SQL', extensions: ['sql.gz', 'gz'] },
           { name: 'SQL Files', extensions: ['sql'] },
