@@ -86,6 +86,7 @@ contextBridge.exposeInMainWorld('devbox', {
     getProjectLogs: (projectId, lines) => ipcRenderer.invoke('logs:getProjectLogs', projectId, lines),
     getServiceLogs: (service, lines) => ipcRenderer.invoke('logs:getServiceLogs', service, lines),
     clearProjectLogs: (projectId) => ipcRenderer.invoke('logs:clearProjectLogs', projectId),
+    clearServiceLogs: (serviceName) => ipcRenderer.invoke('logs:clearServiceLogs', serviceName),
     streamLogs: (projectId) => ipcRenderer.invoke('logs:streamLogs', projectId),
   },
 

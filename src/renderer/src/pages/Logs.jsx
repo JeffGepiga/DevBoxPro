@@ -142,11 +142,27 @@ function Logs() {
   });
 
   const clearLogs = async () => {
-    if (selectedSource.startsWith('project:')) {
+    if (selectedSource === 'all') {
+      // Clear all logs - ask for confirmation
+      if (!window.confirm('Clear all logs from all projects and services?')) {
+        return;
+      }
+      // Clear all project logs
+      for (const project of projects) {
+        await window.devbox?.logs.clearProjectLogs(project.id);
+      }
+      // Clear all service logs
+      for (const name of Object.keys(services)) {
+        await window.devbox?.logs.clearServiceLogs(name);
+      }
+    } else if (selectedSource.startsWith('project:')) {
       const projectId = selectedSource.replace('project:', '');
       await window.devbox?.logs.clearProjectLogs(projectId);
-      loadLogs();
+    } else if (selectedSource.startsWith('service:')) {
+      const serviceName = selectedSource.replace('service:', '');
+      await window.devbox?.logs.clearServiceLogs(serviceName);
     }
+    loadLogs();
   };
 
   const exportLogs = () => {
@@ -191,7 +207,6 @@ function Logs() {
           </button>
           <button
             onClick={clearLogs}
-            disabled={!selectedSource.startsWith('project:')}
             className="btn-secondary"
           >
             <Trash2 className="w-4 h-4" />

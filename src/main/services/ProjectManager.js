@@ -617,10 +617,14 @@ class ProjectManager {
 
     if (this.runningProjects.has(id)) {
       console.log(`Project ${project.name} is already running`);
+      this.managers.log?.project(id, `Project ${project.name} is already running`);
       return { success: true, alreadyRunning: true };
     }
 
     console.log(`Starting project: ${project.name}`);
+    this.managers.log?.project(id, `Starting project: ${project.name}`);
+    this.managers.log?.project(id, `Type: ${project.type}, PHP: ${project.phpVersion}, Web Server: ${project.webServer}`);
+    this.managers.log?.project(id, `Domain: ${project.domain}, Path: ${project.path}`);
 
     try {
       // Start required services first
@@ -675,10 +679,13 @@ class ProjectManager {
         this.configStore.set('projects', projects);
       }
 
-      console.log(`Project ${project.name} started with PHP-CGI on port ${phpFpmPort}`);
-      return { success: true, port: project.port, phpFpmPort };
+      console.log(`Project ${project.name} started with PHP-CGI on port ${actualPhpFpmPort}`);
+      this.managers.log?.project(id, `Project ${project.name} started successfully`);
+      this.managers.log?.project(id, `PHP-CGI running on port ${actualPhpFpmPort}`);
+      return { success: true, port: project.port, phpFpmPort: actualPhpFpmPort };
     } catch (error) {
       console.error(`Failed to start project ${project.name}:`, error);
+      this.managers.log?.project(id, `Failed to start project: ${error.message}`, 'error');
       throw error;
     }
   }
@@ -795,6 +802,7 @@ class ProjectManager {
 
     const project = this.getProject(id);
     console.log(`Stopping project: ${project?.name || id}`);
+    this.managers.log?.project(id, `Stopping project: ${project?.name || id}`);
 
     try {
       const kill = require('tree-kill');
@@ -817,6 +825,7 @@ class ProjectManager {
 
       this.runningProjects.delete(id);
       console.log(`Project ${project?.name || id} stopped`);
+      this.managers.log?.project(id, `Project ${project?.name || id} stopped successfully`);
 
       return { success: true, wasRunning: true };
     } catch (error) {
@@ -981,8 +990,10 @@ class ProjectManager {
 
     if (results.success) {
       console.log(`Services started for project ${project.name}`);
+      this.managers.log?.project(project.id, `Services ready: ${results.started.join(', ')}`);
     } else {
       console.error(`Critical services failed for project ${project.name}:`, results.criticalFailures);
+      this.managers.log?.project(project.id, `Service failures: ${results.errors.join('; ')}`, 'error');
     }
 
     return results;

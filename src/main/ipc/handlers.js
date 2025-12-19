@@ -309,6 +309,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return log.clearProjectLogs(projectId);
   });
 
+  ipcMain.handle('logs:clearServiceLogs', async (event, serviceName) => {
+    return log.clearServiceLogs(serviceName);
+  });
+
   ipcMain.handle('logs:streamLogs', async (event, projectId) => {
     log.streamLogs(projectId, (entry) => {
       mainWindow?.webContents.send('log:newEntry', { projectId, entry });

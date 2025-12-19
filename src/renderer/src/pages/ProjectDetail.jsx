@@ -697,7 +697,10 @@ function LogsTab({ logs, onRefresh, projectId }) {
             Refresh
           </button>
           <button
-            onClick={() => window.devbox?.logs.clearProjectLogs(projectId)}
+            onClick={async () => {
+              await window.devbox?.logs.clearProjectLogs(projectId);
+              onRefresh();
+            }}
             className="btn-ghost btn-sm"
           >
             Clear
