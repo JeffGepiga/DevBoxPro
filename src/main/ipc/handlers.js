@@ -166,6 +166,19 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return project.getCompatibilityRules();
   });
 
+  // ============ COMPATIBILITY HANDLERS ============
+  ipcMain.handle('compatibility:checkForUpdates', async () => {
+    return project.checkCompatibilityUpdates();
+  });
+
+  ipcMain.handle('compatibility:applyUpdates', async () => {
+    return project.applyCompatibilityUpdates();
+  });
+
+  ipcMain.handle('compatibility:getConfigInfo', async () => {
+    return project.getCompatibilityConfigInfo();
+  });
+
   // ============ PHP HANDLERS ============
   ipcMain.handle('php:getVersions', async () => {
     return php.getAvailableVersions();

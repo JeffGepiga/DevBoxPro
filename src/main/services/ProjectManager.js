@@ -45,6 +45,9 @@ class ProjectManager {
       this.configStore.set('projects', []);
     }
 
+    // Initialize compatibility manager (loads cached config)
+    await this.compatibilityManager.initialize();
+
     console.log('ProjectManager initialized');
   }
 
@@ -2420,6 +2423,30 @@ server {
     updates.compatibilityWarnings = compatibility.warnings || [];
 
     return this.updateProject(id, updates);
+  }
+
+  /**
+   * Check for compatibility rule updates from remote config
+   * @returns {Object} Update check result
+   */
+  async checkCompatibilityUpdates() {
+    return this.compatibilityManager.checkForUpdates();
+  }
+
+  /**
+   * Apply compatibility rule updates from remote config
+   * @returns {Object} Apply result
+   */
+  async applyCompatibilityUpdates() {
+    return this.compatibilityManager.applyUpdates();
+  }
+
+  /**
+   * Get compatibility config info
+   * @returns {Object} Config info
+   */
+  getCompatibilityConfigInfo() {
+    return this.compatibilityManager.getConfigInfo();
   }
 }
 

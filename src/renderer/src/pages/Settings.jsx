@@ -729,8 +729,260 @@ function AppearanceSettings({ settings, updateSetting }) {
 }
 
 function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
+  const [checkingBinaryUpdates, setCheckingBinaryUpdates] = useState(false);
+  const [binaryUpdateResult, setBinaryUpdateResult] = useState(null);
+  const [applyingBinaryUpdates, setApplyingBinaryUpdates] = useState(false);
+  
+  const [checkingCompatibilityUpdates, setCheckingCompatibilityUpdates] = useState(false);
+  const [compatibilityUpdateResult, setCompatibilityUpdateResult] = useState(null);
+  const [applyingCompatibilityUpdates, setApplyingCompatibilityUpdates] = useState(false);
+  
+  const [configInfo, setConfigInfo] = useState({ binaries: null, compatibility: null });
+
+  // Load config info on mount
+  useEffect(() => {
+    const loadConfigInfo = async () => {
+      try {
+        const compatInfo = await window.devbox?.compatibility?.getConfigInfo();
+        setConfigInfo(prev => ({ ...prev, compatibility: compatInfo }));
+      } catch (error) {
+        console.error('Error loading config info:', error);
+      }
+    };
+    loadConfigInfo();
+  }, []);
+
+  const handleCheckBinaryUpdates = async () => {
+    setCheckingBinaryUpdates(true);
+    setBinaryUpdateResult(null);
+    try {
+      const result = await window.devbox?.binaries?.checkForUpdates();
+      setBinaryUpdateResult(result);
+    } catch (error) {
+      setBinaryUpdateResult({ success: false, error: error.message });
+    } finally {
+      setCheckingBinaryUpdates(false);
+    }
+  };
+
+  const handleApplyBinaryUpdates = async () => {
+    setApplyingBinaryUpdates(true);
+    try {
+      await window.devbox?.binaries?.applyUpdates();
+      setBinaryUpdateResult(prev => ({ ...prev, hasUpdates: false, applied: true }));
+    } catch (error) {
+      console.error('Error applying binary updates:', error);
+    } finally {
+      setApplyingBinaryUpdates(false);
+    }
+  };
+
+  const handleCheckCompatibilityUpdates = async () => {
+    setCheckingCompatibilityUpdates(true);
+    setCompatibilityUpdateResult(null);
+    try {
+      const result = await window.devbox?.compatibility?.checkForUpdates();
+      setCompatibilityUpdateResult(result);
+    } catch (error) {
+      setCompatibilityUpdateResult({ success: false, error: error.message });
+    } finally {
+      setCheckingCompatibilityUpdates(false);
+    }
+  };
+
+  const handleApplyCompatibilityUpdates = async () => {
+    setApplyingCompatibilityUpdates(true);
+    try {
+      const result = await window.devbox?.compatibility?.applyUpdates();
+      if (result?.success) {
+        setCompatibilityUpdateResult(prev => ({ ...prev, hasUpdates: false, applied: true }));
+        // Refresh config info
+        const compatInfo = await window.devbox?.compatibility?.getConfigInfo();
+        setConfigInfo(prev => ({ ...prev, compatibility: compatInfo }));
+      }
+    } catch (error) {
+      console.error('Error applying compatibility updates:', error);
+    } finally {
+      setApplyingCompatibilityUpdates(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Remote Updates Section */}
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          Remote Configuration Updates
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Check for updates to binary download URLs and compatibility rules from the DevBox Pro repository.
+        </p>
+        
+        {/* Binary Updates */}
+        <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white">Binary Downloads</h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                PHP, MySQL, Redis, and other service download URLs
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {binaryUpdateResult?.hasUpdates && !binaryUpdateResult?.applied && (
+                <button
+                  onClick={handleApplyBinaryUpdates}
+                  disabled={applyingBinaryUpdates}
+                  className="btn-primary text-sm py-1.5 px-3"
+                >
+                  {applyingBinaryUpdates ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      Apply Updates
+                    </>
+                  )}
+                </button>
+              )}
+              <button
+                onClick={handleCheckBinaryUpdates}
+                disabled={checkingBinaryUpdates}
+                className="btn-secondary text-sm py-1.5 px-3"
+              >
+                {checkingBinaryUpdates ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    Check for Updates
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+          {binaryUpdateResult && (
+            <div className={clsx(
+              'mt-3 p-3 rounded-lg text-sm',
+              binaryUpdateResult.success 
+                ? binaryUpdateResult.hasUpdates
+                  ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200'
+                  : binaryUpdateResult.applied
+                    ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200'
+                    : 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200'
+                : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200'
+            )}>
+              {binaryUpdateResult.success ? (
+                binaryUpdateResult.applied ? (
+                  <span className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" />
+                    Updates applied successfully!
+                  </span>
+                ) : binaryUpdateResult.hasUpdates ? (
+                  <span>{binaryUpdateResult.updates?.length} update(s) available (v{binaryUpdateResult.configVersion})</span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <Check className="w-4 h-4" />
+                    Up to date (v{binaryUpdateResult.configVersion})
+                  </span>
+                )
+              ) : (
+                <span className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  {binaryUpdateResult.error}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Compatibility Updates */}
+        <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white">Compatibility Rules</h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Version compatibility warnings and recommendations
+                {configInfo.compatibility && (
+                  <span className="ml-2 text-gray-400">
+                    (Current: v{configInfo.compatibility.version}, {configInfo.compatibility.ruleCount} rules)
+                  </span>
+                )}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {compatibilityUpdateResult?.hasUpdates && !compatibilityUpdateResult?.applied && (
+                <button
+                  onClick={handleApplyCompatibilityUpdates}
+                  disabled={applyingCompatibilityUpdates}
+                  className="btn-primary text-sm py-1.5 px-3"
+                >
+                  {applyingCompatibilityUpdates ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      Apply Updates
+                    </>
+                  )}
+                </button>
+              )}
+              <button
+                onClick={handleCheckCompatibilityUpdates}
+                disabled={checkingCompatibilityUpdates}
+                className="btn-secondary text-sm py-1.5 px-3"
+              >
+                {checkingCompatibilityUpdates ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    Check for Updates
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+          {compatibilityUpdateResult && (
+            <div className={clsx(
+              'mt-3 p-3 rounded-lg text-sm',
+              compatibilityUpdateResult.success 
+                ? compatibilityUpdateResult.hasUpdates
+                  ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200'
+                  : compatibilityUpdateResult.applied
+                    ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200'
+                    : 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200'
+                : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200'
+            )}>
+              {compatibilityUpdateResult.success ? (
+                compatibilityUpdateResult.applied ? (
+                  <span className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" />
+                    Updates applied successfully!
+                  </span>
+                ) : compatibilityUpdateResult.hasUpdates ? (
+                  <div>
+                    <span className="font-medium">Updates available (v{compatibilityUpdateResult.configVersion})</span>
+                    {compatibilityUpdateResult.updates?.newRules?.length > 0 && (
+                      <p className="text-xs mt-1">{compatibilityUpdateResult.updates.newRules.length} new rule(s)</p>
+                    )}
+                  </div>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <Check className="w-4 h-4" />
+                    Up to date (v{compatibilityUpdateResult.configVersion})
+                  </span>
+                )
+              ) : (
+                <span className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  {compatibilityUpdateResult.error}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Configuration

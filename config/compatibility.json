@@ -1,0 +1,408 @@
+{
+  "version": "1.1.0",
+  "lastUpdated": "2024-12-19",
+  "rules": [
+    {
+      "id": "php8-mysql57-auth",
+      "name": "PHP 8.x + MySQL 5.7 Authentication",
+      "enabled": true,
+      "conditions": {
+        "phpVersion": { "min": "8.0" },
+        "mysql": { "max": "7.99" }
+      },
+      "result": {
+        "level": "warning",
+        "message": "MySQL {mysqlVersion} uses legacy authentication (mysql_native_password). You may need to configure MySQL to use mysql_native_password for PHP {phpVersion} compatibility.",
+        "suggestion": "Consider using MySQL 8.0+ or configure mysql_native_password in MySQL settings."
+      }
+    },
+    {
+      "id": "php74-mysql84-features",
+      "name": "PHP 7.4 + MySQL 8.4 Features",
+      "enabled": true,
+      "conditions": {
+        "phpVersion": { "max": "7.99" },
+        "mysql": { "min": "8.4" }
+      },
+      "result": {
+        "level": "info",
+        "message": "Some MySQL 8.4 features may not be fully supported with PHP {phpVersion}. Consider upgrading PHP for full compatibility.",
+        "suggestion": "Upgrade to PHP 8.x for best MySQL 8.4 compatibility."
+      }
+    },
+    {
+      "id": "mysql-mariadb-conflict",
+      "name": "MySQL + MariaDB Port Conflict",
+      "enabled": true,
+      "conditions": {
+        "mysql": { "any": true },
+        "mariadb": { "any": true }
+      },
+      "result": {
+        "level": "warning",
+        "message": "Running both MySQL and MariaDB simultaneously may cause port conflicts. Each will use a different port automatically.",
+        "suggestion": "DevBox Pro assigns different ports to each database version automatically."
+      }
+    },
+    {
+      "id": "legacy-php-modern-node",
+      "name": "Legacy PHP + Modern Node.js",
+      "enabled": true,
+      "conditions": {
+        "phpVersion": { "max": "7.99" },
+        "nodejs": { "min": "20" }
+      },
+      "result": {
+        "level": "info",
+        "message": "Node.js {nodeVersion} build tools are designed for modern workflows. Some older Laravel/PHP tools may expect older Node.js versions.",
+        "suggestion": "This is usually fine, but if you encounter build issues, try Node.js 18 or 16."
+      }
+    },
+    {
+      "id": "php74-deprecated",
+      "name": "PHP 7.4 End of Life",
+      "enabled": true,
+      "conditions": {
+        "phpVersion": { "exact": "7.4" }
+      },
+      "result": {
+        "level": "info",
+        "message": "PHP 7.4 reached end-of-life in November 2022 and no longer receives security updates.",
+        "suggestion": "Consider upgrading to PHP 8.x for security and performance improvements."
+      }
+    },
+    {
+      "id": "php80-deprecated",
+      "name": "PHP 8.0 End of Life",
+      "enabled": true,
+      "conditions": {
+        "phpVersion": { "exact": "8.0" }
+      },
+      "result": {
+        "level": "info",
+        "message": "PHP 8.0 reached end-of-life in November 2023 and no longer receives security updates.",
+        "suggestion": "Consider upgrading to PHP 8.1+ for security updates."
+      }
+    },
+    {
+      "id": "php81-eol-notice",
+      "name": "PHP 8.1 Security Only",
+      "enabled": true,
+      "conditions": {
+        "phpVersion": { "exact": "8.1" }
+      },
+      "result": {
+        "level": "info",
+        "message": "PHP 8.1 is in security-only maintenance mode until December 2025.",
+        "suggestion": "Consider upgrading to PHP 8.2+ for active bug fix support."
+      }
+    },
+    {
+      "id": "redis-php-extension",
+      "name": "Redis PHP Extension",
+      "enabled": true,
+      "conditions": {
+        "redis": { "any": true }
+      },
+      "result": {
+        "level": "info",
+        "message": "Make sure the PHP Redis extension (phpredis) is enabled in php.ini for your selected PHP version.",
+        "suggestion": "Check Binary Manager to configure PHP extensions."
+      }
+    },
+    {
+      "id": "laravel11-php-version",
+      "name": "Laravel 11 PHP Requirements",
+      "enabled": true,
+      "conditions": {
+        "projectType": { "exact": "laravel" },
+        "phpVersion": { "max": "8.19" }
+      },
+      "result": {
+        "level": "warning",
+        "message": "Laravel 11 requires PHP 8.2 or higher. PHP {phpVersion} will work with Laravel 10 or earlier.",
+        "suggestion": "Use PHP 8.2+ for Laravel 11, or PHP 8.1+ for Laravel 10."
+      }
+    },
+    {
+      "id": "wordpress-php-version",
+      "name": "WordPress PHP Version",
+      "enabled": true,
+      "conditions": {
+        "projectType": { "exact": "wordpress" },
+        "phpVersion": { "max": "7.39" }
+      },
+      "result": {
+        "level": "warning",
+        "message": "WordPress recommends PHP 7.4 or higher. PHP {phpVersion} may cause compatibility issues.",
+        "suggestion": "Upgrade to PHP 7.4+ for best WordPress compatibility."
+      }
+    },
+    {
+      "id": "wordpress-php84",
+      "name": "WordPress + PHP 8.4",
+      "enabled": true,
+      "conditions": {
+        "projectType": { "exact": "wordpress" },
+        "phpVersion": { "min": "8.4" }
+      },
+      "result": {
+        "level": "info",
+        "message": "WordPress 6.4+ fully supports PHP 8.4, but some plugins may not be updated yet.",
+        "suggestion": "Test plugin compatibility before deploying to production."
+      }
+    },
+    {
+      "id": "mariadb-mysql-syntax",
+      "name": "MariaDB vs MySQL Syntax",
+      "enabled": true,
+      "conditions": {
+        "mariadb": { "any": true },
+        "projectType": { "exact": "laravel" }
+      },
+      "result": {
+        "level": "info",
+        "message": "MariaDB is MySQL-compatible but may have minor syntax differences in edge cases.",
+        "suggestion": "Laravel works great with MariaDB. Just ensure your database driver is set correctly."
+      }
+    },
+    {
+      "id": "mysql-8.4-caching-sha2",
+      "name": "MySQL 8.4 Default Authentication",
+      "enabled": true,
+      "conditions": {
+        "mysql": { "min": "8.4" },
+        "phpVersion": { "max": "8.0.99" }
+      },
+      "result": {
+        "level": "info",
+        "message": "MySQL 8.4 uses caching_sha2_password by default. Ensure your PHP MySQL extension supports it.",
+        "suggestion": "PHP 8.1+ has better support for modern MySQL authentication methods."
+      }
+    },
+    {
+      "id": "symfony-php-version",
+      "name": "Symfony 7 PHP Requirements",
+      "enabled": true,
+      "conditions": {
+        "projectType": { "exact": "symfony" },
+        "phpVersion": { "max": "8.19" }
+      },
+      "result": {
+        "level": "warning",
+        "message": "Symfony 7 requires PHP 8.2 or higher. PHP {phpVersion} is compatible with Symfony 6.x.",
+        "suggestion": "Use PHP 8.2+ for Symfony 7, or stick with Symfony 6 for older PHP versions."
+      }
+    },
+    {
+      "id": "redis-74-compatibility",
+      "name": "Redis 7.4 PHP Compatibility",
+      "enabled": true,
+      "conditions": {
+        "redis": { "min": "7.4" },
+        "phpVersion": { "max": "7.99" }
+      },
+      "result": {
+        "level": "info",
+        "message": "Redis 7.4 works with PHP 7.4 but some newer Redis features require updated phpredis extension.",
+        "suggestion": "Update phpredis extension to v6.0+ for best Redis 7.x compatibility."
+      }
+    },
+    {
+      "id": "node22-laravel-mix",
+      "name": "Node.js 22 + Laravel Mix",
+      "enabled": true,
+      "conditions": {
+        "projectType": { "exact": "laravel" },
+        "nodejs": { "min": "22" }
+      },
+      "result": {
+        "level": "info",
+        "message": "If using Laravel Mix (older Laravel projects), Node.js 22 may have compatibility issues.",
+        "suggestion": "Laravel 11+ uses Vite by default. For older projects with Mix, try Node.js 18 or 20."
+      }
+    },
+    {
+      "id": "nginx-old-mysql84",
+      "name": "Old Nginx + MySQL 8.4",
+      "enabled": true,
+      "conditions": {
+        "nginx": { "max": "1.24.99" },
+        "mysql": { "min": "8.4" }
+      },
+      "result": {
+        "level": "warning",
+        "message": "Nginx {nginxVersion} may have connection handling issues with MySQL 8.4's improved connection protocol.",
+        "suggestion": "Consider upgrading to Nginx 1.26+ for better compatibility with MySQL 8.4."
+      }
+    },
+    {
+      "id": "apache-old-mysql84",
+      "name": "Old Apache + MySQL 8.4",
+      "enabled": true,
+      "conditions": {
+        "apache": { "max": "2.4.49" },
+        "mysql": { "min": "8.4" }
+      },
+      "result": {
+        "level": "info",
+        "message": "Apache {apacheVersion} works with MySQL 8.4 but newer Apache versions have better performance.",
+        "suggestion": "Consider updating Apache to 2.4.58+ for optimal performance with MySQL 8.4."
+      }
+    },
+    {
+      "id": "nginx-old-php84",
+      "name": "Old Nginx + PHP 8.4",
+      "enabled": true,
+      "conditions": {
+        "nginx": { "max": "1.24.99" },
+        "phpVersion": { "min": "8.4" }
+      },
+      "result": {
+        "level": "info",
+        "message": "Nginx {nginxVersion} works with PHP 8.4 but Nginx 1.26+ has better FastCGI handling.",
+        "suggestion": "Upgrade to Nginx 1.26+ for improved PHP-FPM performance and HTTP/2 support."
+      }
+    },
+    {
+      "id": "apache-mod-php-deprecated",
+      "name": "Apache mod_php Deprecation",
+      "enabled": true,
+      "conditions": {
+        "webServer": { "exact": "apache" },
+        "phpVersion": { "min": "8.0" }
+      },
+      "result": {
+        "level": "info",
+        "message": "PHP 8+ recommends using PHP-FPM over mod_php for better performance and security.",
+        "suggestion": "DevBox Pro uses PHP-FPM by default for optimal Apache + PHP performance."
+      }
+    },
+    {
+      "id": "nginx-mariadb-114",
+      "name": "Old Nginx + MariaDB 11.4",
+      "enabled": true,
+      "conditions": {
+        "nginx": { "max": "1.24.99" },
+        "mariadb": { "min": "11.4" }
+      },
+      "result": {
+        "level": "info",
+        "message": "MariaDB 11.4 works with Nginx {nginxVersion}, but newer Nginx versions offer better upstream handling.",
+        "suggestion": "Consider Nginx 1.26+ for improved connection pooling with MariaDB 11.4."
+      }
+    },
+    {
+      "id": "webserver-mysql-connection-limits",
+      "name": "Web Server + MySQL 8.4 Connection Limits",
+      "enabled": true,
+      "conditions": {
+        "mysql": { "min": "8.4" }
+      },
+      "result": {
+        "level": "info",
+        "message": "MySQL 8.4 has improved connection handling. Ensure your web server is configured for connection pooling.",
+        "suggestion": "MySQL 8.4 defaults to a higher max_connections. Consider tuning based on your traffic needs."
+      }
+    }
+  ],
+  "deprecatedServices": {
+    "php": {
+      "7.4": {
+        "eolDate": "2022-11-28",
+        "status": "unsupported"
+      },
+      "8.0": {
+        "eolDate": "2023-11-26",
+        "status": "unsupported"
+      },
+      "8.1": {
+        "eolDate": "2025-12-31",
+        "status": "security-only"
+      },
+      "8.2": {
+        "eolDate": "2026-12-31",
+        "status": "active"
+      },
+      "8.3": {
+        "eolDate": "2027-12-31",
+        "status": "active"
+      },
+      "8.4": {
+        "eolDate": "2028-12-31",
+        "status": "active"
+      }
+    },
+    "mysql": {
+      "5.7": {
+        "eolDate": "2023-10-31",
+        "status": "unsupported"
+      },
+      "8.0": {
+        "eolDate": "2026-04-30",
+        "status": "active"
+      },
+      "8.4": {
+        "eolDate": "2032-04-30",
+        "status": "active"
+      }
+    },
+    "nodejs": {
+      "16": {
+        "eolDate": "2023-09-11",
+        "status": "unsupported"
+      },
+      "18": {
+        "eolDate": "2025-04-30",
+        "status": "maintenance"
+      },
+      "20": {
+        "eolDate": "2026-04-30",
+        "status": "active"
+      },
+      "22": {
+        "eolDate": "2027-04-30",
+        "status": "active"
+      }
+    }
+  },
+  "frameworkRequirements": {
+    "laravel": {
+      "11": { "phpMin": "8.2", "recommended": "8.3" },
+      "10": { "phpMin": "8.1", "recommended": "8.2" },
+      "9": { "phpMin": "8.0", "recommended": "8.1" }
+    },
+    "symfony": {
+      "7": { "phpMin": "8.2", "recommended": "8.3" },
+      "6.4": { "phpMin": "8.1", "recommended": "8.2" },
+      "6.0": { "phpMin": "8.0", "recommended": "8.1" }
+    },
+    "wordpress": {
+      "6.4+": { "phpMin": "7.4", "recommended": "8.2" }
+    }
+  },
+  "webServerRecommendations": {
+    "nginx": {
+      "recommended": "1.26",
+      "minimum": "1.24",
+      "notes": "1.26+ recommended for HTTP/2, HTTP/3 support and improved FastCGI handling"
+    },
+    "apache": {
+      "recommended": "2.4.58",
+      "minimum": "2.4",
+      "notes": "2.4.58+ includes important security fixes and HTTP/2 improvements"
+    }
+  },
+  "databaseRecommendations": {
+    "mysql": {
+      "8.4": { "recommendedNginx": "1.26+", "recommendedApache": "2.4.58+" },
+      "8.0": { "recommendedNginx": "1.24+", "recommendedApache": "2.4+" },
+      "5.7": { "recommendedNginx": "1.24+", "recommendedApache": "2.4+", "note": "Legacy - consider upgrading" }
+    },
+    "mariadb": {
+      "11.4": { "recommendedNginx": "1.26+", "recommendedApache": "2.4.58+" },
+      "10.11": { "recommendedNginx": "1.24+", "recommendedApache": "2.4+" },
+      "10.6": { "recommendedNginx": "1.24+", "recommendedApache": "2.4+" }
+    }
+  }
+}

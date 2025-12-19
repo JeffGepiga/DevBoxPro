@@ -30,6 +30,13 @@ contextBridge.exposeInMainWorld('devbox', {
     readEnv: (id) => ipcRenderer.invoke('projects:readEnv', id),
   },
 
+  // Compatibility operations
+  compatibility: {
+    checkForUpdates: () => ipcRenderer.invoke('compatibility:checkForUpdates'),
+    applyUpdates: () => ipcRenderer.invoke('compatibility:applyUpdates'),
+    getConfigInfo: () => ipcRenderer.invoke('compatibility:getConfigInfo'),
+  },
+
   // PHP operations
   php: {
     getVersions: () => ipcRenderer.invoke('php:getVersions'),
