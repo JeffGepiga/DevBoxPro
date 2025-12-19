@@ -54,6 +54,26 @@ This is an early **pre-release** of DevBox Pro – a standalone desktop applicat
 - Compatibility rules sync – updated version warnings
 - One-click update check from Settings
 
+### 💻 CLI Tool (dvp)
+Run PHP, Node.js, Composer, and npm commands with **project-specific versions** from any terminal or editor:
+
+```bash
+# Navigate to your project and run commands
+cd C:\Projects\my-laravel-app
+
+dvp php artisan migrate      # Uses project's PHP version
+dvp composer install         # Uses correct PHP for Composer
+dvp npm install              # Uses project's Node.js version
+dvp npm run dev              # Run npm scripts
+```
+
+**Why is this important?**
+- Prevents "wrong PHP version" errors when running artisan commands from VS Code
+- Ensures consistent behavior across different terminals and editors
+- No need to manually switch PHP/Node.js versions
+
+**Setup:** Go to Settings > CLI Tool > Install CLI > Add to PATH
+
 ---
 
 ## 📥 Downloads
@@ -63,7 +83,12 @@ This is an early **pre-release** of DevBox Pro – a standalone desktop applicat
 | **DevBox.Pro.Setup.1.0.0-BETA.exe** | Installer version (recommended) |
 | **DevBox.Pro.1.0.0-Portable-BETA.exe** | Portable version – no installation required |
 
-### System Requirements
+### 🍎 macOS Support
+
+> **Note**: macOS builds are not yet available. The application has not been tested on macOS. 
+> Please wait for a future release that includes macOS support. Stay tuned!
+
+### System Requirements (Windows)
 - **OS**: Windows 10/11 (64-bit)
 - **RAM**: 4GB minimum, 8GB recommended
 - **Disk**: 2GB for app + space for binaries

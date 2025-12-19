@@ -5,6 +5,7 @@ const net = require('net');
 const { app } = require('electron');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
+const { Transform } = require('stream');
 
 class DatabaseManager {
   constructor(resourcePath, configStore, managers = {}) {
@@ -329,10 +330,16 @@ class DatabaseManager {
             resolve([]);
           }
         } else {
-          const rows = stdout.trim().split('\n').filter(Boolean).map(row => {
-            const cols = row.split('\t');
-            return cols.length === 1 ? { value: cols[0] } : cols;
-          });
+          const rows = stdout
+            .replace(/\r\n/g, '\n')  // Normalize Windows line endings
+            .replace(/\r/g, '')       // Remove stray carriage returns
+            .trim()
+            .split('\n')
+            .filter(Boolean)
+            .map(row => {
+              const cols = row.split('\t').map(c => c.trim());
+              return cols.length === 1 ? { value: cols[0] } : cols;
+            });
           resolve(rows);
         }
       });
@@ -435,32 +442,12 @@ class DatabaseManager {
           await this.dropAllTables(safeName);
         }
 
-        let sqlContent;
+        // Get file size for progress tracking
+        const fileStats = await fs.stat(filePath);
+        const totalSize = fileStats.size;
+        let processedBytes = 0;
         
-        // Read and decompress if needed
-        if (isGzipped) {
-          progressCallback?.({ status: 'decompressing', message: 'Decompressing backup file...' });
-          const gzContent = await fs.readFile(filePath);
-          sqlContent = await new Promise((res, rej) => {
-            zlib.gunzip(gzContent, (err, result) => {
-              if (err) rej(err);
-              else res(result.toString('utf8'));
-            });
-          });
-        } else {
-          sqlContent = await fs.readFile(filePath, 'utf8');
-        }
-
-        // Process SQL to remove virtual column definitions that may cause issues
-        progressCallback?.({ status: 'processing', message: 'Processing SQL content...' });
-        const processedSql = this.processImportSql(sqlContent);
-
-        // Create temporary processed SQL file
-        const tempDir = app.getPath('temp');
-        const tempFile = path.join(tempDir, `import_${Date.now()}.sql`);
-        await fs.writeFile(tempFile, processedSql);
-
-        progressCallback?.({ status: 'importing', message: 'Importing to database...' });
+        progressCallback?.({ status: 'importing', message: 'Importing to database (streaming)...', progress: 0 });
 
         const args = [
           `-h${this.dbConfig.host}`,
@@ -480,18 +467,60 @@ class DatabaseManager {
           windowsHide: true,
         });
 
-        const fileStream = fs.createReadStream(tempFile);
-        fileStream.pipe(proc.stdin);
-
         let stderr = '';
         proc.stderr.on('data', (data) => {
           stderr += data.toString();
         });
 
-        proc.on('close', async (code) => {
-          // Clean up temp file
-          await fs.remove(tempFile).catch(() => {});
+        // Create read stream with progress tracking
+        const readStream = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 }); // 64KB chunks
+        
+        readStream.on('data', (chunk) => {
+          processedBytes += chunk.length;
+          const progress = Math.round((processedBytes / totalSize) * 100);
+          // Update progress every ~5%
+          if (progress % 5 === 0) {
+            const sizeMB = (processedBytes / (1024 * 1024)).toFixed(1);
+            const totalMB = (totalSize / (1024 * 1024)).toFixed(1);
+            progressCallback?.({ 
+              status: 'importing', 
+              message: `Importing... ${sizeMB}MB / ${totalMB}MB (${progress}%)`,
+              progress 
+            });
+          }
+        });
+
+        // Create SQL processor transform stream to handle generated columns
+        const sqlProcessor = this.createSqlProcessorStream();
+
+        // Set up the pipeline
+        if (isGzipped) {
+          progressCallback?.({ status: 'importing', message: 'Decompressing and importing (streaming)...', progress: 0 });
           
+          // Use streaming decompression - much faster and memory efficient
+          const gunzip = zlib.createGunzip();
+          
+          gunzip.on('error', (err) => {
+            proc.stdin.end();
+            reject(new Error(`Decompression error: ${err.message}`));
+          });
+          
+          readStream.pipe(gunzip).pipe(sqlProcessor).pipe(proc.stdin);
+        } else {
+          readStream.pipe(sqlProcessor).pipe(proc.stdin);
+        }
+
+        readStream.on('error', (err) => {
+          proc.stdin.end();
+          reject(new Error(`Read error: ${err.message}`));
+        });
+
+        sqlProcessor.on('error', (err) => {
+          proc.stdin.end();
+          reject(new Error(`SQL processing error: ${err.message}`));
+        });
+
+        proc.on('close', (code) => {
           if (code === 0) {
             console.log(`Database ${databaseName} imported successfully`);
             progressCallback?.({ status: 'complete', message: 'Import completed successfully!' });
@@ -503,8 +532,7 @@ class DatabaseManager {
           }
         });
 
-        proc.on('error', async (error) => {
-          await fs.remove(tempFile).catch(() => {});
+        proc.on('error', (error) => {
           progressCallback?.({ status: 'error', message: `Import error: ${error.message}` });
           reject(error);
         });
@@ -513,6 +541,380 @@ class DatabaseManager {
         reject(error);
       }
     });
+  }
+
+  /**
+   * Create a Transform stream that processes SQL to handle generated columns
+   * - Tracks CREATE TABLE statements to identify generated columns by POSITION
+   * - REMOVES generated column definitions from CREATE TABLE
+   * - Modifies INSERT statements to remove values at those positions
+   */
+  createSqlProcessorStream() {
+    const self = this;
+    let buffer = '';
+    const generatedColumns = new Map(); // tableName (lowercase) -> array of column indices
+
+    console.log('[SQL Processor] Stream initialized');
+
+    return new Transform({
+      transform(chunk, encoding, callback) {
+        buffer += chunk.toString('utf8');
+        
+        // Find the last complete statement
+        let processUpTo = -1;
+        
+        for (let i = buffer.length - 1; i >= 0; i--) {
+          if (buffer[i] === ';') {
+            const after = buffer.substring(i + 1, i + 20);
+            if (!after || /^[\s\r\n]*($|--|\/\*|INSERT|CREATE|DROP|LOCK|UNLOCK|ALTER|SET)/i.test(after)) {
+              processUpTo = i;
+              break;
+            }
+          }
+        }
+        
+        if (processUpTo === -1) {
+          if (buffer.length > 10 * 1024 * 1024) {
+            console.log('[SQL Processor] Buffer too large, flushing');
+            this.push(buffer);
+            buffer = '';
+          }
+          callback();
+          return;
+        }
+        
+        let toProcess = buffer.substring(0, processUpTo + 1);
+        buffer = buffer.substring(processUpTo + 1);
+        
+        // First pass: Find and modify CREATE TABLE statements
+        toProcess = toProcess.replace(
+          /CREATE TABLE\s+`(\w+)`\s*\(([\s\S]*?)\)\s*(ENGINE[\s\S]*?;)/gi,
+          (match, tableName, tableDefinition, enginePart) => {
+            const tableNameLower = tableName.toLowerCase();
+            
+            // Split by lines and process
+            const lines = tableDefinition.split('\n');
+            const filteredLines = [];
+            let columnIndex = 0;
+            const virtualIndices = [];
+            
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              const trimmed = line.trim();
+              
+              // Skip empty lines
+              if (!trimmed) {
+                continue;
+              }
+              
+              // Keep PRIMARY KEY, KEY, CONSTRAINT, etc. as-is
+              if (/^(PRIMARY KEY|KEY|UNIQUE KEY|CONSTRAINT|FOREIGN KEY|INDEX|CHECK)\b/i.test(trimmed)) {
+                filteredLines.push(trimmed);
+                continue;
+              }
+              
+              // Check if this is a column definition
+              const colMatch = trimmed.match(/^`(\w+)`/);
+              if (colMatch) {
+                const columnName = colMatch[1];
+                
+                // Check if it's a virtual/generated column
+                if (/GENERATED\s+ALWAYS\s+AS|AS\s*\(.*\)\s*(VIRTUAL|STORED)/i.test(trimmed)) {
+                  virtualIndices.push(columnIndex);
+                  console.log(`[SQL Processor] Removing generated column: ${tableName}.${columnName} at position ${columnIndex}`);
+                  columnIndex++;
+                  // Don't add this line
+                  continue;
+                }
+                
+                columnIndex++;
+              }
+              
+              filteredLines.push(trimmed);
+            }
+            
+            if (virtualIndices.length > 0) {
+              generatedColumns.set(tableNameLower, virtualIndices);
+              console.log(`[SQL Processor] Table '${tableName}' has ${virtualIndices.length} generated columns removed`);
+              
+              // Rebuild with proper commas
+              // Remove trailing commas from all lines first
+              const cleanedLines = filteredLines.map(line => line.replace(/,\s*$/, ''));
+              
+              // Add commas to all lines except the last one
+              const finalLines = cleanedLines.map((line, idx) => {
+                if (idx < cleanedLines.length - 1) {
+                  return '  ' + line + ',';
+                }
+                return '  ' + line;
+              });
+              
+              const newDefinition = '\n' + finalLines.join('\n') + '\n';
+              return `CREATE TABLE \`${tableName}\` (${newDefinition}) ${enginePart}`;
+            }
+            
+            return match;
+          }
+        );
+        
+        // Second pass: Process INSERT statements
+        const insertRegex = /INSERT INTO `(\w+)` VALUES\s*/gi;
+        let lastIndex = 0;
+        let result = '';
+        let insertMatch;
+        
+        while ((insertMatch = insertRegex.exec(toProcess)) !== null) {
+          const tableName = insertMatch[1].toLowerCase();
+          const virtualIndices = generatedColumns.get(tableName);
+          
+          result += toProcess.substring(lastIndex, insertMatch.index);
+          
+          if (!virtualIndices || virtualIndices.length === 0) {
+            result += insertMatch[0];
+            lastIndex = insertRegex.lastIndex;
+            continue;
+          }
+          
+          console.log(`[SQL Processor] Processing INSERT for ${insertMatch[1]}, removing positions: ${virtualIndices.join(', ')}`);
+          
+          const valuesStart = insertRegex.lastIndex;
+          let valuesEnd = toProcess.indexOf(';', valuesStart);
+          if (valuesEnd === -1) valuesEnd = toProcess.length;
+          
+          const valuesSection = toProcess.substring(valuesStart, valuesEnd);
+          const processedValues = self.removeColumnsFromValues(valuesSection, virtualIndices);
+          
+          result += `INSERT INTO \`${insertMatch[1]}\` VALUES ${processedValues}`;
+          lastIndex = valuesEnd;
+        }
+        
+        result += toProcess.substring(lastIndex);
+        
+        this.push(result);
+        callback();
+      },
+      
+      flush(callback) {
+        if (buffer.trim()) {
+          console.log('[SQL Processor] Flushing remaining buffer');
+          this.push(buffer);
+        }
+        callback();
+      }
+    });
+  }
+
+  /**
+   * Remove values at specified indices from a VALUES clause
+   * Handles multiple value sets: (a,b,c),(d,e,f)
+   */
+  removeColumnsFromValues(valuesSection, indicesToRemove) {
+    if (indicesToRemove.length === 0) return valuesSection;
+    
+    // Parse value sets using proper state machine
+    const valueSets = this.parseValueSets(valuesSection);
+    
+    console.log(`[SQL Processor] Parsed ${valueSets.length} value sets, removing indices: ${indicesToRemove.join(', ')}`);
+    
+    // Process each value set
+    const processedSets = valueSets.map((valueSet, setIdx) => {
+      const values = this.splitValues(valueSet);
+      
+      if (setIdx === 0) {
+        console.log(`[SQL Processor] First value set has ${values.length} values, removing ${indicesToRemove.length} at indices: ${indicesToRemove.join(',')}`);
+        console.log(`[SQL Processor] Values preview: ${values.slice(0, 3).map(v => v.substring(0, 20)).join(' | ')} ...`);
+      }
+      
+      // Filter out the generated column indices
+      const filteredValues = [];
+      for (let i = 0; i < values.length; i++) {
+        if (!indicesToRemove.includes(i)) {
+          filteredValues.push(values[i]);
+        }
+      }
+      
+      if (setIdx === 0) {
+        console.log(`[SQL Processor] After removal: ${filteredValues.length} values`);
+      }
+      
+      return '(' + filteredValues.join(',') + ')';
+    });
+    
+    return processedSets.join(',');
+  }
+
+  /**
+   * Parse value sets from VALUES section: (v1,v2),(v3,v4),...
+   */
+  parseValueSets(valuesSection) {
+    const valueSets = [];
+    let current = '';
+    let depth = 0;
+    let inString = false;
+    let stringChar = '';
+    let i = 0;
+    
+    while (i < valuesSection.length) {
+      const char = valuesSection[i];
+      const nextChar = valuesSection[i + 1] || '';
+      
+      // Handle escape sequences in strings
+      if (inString && char === '\\') {
+        current += char + nextChar;
+        i += 2;
+        continue;
+      }
+      
+      // Handle doubled quotes (MySQL escape)
+      if (inString && char === stringChar && nextChar === stringChar) {
+        current += char + nextChar;
+        i += 2;
+        continue;
+      }
+      
+      // Toggle string state
+      if ((char === "'" || char === '"') && !inString) {
+        inString = true;
+        stringChar = char;
+        current += char;
+        i++;
+        continue;
+      }
+      
+      if (inString && char === stringChar) {
+        inString = false;
+        stringChar = '';
+        current += char;
+        i++;
+        continue;
+      }
+      
+      // Handle parentheses only when not in string
+      if (!inString) {
+        if (char === '(') {
+          if (depth === 0) {
+            // Start of a new value set
+            current = '';
+          } else {
+            current += char;
+          }
+          depth++;
+          i++;
+          continue;
+        }
+        
+        if (char === ')') {
+          depth--;
+          if (depth === 0) {
+            // End of a value set
+            valueSets.push(current);
+            current = '';
+          } else {
+            current += char;
+          }
+          i++;
+          continue;
+        }
+        
+        // Skip commas between value sets (depth 0)
+        if (char === ',' && depth === 0) {
+          i++;
+          continue;
+        }
+      }
+      
+      // Add character if we're inside a value set
+      if (depth > 0) {
+        current += char;
+      }
+      i++;
+    }
+    
+    return valueSets;
+  }
+
+  /**
+   * Split a single value set into individual values
+   * Input: "val1,val2,'string,with,commas',val4"
+   */
+  splitValues(valueSet) {
+    const values = [];
+    let current = '';
+    let inString = false;
+    let stringChar = '';
+    let parenDepth = 0;
+    let i = 0;
+    
+    while (i < valueSet.length) {
+      const char = valueSet[i];
+      const nextChar = valueSet[i + 1] || '';
+      
+      // Handle escape sequences
+      if (inString && char === '\\') {
+        current += char + nextChar;
+        i += 2;
+        continue;
+      }
+      
+      // Handle doubled quotes (MySQL escape)
+      if (inString && char === stringChar && nextChar === stringChar) {
+        current += char + nextChar;
+        i += 2;
+        continue;
+      }
+      
+      // Toggle string state
+      if ((char === "'" || char === '"') && !inString) {
+        inString = true;
+        stringChar = char;
+        current += char;
+        i++;
+        continue;
+      }
+      
+      if (inString && char === stringChar) {
+        inString = false;
+        stringChar = '';
+        current += char;
+        i++;
+        continue;
+      }
+      
+      // Track nested parentheses (for functions like NOW(), CONCAT())
+      if (!inString) {
+        if (char === '(') {
+          parenDepth++;
+          current += char;
+          i++;
+          continue;
+        }
+        
+        if (char === ')') {
+          parenDepth--;
+          current += char;
+          i++;
+          continue;
+        }
+        
+        // Split on comma only when not in string and not in nested parens
+        if (char === ',' && parenDepth === 0) {
+          values.push(current);
+          current = '';
+          i++;
+          continue;
+        }
+      }
+      
+      current += char;
+      i++;
+    }
+    
+    // Don't forget the last value
+    if (current !== '' || values.length > 0) {
+      values.push(current);
+    }
+    
+    return values;
   }
 
   /**
@@ -671,13 +1073,15 @@ class DatabaseManager {
 
       proc.on('close', (code) => {
         if (code === 0) {
-          // Parse results
+          // Parse results - handle both Unix (\n) and Windows (\r\n) line endings
           const rows = stdout
+            .replace(/\r\n/g, '\n')  // Normalize Windows line endings
+            .replace(/\r/g, '')       // Remove any stray carriage returns
             .trim()
             .split('\n')
             .filter((line) => line.length > 0)
             .map((line) => {
-              const columns = line.split('\t');
+              const columns = line.split('\t').map(col => col.trim());
               // For SHOW DATABASES, first column is Database
               if (query.toLowerCase().includes('show databases')) {
                 return { Database: columns[0] };
@@ -718,23 +1122,14 @@ class DatabaseManager {
       
       console.log(`Dropping ${tables.length} tables in ${databaseName}...`);
       
-      // Disable foreign key checks to avoid constraint issues
-      await this.runDbQuery('SET FOREIGN_KEY_CHECKS = 0', databaseName);
+      // Build a single SQL statement with foreign key checks disabled
+      // This ensures everything runs in the same session
+      const dropStatements = tables.map(table => `DROP TABLE IF EXISTS \`${table}\``).join('; ');
+      const combinedSql = `SET FOREIGN_KEY_CHECKS = 0; ${dropStatements}; SET FOREIGN_KEY_CHECKS = 1;`;
       
-      // Drop each table
-      for (const table of tables) {
-        try {
-          await this.runDbQuery(`DROP TABLE IF EXISTS \`${table}\``, databaseName);
-          console.log(`Dropped table: ${table}`);
-        } catch (error) {
-          console.warn(`Warning: Could not drop table ${table}: ${error.message}`);
-        }
-      }
+      await this.runDbQuery(combinedSql, databaseName);
       
-      // Re-enable foreign key checks
-      await this.runDbQuery('SET FOREIGN_KEY_CHECKS = 1', databaseName);
-      
-      console.log(`All tables dropped from ${databaseName}`);
+      console.log(`All ${tables.length} tables dropped from ${databaseName}`);
     } catch (error) {
       console.error(`Error dropping tables in ${databaseName}:`, error);
       throw error;
@@ -743,7 +1138,7 @@ class DatabaseManager {
 
   async getTables(databaseName) {
     const result = await this.runDbQuery('SHOW TABLES', databaseName);
-    return result.map((row) => row[0]);
+    return result.map((row) => (row[0] || '').replace(/[\r\n]/g, '').trim()).filter(name => name.length > 0);
   }
 
   async getTableStructure(databaseName, tableName) {

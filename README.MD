@@ -72,6 +72,13 @@ DevBox Pro is a standalone desktop application that provides everything you need
 - **Offline fallback** - Built-in defaults when offline
 - **Version tracking** - Only download when updates are available
 
+### 💻 CLI Tool (dvp)
+- **External terminal support** - Use project-specific PHP/Node.js from VS Code, Windows Terminal, or any editor
+- **Automatic version detection** - Detects your project and uses the correct versions
+- **Customizable alias** - Change from `dvp` to any alias you prefer
+- **Commands supported**: `php`, `composer`, `node`, `npm`, `npx`
+- **Prevents version conflicts** - No more "wrong PHP version" issues when running artisan commands
+
 ### 📊 Logging & Monitoring
 - **Real-time log streaming** per project and service
 - **Color-coded log levels** (info, warning, error)
@@ -148,6 +155,36 @@ DevBox Pro is a standalone desktop application that provides everything you need
 4. Configure **services** (MySQL, Redis, etc.)
 5. Set your **domain** (e.g., `myproject.test`)
 6. Click **Create** and you're ready!
+
+### Using the CLI Tool
+
+The CLI tool allows you to run commands with project-specific versions from any terminal:
+
+1. Go to **Settings > CLI Tool** in DevBox Pro
+2. Click **"Install CLI"**
+3. Click **"Add to PATH"** (or follow manual instructions)
+4. Restart your terminal
+
+**Usage examples:**
+```bash
+# Navigate to your project folder
+cd C:\Projects\my-laravel-app
+
+# Run PHP with project-specific version
+dvp php artisan migrate
+dvp php artisan optimize
+
+# Run Composer with correct PHP version
+dvp composer install
+dvp composer update
+
+# Run Node.js/npm with project version (if enabled)
+dvp npm install
+dvp npm run dev
+dvp npx vite build
+```
+
+> **Why use this?** When you open a terminal in VS Code or run commands from external tools, they use your system's default PHP/Node.js version. The `dvp` CLI ensures the correct project-specific version is always used.
 
 ---
 
