@@ -238,6 +238,25 @@ async function startup() {
       await managers.service.startCoreServices();
     }
 
+    // Auto-start projects that have autoStart enabled
+    try {
+      const projects = managers.project.getProjects();
+      const autoStartProjects = projects.filter(p => p.autoStart);
+      if (autoStartProjects.length > 0) {
+        console.log(`Auto-starting ${autoStartProjects.length} project(s)...`);
+        for (const project of autoStartProjects) {
+          try {
+            console.log(`Auto-starting project: ${project.name}`);
+            await managers.project.startProject(project.id);
+          } catch (err) {
+            console.error(`Failed to auto-start project ${project.name}:`, err.message);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error auto-starting projects:', err);
+    }
+
     console.log('DevBox Pro started successfully!');
   } catch (error) {
     console.error('Failed to start DevBox Pro:', error);

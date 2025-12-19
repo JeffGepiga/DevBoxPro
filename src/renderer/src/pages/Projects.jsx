@@ -30,6 +30,10 @@ function Projects() {
   const [isScanning, setIsScanning] = useState(false);
   const [showDiscovered, setShowDiscovered] = useState(true);
   const [importModal, setImportModal] = useState({ open: false, project: null });
+  const [deleteModal, setDeleteModal] = useState({ open: false, project: null });
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteFiles, setDeleteFiles] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const filteredProjects = projects.filter((project) => {
     const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -42,10 +46,33 @@ function Projects() {
     return matchesSearch && matchesType && matchesStatus;
   });
 
-  const handleDelete = async (id, name) => {
-    if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
-      await deleteProject(id);
+  const handleDeleteClick = (project) => {
+    setDeleteModal({ open: true, project });
+    setDeleteConfirmText('');
+    setDeleteFiles(false);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deleteConfirmText !== 'delete' || !deleteModal.project) return;
+    
+    setIsDeleting(true);
+    try {
+      await deleteProject(deleteModal.project.id, deleteFiles);
+      setDeleteModal({ open: false, project: null });
+      setDeleteConfirmText('');
+      setDeleteFiles(false);
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+      alert('Failed to delete project: ' + error.message);
+    } finally {
+      setIsDeleting(false);
     }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteModal({ open: false, project: null });
+    setDeleteConfirmText('');
+    setDeleteFiles(false);
   };
 
   const handleScanProjects = async () => {
@@ -207,7 +234,7 @@ function Projects() {
               project={project}
               onStart={() => startProject(project.id)}
               onStop={() => stopProject(project.id)}
-              onDelete={() => handleDelete(project.id, project.name)}
+              onDelete={() => handleDeleteClick(project)}
               defaultEditor={settings?.settings?.defaultEditor}
             />
           ))}
@@ -239,6 +266,92 @@ function Projects() {
           onClose={() => setImportModal({ open: false, project: null })}
           onImport={handleImportProject}
         />
+      )}
+
+      {/* Delete Project Modal */}
+      {deleteModal.open && deleteModal.project && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-red-500" />
+                Delete Project
+              </h3>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{deleteModal.project.name}</strong>?
+              </p>
+
+              {/* Delete files option */}
+              <label className="flex items-start gap-3 p-3 mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={deleteFiles}
+                  onChange={(e) => setDeleteFiles(e.target.checked)}
+                  className="mt-0.5 rounded border-red-300 text-red-600 focus:ring-red-500"
+                />
+                <div>
+                  <p className="font-medium text-red-700 dark:text-red-400">
+                    Also delete project files
+                  </p>
+                  <p className="text-xs text-red-600 dark:text-red-500 mt-1">
+                    ⚠️ This will permanently delete all files in the project folder!
+                  </p>
+                </div>
+              </label>
+
+              {/* Confirmation input */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Type <span className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">delete</span> to confirm:
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value.toLowerCase())}
+                  placeholder="delete"
+                  className="input w-full"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+              <button
+                onClick={handleDeleteCancel}
+                className="btn-secondary"
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deleteConfirmText !== 'delete' || isDeleting}
+                className={clsx(
+                  'btn-danger',
+                  deleteConfirmText !== 'delete' && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    {deleteFiles ? 'Delete Project & Files' : 'Delete Project'}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
