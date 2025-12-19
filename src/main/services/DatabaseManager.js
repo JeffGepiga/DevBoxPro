@@ -105,22 +105,132 @@ class DatabaseManager {
     return false;
   }
 
-  // Reset database credentials
+  // Reset database credentials by restarting with skip-grant-tables
   async resetCredentials(newUser = 'root', newPassword = '') {
     const dbType = this.getActiveDatabaseType();
     console.log(`Resetting ${dbType} credentials: user=${newUser}`);
 
     try {
-      // Update the root password using ALTER USER
-      if (newPassword) {
-        await this.runDbQuery(`ALTER USER '${newUser}'@'localhost' IDENTIFIED BY '${newPassword}'`);
-        await this.runDbQuery(`ALTER USER '${newUser}'@'127.0.0.1' IDENTIFIED BY '${newPassword}'`);
-      } else {
-        // Set empty password
-        await this.runDbQuery(`ALTER USER '${newUser}'@'localhost' IDENTIFIED BY ''`);
-        await this.runDbQuery(`ALTER USER '${newUser}'@'127.0.0.1' IDENTIFIED BY ''`);
+      // Check if service manager is available
+      if (!this.managers.service) {
+        throw new Error('Service manager not available');
       }
-      await this.runDbQuery('FLUSH PRIVILEGES');
+
+      // Force stop the database service and kill any orphan processes
+      console.log(`Stopping ${dbType} for credential reset...`);
+      try {
+        await this.managers.service.stopService(dbType);
+      } catch (e) {
+        console.log(`Stop service warning: ${e.message}`);
+      }
+      
+      // Kill any remaining processes
+      if (dbType === 'mysql') {
+        await this.managers.service.killOrphanMySQLProcesses?.();
+      } else {
+        await this.managers.service.killOrphanMariaDBProcesses?.();
+      }
+      
+      // Wait for service to fully stop
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Start with skip-grant-tables
+      console.log(`Starting ${dbType} with skip-grant-tables...`);
+      await this.managers.service.startServiceWithOptions(dbType, { skipGrantTables: true });
+      
+      // Wait a bit more for service to be fully ready
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Now run the credential reset queries (no auth needed with skip-grant-tables)
+      const passwordClause = newPassword ? `'${newPassword}'` : "''";
+      
+      let querySuccess = false;
+      try {
+        // For MySQL 8.0+ we need to flush privileges first when using skip-grant-tables
+        console.log('Flushing privileges...');
+        await this.runDbQueryNoAuth(`FLUSH PRIVILEGES`);
+        
+        // Create/update users - wrap each in try/catch to continue on partial failure
+        console.log('Creating/updating users...');
+        try {
+          await this.runDbQueryNoAuth(`CREATE USER IF NOT EXISTS '${newUser}'@'localhost' IDENTIFIED BY ${passwordClause}`);
+        } catch (e) { console.log(`Create user localhost: ${e.message}`); }
+        
+        try {
+          await this.runDbQueryNoAuth(`CREATE USER IF NOT EXISTS '${newUser}'@'127.0.0.1' IDENTIFIED BY ${passwordClause}`);
+        } catch (e) { console.log(`Create user 127.0.0.1: ${e.message}`); }
+        
+        try {
+          await this.runDbQueryNoAuth(`CREATE USER IF NOT EXISTS '${newUser}'@'%' IDENTIFIED BY ${passwordClause}`);
+        } catch (e) { console.log(`Create user %: ${e.message}`); }
+        
+        // Alter passwords
+        console.log('Setting passwords...');
+        if (newPassword) {
+          try {
+            await this.runDbQueryNoAuth(`ALTER USER '${newUser}'@'localhost' IDENTIFIED BY '${newPassword}'`);
+          } catch (e) { console.log(`Alter user localhost: ${e.message}`); }
+          try {
+            await this.runDbQueryNoAuth(`ALTER USER '${newUser}'@'127.0.0.1' IDENTIFIED BY '${newPassword}'`);
+          } catch (e) { console.log(`Alter user 127.0.0.1: ${e.message}`); }
+          try {
+            await this.runDbQueryNoAuth(`ALTER USER '${newUser}'@'%' IDENTIFIED BY '${newPassword}'`);
+          } catch (e) { console.log(`Alter user %: ${e.message}`); }
+        } else {
+          try {
+            await this.runDbQueryNoAuth(`ALTER USER '${newUser}'@'localhost' IDENTIFIED BY ''`);
+          } catch (e) { console.log(`Alter user localhost: ${e.message}`); }
+          try {
+            await this.runDbQueryNoAuth(`ALTER USER '${newUser}'@'127.0.0.1' IDENTIFIED BY ''`);
+          } catch (e) { console.log(`Alter user 127.0.0.1: ${e.message}`); }
+          try {
+            await this.runDbQueryNoAuth(`ALTER USER '${newUser}'@'%' IDENTIFIED BY ''`);
+          } catch (e) { console.log(`Alter user %: ${e.message}`); }
+        }
+        
+        // Grant privileges
+        console.log('Granting privileges...');
+        try {
+          await this.runDbQueryNoAuth(`GRANT ALL PRIVILEGES ON *.* TO '${newUser}'@'localhost' WITH GRANT OPTION`);
+        } catch (e) { console.log(`Grant localhost: ${e.message}`); }
+        try {
+          await this.runDbQueryNoAuth(`GRANT ALL PRIVILEGES ON *.* TO '${newUser}'@'127.0.0.1' WITH GRANT OPTION`);
+        } catch (e) { console.log(`Grant 127.0.0.1: ${e.message}`); }
+        try {
+          await this.runDbQueryNoAuth(`GRANT ALL PRIVILEGES ON *.* TO '${newUser}'@'%' WITH GRANT OPTION`);
+        } catch (e) { console.log(`Grant %: ${e.message}`); }
+        
+        await this.runDbQueryNoAuth('FLUSH PRIVILEGES');
+        querySuccess = true;
+        console.log('Credential queries completed successfully');
+      } catch (queryError) {
+        console.error('Error running credential queries:', queryError);
+      }
+
+      // Stop the service again
+      console.log(`Stopping ${dbType} skip-grant-tables mode...`);
+      try {
+        await this.managers.service.stopService(dbType);
+      } catch (e) {
+        console.log(`Stop service warning: ${e.message}`);
+      }
+      
+      // Kill any remaining processes
+      if (dbType === 'mysql') {
+        await this.managers.service.killOrphanMySQLProcesses?.();
+      } else {
+        await this.managers.service.killOrphanMariaDBProcesses?.();
+      }
+      
+      // Wait for service to fully stop
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Restart normally
+      console.log(`Restarting ${dbType} normally...`);
+      await this.managers.service.startService(dbType);
+      
+      // Wait for service to start
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Save the new credentials in settings
       this.configStore.setSetting('dbUser', newUser);
@@ -134,8 +244,101 @@ class DatabaseManager {
       return { success: true };
     } catch (error) {
       console.error('Error resetting credentials:', error);
+      // Try to restart the service normally if something went wrong
+      try {
+        await this.managers.service?.startService(dbType);
+      } catch (e) {
+        console.error('Error restarting service:', e);
+      }
       throw new Error(`Failed to reset credentials: ${error.message}`);
     }
+  }
+
+  // Run a query without authentication (for skip-grant-tables mode)
+  // Uses named pipe on Windows since MySQL 8.0+ skip-grant-tables disables networking
+  async runDbQueryNoAuth(query, database = null) {
+    const clientPath = this.getDbClientPath();
+    const dbType = this.getActiveDatabaseType();
+    const settings = this.configStore.get('settings', {});
+    const defaults = { mysql: '8.4', mariadb: '11.4' };
+    const version = settings[`${dbType}Version`] || defaults[dbType];
+
+    return new Promise((resolve, reject) => {
+      let args;
+      
+      if (process.platform === 'win32') {
+        // On Windows, use named pipe since skip-grant-tables disables TCP
+        const pipeName = dbType === 'mysql' 
+          ? `MYSQL_${version.replace(/\./g, '')}_SKIP`
+          : `MARIADB_${version.replace(/\./g, '')}_SKIP`;
+        args = [
+          `--pipe`,
+          `--socket=${pipeName}`,
+          '-uroot',
+          '-N',
+          '-B',
+          '-e',
+          query,
+        ];
+      } else {
+        // On Unix, use socket file
+        const { app } = require('electron');
+        const dataPath = path.join(app.getPath('userData'), 'data');
+        const socketPath = dbType === 'mysql'
+          ? path.join(dataPath, 'mysql', version, 'data', 'mysql_skip.sock')
+          : path.join(dataPath, 'mariadb', version, 'data', 'mariadb_skip.sock');
+        args = [
+          `--socket=${socketPath}`,
+          '-uroot',
+          '-N',
+          '-B',
+          '-e',
+          query,
+        ];
+      }
+
+      if (database) {
+        args.push(database);
+      }
+
+      console.log(`Running query with args:`, args.join(' '));
+
+      const proc = spawn(clientPath, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          console.warn(`Query warning: ${stderr}`);
+          // Don't reject for warnings, only for errors
+          if (stderr.includes('ERROR')) {
+            reject(new Error(`Query failed: ${stderr}`));
+          } else {
+            resolve([]);
+          }
+        } else {
+          const rows = stdout.trim().split('\n').filter(Boolean).map(row => {
+            const cols = row.split('\t');
+            return cols.length === 1 ? { value: cols[0] } : cols;
+          });
+          resolve(rows);
+        }
+      });
+
+      proc.on('error', reject);
+    });
   }
 
   getConnections() {

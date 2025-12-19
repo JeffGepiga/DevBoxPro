@@ -262,6 +262,350 @@ class ServiceManager extends EventEmitter {
     }
   }
 
+  // Start a service with special options (like skip-grant-tables for credential reset)
+  async startServiceWithOptions(serviceName, options = {}) {
+    if (serviceName !== 'mysql' && serviceName !== 'mariadb') {
+      throw new Error('startServiceWithOptions only supports mysql and mariadb');
+    }
+
+    const config = this.serviceConfigs[serviceName];
+    const defaults = { mysql: '8.4', mariadb: '11.4' };
+    const version = defaults[serviceName];
+
+    if (options.skipGrantTables) {
+      console.log(`Starting ${serviceName} ${version} with skip-grant-tables...`);
+      
+      if (serviceName === 'mysql') {
+        await this.startMySQLWithSkipGrant(version);
+      } else {
+        await this.startMariaDBWithSkipGrant(version);
+      }
+      
+      const status = this.serviceStatus.get(serviceName);
+      status.status = 'running';
+      status.startedAt = new Date();
+      status.version = version;
+      
+      return { success: true, service: serviceName, version };
+    }
+    
+    // Otherwise use normal start
+    return this.startService(serviceName, version);
+  }
+
+  async startMySQLWithSkipGrant(version = '8.4') {
+    const mysqlPath = this.getMySQLPath(version);
+    const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
+    
+    if (!await fs.pathExists(mysqldPath)) {
+      throw new Error(`MySQL ${version} binary not found`);
+    }
+
+    // Kill any orphan processes
+    await this.killOrphanMySQLProcesses();
+
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataDir = path.join(dataPath, 'mysql', version, 'data');
+    
+    // Use the same port detection as normal start
+    const defaultPort = this.getVersionPort('mysql', version, this.serviceConfigs.mysql.defaultPort);
+    let port = defaultPort;
+    
+    if (!await isPortAvailable(port)) {
+      port = await findAvailablePort(defaultPort, 100);
+    }
+    
+    this.serviceConfigs.mysql.actualPort = port;
+
+    // Create a temporary config with skip-grant-tables
+    const configPath = path.join(dataPath, 'mysql', version, 'my_skipgrant.cnf');
+    await this.createMySQLConfigWithSkipGrant(configPath, dataDir, port, version);
+
+    console.log(`Starting MySQL ${version} with skip-grant-tables on port ${port}...`);
+    
+    let proc;
+    if (process.platform === 'win32') {
+      proc = spawnHidden(mysqldPath, [`--defaults-file=${configPath}`], {
+        cwd: mysqlPath,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } else {
+      proc = spawn(mysqldPath, [`--defaults-file=${configPath}`], {
+        cwd: mysqlPath,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
+    }
+    
+    // Track when MySQL reports ready
+    let mysqlReady = false;
+    
+    proc.stdout?.on('data', (data) => {
+      const output = data.toString().trim();
+      console.log('[MySQL skip-grant]', output);
+    });
+    
+    proc.stderr?.on('data', (data) => {
+      const output = data.toString().trim();
+      console.log('[MySQL skip-grant stderr]', output);
+      // Check for ready message in stderr (MySQL logs to stderr)
+      if (output.includes('ready for connections') || output.includes('MySQL is ready')) {
+        mysqlReady = true;
+      }
+    });
+    
+    this.processes.set(this.getProcessKey('mysql', version), proc);
+    const status = this.serviceStatus.get('mysql');
+    status.port = port;
+    status.version = version;
+    
+    this.runningVersions.get('mysql').set(version, { port, startedAt: new Date() });
+
+    // Wait for MySQL to report ready via named pipe (since skip-grant-tables disables TCP)
+    // Just wait for the process to start and give it time to initialize
+    await this.waitForNamedPipeReady(`MYSQL_${version.replace(/\./g, '')}_SKIP`, 30000);
+    status.status = 'running';
+    console.log(`MySQL ${version} started with skip-grant-tables (named pipe)`);
+  }
+
+  // Wait for Windows named pipe to be ready
+  async waitForNamedPipeReady(pipeName, timeout = 30000) {
+    if (process.platform !== 'win32') {
+      // On Unix, just wait a fixed time
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      return;
+    }
+    
+    const startTime = Date.now();
+    const net = require('net');
+    const fullPipePath = `\\\\.\\pipe\\${pipeName}`;
+    
+    console.log(`Waiting for named pipe: ${fullPipePath}`);
+    
+    while (Date.now() - startTime < timeout) {
+      try {
+        await new Promise((resolve, reject) => {
+          const socket = new net.Socket();
+          socket.setTimeout(2000);
+          
+          socket.on('connect', () => {
+            console.log(`Named pipe ${pipeName} is ready`);
+            socket.destroy();
+            resolve(true);
+          });
+          
+          socket.on('timeout', () => {
+            socket.destroy();
+            reject(new Error('timeout'));
+          });
+          
+          socket.on('error', (err) => {
+            socket.destroy();
+            reject(err);
+          });
+          
+          socket.connect(fullPipePath);
+        });
+        return; // Pipe is ready
+      } catch (e) {
+        // Pipe not ready yet, wait and retry
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    
+    // If pipe check timed out, just continue anyway - MySQL might still be working
+    console.log(`Named pipe check timed out, but continuing anyway`);
+  }
+
+  // Simple wait for port to be accepting connections
+  async waitForPortReady(port, timeout = 30000) {
+    const startTime = Date.now();
+    const net = require('net');
+    
+    while (Date.now() - startTime < timeout) {
+      try {
+        await new Promise((resolve, reject) => {
+          const socket = new net.Socket();
+          socket.setTimeout(1000);
+          
+          socket.on('connect', () => {
+            socket.destroy();
+            resolve(true);
+          });
+          
+          socket.on('timeout', () => {
+            socket.destroy();
+            reject(new Error('timeout'));
+          });
+          
+          socket.on('error', (err) => {
+            socket.destroy();
+            reject(err);
+          });
+          
+          socket.connect(port, '127.0.0.1');
+        });
+        return; // Port is ready
+      } catch (e) {
+        // Port not ready yet, wait and retry
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    throw new Error(`Port ${port} not ready within ${timeout}ms`);
+  }
+
+  async createMySQLConfigWithSkipGrant(configPath, dataDir, port, version = '8.4') {
+    const mysqlPath = this.getMySQLPath(version);
+    const isWindows = process.platform === 'win32';
+    
+    let config;
+    if (isWindows) {
+      config = `[mysqld]
+basedir=${mysqlPath.replace(/\\/g, '/')}
+datadir=${dataDir.replace(/\\/g, '/')}
+port=${port}
+bind-address=0.0.0.0
+enable-named-pipe=ON
+socket=MYSQL_${version.replace(/\./g, '')}_SKIP
+pid-file=${path.join(dataDir, 'mysql_skip.pid').replace(/\\/g, '/')}
+log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
+skip-grant-tables
+skip-networking=0
+innodb_buffer_pool_size=128M
+innodb_redo_log_capacity=100M
+max_connections=100
+loose-mysqlx=0
+skip-log-bin
+
+[client]
+port=${port}
+`;
+    } else {
+      config = `[mysqld]
+datadir=${dataDir.replace(/\\/g, '/')}
+port=${port}
+bind-address=127.0.0.1
+socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
+pid-file=${path.join(dataDir, 'mysql_skip.pid').replace(/\\/g, '/')}
+log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
+skip-grant-tables
+
+[client]
+port=${port}
+socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
+`;
+    }
+    
+    await fs.ensureDir(path.dirname(configPath));
+    await fs.writeFile(configPath, config);
+  }
+
+  async startMariaDBWithSkipGrant(version = '11.4') {
+    const mariadbPath = this.getMariaDBPath(version);
+    const mariadbd = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
+    
+    if (!await fs.pathExists(mariadbd)) {
+      throw new Error(`MariaDB ${version} binary not found`);
+    }
+
+    // Kill any orphan processes
+    await this.killOrphanMariaDBProcesses();
+
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataDir = path.join(dataPath, 'mariadb', version, 'data');
+    
+    const defaultPort = this.getVersionPort('mariadb', version, this.serviceConfigs.mariadb.defaultPort);
+    let port = defaultPort;
+    
+    if (!await isPortAvailable(port)) {
+      port = await findAvailablePort(defaultPort, 100);
+    }
+    
+    this.serviceConfigs.mariadb.actualPort = port;
+
+    // Create a temporary config with skip-grant-tables
+    const configPath = path.join(dataPath, 'mariadb', version, 'my_skipgrant.cnf');
+    await this.createMariaDBConfigWithSkipGrant(configPath, dataDir, port, version, mariadbPath);
+
+    console.log(`Starting MariaDB ${version} with skip-grant-tables on port ${port}...`);
+    
+    let proc;
+    if (process.platform === 'win32') {
+      proc = spawnHidden(mariadbd, [`--defaults-file=${configPath}`], {
+        cwd: mariadbPath,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } else {
+      proc = spawn(mariadbd, [`--defaults-file=${configPath}`], {
+        cwd: mariadbPath,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
+    }
+    
+    proc.stdout?.on('data', (data) => {
+      console.log('[MariaDB skip-grant]', data.toString().trim());
+    });
+    
+    proc.stderr?.on('data', (data) => {
+      console.log('[MariaDB skip-grant stderr]', data.toString().trim());
+    });
+    
+    this.processes.set(this.getProcessKey('mariadb', version), proc);
+    const status = this.serviceStatus.get('mariadb');
+    status.port = port;
+    status.version = version;
+    
+    this.runningVersions.get('mariadb').set(version, { port, startedAt: new Date() });
+
+    // Wait for MariaDB to be ready via named pipe
+    // MariaDB doesn't disable networking with skip-grant-tables, but use pipe for consistency
+    await this.waitForNamedPipeReady(`MARIADB_${version.replace(/\./g, '')}_SKIP`, 30000);
+    status.status = 'running';
+    console.log(`MariaDB ${version} started with skip-grant-tables (named pipe)`);
+  }
+
+  async createMariaDBConfigWithSkipGrant(configPath, dataDir, port, version, mariadbPath) {
+    const isWindows = process.platform === 'win32';
+    
+    let config;
+    if (isWindows) {
+      config = `[mysqld]
+basedir=${mariadbPath.replace(/\\/g, '/')}
+datadir=${dataDir.replace(/\\/g, '/')}
+port=${port}
+bind-address=0.0.0.0
+enable-named-pipe=ON
+socket=MARIADB_${version.replace(/\./g, '')}_SKIP
+pid-file=${path.join(dataDir, 'mariadb_skip.pid').replace(/\\/g, '/')}
+log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
+skip-grant-tables
+innodb_buffer_pool_size=128M
+max_connections=100
+
+[client]
+port=${port}
+`;
+    } else {
+      config = `[mysqld]
+datadir=${dataDir.replace(/\\/g, '/')}
+port=${port}
+bind-address=127.0.0.1
+socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
+pid-file=${path.join(dataDir, 'mariadb_skip.pid').replace(/\\/g, '/')}
+log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
+skip-grant-tables
+
+[client]
+port=${port}
+socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
+`;
+    }
+    
+    await fs.ensureDir(path.dirname(configPath));
+    await fs.writeFile(configPath, config);
+  }
+
   async stopService(serviceName, version = null) {
     const config = this.serviceConfigs[serviceName];
     if (!config) {

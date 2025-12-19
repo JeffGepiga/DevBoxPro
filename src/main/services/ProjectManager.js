@@ -665,12 +665,56 @@ class ProjectManager {
     // Sync CLI projects file
     await this.syncCliProjectsFile();
 
+    // If environment was updated, sync to .env file for Laravel projects
+    if (updates.environment && projects[index].type === 'laravel') {
+      try {
+        await this.syncEnvFile(projects[index]);
+      } catch (error) {
+        console.warn('Could not sync .env file:', error.message);
+      }
+    }
+
     // Restart if was running
     if (isRunning) {
       await this.startProject(id);
     }
 
     return projects[index];
+  }
+
+  /**
+   * Sync environment variables to the project's .env file
+   */
+  async syncEnvFile(project) {
+    if (!project.path || !project.environment) {
+      return;
+    }
+
+    const envPath = path.join(project.path, '.env');
+    
+    if (!await fs.pathExists(envPath)) {
+      console.log('.env file does not exist, skipping sync');
+      return;
+    }
+
+    let envContent = await fs.readFile(envPath, 'utf-8');
+    
+    // Update each environment variable
+    for (const [key, value] of Object.entries(project.environment)) {
+      const regex = new RegExp(`^${key}=.*$`, 'm');
+      const newLine = `${key}=${value}`;
+      
+      if (regex.test(envContent)) {
+        // Replace existing line
+        envContent = envContent.replace(regex, newLine);
+      } else {
+        // Add new line at the end
+        envContent = envContent.trim() + '\n' + newLine + '\n';
+      }
+    }
+
+    await fs.writeFile(envPath, envContent);
+    console.log(`Synced environment to ${envPath}`);
   }
 
   async deleteProject(id, deleteFiles = false) {

@@ -272,7 +272,30 @@ class CliManager {
    */
   async installWindowsCli(alias, cliPath) {
     const resourcesPath = this.resourcesPath;
-    const projectsFilePath = this.getProjectsFilePath().replace(/\\/g, '\\\\');
+    const projectsFilePath = this.getProjectsFilePath();
+    
+    // Create a helper PowerShell script for JSON parsing
+    const psHelperContent = `param($ProjectsFile, $CurrentDir)
+try {
+    $projects = Get-Content $ProjectsFile -Raw | ConvertFrom-Json
+    $currentDirLower = $CurrentDir.ToLower().Replace('/', '\\')
+    foreach ($prop in $projects.PSObject.Properties) {
+        $projPath = $prop.Name.ToLower().Replace('/', '\\')
+        if ($currentDirLower.StartsWith($projPath) -or $currentDirLower -eq $projPath) {
+            $php = if ($prop.Value.phpVersion) { $prop.Value.phpVersion } else { "8.3" }
+            $node = if ($prop.Value.nodejsVersion) { $prop.Value.nodejsVersion } else { "" }
+            Write-Output "$php|$node"
+            exit 0
+        }
+    }
+    Write-Output "8.3|"
+} catch {
+    Write-Output "8.3|"
+}
+`;
+    
+    const psHelperPath = path.join(cliPath, 'find-project.ps1');
+    await fs.writeFile(psHelperPath, psHelperContent, 'utf8');
     
     // Create the batch script
     const batchContent = `@echo off
@@ -281,8 +304,9 @@ setlocal enabledelayedexpansion
 REM DevBox Pro CLI Wrapper
 REM This script routes commands through DevBox Pro to use project-specific versions
 
-set "DEVBOX_RESOURCES=${resourcesPath.replace(/\\/g, '\\\\')}"
-set "DEVBOX_PROJECTS=${projectsFilePath}"
+set "DEVBOX_RESOURCES=${resourcesPath.replace(/\\/g, '\\')}"
+set "DEVBOX_CLI=${cliPath.replace(/\\/g, '\\')}"
+set "DEVBOX_PROJECTS=${projectsFilePath.replace(/\\/g, '\\')}"
 
 REM Get current directory
 set "CURRENT_DIR=%CD%"
@@ -316,13 +340,12 @@ if not exist "%DEVBOX_PROJECTS%" (
     exit /b %ERRORLEVEL%
 )
 
-REM Find matching project by checking if current path starts with any project path
+REM Find matching project using PowerShell helper script
 set "PHP_VERSION=8.3"
 set "NODE_VERSION="
 set "FOUND_PROJECT="
 
-REM Use PowerShell to parse JSON and find matching project
-for /f "usebackq tokens=1,2 delims=|" %%a in (\`powershell -NoProfile -Command "$projects = Get-Content '%DEVBOX_PROJECTS%' | ConvertFrom-Json; $currentDir = '%CURRENT_DIR%'.ToLower().Replace('/', '\\\\'); foreach ($prop in $projects.PSObject.Properties) { $projPath = $prop.Name.ToLower().Replace('/', '\\\\'); if ($currentDir.StartsWith($projPath) -or $currentDir -eq $projPath) { Write-Host \\"$($prop.Value.phpVersion)|$($prop.Value.nodejsVersion)\\"; break } }"\`) do (
+for /f "tokens=1,2 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%DEVBOX_CLI%\\find-project.ps1" "%DEVBOX_PROJECTS%" "%CURRENT_DIR%"') do (
     set "PHP_VERSION=%%a"
     set "NODE_VERSION=%%b"
     set "FOUND_PROJECT=1"
@@ -334,9 +357,6 @@ if not defined FOUND_PROJECT (
     %*
     exit /b %ERRORLEVEL%
 )
-
-REM Handle "null" node version from JSON
-if "!NODE_VERSION!"=="null" set "NODE_VERSION="
 
 REM Set up paths based on detected versions
 set "PHP_PATH=%DEVBOX_RESOURCES%\\php\\%PHP_VERSION%\\win"
@@ -376,7 +396,7 @@ if /i "%CMD%"=="composer" (
 )
 
 if /i "%CMD%"=="node" (
-    if not defined NODE_VERSION (
+    if "%NODE_VERSION%"=="" (
         echo Node.js is not enabled for this project.
         exit /b 1
     )
@@ -390,7 +410,7 @@ if /i "%CMD%"=="node" (
 )
 
 if /i "%CMD%"=="npm" (
-    if not defined NODE_VERSION (
+    if "%NODE_VERSION%"=="" (
         echo npm is not enabled for this project. Enable Node.js in project settings.
         exit /b 1
     )
@@ -404,7 +424,7 @@ if /i "%CMD%"=="npm" (
 )
 
 if /i "%CMD%"=="npx" (
-    if not defined NODE_VERSION (
+    if "%NODE_VERSION%"=="" (
         echo npx is not enabled for this project. Enable Node.js in project settings.
         exit /b 1
     )
