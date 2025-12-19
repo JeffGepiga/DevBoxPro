@@ -316,7 +316,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 💬 Support
 
-- 📧 Email: support@devboxpro.dev
+- 📧 Email: jeffreygepiga27@gmail.com
 - 🐛 Issues: [GitHub Issues](https://github.com/JeffGepiga/DevBoxPro/issues)
 - 💬 Discussions: [GitHub Discussions](https://github.com/JeffGepiga/DevBoxPro/discussions)
 

@@ -187,14 +187,29 @@ class DatabaseManager {
     return { success: true, name: safeName };
   }
 
-  async importDatabase(databaseName, filePath, progressCallback = null) {
+  /**
+   * Import a database from SQL file
+   * @param {string} databaseName - Name of the database to import into
+   * @param {string} filePath - Path to the SQL file (.sql or .sql.gz)
+   * @param {Function} progressCallback - Callback for progress updates
+   * @param {string} mode - Import mode: 'clean' (drop all tables first) or 'merge' (keep existing)
+   */
+  async importDatabase(databaseName, filePath, progressCallback = null, mode = 'merge') {
     const safeName = this.sanitizeName(databaseName);
 
     if (!(await fs.pathExists(filePath))) {
       throw new Error('Import file not found');
     }
 
-    console.log(`Importing database ${safeName} from ${filePath}`);
+    console.log(`Importing database: original="${databaseName}", sanitized="${safeName}", mode=${mode}`);
+    
+    // Verify database exists before importing
+    const databases = await this.listDatabases();
+    const dbExists = databases.some(db => db.name === safeName || db.name === databaseName);
+    if (!dbExists) {
+      throw new Error(`Database '${databaseName}' does not exist. Please create it first.`);
+    }
+    
     progressCallback?.({ status: 'starting', message: 'Starting import...' });
 
     const isGzipped = filePath.toLowerCase().endsWith('.gz');
@@ -211,6 +226,12 @@ class DatabaseManager {
 
     return new Promise(async (resolve, reject) => {
       try {
+        // If clean mode, drop all existing tables first
+        if (mode === 'clean') {
+          progressCallback?.({ status: 'cleaning', message: 'Dropping existing tables...' });
+          await this.dropAllTables(databaseName);
+        }
+
         let sqlContent;
         
         // Read and decompress if needed
@@ -248,7 +269,8 @@ class DatabaseManager {
           args.push(`-p${password}`);
         }
         
-        args.push(safeName);
+        // Use original database name - MySQL accepts most names when properly used
+        args.push(databaseName);
 
         const proc = spawn(clientPath, args, {
           stdio: ['pipe', 'pipe', 'pipe'],
@@ -268,7 +290,7 @@ class DatabaseManager {
           await fs.remove(tempFile).catch(() => {});
           
           if (code === 0) {
-            console.log(`Database ${safeName} imported successfully`);
+            console.log(`Database ${databaseName} imported successfully`);
             progressCallback?.({ status: 'complete', message: 'Import completed successfully!' });
             resolve({ success: true });
           } else {
@@ -478,6 +500,46 @@ class DatabaseManager {
     return `http://127.0.0.1:${port}`;
   }
 
+  /**
+   * Drop all tables in a database (for clean import)
+   */
+  async dropAllTables(databaseName) {
+    const safeName = this.sanitizeName(databaseName);
+    
+    try {
+      // Get list of all tables
+      const tables = await this.getTables(databaseName);
+      
+      if (tables.length === 0) {
+        console.log(`No tables to drop in ${safeName}`);
+        return;
+      }
+      
+      console.log(`Dropping ${tables.length} tables in ${safeName}...`);
+      
+      // Disable foreign key checks to avoid constraint issues
+      await this.runDbQuery('SET FOREIGN_KEY_CHECKS = 0', safeName);
+      
+      // Drop each table
+      for (const table of tables) {
+        try {
+          await this.runDbQuery(`DROP TABLE IF EXISTS \`${table}\``, safeName);
+          console.log(`Dropped table: ${table}`);
+        } catch (error) {
+          console.warn(`Warning: Could not drop table ${table}: ${error.message}`);
+        }
+      }
+      
+      // Re-enable foreign key checks
+      await this.runDbQuery('SET FOREIGN_KEY_CHECKS = 1', safeName);
+      
+      console.log(`All tables dropped from ${safeName}`);
+    } catch (error) {
+      console.error(`Error dropping tables in ${safeName}:`, error);
+      throw error;
+    }
+  }
+
   async getTables(databaseName) {
     const safeName = this.sanitizeName(databaseName);
     const result = await this.runDbQuery('SHOW TABLES', safeName);
@@ -505,7 +567,11 @@ class DatabaseManager {
 
   // Helper methods
   sanitizeName(name) {
-    return name.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 64);
+    // Trim whitespace and sanitize
+    const trimmed = String(name || '').trim();
+    const sanitized = trimmed.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 64);
+    // Remove trailing underscores that might result from sanitization
+    return sanitized.replace(/_+$/, '') || 'unnamed';
   }
 
   // Get the client path based on active database type and running version

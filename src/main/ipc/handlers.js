@@ -268,11 +268,11 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return database.deleteDatabase(name);
   });
 
-  ipcMain.handle('database:importDatabase', async (event, name, filePath) => {
+  ipcMain.handle('database:importDatabase', async (event, name, filePath, mode) => {
     const progressCallback = (progress) => {
       mainWindow?.webContents.send('database:importProgress', progress);
     };
-    return database.importDatabase(name, filePath, progressCallback);
+    return database.importDatabase(name, filePath, progressCallback, mode);
   });
 
   ipcMain.handle('database:exportDatabase', async (event, name, filePath) => {

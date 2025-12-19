@@ -56,7 +56,7 @@ contextBridge.exposeInMainWorld('devbox', {
     getDatabases: () => ipcRenderer.invoke('database:getDatabases'),
     createDatabase: (name) => ipcRenderer.invoke('database:createDatabase', name),
     deleteDatabase: (name) => ipcRenderer.invoke('database:deleteDatabase', name),
-    importDatabase: (name, filePath) => ipcRenderer.invoke('database:importDatabase', name, filePath),
+    importDatabase: (name, filePath, mode) => ipcRenderer.invoke('database:importDatabase', name, filePath, mode),
     exportDatabase: (name, filePath) => ipcRenderer.invoke('database:exportDatabase', name, filePath),
     runQuery: (database, query) => ipcRenderer.invoke('database:runQuery', database, query),
     getPhpMyAdminUrl: () => ipcRenderer.invoke('database:getPhpMyAdminUrl'),
