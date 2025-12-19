@@ -22,7 +22,7 @@ import {
 import clsx from 'clsx';
 
 function Projects() {
-  const { projects, loading, startProject, stopProject, deleteProject, refreshProjects } = useApp();
+  const { projects, loading, startProject, stopProject, deleteProject, refreshProjects, settings } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -208,6 +208,7 @@ function Projects() {
               onStart={() => startProject(project.id)}
               onStop={() => stopProject(project.id)}
               onDelete={() => handleDelete(project.id, project.name)}
+              defaultEditor={settings?.settings?.defaultEditor}
             />
           ))}
         </div>
@@ -445,7 +446,7 @@ function ImportProjectModal({ project, onClose, onImport }) {
   );
 }
 
-function ProjectCard({ project, onStart, onStop, onDelete }) {
+function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
   const [showMenu, setShowMenu] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -523,13 +524,13 @@ function ProjectCard({ project, onStart, onStop, onDelete }) {
                 </button>
                 <button
                   onClick={() => {
-                    window.devbox?.projects.openInEditor(project.id, 'vscode');
+                    window.devbox?.projects.openInEditor(project.id, defaultEditor || 'vscode');
                     setShowMenu(false);
                   }}
                   className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
                 >
                   <Code className="w-4 h-4" />
-                  Open in VS Code
+                  Open in Editor
                 </button>
                 <hr className="my-1 border-gray-200 dark:border-gray-700" />
                 <button

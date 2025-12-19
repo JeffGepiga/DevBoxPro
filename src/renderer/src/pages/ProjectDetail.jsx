@@ -31,7 +31,7 @@ function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { projects, startProject, stopProject, deleteProject, refreshProjects } = useApp();
+  const { projects, startProject, stopProject, deleteProject, refreshProjects, settings } = useApp();
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'overview');
   const [project, setProject] = useState(null);
   const [logs, setLogs] = useState([]);
@@ -231,11 +231,11 @@ function ProjectDetail() {
               </button>
             )}
             <button
-              onClick={() => window.devbox?.projects.openInEditor(id, 'vscode')}
+              onClick={() => window.devbox?.projects.openInEditor(id, settings?.settings?.defaultEditor || 'vscode')}
               className="btn-secondary"
             >
               <Code className="w-4 h-4" />
-              VS Code
+              Open in Editor
             </button>
           </div>
         </div>
