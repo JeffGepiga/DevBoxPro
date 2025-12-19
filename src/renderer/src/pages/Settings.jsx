@@ -822,7 +822,16 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
         <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Binary Downloads</h4>
+              <div className="flex items-center gap-2">
+                <h4 className="font-medium text-gray-900 dark:text-white">Binary Downloads</h4>
+                <button
+                  onClick={() => window.devbox?.system.openExternal('https://github.com/JeffGepiga/DevBoxPro/blob/main/config/binaries.json')}
+                  className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                  title="View source on GitHub"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+              </div>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 PHP, MySQL, Redis, and other service download URLs
               </p>
@@ -899,7 +908,16 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
         <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Compatibility Rules</h4>
+              <div className="flex items-center gap-2">
+                <h4 className="font-medium text-gray-900 dark:text-white">Compatibility Rules</h4>
+                <button
+                  onClick={() => window.devbox?.system.openExternal('https://github.com/JeffGepiga/DevBoxPro/blob/main/config/compatibility.json')}
+                  className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                  title="View source on GitHub"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+              </div>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 Version compatibility warnings and recommendations
                 {configInfo.compatibility && (
