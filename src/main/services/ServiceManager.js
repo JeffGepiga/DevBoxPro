@@ -413,25 +413,98 @@ class ServiceManager extends EventEmitter {
     await this.createNginxConfig(confPath, logsPath, httpPort, sslPort);
 
     // Test Nginx configuration before starting
-    try {
+    // This may fail with port bind errors even if our port check passed (Windows HTTP service, Hyper-V, etc.)
+    const testConfig = async () => {
       const { execSync } = require('child_process');
-      execSync(`"${nginxExe}" -t -c "${confPath}" -p "${nginxPath}"`, { 
-        cwd: nginxPath,
-        windowsHide: true,
-        timeout: 10000,
-        encoding: 'utf8'
-      });
-      console.log('Nginx configuration test passed');
-    } catch (configError) {
-      console.error('Nginx configuration test failed:', configError.message);
-      if (configError.stderr) {
-        console.error('Nginx config error details:', configError.stderr);
+      try {
+        execSync(`"${nginxExe}" -t -c "${confPath}" -p "${nginxPath}"`, { 
+          cwd: nginxPath,
+          windowsHide: true,
+          timeout: 10000,
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+        return { success: true };
+      } catch (configError) {
+        // Nginx may output to stderr, stdout, or both - check all sources
+        const stderr = configError.stderr || '';
+        const stdout = configError.stdout || '';
+        const message = configError.message || '';
+        const errorMsg = `${stderr} ${stdout} ${message}`;
+        console.log('Nginx config test error output:', errorMsg);
+        
+        // Check for port binding errors (Windows error 10013 = permission denied, 10048 = already in use)
+        const portBindError = errorMsg.includes('10013') || errorMsg.includes('10048') || 
+                              errorMsg.includes('bind()') || errorMsg.includes('Address already in use');
+        console.log('Is port bind error:', portBindError);
+        return { success: false, error: errorMsg, isPortError: portBindError };
       }
-      if (configError.stdout) {
-        console.error('Nginx config output:', configError.stdout);
+    };
+
+    let testResult = await testConfig();
+    
+    // If we got a port binding error, try alternate ports
+    if (!testResult.success && testResult.isPortError) {
+      console.log(`Port binding error detected: ${testResult.error}`);
+      console.log(`Current ports: HTTP=${httpPort}, SSL=${sslPort}, trying alternate ports...`);
+      
+      // Always try alternate ports on port binding errors
+      const newHttpPort = this.webServerPorts.alternate.http;
+      const newSslPort = this.webServerPorts.alternate.https;
+      
+      // Find available alternate ports
+      let altHttpPort = newHttpPort;
+      let altSslPort = newSslPort;
+      
+      if (!await isPortAvailable(altHttpPort)) {
+        altHttpPort = await findAvailablePort(altHttpPort, 100);
       }
-      throw new Error(`Nginx configuration error: ${configError.stderr || configError.message}`);
+      if (!await isPortAvailable(altSslPort)) {
+        altSslPort = await findAvailablePort(altSslPort, 100);
+      }
+      
+      if (altHttpPort && altSslPort) {
+        httpPort = altHttpPort;
+        sslPort = altSslPort;
+        
+        // Clear all existing vhost files - they have the old ports hardcoded
+        // They will be regenerated when projects start
+        const sitesDir = path.join(dataPath, 'nginx', 'sites');
+        try {
+          const files = await fs.readdir(sitesDir);
+          for (const file of files) {
+            if (file.endsWith('.conf')) {
+              await fs.remove(path.join(sitesDir, file));
+              console.log(`Removed old vhost: ${file}`);
+            }
+          }
+        } catch (e) {
+          // Sites dir may not exist yet
+        }
+        
+        // Update the config with new ports
+        await this.createNginxConfig(confPath, logsPath, httpPort, sslPort);
+        
+        // Update port ownership - we couldn't get standard ports
+        if (this.standardPortOwner === 'nginx') {
+          this.standardPortOwner = null;
+        }
+        
+        // Update actual ports
+        this.serviceConfigs.nginx.actualHttpPort = httpPort;
+        this.serviceConfigs.nginx.actualSslPort = sslPort;
+        
+        console.log(`Nginx now using alternate ports ${httpPort}/${sslPort}`);
+        testResult = await testConfig();
+      }
     }
+    
+    if (!testResult.success) {
+      console.error('Nginx configuration test failed:', testResult.error);
+      throw new Error(`Nginx configuration error: ${testResult.error}`);
+    }
+    
+    console.log('Nginx configuration test passed');
 
     console.log(`Starting Nginx on ports ${httpPort} (HTTP) and ${sslPort} (HTTPS)...`);
 
@@ -742,23 +815,92 @@ http {
     await this.createApacheConfig(apachePath, confPath, logsPath, httpPort, httpsPort);
 
     // Test Apache config before starting
-    console.log(`Testing Apache configuration...`);
-    try {
+    // This may fail with port bind errors even if our port check passed (Windows HTTP service, Hyper-V, etc.)
+    const testConfig = async () => {
       const { execSync } = require('child_process');
-      execSync(`"${httpdExe}" -t -f "${confPath}"`, { 
-        cwd: apachePath,
-        windowsHide: true,
-        timeout: 10000,
-        encoding: 'utf8'
-      });
-      console.log('Apache configuration test passed');
-    } catch (configError) {
-      console.error('Apache configuration test failed:', configError.message);
-      if (configError.stderr) {
-        console.error('Config error details:', configError.stderr);
+      try {
+        execSync(`"${httpdExe}" -t -f "${confPath}"`, { 
+          cwd: apachePath,
+          windowsHide: true,
+          timeout: 10000,
+          encoding: 'utf8'
+        });
+        return { success: true };
+      } catch (configError) {
+        const errorMsg = configError.stderr || configError.message || '';
+        // Check for port binding errors (Windows error 10013 = permission denied, 10048 = already in use)
+        const portBindError = errorMsg.includes('10013') || errorMsg.includes('10048') || 
+                              errorMsg.includes('could not bind') || errorMsg.includes('Address already in use') ||
+                              errorMsg.includes('make_sock');
+        return { success: false, error: errorMsg, isPortError: portBindError };
       }
-      throw new Error(`Apache configuration error: ${configError.message}`);
+    };
+
+    console.log(`Testing Apache configuration...`);
+    let testResult = await testConfig();
+    
+    // If we got a port binding error, try alternate ports
+    if (!testResult.success && testResult.isPortError) {
+      console.log(`Port binding error detected: ${testResult.error}`);
+      console.log(`Current ports: HTTP=${httpPort}, HTTPS=${httpsPort}, trying alternate ports...`);
+      
+      // Always try alternate ports on port binding errors
+      const newHttpPort = this.webServerPorts.alternate.http;
+      const newHttpsPort = this.webServerPorts.alternate.https;
+      
+      // Find available alternate ports
+      let altHttpPort = newHttpPort;
+      let altHttpsPort = newHttpsPort;
+      
+      if (!await isPortAvailable(altHttpPort)) {
+        altHttpPort = await findAvailablePort(altHttpPort, 100);
+      }
+      if (!await isPortAvailable(altHttpsPort)) {
+        altHttpsPort = await findAvailablePort(altHttpsPort, 100);
+      }
+      
+      if (altHttpPort && altHttpsPort) {
+        httpPort = altHttpPort;
+        httpsPort = altHttpsPort;
+        
+        // Clear all existing vhost files - they have the old ports hardcoded
+        // They will be regenerated when projects start
+        const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
+        try {
+          const files = await fs.readdir(vhostsDir);
+          for (const file of files) {
+            if (file.endsWith('.conf')) {
+              await fs.remove(path.join(vhostsDir, file));
+              console.log(`Removed old vhost: ${file}`);
+            }
+          }
+        } catch (e) {
+          // Vhosts dir may not exist yet
+        }
+        
+        // Update the config with new ports
+        await this.createApacheConfig(apachePath, confPath, logsPath, httpPort, httpsPort);
+        
+        // Update port ownership - we couldn't get standard ports
+        if (this.standardPortOwner === 'apache') {
+          this.standardPortOwner = null;
+        }
+        
+        // Update actual ports
+        this.serviceConfigs.apache.actualHttpPort = httpPort;
+        this.serviceConfigs.apache.actualSslPort = httpsPort;
+        
+        console.log(`Apache now using alternate ports ${httpPort}/${httpsPort}`);
+        testResult = await testConfig();
+      }
     }
+    
+    if (!testResult.success) {
+      console.error('Apache configuration test failed:', testResult.error);
+      throw new Error(`Apache configuration error: ${testResult.error}`);
+    }
+    
+    console.log('Apache configuration test passed');
 
     console.log(`Starting Apache on ports ${httpPort} (HTTP) and ${httpsPort} (HTTPS)...`);
     
