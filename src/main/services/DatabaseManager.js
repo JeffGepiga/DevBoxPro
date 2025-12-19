@@ -3,6 +3,8 @@ const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const net = require('net');
 const { app } = require('electron');
+const zlib = require('zlib');
+const { pipeline } = require('stream/promises');
 
 class DatabaseManager {
   constructor(resourcePath, configStore, managers = {}) {
@@ -185,7 +187,7 @@ class DatabaseManager {
     return { success: true, name: safeName };
   }
 
-  async importDatabase(databaseName, filePath) {
+  async importDatabase(databaseName, filePath, progressCallback = null) {
     const safeName = this.sanitizeName(databaseName);
 
     if (!(await fs.pathExists(filePath))) {
@@ -193,96 +195,208 @@ class DatabaseManager {
     }
 
     console.log(`Importing database ${safeName} from ${filePath}`);
+    progressCallback?.({ status: 'starting', message: 'Starting import...' });
 
+    const isGzipped = filePath.toLowerCase().endsWith('.gz');
     const clientPath = this.getDbClientPath();
     const port = this.getActualPort();
     const settings = this.configStore.get('settings', {});
     const user = settings.dbUser || this.dbConfig.user;
+    const password = settings.dbPassword || '';
 
-    return new Promise((resolve, reject) => {
-      const proc = spawn(
-        clientPath,
-        [
+    // Check if client exists
+    if (!await fs.pathExists(clientPath)) {
+      throw new Error(`MySQL client not found at ${clientPath}. Please ensure the database binary is installed.`);
+    }
+
+    return new Promise(async (resolve, reject) => {
+      try {
+        let sqlContent;
+        
+        // Read and decompress if needed
+        if (isGzipped) {
+          progressCallback?.({ status: 'decompressing', message: 'Decompressing backup file...' });
+          const gzContent = await fs.readFile(filePath);
+          sqlContent = await new Promise((res, rej) => {
+            zlib.gunzip(gzContent, (err, result) => {
+              if (err) rej(err);
+              else res(result.toString('utf8'));
+            });
+          });
+        } else {
+          sqlContent = await fs.readFile(filePath, 'utf8');
+        }
+
+        // Process SQL to remove virtual column definitions that may cause issues
+        progressCallback?.({ status: 'processing', message: 'Processing SQL content...' });
+        const processedSql = this.processImportSql(sqlContent);
+
+        // Create temporary processed SQL file
+        const tempDir = app.getPath('temp');
+        const tempFile = path.join(tempDir, `import_${Date.now()}.sql`);
+        await fs.writeFile(tempFile, processedSql);
+
+        progressCallback?.({ status: 'importing', message: 'Importing to database...' });
+
+        const args = [
           `-h${this.dbConfig.host}`,
           `-P${port}`,
           `-u${user}`,
-          safeName,
-        ],
-        {
+        ];
+        
+        if (password) {
+          args.push(`-p${password}`);
+        }
+        
+        args.push(safeName);
+
+        const proc = spawn(clientPath, args, {
           stdio: ['pipe', 'pipe', 'pipe'],
           windowsHide: true,
-        }
-      );
+        });
 
-      const fileStream = fs.createReadStream(filePath);
-      fileStream.pipe(proc.stdin);
+        const fileStream = fs.createReadStream(tempFile);
+        fileStream.pipe(proc.stdin);
 
-      let stderr = '';
-      proc.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
+        let stderr = '';
+        proc.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
 
-      proc.on('close', (code) => {
-        if (code === 0) {
-          console.log(`Database ${safeName} imported successfully`);
-          resolve({ success: true });
-        } else {
-          reject(new Error(`Import failed: ${stderr}`));
-        }
-      });
+        proc.on('close', async (code) => {
+          // Clean up temp file
+          await fs.remove(tempFile).catch(() => {});
+          
+          if (code === 0) {
+            console.log(`Database ${safeName} imported successfully`);
+            progressCallback?.({ status: 'complete', message: 'Import completed successfully!' });
+            resolve({ success: true });
+          } else {
+            const errorMsg = stderr || `Process exited with code ${code}`;
+            progressCallback?.({ status: 'error', message: `Import failed: ${errorMsg}` });
+            reject(new Error(`Import failed: ${errorMsg}`));
+          }
+        });
 
-      proc.on('error', (error) => {
+        proc.on('error', async (error) => {
+          await fs.remove(tempFile).catch(() => {});
+          progressCallback?.({ status: 'error', message: `Import error: ${error.message}` });
+          reject(error);
+        });
+      } catch (error) {
+        progressCallback?.({ status: 'error', message: `Import error: ${error.message}` });
         reject(error);
-      });
+      }
     });
   }
 
-  async exportDatabase(databaseName, outputPath) {
+  /**
+   * Process SQL content to remove virtual column definitions that may cause import issues
+   */
+  processImportSql(sql) {
+    // Remove GENERATED/VIRTUAL column definitions from CREATE TABLE statements
+    // These need to be added back separately via ALTER TABLE after data import
+    const virtualColumnPattern = /`\w+`\s+\w+(?:\([^)]*\))?\s+(?:GENERATED ALWAYS )?AS\s*\([^)]+\)\s*(?:VIRTUAL|STORED)?(?:\s+(?:NOT NULL|NULL))?(?:\s+COMMENT\s+'[^']*')?,?\s*\n?/gi;
+    
+    let processedSql = sql;
+    
+    // Remove virtual columns from CREATE TABLE statements
+    processedSql = processedSql.replace(virtualColumnPattern, '');
+    
+    // Clean up any trailing commas before closing parenthesis in CREATE TABLE
+    processedSql = processedSql.replace(/,(\s*\n?\s*\))/g, '$1');
+    
+    // Remove any double newlines
+    processedSql = processedSql.replace(/\n\n+/g, '\n');
+    
+    return processedSql;
+  }
+
+  async exportDatabase(databaseName, outputPath, progressCallback = null) {
     const safeName = this.sanitizeName(databaseName);
 
     console.log(`Exporting database ${safeName} to ${outputPath}`);
+    progressCallback?.({ status: 'starting', message: 'Starting export...' });
 
     const dumpPath = this.getDbDumpPath();
     const port = this.getActualPort();
     const settings = this.configStore.get('settings', {});
     const user = settings.dbUser || this.dbConfig.user;
+    const password = settings.dbPassword || '';
+
+    // Check if mysqldump exists
+    if (!await fs.pathExists(dumpPath)) {
+      throw new Error(`mysqldump not found at ${dumpPath}. Please ensure the database binary is installed.`);
+    }
+
+    // Ensure output has .gz extension
+    const finalPath = outputPath.toLowerCase().endsWith('.gz') ? outputPath : `${outputPath}.gz`;
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(
-        dumpPath,
-        [
-          `-h${this.dbConfig.host}`,
-          `-P${port}`,
-          `-u${user}`,
-          '--single-transaction',
-          '--routines',
-          '--triggers',
-          safeName,
-        ],
-        {
-          stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: true,
-        }
-      );
+      const args = [
+        `-h${this.dbConfig.host}`,
+        `-P${port}`,
+        `-u${user}`,
+        '--single-transaction',
+        '--routines',
+        '--triggers',
+        '--quick',
+        '--lock-tables=false',
+      ];
+      
+      if (password) {
+        args.push(`-p${password}`);
+      }
+      
+      args.push(safeName);
 
-      const outputStream = fs.createWriteStream(outputPath);
-      proc.stdout.pipe(outputStream);
+      progressCallback?.({ status: 'dumping', message: 'Creating database dump...' });
+
+      const proc = spawn(dumpPath, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+
+      // Create gzip stream and pipe to file
+      const gzip = zlib.createGzip({ level: 6 });
+      const outputStream = fs.createWriteStream(finalPath);
+
+      proc.stdout.pipe(gzip).pipe(outputStream);
 
       let stderr = '';
+      let dataReceived = false;
+      
+      proc.stdout.on('data', () => {
+        if (!dataReceived) {
+          dataReceived = true;
+          progressCallback?.({ status: 'compressing', message: 'Compressing and writing backup...' });
+        }
+      });
+
       proc.stderr.on('data', (data) => {
-        stderr += data.toString();
+        const msg = data.toString();
+        // Filter out common warnings that aren't errors
+        if (!msg.includes('Using a password on the command line') && 
+            !msg.includes('Warning:')) {
+          stderr += msg;
+        }
+      });
+
+      outputStream.on('finish', () => {
+        console.log(`Database ${safeName} exported to ${finalPath}`);
+        progressCallback?.({ status: 'complete', message: 'Export completed successfully!', path: finalPath });
+        resolve({ success: true, path: finalPath });
       });
 
       proc.on('close', (code) => {
-        if (code === 0) {
-          console.log(`Database ${safeName} exported to ${outputPath}`);
-          resolve({ success: true, path: outputPath });
-        } else {
+        if (code !== 0 && stderr) {
+          progressCallback?.({ status: 'error', message: `Export failed: ${stderr}` });
           reject(new Error(`Export failed: ${stderr}`));
         }
       });
 
       proc.on('error', (error) => {
+        progressCallback?.({ status: 'error', message: `Export error: ${error.message}` });
         reject(error);
       });
     });
@@ -394,19 +508,51 @@ class DatabaseManager {
     return name.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 64);
   }
 
-  // Get the client path based on active database type
+  // Get the client path based on active database type and running version
   getDbClientPath() {
     const dbType = this.getActiveDatabaseType();
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const binName = process.platform === 'win32' ? 'mysql.exe' : 'mysql';
+    
+    // Get the running version from ServiceManager
+    let version = null;
+    if (this.managers.service) {
+      const serviceStatus = this.managers.service.serviceStatus.get(dbType);
+      if (serviceStatus?.status === 'running') {
+        version = serviceStatus.version;
+      }
+    }
+    
+    // Use version in path if available
+    if (version) {
+      return path.join(this.resourcePath, dbType, version, platform, 'bin', binName);
+    }
+    
+    // Fallback to old path structure
     return path.join(this.resourcePath, dbType, platform, 'bin', binName);
   }
 
-  // Get the dump path based on active database type
+  // Get the dump path based on active database type and running version
   getDbDumpPath() {
     const dbType = this.getActiveDatabaseType();
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const binName = process.platform === 'win32' ? 'mysqldump.exe' : 'mysqldump';
+    
+    // Get the running version from ServiceManager
+    let version = null;
+    if (this.managers.service) {
+      const serviceStatus = this.managers.service.serviceStatus.get(dbType);
+      if (serviceStatus?.status === 'running') {
+        version = serviceStatus.version;
+      }
+    }
+    
+    // Use version in path if available
+    if (version) {
+      return path.join(this.resourcePath, dbType, version, platform, 'bin', binName);
+    }
+    
+    // Fallback to old path structure
     return path.join(this.resourcePath, dbType, platform, 'bin', binName);
   }
 

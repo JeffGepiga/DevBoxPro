@@ -269,11 +269,17 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('database:importDatabase', async (event, name, filePath) => {
-    return database.importDatabase(name, filePath);
+    const progressCallback = (progress) => {
+      mainWindow?.webContents.send('database:importProgress', progress);
+    };
+    return database.importDatabase(name, filePath, progressCallback);
   });
 
   ipcMain.handle('database:exportDatabase', async (event, name, filePath) => {
-    return database.exportDatabase(name, filePath);
+    const progressCallback = (progress) => {
+      mainWindow?.webContents.send('database:exportProgress', progress);
+    };
+    return database.exportDatabase(name, filePath, progressCallback);
   });
 
   ipcMain.handle('database:runQuery', async (event, databaseName, query) => {
@@ -409,6 +415,14 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       filters: filters || [{ name: 'All Files', extensions: ['*'] }],
     });
     return result.canceled ? null : result.filePaths[0];
+  });
+
+  ipcMain.handle('system:saveFile', async (event, options) => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: options?.defaultPath,
+      filters: options?.filters || [{ name: 'All Files', extensions: ['*'] }],
+    });
+    return result.canceled ? null : result.filePath;
   });
 
   ipcMain.handle('system:openExternal', async (event, url) => {

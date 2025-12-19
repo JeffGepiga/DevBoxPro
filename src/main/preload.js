@@ -64,6 +64,16 @@ contextBridge.exposeInMainWorld('devbox', {
     setActiveDatabaseType: (dbType) => ipcRenderer.invoke('database:setActiveDatabaseType', dbType),
     getDatabaseInfo: () => ipcRenderer.invoke('database:getDatabaseInfo'),
     resetCredentials: (user, password) => ipcRenderer.invoke('database:resetCredentials', user, password),
+    onImportProgress: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('database:importProgress', handler);
+      return () => ipcRenderer.removeListener('database:importProgress', handler);
+    },
+    onExportProgress: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('database:exportProgress', handler);
+      return () => ipcRenderer.removeListener('database:exportProgress', handler);
+    },
   },
 
   // SSL operations
@@ -121,6 +131,7 @@ contextBridge.exposeInMainWorld('devbox', {
   system: {
     selectDirectory: () => ipcRenderer.invoke('system:selectDirectory'),
     selectFile: (filters) => ipcRenderer.invoke('system:selectFile', filters),
+    saveFile: (options) => ipcRenderer.invoke('system:saveFile', options),
     openExternal: (url) => ipcRenderer.invoke('system:openExternal', url),
     getAppVersion: () => ipcRenderer.invoke('system:getAppVersion'),
     getPlatform: () => ipcRenderer.invoke('system:getPlatform'),
