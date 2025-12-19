@@ -88,29 +88,41 @@ DevBox Pro is a standalone desktop application that provides everything you need
 
 ## 📸 Screenshots
 
+### Laravel Installation
+![Laravel Installation](screenshots/pic-1.png)
+*Fresh Laravel project installation with real-time progress tracking. Watch as DevBox Pro runs Composer, generates app keys, and installs npm dependencies automatically.*
+
+### Viewing Single Project
+![Viewing Single Project](screenshots/pic-2.png)
+*Detailed project view showing all configuration options - PHP version, web server selection, database settings, and enabled services. Easily switch between Nginx and Apache, enable/disable Redis, MySQL, or MariaDB per project.*
+
 ### Dashboard
-![Dashboard](screenshots/pic-1.png)
+![Dashboard](screenshots/pic-3.png)
+*Clean overview of all your projects with quick status indicators. See which projects are running, their domains, PHP versions, and quickly start/stop any project with one click.*
 
-### Projects List
-![Projects](screenshots/pic-2.png)
+### List of Binaries (Multiple PHP Versions)
+![List of Binaries - PHP](screenshots/pic-4.png)
+*Binary Manager showing all available PHP versions from 7.4 to 8.4. Download only the versions you need, and run different PHP versions for different projects simultaneously.*
 
-### Project Detail
-![Project Detail](screenshots/pic-3.png)
+### List of Binaries (Web Servers & Databases)
+![List of Binaries - Servers](screenshots/pic-5.png)
+*Download multiple web server and database versions. Choose between Nginx 1.26/1.28, Apache 2.4, MySQL 8.0/8.4, MariaDB 10.11/11.4, Redis 7.2/7.4, and more.*
 
-### Create New Project
-![Create Project](screenshots/pic-4.png)
-
-### Services Management
-![Services](screenshots/pic-5.png)
-
-### Binary Manager
-![Binary Manager](screenshots/pic-6.png)
+### Logs
+![Logs](screenshots/pic-6.png)
+*Real-time log streaming with color-coded output. Filter logs by project or service, see errors highlighted in red, and quickly diagnose issues. Supports PHP, Nginx, Apache, MySQL, and all other service logs.*
 
 ### Database Management
 ![Databases](screenshots/pic-7.png)
+*Full database management interface. Create, drop, import, and export databases with ease. Supports .sql and .gz compressed files. Progress tracking for large imports/exports. Quick access to phpMyAdmin for visual management.*
+
+### Running Services
+![Running Services](screenshots/pic-8.png)
+*Global services panel showing all active services. Start/stop MySQL, MariaDB, Redis, Mailpit, and phpMyAdmin independently. Each service displays its current status, version, and port number.*
 
 ### Settings & Cloud Updates
-![Settings](screenshots/pic-8.png)
+![Settings](screenshots/pic-9.png)
+*Application settings with cloud configuration updates. Check for new binary definitions and compatibility rules without updating the app. Configure default paths, ports, and preferences.*
 
 ---
 
