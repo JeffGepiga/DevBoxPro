@@ -65,6 +65,13 @@ DevBox Pro is a standalone desktop application that provides everything you need
 - **One-click updates** - Easy version upgrades
 - **Import custom binaries** - Use your own compiled versions
 
+### ☁️ Cloud Configuration Updates
+- **Remote binary definitions** - New versions available without app update
+- **Compatibility rules sync** - Updated version compatibility warnings
+- **One-click update check** - Check for new binaries and rules from Settings
+- **Offline fallback** - Built-in defaults when offline
+- **Version tracking** - Only download when updates are available
+
 ### 📊 Logging & Monitoring
 - **Real-time log streaming** per project and service
 - **Color-coded log levels** (info, warning, error)
@@ -81,28 +88,29 @@ DevBox Pro is a standalone desktop application that provides everything you need
 
 ## 📸 Screenshots
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  DevBox Pro                                          _ □ X │
-├─────────────────────────────────────────────────────────────┤
-│  🏠 Dashboard    📁 Projects    ⚙️ Services    📊 Logs     │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   My Projects                           + New Project       │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │ 🟢 Laravel Blog          PHP 8.3    Port: 8000      │  │
-│  │    laravel-blog.test     MySQL ✓    Redis ✓         │  │
-│  └──────────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │ 🔴 WordPress Site        PHP 8.1    Port: 8001      │  │
-│  │    wordpress.test        MySQL ✓                     │  │
-│  └──────────────────────────────────────────────────────┘  │
-│                                                             │
-│   Services Status                                           │
-│   MySQL: 🟢 Running    Redis: 🟢 Running    Mailpit: ⚪    │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
+### Dashboard
+![Dashboard](screenshots/pic-1.png)
+
+### Projects List
+![Projects](screenshots/pic-2.png)
+
+### Project Detail
+![Project Detail](screenshots/pic-3.png)
+
+### Create New Project
+![Create Project](screenshots/pic-4.png)
+
+### Services Management
+![Services](screenshots/pic-5.png)
+
+### Binary Manager
+![Binary Manager](screenshots/pic-6.png)
+
+### Database Management
+![Databases](screenshots/pic-7.png)
+
+### Settings & Cloud Updates
+![Settings](screenshots/pic-8.png)
 
 ---
 
@@ -205,6 +213,11 @@ DevBoxPro/
 │       └── index.html
 │
 ├── resources/                   # App resources (icons, configs)
+├── config/                      # Remote configuration files
+│   ├── binaries.json            # Binary download definitions
+│   ├── compatibility.json       # Version compatibility rules
+│   └── README.md                # Config contribution guide
+├── screenshots/                 # App screenshots
 ├── build/                       # Build resources
 ├── electron-builder.config.js   # Electron builder config
 ├── package.json
@@ -287,6 +300,7 @@ MAIL_PORT=1025
 - [x] Binary validation before project start
 - [x] php.ini editor
 - [x] Real-time log streaming
+- [x] Cloud config updates (binaries & compatibility rules)
 - [ ] Docker container support
 - [ ] PostgreSQL support
 - [ ] MongoDB support

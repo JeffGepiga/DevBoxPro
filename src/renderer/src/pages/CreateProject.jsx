@@ -13,6 +13,8 @@ import {
   Zap,
   AlertTriangle,
   Download,
+  Server,
+  Layers,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -80,6 +82,7 @@ function CreateProject() {
     mysql: false,
     mariadb: false,
     redis: false,
+    nodejs: [],
   });
   const [formData, setFormData] = useState({
     name: '',
@@ -94,6 +97,8 @@ function CreateProject() {
       mariadbVersion: '11.4',
       redis: false,
       redisVersion: '7.4',
+      nodejs: false,
+      nodejsVersion: '20',
       queue: false,
     },
     domain: '',
@@ -228,6 +233,11 @@ function CreateProject() {
             .filter(([_, info]) => info.installed)
             .map(([version]) => version);
           
+          // Node.js versions
+          const nodejsVersions = Object.entries(status.nodejs || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+          
           // Nginx versions
           const nginxVersions = Object.entries(status.nginx || {})
             .filter(([_, info]) => info.installed)
@@ -244,6 +254,7 @@ function CreateProject() {
             mysql: mysqlVersions,
             mariadb: mariadbVersions,
             redis: redisVersions,
+            nodejs: nodejsVersions,
             nginx: nginxVersions,
             apache: apacheVersions,
           });
@@ -282,6 +293,9 @@ function CreateProject() {
           mysqlVersion: formData.services.mysql ? formData.services.mysqlVersion : null,
           mariadbVersion: formData.services.mariadb ? formData.services.mariadbVersion : null,
           redisVersion: formData.services.redis ? formData.services.redisVersion : null,
+          nodeVersion: formData.services.nodejs ? formData.services.nodejsVersion : null,
+          webServer: formData.webServer,
+          webServerVersion: formData.webServerVersion,
           projectType: formData.type,
         };
         const result = await window.devbox?.projects.checkCompatibility(config);
@@ -805,6 +819,13 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
       versions: binariesStatus?.redis || [],
     },
     {
+      id: 'nodejs',
+      name: 'Node.js',
+      description: 'JavaScript runtime for frontend builds',
+      icon: '🟢',
+      versions: binariesStatus?.nodejs || [],
+    },
+    {
       id: 'queue',
       name: 'Queue Worker',
       description: 'Background job processing (Laravel)',
@@ -980,6 +1001,28 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
                   </div>
                 </div>
               )}
+              {/* Version selector for Node.js */}
+              {service.id === 'nodejs' && formData.services[service.id] && service.versions.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                  <label className="text-xs text-gray-500 mb-2 block">Version</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {service.versions.map(version => (
+                      <button
+                        key={version}
+                        onClick={(e) => { e.stopPropagation(); updateServiceVersion(service.id, version); }}
+                        className={clsx(
+                          'px-3 py-1 rounded text-sm font-medium transition-all',
+                          formData.services[`${service.id}Version`] === version
+                            ? 'bg-green-500 text-white'
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                        )}
+                      >
+                        {version}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -1027,7 +1070,7 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig })
               )}
             >
               <div className="flex items-center gap-3">
-                <span className="text-2xl">🟢</span>
+                <Server className="w-6 h-6 text-green-500" />
                 <div>
                   <h3 className="font-semibold text-gray-900 dark:text-white">Nginx</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -1053,7 +1096,7 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig })
               )}
             >
               <div className="flex items-center gap-3">
-                <span className="text-2xl">🔴</span>
+                <Layers className="w-6 h-6 text-orange-500" />
                 <div>
                   <h3 className="font-semibold text-gray-900 dark:text-white">Apache</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -1168,7 +1211,7 @@ function StepReview({ formData }) {
               Web Server
             </h3>
             <p className="text-lg font-semibold text-gray-900 dark:text-white capitalize">
-              {formData.webServer === 'nginx' ? '🟢 Nginx' : '🔴 Apache'}
+              {formData.webServer === 'nginx' ? 'Nginx' : 'Apache'}
             </p>
           </div>
         </div>
@@ -1211,7 +1254,7 @@ function StepReview({ formData }) {
                 </h3>
                 <p className="text-sm text-blue-700 dark:text-blue-300">
                   {formData.type === 'laravel' 
-                    ? 'Will run "composer create-project", generate app key, and "npm install" to set up a complete Laravel application.'
+                    ? `Will run "composer create-project" and generate app key${formData.services.nodejs ? ', then "npm install"' : ''} to set up a complete Laravel application.`
                     : 'Will download and install a fresh WordPress copy.'}
                 </p>
               </div>

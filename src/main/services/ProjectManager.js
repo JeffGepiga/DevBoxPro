@@ -309,7 +309,7 @@ class ProjectManager {
           }
         }
         
-        await this.installLaravel(project.path, project.phpVersion, project.name, mainWindow);
+        await this.installLaravel(project, mainWindow);
         
       } else if (project.type === 'wordpress') {
         console.log(`Installing fresh WordPress at ${project.path}...`);
@@ -417,7 +417,13 @@ class ProjectManager {
     }
   }
 
-  async installLaravel(projectPath, phpVersion = '8.4', projectName = 'laravel', mainWindow = null) {
+  async installLaravel(project, mainWindow = null) {
+    const projectPath = project.path;
+    const phpVersion = project.phpVersion || '8.4';
+    const projectName = project.name || 'laravel';
+    const useNodejs = project.services?.nodejs !== false; // Default to true for backwards compatibility
+    const nodejsVersion = project.services?.nodejsVersion || '20';
+    
     const parentPath = path.dirname(projectPath);
     const folderName = path.basename(projectPath);
     
@@ -565,62 +571,65 @@ class ProjectManager {
       onOutput(`Warning: Could not generate app key: ${e.message}`, 'warning');
     }
 
-    // Run npm install if package.json exists (like Laragon does)
-    try {
-      const packageJsonPath = path.join(projectPath, 'package.json');
-      if (await fs.pathExists(packageJsonPath)) {
-        onOutput('Installing npm packages...', 'info');
-        onOutput('$ npm install', 'command');
-        
-        // Try to use downloaded Node.js, fall back to system npm
-        const nodeVersion = '22'; // Use LTS version
-        const platform = process.platform === 'win32' ? 'win' : 'mac';
-        const resourcePath = this.configStore.get('resourcePath') || require('path').join(require('electron').app.getPath('userData'), 'resources');
-        const nodeDir = path.join(resourcePath, 'nodejs', nodeVersion, platform);
-        
-        let npmCmd = 'npm';
-        
-        // Check if we have local Node.js
-        if (await fs.pathExists(nodeDir)) {
-          if (process.platform === 'win32') {
-            npmCmd = path.join(nodeDir, 'npm.cmd');
-          } else {
-            npmCmd = path.join(nodeDir, 'bin', 'npm');
-          }
-        }
-        
-        await new Promise((resolve) => {
-          const npmProc = spawn(npmCmd, ['install'], {
-            cwd: projectPath,
-            shell: true,
-            stdio: ['ignore', 'pipe', 'pipe'],
-            windowsHide: true,
-            env: {
-              ...process.env,
-              PATH: process.platform === 'win32' 
-                ? `${nodeDir};${process.env.PATH}`
-                : `${path.join(nodeDir, 'bin')}:${process.env.PATH}`,
-            },
-          });
+    // Run npm install if package.json exists AND Node.js service is enabled
+    if (!useNodejs) {
+      onOutput('Skipping npm install (Node.js service not selected)', 'info');
+    } else {
+      try {
+        const packageJsonPath = path.join(projectPath, 'package.json');
+        if (await fs.pathExists(packageJsonPath)) {
+          onOutput('Installing npm packages...', 'info');
+          onOutput('$ npm install', 'command');
           
-          npmProc.stdout.on('data', (data) => onOutput(data.toString(), 'stdout'));
-          npmProc.stderr.on('data', (data) => onOutput(data.toString(), 'stderr'));
-          npmProc.on('close', (code) => {
-            if (code === 0) {
-              onOutput('✓ npm packages installed successfully!', 'success');
+          // Use selected Node.js version
+          const platform = process.platform === 'win32' ? 'win' : 'mac';
+          const resourcePath = this.configStore.get('resourcePath') || require('path').join(require('electron').app.getPath('userData'), 'resources');
+          const nodeDir = path.join(resourcePath, 'nodejs', nodejsVersion, platform);
+          
+          let npmCmd = 'npm';
+          
+          // Check if we have local Node.js
+          if (await fs.pathExists(nodeDir)) {
+            if (process.platform === 'win32') {
+              npmCmd = path.join(nodeDir, 'npm.cmd');
             } else {
-              onOutput(`npm install finished with code ${code} (non-critical)`, 'warning');
+              npmCmd = path.join(nodeDir, 'bin', 'npm');
             }
-            resolve();
+          }
+          
+          await new Promise((resolve) => {
+            const npmProc = spawn(npmCmd, ['install'], {
+              cwd: projectPath,
+              shell: true,
+              stdio: ['ignore', 'pipe', 'pipe'],
+              windowsHide: true,
+              env: {
+                ...process.env,
+                PATH: process.platform === 'win32' 
+                  ? `${nodeDir};${process.env.PATH}`
+                  : `${path.join(nodeDir, 'bin')}:${process.env.PATH}`,
+              },
+            });
+            
+            npmProc.stdout.on('data', (data) => onOutput(data.toString(), 'stdout'));
+            npmProc.stderr.on('data', (data) => onOutput(data.toString(), 'stderr'));
+            npmProc.on('close', (code) => {
+              if (code === 0) {
+                onOutput('✓ npm packages installed successfully!', 'success');
+              } else {
+                onOutput(`npm install finished with code ${code} (non-critical)`, 'warning');
+              }
+              resolve();
+            });
+            npmProc.on('error', (err) => {
+              onOutput(`npm not available: ${err.message} (non-critical)`, 'warning');
+              resolve();
+            });
           });
-          npmProc.on('error', (err) => {
-            onOutput(`npm not available: ${err.message} (non-critical)`, 'warning');
-            resolve();
-          });
-        });
+        }
+      } catch (e) {
+        onOutput(`npm install skipped: ${e.message}`, 'warning');
       }
-    } catch (e) {
-      onOutput(`npm install skipped: ${e.message}`, 'warning');
     }
 
     onOutput('', 'info');
