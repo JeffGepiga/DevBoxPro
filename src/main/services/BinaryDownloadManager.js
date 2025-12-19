@@ -352,6 +352,7 @@ class BinaryDownloadManager {
     // Track remote config state
     this.remoteConfig = null;
     this.lastRemoteCheck = null;
+    this.configVersion = 'built-in'; // Track current config version
     
     // Local config cache path - persists updates between app restarts
     this.localConfigPath = path.join(app.getPath('userData'), 'binaries-config.json');
@@ -374,20 +375,42 @@ class BinaryDownloadManager {
       this.remoteConfig = remoteConfig;
       this.lastRemoteCheck = new Date().toISOString();
 
-      // Compare versions and find updates
+      // Check if remote version is newer
+      const isNewerVersion = this.isVersionNewer(remoteConfig.version, this.configVersion);
+      
+      // Compare versions and find updates (for display purposes)
       const updates = this.compareConfigs(remoteConfig);
       
       return {
         success: true,
         configVersion: remoteConfig.version,
+        currentVersion: this.configVersion,
         lastUpdated: remoteConfig.lastUpdated,
         updates,
-        hasUpdates: updates.length > 0
+        // Only show updates if remote version is newer
+        hasUpdates: isNewerVersion
       };
     } catch (error) {
       console.error('Error checking for updates:', error);
       return { success: false, error: error.message };
     }
+  }
+
+  // Check if version1 is newer than version2 (semver comparison)
+  isVersionNewer(version1, version2) {
+    if (!version1 || !version2 || version2 === 'built-in') return true;
+    if (version1 === version2) return false;
+    
+    const v1Parts = version1.split('.').map(p => parseInt(p, 10) || 0);
+    const v2Parts = version2.split('.').map(p => parseInt(p, 10) || 0);
+    
+    for (let i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {
+      const p1 = v1Parts[i] || 0;
+      const p2 = v2Parts[i] || 0;
+      if (p1 > p2) return true;
+      if (p1 < p2) return false;
+    }
+    return false;
   }
 
   // Fetch remote config JSON from GitHub
@@ -477,11 +500,14 @@ class BinaryDownloadManager {
       // Apply config to in-memory downloads
       const appliedCount = await this.applyConfigToDownloads(this.remoteConfig);
       
+      // Update the current config version
+      this.configVersion = this.remoteConfig.version;
+      
       // Save to local cache for persistence
       await this.saveCachedConfig(this.remoteConfig);
 
-      console.log(`Applied ${appliedCount} binary config updates`);
-      return { success: true, appliedCount };
+      console.log(`Applied ${appliedCount} binary config updates (version: ${this.configVersion})`);
+      return { success: true, appliedCount, version: this.configVersion };
     } catch (error) {
       console.error('Error applying updates:', error);
       return { success: false, error: error.message };
@@ -520,6 +546,7 @@ class BinaryDownloadManager {
           
           // Apply cached config
           this.remoteConfig = cachedData.config;
+          this.configVersion = cachedData.config.version; // Restore the version
           await this.applyConfigToDownloads(cachedData.config);
           
           return true;

@@ -292,7 +292,10 @@ class CompatibilityManager {
       this.remoteConfig = remoteConfig;
       this.lastRemoteCheck = new Date().toISOString();
 
-      // Compare with current config
+      // Compare versions - if same version, no updates needed
+      const isNewerVersion = this.isVersionNewer(remoteConfig.version, this.configVersion);
+      
+      // Compare with current config for details
       const updates = this.compareConfigs(remoteConfig);
       
       return {
@@ -301,12 +304,32 @@ class CompatibilityManager {
         lastUpdated: remoteConfig.lastUpdated,
         currentVersion: this.configVersion,
         updates,
-        hasUpdates: updates.newRules.length > 0 || updates.updatedRules.length > 0 || updates.removedRules.length > 0
+        // Only show updates if remote version is newer than current
+        hasUpdates: isNewerVersion
       };
     } catch (error) {
       console.error('Error checking for compatibility updates:', error);
       return { success: false, error: error.message };
     }
+  }
+
+  /**
+   * Check if version1 is newer than version2 (semver comparison)
+   */
+  isVersionNewer(version1, version2) {
+    if (!version1 || !version2 || version2 === 'built-in') return true;
+    if (version1 === version2) return false;
+    
+    const v1Parts = version1.split('.').map(p => parseInt(p, 10) || 0);
+    const v2Parts = version2.split('.').map(p => parseInt(p, 10) || 0);
+    
+    for (let i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {
+      const p1 = v1Parts[i] || 0;
+      const p2 = v2Parts[i] || 0;
+      if (p1 > p2) return true;
+      if (p1 < p2) return false;
+    }
+    return false;
   }
 
   /**
