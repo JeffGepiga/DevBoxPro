@@ -970,6 +970,10 @@ class ProjectManager {
     
     if (runningProjectIds.length === 0) {
       console.log('No running projects to stop');
+      // Still do cleanup in case of orphan processes
+      if (process.platform === 'win32') {
+        await this.forceKillOrphanPhpProcesses();
+      }
       return { success: true, stoppedCount: 0 };
     }
 
@@ -986,6 +990,11 @@ class ProjectManager {
       }
     }
 
+    // Force kill any orphan PHP-CGI processes on Windows
+    if (process.platform === 'win32') {
+      await this.forceKillOrphanPhpProcesses();
+    }
+
     const stoppedCount = results.filter(r => r.success).length;
     console.log(`Stopped ${stoppedCount}/${runningProjectIds.length} projects`);
     
@@ -994,6 +1003,23 @@ class ProjectManager {
       stoppedCount,
       results 
     };
+  }
+
+  /**
+   * Force kill any orphan PHP-CGI processes on Windows
+   */
+  async forceKillOrphanPhpProcesses() {
+    const { execSync } = require('child_process');
+    try {
+      execSync('taskkill /F /IM php-cgi.exe 2>nul', { 
+        windowsHide: true, 
+        timeout: 5000,
+        stdio: 'ignore'
+      });
+      console.log('Killed orphan php-cgi.exe processes');
+    } catch (e) {
+      // Ignore - no processes to kill
+    }
   }
 
   async startSupervisorProcesses(project) {

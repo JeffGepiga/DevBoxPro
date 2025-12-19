@@ -247,10 +247,12 @@ async function startup() {
 // App event handlers
 app.whenReady().then(startup);
 
-app.on('window-all-closed', () => {
-  // Don't quit on macOS when all windows are closed
+app.on('window-all-closed', async () => {
+  // On macOS, apps typically stay active until explicitly quit
   if (process.platform !== 'darwin') {
-    // Keep app running in tray
+    // Windows/Linux: perform cleanup when all windows are closed
+    await gracefulShutdown();
+    app.quit();
   }
 });
 
@@ -303,16 +305,6 @@ app.on('before-quit', async (event) => {
     await gracefulShutdown();
     
     // Now quit the app
-    app.quit();
-  }
-});
-
-// Handle window close on Windows - ensure cleanup
-app.on('window-all-closed', async () => {
-  // On macOS, apps typically stay active until explicitly quit
-  if (process.platform !== 'darwin') {
-    // Windows/Linux: perform cleanup when all windows are closed
-    await gracefulShutdown();
     app.quit();
   }
 });

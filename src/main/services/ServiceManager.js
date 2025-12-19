@@ -398,7 +398,24 @@ class ServiceManager extends EventEmitter {
       }
     }
     
-    // Then stop all services
+    // Stop all tracked processes first
+    console.log('Stopping all tracked processes...');
+    for (const [processKey, proc] of this.processes) {
+      try {
+        console.log(`Stopping process: ${processKey}`);
+        await this.killProcess(proc);
+      } catch (error) {
+        console.error(`Error stopping process ${processKey}:`, error);
+      }
+    }
+    this.processes.clear();
+    
+    // Clear all running versions tracking
+    for (const [serviceName, versions] of this.runningVersions) {
+      versions.clear();
+    }
+    
+    // Then stop all services (this also does cleanup)
     for (const serviceName of Object.keys(this.serviceConfigs)) {
       try {
         await this.stopService(serviceName);
@@ -407,7 +424,74 @@ class ServiceManager extends EventEmitter {
         results.push({ service: serviceName, success: false, error: error.message });
       }
     }
+    
+    // Force kill any remaining orphan processes on Windows
+    if (process.platform === 'win32') {
+      await this.forceKillOrphanProcesses();
+    }
+    
+    // Reset service statuses
+    for (const [serviceName, status] of this.serviceStatus) {
+      status.status = 'stopped';
+      status.pid = null;
+      status.startedAt = null;
+      status.version = null;
+    }
+    
+    // Reset port ownership
+    this.standardPortOwner = null;
+    
+    console.log('All services stopped');
     return results;
+  }
+
+  /**
+   * Force kill any orphan processes that might be left behind
+   * Only kills processes running from our resources directory
+   */
+  async forceKillOrphanProcesses() {
+    const { execSync, exec } = require('child_process');
+    
+    // First try to kill known service processes by image name
+    const processesToKill = [
+      'nginx.exe',
+      'httpd.exe', 
+      'mysqld.exe',
+      'mariadbd.exe',
+      'redis-server.exe',
+      'mailpit.exe',
+    ];
+    
+    for (const processName of processesToKill) {
+      try {
+        execSync(`taskkill /F /IM ${processName} 2>nul`, { 
+          windowsHide: true, 
+          timeout: 5000,
+          stdio: 'ignore'
+        });
+        console.log(`Killed orphan ${processName} processes`);
+      } catch (e) {
+        // Ignore - no processes to kill or already dead
+      }
+    }
+    
+    // Kill PHP processes running from our resources path (for phpMyAdmin)
+    const resourcesPath = this.resourcePath.replace(/\\/g, '\\\\');
+    try {
+      // Use WMIC to find and kill PHP processes from our path
+      const wmicCmd = `wmic process where "name='php.exe' and commandline like '%${resourcesPath}%'" get processid 2>nul`;
+      const result = execSync(wmicCmd, { windowsHide: true, timeout: 5000 }).toString();
+      const pids = result.split('\\n').filter(line => /^\\d+$/.test(line.trim())).map(line => line.trim());
+      
+      for (const pid of pids) {
+        try {
+          execSync(`taskkill /F /PID ${pid} 2>nul`, { windowsHide: true, timeout: 5000, stdio: 'ignore' });
+          console.log(`Killed orphan PHP process (PID: ${pid})`);
+        } catch (e) {}
+      }
+    } catch (e) {
+      // Ignore errors
+    }
   }
 
   // Nginx
