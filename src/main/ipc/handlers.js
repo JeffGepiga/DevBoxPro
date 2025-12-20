@@ -92,15 +92,29 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     const projectData = project.getProject(id);
     if (!projectData) throw new Error('Project not found');
 
-    const commands = {
-      vscode: `code "${projectData.path}"`,
-      phpstorm: `phpstorm "${projectData.path}"`,
-      sublime: `subl "${projectData.path}"`,
+    const editorConfigs = {
+      vscode: { command: 'code', name: 'Visual Studio Code' },
+      phpstorm: { command: 'phpstorm', name: 'PhpStorm' },
+      sublime: { command: 'subl', name: 'Sublime Text' },
     };
 
-    const { exec } = require('child_process');
+    const config = editorConfigs[editor] || editorConfigs.vscode;
+    const { exec, execSync } = require('child_process');
+    
+    // Check if the editor command is available
+    const checkCommand = process.platform === 'win32' 
+      ? `where ${config.command}` 
+      : `which ${config.command}`;
+    
+    try {
+      execSync(checkCommand, { stdio: 'ignore' });
+    } catch {
+      throw new Error(`${config.name} is not installed or not in your system PATH. Please install ${config.name} or choose a different editor in Settings.`);
+    }
+
+    const fullCommand = `${config.command} "${projectData.path}"`;
     return new Promise((resolve, reject) => {
-      exec(commands[editor] || commands.vscode, (error) => {
+      exec(fullCommand, (error) => {
         if (error) reject(error);
         else resolve(true);
       });

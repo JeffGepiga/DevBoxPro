@@ -118,6 +118,14 @@ function ProjectDetail() {
     setDeleteFiles(false);
   };
 
+  const handleOpenInEditor = async () => {
+    setActionError(null);
+    try {
+      await window.devbox?.projects.openInEditor(id, settings?.settings?.defaultEditor || 'vscode');
+    } catch (err) {
+      setActionError(err.message || 'Failed to open in editor');
+    }
+  };
   const handleDeleteConfirm = async () => {
     if (deleteConfirmText !== 'delete') return;
     
@@ -231,7 +239,7 @@ function ProjectDetail() {
               </button>
             )}
             <button
-              onClick={() => window.devbox?.projects.openInEditor(id, settings?.settings?.defaultEditor || 'vscode')}
+              onClick={handleOpenInEditor}
               className="btn-secondary"
             >
               <Code className="w-4 h-4" />

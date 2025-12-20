@@ -23,7 +23,7 @@ import {
 import clsx from 'clsx';
 
 function Settings() {
-  const { settings } = useApp();
+  const { settings, refreshSettings } = useApp();
   const [localSettings, setLocalSettings] = useState({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -46,6 +46,8 @@ function Settings() {
       for (const [key, value] of Object.entries(localSettings)) {
         await window.devbox?.settings.set(`settings.${key}`, value);
       }
+      // Refresh settings in context so other components get the updated values
+      await refreshSettings();
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (error) {
@@ -59,6 +61,7 @@ function Settings() {
   const handleReset = async () => {
     if (window.confirm('Reset all settings to defaults?')) {
       await window.devbox?.settings.reset();
+      await refreshSettings();
       const newSettings = await window.devbox?.settings.getAll();
       setLocalSettings(newSettings.settings || {});
     }

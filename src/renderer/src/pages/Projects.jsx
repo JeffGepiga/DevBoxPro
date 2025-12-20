@@ -636,8 +636,13 @@ function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
                   Open Folder
                 </button>
                 <button
-                  onClick={() => {
-                    window.devbox?.projects.openInEditor(project.id, defaultEditor || 'vscode');
+                  onClick={async () => {
+                    setError(null);
+                    try {
+                      await window.devbox?.projects.openInEditor(project.id, defaultEditor || 'vscode');
+                    } catch (err) {
+                      setError(err.message || 'Failed to open in editor');
+                    }
                     setShowMenu(false);
                   }}
                   className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"

@@ -209,6 +209,15 @@ export function AppProvider({ children }) {
     }
   }, []);
 
+  const refreshSettings = useCallback(async () => {
+    try {
+      const settings = await window.devbox?.settings.getAll();
+      dispatch({ type: 'SET_SETTINGS', payload: settings || {} });
+    } catch (error) {
+      console.error('Error refreshing settings:', error);
+    }
+  }, []);
+
   const createProject = useCallback(async (config) => {
     const project = await window.devbox?.projects.create(config);
     if (project) {
@@ -282,6 +291,7 @@ export function AppProvider({ children }) {
     dispatch,
     refreshProjects,
     refreshServices,
+    refreshSettings,
     createProject,
     deleteProject,
     startProject,
