@@ -99,7 +99,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     };
 
     const config = editorConfigs[editor] || editorConfigs.vscode;
-    const { exec, execSync } = require('child_process');
+    const { spawn, execSync } = require('child_process');
     
     // Check if the editor command is available
     const checkCommand = process.platform === 'win32' 
@@ -112,12 +112,33 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       throw new Error(`${config.name} is not installed or not in your system PATH. Please install ${config.name} or choose a different editor in Settings.`);
     }
 
-    const fullCommand = `${config.command} "${projectData.path}"`;
+    // Use cmd.exe /c start to launch the editor in a completely separate environment
+    // This avoids inheriting Electron's ICU environment issues
     return new Promise((resolve, reject) => {
-      exec(fullCommand, (error) => {
-        if (error) reject(error);
-        else resolve(true);
-      });
+      try {
+        if (process.platform === 'win32') {
+          // On Windows, use 'start' command via cmd.exe to fully detach
+          // The empty string after 'start' is the window title (required when path has spaces)
+          const child = spawn('cmd.exe', ['/c', 'start', '""', config.command, projectData.path], {
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true,
+          });
+          child.unref();
+        } else {
+          // On macOS/Linux, use regular spawn with detached
+          const child = spawn(config.command, [projectData.path], {
+            detached: true,
+            stdio: 'ignore',
+          });
+          child.unref();
+        }
+        
+        // Small delay to ensure process started
+        setTimeout(() => resolve(true), 100);
+      } catch (error) {
+        reject(error);
+      }
     });
   });
 

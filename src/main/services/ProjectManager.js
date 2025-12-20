@@ -201,7 +201,17 @@ class ProjectManager {
       project.environment.DB_DATABASE = dbName;
 
       try {
-        await this.managers.database?.createDatabase(dbName);
+        // Set the active database type and get the version based on project configuration
+        let dbVersion = null;
+        if (project.services.mariadb && this.managers.database) {
+          await this.managers.database.setActiveDatabaseType('mariadb');
+          dbVersion = project.services.mariadbVersion || '11.4';
+        } else if (project.services.mysql && this.managers.database) {
+          await this.managers.database.setActiveDatabaseType('mysql');
+          dbVersion = project.services.mysqlVersion || '8.4';
+        }
+        
+        await this.managers.database?.createDatabase(dbName, dbVersion);
       } catch (error) {
         console.warn('Could not create database:', error.message);
       }

@@ -691,18 +691,48 @@ esac
    */
   async isInWindowsUserPath(targetPath) {
     return new Promise((resolve) => {
-      const psCommand = `
-        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-        $systemPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-        $fullPath = "$systemPath;$userPath"
-        $targetPath = "${targetPath.replace(/\\/g, '\\\\')}"
-        $found = $fullPath.Split(';') | Where-Object { $_.Trim() -eq $targetPath }
-        if ($found) { Write-Output "FOUND" } else { Write-Output "NOTFOUND" }
-      `;
+      // Normalize the target path - remove trailing slashes
+      const normalizedTarget = targetPath.replace(/[\\/]+$/, '');
       
-      exec(`powershell -NoProfile -Command "${psCommand.replace(/"/g, '\\"')}"`, { timeout: 5000 }, (error, stdout, stderr) => {
-        if (error) {
-          console.error('Error checking Windows PATH:', error);
+      // Use spawn with -File parameter to avoid complex escaping issues
+      const { spawn } = require('child_process');
+      
+      // Create a simple inline script that checks the PATH
+      const psScript = `
+$targetPath = '${normalizedTarget.replace(/'/g, "''")}'
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$systemPath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+$fullPath = "$systemPath;$userPath"
+$found = $fullPath.Split(';') | Where-Object { 
+  $_.Trim().TrimEnd('\\', '/') -ieq $targetPath 
+}
+if ($found) { 'FOUND' } else { 'NOTFOUND' }
+`;
+      
+      const child = spawn('powershell', ['-NoProfile', '-Command', psScript], {
+        windowsHide: true,
+        timeout: 5000,
+      });
+      
+      let stdout = '';
+      let stderr = '';
+      
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      child.on('error', (error) => {
+        console.error('Error checking Windows PATH:', error);
+        resolve(false);
+      });
+      
+      child.on('close', (code) => {
+        if (code !== 0) {
+          console.error('PowerShell PATH check failed:', stderr);
           resolve(false);
         } else {
           resolve(stdout.trim() === 'FOUND');

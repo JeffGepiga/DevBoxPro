@@ -628,23 +628,41 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
         
         if (await fs.pathExists(nginxExe)) {
-          // Send stop signal to Nginx
           const { execSync } = require('child_process');
+          
+          // First check if nginx is actually running before trying to stop it
+          let nginxRunning = false;
           try {
-            execSync(`"${nginxExe}" -s stop -c "${confPath}"`, { 
-              cwd: nginxPath,
-              windowsHide: true,
-              timeout: 5000
+            const result = execSync('tasklist /FI "IMAGENAME eq nginx.exe" /NH 2>nul', { 
+              windowsHide: true, 
+              timeout: 5000,
+              encoding: 'utf8'
             });
+            nginxRunning = result.toLowerCase().includes('nginx.exe');
           } catch (e) {
-            // Ignore errors - process may already be dead
+            // If tasklist fails, assume not running
+            nginxRunning = false;
           }
           
-          // Kill any remaining nginx processes
-          try {
-            execSync('taskkill /F /IM nginx.exe 2>nul', { windowsHide: true, timeout: 5000 });
-          } catch (e) {
-            // Ignore - no processes to kill
+          // Only send stop signal if nginx is actually running
+          if (nginxRunning) {
+            try {
+              execSync(`"${nginxExe}" -s stop -c "${confPath}" 2>nul`, { 
+                cwd: nginxPath,
+                windowsHide: true,
+                timeout: 5000,
+                stdio: 'ignore'
+              });
+            } catch (e) {
+              // Ignore errors - process may already be dead
+            }
+            
+            // Kill any remaining nginx processes
+            try {
+              execSync('taskkill /F /IM nginx.exe 2>nul', { windowsHide: true, timeout: 5000, stdio: 'ignore' });
+            } catch (e) {
+              // Ignore - no processes to kill
+            }
           }
         }
       } catch (error) {

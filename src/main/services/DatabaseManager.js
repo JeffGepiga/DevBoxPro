@@ -377,8 +377,46 @@ class DatabaseManager {
     }));
   }
 
-  async createDatabase(name) {
+  async createDatabase(name, version = null) {
     const safeName = this.sanitizeName(name);
+    const dbType = this.getActiveDatabaseType();
+    
+    // Check if service is running, if not try to start it
+    if (!this.isServiceRunning()) {
+      console.log(`${dbType} service is not running, attempting to start it...`);
+      
+      if (this.managers.service) {
+        try {
+          // Use provided version, or fall back to settings
+          let dbVersion = version;
+          if (!dbVersion) {
+            const settings = this.configStore.get('settings', {});
+            dbVersion = dbType === 'mariadb' 
+              ? (settings.mariadbVersion || '11.4')
+              : (settings.mysqlVersion || '8.4');
+          }
+          
+          console.log(`Starting ${dbType} version ${dbVersion}...`);
+          await this.managers.service.startService(dbType, dbVersion);
+          
+          // Wait a bit for the service to be ready
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Verify it's running now
+          if (!this.isServiceRunning()) {
+            throw new Error(`${dbType} service failed to start`);
+          }
+          
+          console.log(`${dbType} service started successfully`);
+        } catch (startError) {
+          console.error(`Failed to start ${dbType}:`, startError.message);
+          throw new Error(`Cannot create database: ${dbType} service is not running and failed to start. Please start ${dbType} manually first.`);
+        }
+      } else {
+        throw new Error(`Cannot create database: ${dbType} service is not running. Please start it first.`);
+      }
+    }
+    
     await this.runDbQuery(`CREATE DATABASE IF NOT EXISTS \`${safeName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
     console.log(`Database created: ${safeName}`);
     return { success: true, name: safeName };

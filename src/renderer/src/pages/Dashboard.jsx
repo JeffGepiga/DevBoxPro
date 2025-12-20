@@ -306,6 +306,16 @@ function Dashboard() {
             icon={Globe}
             label="Open phpMyAdmin"
             onClick={async () => {
+              // Check if phpMyAdmin is running, start if not
+              if (services.phpmyadmin?.status !== 'running') {
+                try {
+                  await window.devbox?.services.start('phpmyadmin');
+                  // Wait a moment for service to be ready
+                  await new Promise(resolve => setTimeout(resolve, 1500));
+                } catch (err) {
+                  console.error('Failed to start phpMyAdmin:', err);
+                }
+              }
               const url = await window.devbox?.database.getPhpMyAdminUrl();
               if (url) window.devbox?.system.openExternal(url);
             }}
@@ -313,7 +323,19 @@ function Dashboard() {
           <QuickAction
             icon={ExternalLink}
             label="Open Mailpit"
-            onClick={() => window.devbox?.system.openExternal('http://localhost:8025')}
+            onClick={async () => {
+              // Check if Mailpit is running, start if not
+              if (services.mailpit?.status !== 'running') {
+                try {
+                  await window.devbox?.services.start('mailpit');
+                  // Wait a moment for service to be ready
+                  await new Promise(resolve => setTimeout(resolve, 1500));
+                } catch (err) {
+                  console.error('Failed to start Mailpit:', err);
+                }
+              }
+              window.devbox?.system.openExternal('http://localhost:8025');
+            }}
           />
         </div>
       </div>
