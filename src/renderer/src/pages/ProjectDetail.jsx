@@ -428,6 +428,8 @@ function OverviewTab({ project, processes, refreshProjects }) {
     mariadb: [],
     redis: [],
     nodejs: [],
+    nginx: [],
+    apache: [],
   });
   
   // Load available PHP versions, binaries status, and service config
@@ -461,6 +463,8 @@ function OverviewTab({ project, processes, refreshProjects }) {
             mariadb: getInstalledVersions('mariadb'),
             redis: getInstalledVersions('redis'),
             nodejs: getInstalledVersions('nodejs'),
+            nginx: getInstalledVersions('nginx'),
+            apache: getInstalledVersions('apache'),
           });
         }
       } catch (error) {
@@ -552,6 +556,15 @@ function OverviewTab({ project, processes, refreshProjects }) {
       setPendingChanges(rest);
     } else {
       setPendingChanges({ ...pendingChanges, webServer: newServer });
+    }
+  };
+  
+  const handleWebServerVersionChange = (newVersion) => {
+    if (newVersion === project.webServerVersion) {
+      const { webServerVersion, ...rest } = pendingChanges;
+      setPendingChanges(rest);
+    } else {
+      setPendingChanges({ ...pendingChanges, webServerVersion: newVersion });
     }
   };
   
@@ -774,45 +787,73 @@ function OverviewTab({ project, processes, refreshProjects }) {
         <div className="grid grid-cols-2 gap-4">
           {['nginx', 'apache'].map((server) => {
             const effectiveServer = getEffectiveValue('webServer');
+            const effectiveVersion = getEffectiveValue('webServerVersion');
             const isSelected = effectiveServer === server;
             const isChanged = pendingChanges.webServer && pendingChanges.webServer !== project.webServer;
+            const versionChanged = pendingChanges.webServerVersion && pendingChanges.webServerVersion !== project.webServerVersion;
+            const serverVersions = versionOptions[server] || [];
+            const isInstalled = serverVersions.length > 0;
             
             return (
               <button
                 key={server}
-                onClick={() => handleWebServerChange(server)}
+                onClick={() => isInstalled && handleWebServerChange(server)}
+                disabled={!isInstalled}
                 className={clsx(
                   'p-4 rounded-lg border-2 text-left transition-all',
+                  !isInstalled && 'opacity-50 cursor-not-allowed',
                   isSelected
                     ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
                     : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                 )}
               >
-                <div className="flex items-center gap-2">
-                  {server === 'nginx' ? (
-                    <Server className="w-5 h-5 text-green-500" />
-                  ) : (
-                    <Layers className="w-5 h-5 text-orange-500" />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {server === 'nginx' ? (
+                      <Server className="w-5 h-5 text-green-500" />
+                    ) : (
+                      <Layers className="w-5 h-5 text-orange-500" />
+                    )}
+                    <span className="font-medium text-gray-900 dark:text-white capitalize">{server}</span>
+                  </div>
+                  {/* Version selector */}
+                  {isSelected && serverVersions.length > 0 && (
+                    <select
+                      value={effectiveVersion || serverVersions[0]}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        handleWebServerVersionChange(e.target.value);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="input py-1 px-2 text-xs w-16"
+                    >
+                      {serverVersions.map((v) => (
+                        <option key={v} value={v}>{v}</option>
+                      ))}
+                    </select>
                   )}
-                  <span className="font-medium text-gray-900 dark:text-white capitalize">{server}</span>
                 </div>
-                {isSelected && (
+                {!isInstalled ? (
+                  <span className="text-xs mt-1 block text-gray-500 dark:text-gray-400">
+                    Not installed
+                  </span>
+                ) : isSelected ? (
                   <span className={clsx(
                     'text-xs mt-1 block',
-                    isChanged && effectiveServer === server
+                    (isChanged || versionChanged) && effectiveServer === server
                       ? 'text-yellow-600 dark:text-yellow-400'
                       : 'text-primary-600 dark:text-primary-400'
                   )}>
-                    {isChanged && effectiveServer === server ? 'Will switch to this' : 'Active'}
+                    {(isChanged || versionChanged) && effectiveServer === server ? 'Modified' : 'Active'}
                   </span>
-                )}
+                ) : null}
               </button>
             );
           })}
         </div>
-        {pendingChanges.webServer && (
+        {(pendingChanges.webServer || pendingChanges.webServerVersion) && (
           <p className="mt-3 text-xs text-yellow-600 dark:text-yellow-400">
-            Web server will change after saving
+            Web server configuration will change after saving
           </p>
         )}
       </div>

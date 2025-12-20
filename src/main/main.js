@@ -351,6 +351,57 @@ app.on('activate', () => {
 let isShuttingDown = false;
 
 /**
+ * Force kill all DevBox processes on Windows
+ */
+async function forceKillAllProcesses() {
+  if (process.platform !== 'win32') return;
+  
+  const { execSync } = require('child_process');
+  
+  // Processes that are safe to kill globally (DevBox-specific)
+  const processesToKill = [
+    'php-cgi.exe',
+    'nginx.exe',
+    'httpd.exe',
+    'mysqld.exe',
+    'mariadbd.exe',
+    'redis-server.exe',
+    'mailpit.exe',
+  ];
+  
+  for (const processName of processesToKill) {
+    try {
+      execSync(`taskkill /F /IM ${processName} 2>nul`, { 
+        windowsHide: true, 
+        timeout: 10000,
+        stdio: 'ignore'
+      });
+    } catch (e) {
+      // Ignore - process might not be running
+    }
+  }
+  
+  // Kill PHP and Node processes running from our resources path only
+  const userDataPath = app.getPath('userData').replace(/\\/g, '\\\\');
+  
+  try {
+    // Kill PHP processes from our path (php.exe used for artisan, composer)
+    const phpCmd = `wmic process where "name='php.exe' and (commandline like '%${userDataPath}%' or commandline like '%composer%' or commandline like '%artisan%')" call terminate 2>nul`;
+    execSync(phpCmd, { windowsHide: true, timeout: 10000, stdio: 'ignore' });
+  } catch (e) {
+    // Ignore
+  }
+  
+  try {
+    // Kill Node processes from our resources path only
+    const nodeCmd = `wmic process where "name='node.exe' and commandline like '%${userDataPath}%'" call terminate 2>nul`;
+    execSync(nodeCmd, { windowsHide: true, timeout: 10000, stdio: 'ignore' });
+  } catch (e) {
+    // Ignore
+  }
+}
+
+/**
  * Gracefully shutdown all services and projects
  */
 async function gracefulShutdown() {
@@ -369,8 +420,13 @@ async function gracefulShutdown() {
     if (managers.service) {
       await managers.service.stopAllServices();
     }
+    
+    // Final force kill to ensure no orphan processes remain
+    await forceKillAllProcesses();
   } catch (error) {
     console.error('Error during shutdown:', error);
+    // Even if there's an error, still try to force kill
+    await forceKillAllProcesses();
   }
 }
 

@@ -487,6 +487,146 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return { updateAvailable: false };
   });
 
+  ipcMain.handle('system:clearAllData', async (event, deleteProjectFiles = false) => {
+    const fs = require('fs-extra');
+    
+    try {
+      // Get all projects first if we need to delete their files
+      const projects = config.get('projects', []);
+      
+      // Stop all running projects first
+      if (project) {
+        try {
+          await project.stopAllProjects();
+        } catch (e) {
+          console.error('Error stopping projects:', e);
+        }
+      }
+      
+      // Stop all services
+      if (service) {
+        try {
+          await service.stopAllServices();
+        } catch (e) {
+          console.error('Error stopping services:', e);
+        }
+      }
+      
+      // Force kill any remaining processes on Windows
+      if (process.platform === 'win32') {
+        const { exec, execSync } = require('child_process');
+        // Kill DevBox-specific processes globally
+        const processNames = ['php-cgi.exe', 'nginx.exe', 'httpd.exe', 'mysqld.exe', 'mariadbd.exe', 'redis-server.exe', 'mailpit.exe'];
+        for (const procName of processNames) {
+          try {
+            await new Promise((resolve) => {
+              exec(`taskkill /F /IM ${procName} /T 2>nul`, { timeout: 5000 }, () => resolve());
+            });
+          } catch (e) {
+            // Ignore errors - process might not be running
+          }
+        }
+        
+        // Kill PHP and Node processes from our path only
+        const userDataPath = app.getPath('userData').replace(/\\/g, '\\\\');
+        try {
+          execSync(`wmic process where "name='php.exe' and (commandline like '%${userDataPath}%' or commandline like '%composer%' or commandline like '%artisan%')" call terminate 2>nul`, { windowsHide: true, timeout: 10000, stdio: 'ignore' });
+        } catch (e) {}
+        try {
+          execSync(`wmic process where "name='node.exe' and commandline like '%${userDataPath}%'" call terminate 2>nul`, { windowsHide: true, timeout: 10000, stdio: 'ignore' });
+        } catch (e) {}
+        
+        // Wait a moment for processes to terminate
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      // Delete project files if requested
+      if (deleteProjectFiles) {
+        for (const proj of projects) {
+          if (proj.path && await fs.pathExists(proj.path)) {
+            try {
+              await fs.remove(proj.path);
+              console.log(`Deleted project files: ${proj.path}`);
+            } catch (error) {
+              console.error(`Failed to delete project files ${proj.path}:`, error);
+            }
+          }
+        }
+      }
+      
+      // Clear ALL resources (binaries, configs, everything)
+      const resourcesPath = path.join(app.getPath('userData'), 'resources');
+      if (await fs.pathExists(resourcesPath)) {
+        try {
+          // Remove the entire resources directory
+          await fs.remove(resourcesPath);
+          console.log('Cleared all resources (binaries, configs, etc.)');
+        } catch (e) {
+          console.error('Error clearing resources directory:', e);
+          // If we can't delete the whole thing, try to delete subdirectories
+          const subdirs = ['php', 'mysql', 'mariadb', 'redis', 'nginx', 'apache', 'nodejs', 'mailpit', 'phpmyadmin', 'composer', 'ssl', 'cli'];
+          for (const subdir of subdirs) {
+            try {
+              const subdirPath = path.join(resourcesPath, subdir);
+              if (await fs.pathExists(subdirPath)) {
+                await fs.remove(subdirPath);
+                console.log(`Cleared ${subdir}`);
+              }
+            } catch (err) {
+              console.error(`Error clearing ${subdir}:`, err);
+            }
+          }
+        }
+      }
+      
+      // Clear CLI directory
+      const cliPath = path.join(app.getPath('userData'), 'cli');
+      if (await fs.pathExists(cliPath)) {
+        try {
+          await fs.remove(cliPath);
+          console.log('Cleared CLI directory');
+        } catch (e) {
+          console.error('Error clearing CLI directory:', e);
+        }
+      }
+      
+      // Clear cached binary config
+      const cachedConfigPath = path.join(app.getPath('userData'), 'binaries-config.json');
+      if (await fs.pathExists(cachedConfigPath)) {
+        try {
+          await fs.remove(cachedConfigPath);
+          console.log('Cleared cached binary config');
+        } catch (e) {
+          console.error('Error clearing cached binary config:', e);
+        }
+      }
+      
+      // Clear all configuration
+      config.set('projects', []);
+      config.delete('databases');
+      config.delete('services');
+      config.delete('settings.cliAlias');
+      
+      // Keep some basic settings but reset others
+      const currentSettings = config.get('settings', {});
+      config.set('settings', {
+        defaultProjectsPath: currentSettings.defaultProjectsPath, // Keep this
+        theme: currentSettings.theme, // Keep theme preference
+      });
+      
+      return { 
+        success: true, 
+        message: deleteProjectFiles 
+          ? 'All data, binaries, and project files have been cleared. Please restart the application.' 
+          : 'All data and binaries have been cleared. Project files were preserved. Please restart the application.',
+        requiresRestart: true
+      };
+    } catch (error) {
+      console.error('Error clearing all data:', error);
+      throw new Error(`Failed to clear data: ${error.message}`);
+    }
+  });
+
   // ============ TERMINAL HANDLERS ============
   const terminals = new Map();
 
@@ -682,9 +822,9 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return managers.binaryDownload.downloadApache(version);
   });
 
-  ipcMain.handle('binaries:importApache', async (event, filePath) => {
+  ipcMain.handle('binaries:importApache', async (event, filePath, version = '2.4') => {
     if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
-    return managers.binaryDownload.importApache(filePath);
+    return managers.binaryDownload.importApache(filePath, version);
   });
 
   // Generic binary import for any service

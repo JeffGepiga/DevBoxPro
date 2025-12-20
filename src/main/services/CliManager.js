@@ -657,10 +657,24 @@ esac
     // Check if in PATH
     let inPath = false;
     try {
-      const pathDirs = (process.env.PATH || '').split(path.delimiter);
-      inPath = pathDirs.some(dir => path.normalize(dir).toLowerCase() === path.normalize(cliPath).toLowerCase());
+      if (process.platform === 'win32') {
+        // On Windows, check the actual User PATH from registry
+        // This is more reliable than process.env.PATH which may be stale
+        inPath = await this.isInWindowsUserPath(cliPath);
+      } else {
+        // For macOS/Linux, check process.env.PATH
+        const pathDirs = (process.env.PATH || '').split(path.delimiter);
+        inPath = pathDirs.some(dir => path.normalize(dir).toLowerCase() === path.normalize(cliPath).toLowerCase());
+      }
     } catch (e) {
-      // Ignore
+      console.error('Error checking PATH:', e);
+      // Fallback to checking process.env.PATH
+      try {
+        const pathDirs = (process.env.PATH || '').split(path.delimiter);
+        inPath = pathDirs.some(dir => path.normalize(dir).toLowerCase() === path.normalize(cliPath).toLowerCase());
+      } catch (e2) {
+        // Ignore
+      }
     }
 
     return {
@@ -670,6 +684,31 @@ esac
       scriptPath,
       cliPath,
     };
+  }
+
+  /**
+   * Check if a path is in the Windows User PATH (reads from registry)
+   */
+  async isInWindowsUserPath(targetPath) {
+    return new Promise((resolve) => {
+      const psCommand = `
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        $systemPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        $fullPath = "$systemPath;$userPath"
+        $targetPath = "${targetPath.replace(/\\/g, '\\\\')}"
+        $found = $fullPath.Split(';') | Where-Object { $_.Trim() -eq $targetPath }
+        if ($found) { Write-Output "FOUND" } else { Write-Output "NOTFOUND" }
+      `;
+      
+      exec(`powershell -NoProfile -Command "${psCommand.replace(/"/g, '\\"')}"`, { timeout: 5000 }, (error, stdout, stderr) => {
+        if (error) {
+          console.error('Error checking Windows PATH:', error);
+          resolve(false);
+        } else {
+          resolve(stdout.trim() === 'FOUND');
+        }
+      });
+    });
   }
 
   /**

@@ -145,6 +145,7 @@ contextBridge.exposeInMainWorld('devbox', {
     getAppVersion: () => ipcRenderer.invoke('system:getAppVersion'),
     getPlatform: () => ipcRenderer.invoke('system:getPlatform'),
     checkForUpdates: () => ipcRenderer.invoke('system:checkForUpdates'),
+    clearAllData: (deleteProjectFiles) => ipcRenderer.invoke('system:clearAllData', deleteProjectFiles),
   },
 
   // Terminal operations
@@ -185,7 +186,7 @@ contextBridge.exposeInMainWorld('devbox', {
     downloadPhpMyAdmin: () => ipcRenderer.invoke('binaries:downloadPhpMyAdmin'),
     downloadNginx: (version) => ipcRenderer.invoke('binaries:downloadNginx', version),
     downloadApache: (version) => ipcRenderer.invoke('binaries:downloadApache', version),
-    importApache: (filePath) => ipcRenderer.invoke('binaries:importApache', filePath),
+    importApache: (filePath, version) => ipcRenderer.invoke('binaries:importApache', filePath, version),
     importBinary: (serviceName, version, filePath) => ipcRenderer.invoke('binaries:import', serviceName, version, filePath),
     openApacheDownloadPage: () => ipcRenderer.invoke('binaries:openApacheDownloadPage'),
     downloadNodejs: (version) => ipcRenderer.invoke('binaries:downloadNodejs', version),

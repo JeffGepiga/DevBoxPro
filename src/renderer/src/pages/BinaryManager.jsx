@@ -313,7 +313,7 @@ function BinaryManager() {
     }
   };
 
-  const handleImportApache = async () => {
+  const handleImportApache = async (version = '2.4') => {
     // Use file input to select a file
     const input = document.createElement('input');
     input.type = 'file';
@@ -322,8 +322,9 @@ function BinaryManager() {
       const file = e.target.files?.[0];
       if (!file) return;
 
-      setDownloadingGlobal('apache', true);
-      setProgressGlobal('apache', { status: 'starting', progress: 0 });
+      const id = `apache-${version}`;
+      setDownloadingGlobal(id, true);
+      setProgressGlobal(id, { status: 'starting', progress: 0 });
 
       try {
         // Get the file path - we need to use the path property
@@ -331,11 +332,11 @@ function BinaryManager() {
         if (!filePath) {
           throw new Error('Could not get file path. Please try again.');
         }
-        await window.devbox?.binaries.importApache(filePath);
+        await window.devbox?.binaries.importApache(filePath, version);
       } catch (error) {
         console.error('Error importing Apache:', error);
-        setProgressGlobal('apache', { status: 'error', error: error.message });
-        setDownloadingGlobal('apache', false);
+        setProgressGlobal(id, { status: 'error', error: error.message });
+        setDownloadingGlobal(id, false);
       }
     };
     input.click();
@@ -776,15 +777,13 @@ function BinaryManager() {
                   ) : (
                     <>
                       {url && (
-                        <a
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          onClick={() => window.devbox?.system.openExternal(url)}
                           className="btn-icon text-gray-400 hover:text-gray-600"
                           title="View download source"
                         >
                           <ExternalLink className="w-4 h-4" />
-                        </a>
+                        </button>
                       )}
                       <button
                         onClick={() => handleDownloadPhp(version)}
@@ -993,7 +992,7 @@ function BinaryManager() {
                                   Download
                                 </button>
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); handleImportApache(); }}
+                                  onClick={(e) => { e.stopPropagation(); handleImportApache(version); }}
                                   className="btn-primary text-sm px-2 py-1 flex items-center gap-1"
                                   title="Import downloaded Apache ZIP"
                                 >
@@ -1204,15 +1203,13 @@ function BinaryManager() {
                   ) : (
                     <>
                       {service.url && (
-                        <a
-                          href={service.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          onClick={() => window.devbox?.system.openExternal(service.url)}
                           className="btn-icon text-gray-400 hover:text-gray-600"
                           title="View download source"
                         >
                           <ExternalLink className="w-4 h-4" />
-                        </a>
+                        </button>
                       )}
                       <button
                         onClick={() => handleDownloadService(service.id)}
@@ -1304,15 +1301,13 @@ function BinaryManager() {
                   ) : (
                     <>
                       {url && (
-                        <a
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          onClick={() => window.devbox?.system.openExternal(url)}
                           className="btn-icon text-gray-400 hover:text-gray-600"
                           title="View download source"
                         >
                           <ExternalLink className="w-4 h-4" />
-                        </a>
+                        </button>
                       )}
                       <button
                         onClick={() => handleDownloadNodejs(version)}
@@ -1386,15 +1381,13 @@ function BinaryManager() {
                 </>
               ) : (
                 <>
-                  <a
-                    href="https://getcomposer.org"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => window.devbox?.system.openExternal('https://getcomposer.org')}
                     className="btn-icon text-gray-400 hover:text-gray-600"
                     title="View download source"
                   >
                     <ExternalLink className="w-4 h-4" />
-                  </a>
+                  </button>
                   <button
                     onClick={() => handleDownloadService('composer')}
                     className="btn-primary"
@@ -1417,16 +1410,24 @@ function BinaryManager() {
               Download Full Stack Environment
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Download PHP 8.4, {webServerType === 'nginx' ? 'Nginx' : 'Apache'}, MySQL, Redis, Mailpit, phpMyAdmin, Node.js 20, and Composer
+              Download PHP 8.4, {webServerType === 'nginx' ? 'Nginx 1.28' : 'Apache 2.4'}, MySQL 8.4, Redis 7.4, Mailpit, phpMyAdmin, Node.js 20, and Composer
             </p>
           </div>
           <button
             onClick={async () => {
-              // Download essentials
-              if (!installed.php['8.4']) handleDownloadPhp('8.4');
-              if (!installed[webServerType]) handleDownloadService(webServerType);
-              if (!installed.mysql) handleDownloadService('mysql');
-              if (!installed.redis) handleDownloadService('redis');
+              // Download essentials with latest versions
+              if (!installed.php?.['8.4']) handleDownloadPhp('8.4');
+              // Download web server with latest version
+              if (webServerType === 'nginx') {
+                if (!installed.nginx?.['1.28']) handleDownloadService('nginx', '1.28');
+              } else {
+                if (!installed.apache?.['2.4']) handleDownloadService('apache', '2.4');
+              }
+              // Download MySQL latest (8.4)
+              if (!installed.mysql?.['8.4']) handleDownloadService('mysql', '8.4');
+              // Download Redis latest (7.4)
+              if (!installed.redis?.['7.4']) handleDownloadService('redis', '7.4');
+              // Download single-version services
               if (!installed.mailpit) handleDownloadService('mailpit');
               if (!installed.phpmyadmin) handleDownloadService('phpmyadmin');
               if (!installed.nodejs?.['20']) handleDownloadNodejs('20');

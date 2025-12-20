@@ -558,9 +558,8 @@ IncludeOptional "${vhostsDir.replace(/\\/g, '/')}/*.conf"
   killProcess(pid) {
     return new Promise((resolve) => {
       treeKill(pid, 'SIGTERM', (err) => {
-        if (err) {
-          console.error(`Error killing process ${pid}:`, err);
-        }
+        // Ignore errors - process may already be terminated
+        // This is normal during shutdown
         resolve();
       });
     });

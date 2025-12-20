@@ -779,6 +779,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       'mariadbd.exe',
       'redis-server.exe',
       'mailpit.exe',
+      'php-cgi.exe',
     ];
     
     for (const processName of processesToKill) {
@@ -2355,9 +2356,8 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       }
 
       kill(proc.pid, 'SIGTERM', (err) => {
-        if (err) {
-          console.error('Error killing process:', err);
-        }
+        // Ignore errors - process may already be terminated
+        // This is normal during shutdown
         resolve();
       });
     });

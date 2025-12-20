@@ -1132,14 +1132,18 @@ class ProjectManager {
    */
   async forceKillOrphanPhpProcesses() {
     const { execSync } = require('child_process');
-    try {
-      execSync('taskkill /F /IM php-cgi.exe 2>nul', { 
-        windowsHide: true, 
-        timeout: 5000,
-        stdio: 'ignore'
-      });
-    } catch (e) {
-      // Ignore - no processes to kill
+    // Kill both php-cgi.exe and php.exe (used for artisan serve, composer, etc.)
+    const processes = ['php-cgi.exe', 'php.exe'];
+    for (const proc of processes) {
+      try {
+        execSync(`taskkill /F /IM ${proc} 2>nul`, { 
+          windowsHide: true, 
+          timeout: 5000,
+          stdio: 'ignore'
+        });
+      } catch (e) {
+        // Ignore - no processes to kill
+      }
     }
   }
 

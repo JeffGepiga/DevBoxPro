@@ -224,8 +224,9 @@ class BinaryDownloadManager {
       },
       phpmyadmin: {
         all: {
-          url: 'https://files.phpmyadmin.net/phpMyAdmin/5.2.3/phpMyAdmin-5.2.3-all-languages.zip',
-          filename: 'phpMyAdmin-5.2.3-all-languages.zip',
+          // Using official phpMyAdmin download URL
+          url: 'https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.zip',
+          filename: 'phpMyAdmin-latest-all-languages.zip',
         },
       },
       // Nginx - Multiple versions
@@ -887,6 +888,9 @@ class BinaryDownloadManager {
   }
 
   async downloadFile(url, destPath, id) {
+    // Ensure the directory exists before downloading
+    await fs.ensureDir(path.dirname(destPath));
+    
     return new Promise((resolve, reject) => {
       const file = createWriteStream(destPath);
       const protocol = url.startsWith('https') ? https : http;
@@ -903,7 +907,7 @@ class BinaryDownloadManager {
         // Handle redirects
         if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307) {
           file.close();
-          fs.unlinkSync(destPath);
+          try { fs.unlinkSync(destPath); } catch (e) { /* ignore */ }
           const redirectUrl = response.headers.location.startsWith('http') 
             ? response.headers.location 
             : new URL(response.headers.location, url).toString();
@@ -914,7 +918,7 @@ class BinaryDownloadManager {
 
         if (response.statusCode !== 200) {
           file.close();
-          fs.unlinkSync(destPath);
+          try { fs.unlinkSync(destPath); } catch (e) { /* ignore */ }
           reject(new Error(`Download failed with status ${response.statusCode}`));
           return;
         }
@@ -923,7 +927,7 @@ class BinaryDownloadManager {
         const contentType = response.headers['content-type'] || '';
         if (contentType.includes('text/html') && !destPath.endsWith('.html')) {
           file.close();
-          fs.unlinkSync(destPath);
+          try { fs.unlinkSync(destPath); } catch (e) { /* ignore */ }
           reject(new Error('Server returned HTML instead of binary. Download may be blocked or URL may be invalid.'));
           return;
         }

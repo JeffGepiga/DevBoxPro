@@ -19,6 +19,8 @@ import {
   CheckCircle,
   AlertCircle,
   ExternalLink,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -741,6 +743,13 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
   const [applyingCompatibilityUpdates, setApplyingCompatibilityUpdates] = useState(false);
   
   const [configInfo, setConfigInfo] = useState({ binaries: null, compatibility: null });
+  
+  // Clear data modal state
+  const [showClearDataModal, setShowClearDataModal] = useState(false);
+  const [clearConfirmText, setClearConfirmText] = useState('');
+  const [clearProjectFiles, setClearProjectFiles] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [clearResult, setClearResult] = useState(null);
 
   // Load config info on mount
   useEffect(() => {
@@ -808,6 +817,44 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
     } finally {
       setApplyingCompatibilityUpdates(false);
     }
+  };
+
+  const handleClearAllData = async () => {
+    // Check for correct confirmation text based on whether project files will be deleted
+    const requiredConfirmText = clearProjectFiles ? 'DELETE ALL' : 'confirm';
+    if (clearConfirmText !== requiredConfirmText) return;
+    
+    setIsClearing(true);
+    setClearResult(null);
+    
+    try {
+      const result = await window.devbox?.system?.clearAllData?.(clearProjectFiles);
+      setClearResult({ success: true, message: result?.message || 'All data cleared successfully!' });
+      
+      // Close modal after delay
+      setTimeout(() => {
+        setShowClearDataModal(false);
+        setClearConfirmText('');
+        setClearProjectFiles(false);
+        setClearResult(null);
+        // Optionally reload the app
+        if (result?.requiresRestart) {
+          window.location.reload();
+        }
+      }, 2000);
+    } catch (error) {
+      console.error('Error clearing data:', error);
+      setClearResult({ success: false, message: error.message || 'Failed to clear data' });
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  const handleCancelClearData = () => {
+    setShowClearDataModal(false);
+    setClearConfirmText('');
+    setClearProjectFiles(false);
+    setClearResult(null);
   };
 
   return (
@@ -1039,17 +1086,173 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
         </p>
         <div className="flex gap-4">
           <button
-            onClick={() => {
-              if (window.confirm('Clear all project data? This cannot be undone.')) {
-                // Would clear project data
-              }
-            }}
+            onClick={() => setShowClearDataModal(true)}
             className="btn-danger"
           >
+            <Trash2 className="w-4 h-4" />
             Clear All Data
           </button>
         </div>
       </div>
+
+      {/* Clear Data Modal */}
+      {showClearDataModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 rounded-full bg-red-100 dark:bg-red-900/30">
+                  <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Clear All Data
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    This action cannot be undone
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <p className="text-sm text-gray-700 dark:text-gray-300 font-medium">
+                  This will reset DevBox Pro to a fresh install state:
+                </p>
+                <ul className="text-sm text-gray-600 dark:text-gray-400 mt-2 list-disc list-inside space-y-1">
+                  <li>All downloaded binaries (PHP, MySQL, Redis, Node.js, Nginx, Apache, Composer, etc.)</li>
+                  <li>All project configurations</li>
+                  <li>All SSL certificates</li>
+                  <li>All service configurations</li>
+                  <li>CLI tool installation</li>
+                </ul>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">
+                  You will need to re-download all binaries after clearing.
+                </p>
+              </div>
+
+              {/* Option to delete project files */}
+              <label className="flex items-start gap-3 p-3 mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={clearProjectFiles}
+                  onChange={(e) => {
+                    setClearProjectFiles(e.target.checked);
+                    setClearConfirmText(''); // Reset confirmation when changing this option
+                  }}
+                  className="mt-0.5 rounded border-red-300 text-red-600 focus:ring-red-500"
+                />
+                <div>
+                  <p className="font-medium text-red-700 dark:text-red-400">
+                    Also delete project files
+                  </p>
+                  <p className="text-xs text-red-600 dark:text-red-500 mt-1">
+                    ⚠️ This will permanently delete all files in all project folders!
+                  </p>
+                </div>
+              </label>
+
+              {/* Extra warning when deleting project files */}
+              {clearProjectFiles && (
+                <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/40 border-2 border-red-400 dark:border-red-600 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-red-800 dark:text-red-300">
+                        ⚠️ DANGER: This will DELETE ALL your project source code!
+                      </p>
+                      <p className="text-sm text-red-700 dark:text-red-400 mt-2">
+                        All files in your project directories will be permanently deleted. 
+                        This includes your source code, assets, databases, and any uncommitted changes.
+                      </p>
+                      <p className="text-sm font-semibold text-red-800 dark:text-red-300 mt-2">
+                        Make sure you have backups before proceeding!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Confirmation input */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Type <span className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
+                    {clearProjectFiles ? 'DELETE ALL' : 'confirm'}
+                  </span> to proceed:
+                </label>
+                <input
+                  type="text"
+                  value={clearConfirmText}
+                  onChange={(e) => setClearConfirmText(e.target.value)}
+                  placeholder={clearProjectFiles ? 'DELETE ALL' : 'confirm'}
+                  className={clsx(
+                    'input w-full',
+                    clearProjectFiles && 'border-red-400 focus:border-red-500 focus:ring-red-500'
+                  )}
+                  autoFocus
+                />
+                {clearProjectFiles && (
+                  <p className="text-xs text-red-600 dark:text-red-500 mt-1">
+                    Type exactly "DELETE ALL" (case sensitive) to confirm permanent deletion
+                  </p>
+                )}
+              </div>
+
+              {/* Result message */}
+              {clearResult && (
+                <div className={clsx(
+                  'p-3 rounded-lg mb-4 text-sm',
+                  clearResult.success
+                    ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                    : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400'
+                )}>
+                  {clearResult.success ? (
+                    <span className="flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4" />
+                      {clearResult.message}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4" />
+                      {clearResult.message}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal footer */}
+            <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+              <button
+                onClick={handleCancelClearData}
+                className="btn-secondary"
+                disabled={isClearing}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearAllData}
+                disabled={clearConfirmText !== (clearProjectFiles ? 'DELETE ALL' : 'confirm') || isClearing}
+                className={clsx(
+                  'btn-danger',
+                  clearConfirmText !== (clearProjectFiles ? 'DELETE ALL' : 'confirm') && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                {isClearing ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Clearing...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    {clearProjectFiles ? 'DELETE ALL DATA & FILES' : 'Clear All Data'}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* About */}
       <div className="card p-6">
