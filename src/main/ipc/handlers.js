@@ -1142,12 +1142,20 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   // Resource monitoring interval
-  setInterval(async () => {
+  const resourceInterval = setInterval(async () => {
     try {
+      // Check if window still exists and is not destroyed
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        clearInterval(resourceInterval);
+        return;
+      }
       const usage = await service.getResourceUsage();
-      mainWindow?.webContents.send('resource:update', usage);
+      mainWindow.webContents.send('resource:update', usage);
     } catch (error) {
-      console.error('Error getting resource usage:', error);
+      // Silently ignore errors during shutdown
+      if (!error.message?.includes('destroyed')) {
+        console.error('Error getting resource usage:', error);
+      }
     }
   }, 5000);
 

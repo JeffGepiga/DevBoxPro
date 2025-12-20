@@ -621,7 +621,8 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     if (serviceName === 'nginx' && require('os').platform() === 'win32') {
       try {
         const platform = 'win';
-        const nginxPath = this.getNginxPath(version);
+        const nginxVersion = version || '1.28';
+        const nginxPath = this.getNginxPath(nginxVersion);
         const nginxExe = path.join(nginxPath, 'nginx.exe');
         const dataPath = path.join(app.getPath('userData'), 'data');
         const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
@@ -2177,29 +2178,34 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
   }
 
   // Utility methods - Path helpers for versioned services
-  getNginxPath(version = '1.28') {
+  getNginxPath(version) {
+    const v = version || '1.28';
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    return path.join(this.resourcePath, 'nginx', version, platform);
+    return path.join(this.resourcePath, 'nginx', v, platform);
   }
 
-  getApachePath(version = '2.4') {
+  getApachePath(version) {
+    const v = version || '2.4';
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    return path.join(this.resourcePath, 'apache', version, platform);
+    return path.join(this.resourcePath, 'apache', v, platform);
   }
 
-  getMySQLPath(version = '8.4') {
+  getMySQLPath(version) {
+    const v = version || '8.4';
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    return path.join(this.resourcePath, 'mysql', version, platform);
+    return path.join(this.resourcePath, 'mysql', v, platform);
   }
 
-  getMariaDBPath(version = '11.4') {
+  getMariaDBPath(version) {
+    const v = version || '11.4';
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    return path.join(this.resourcePath, 'mariadb', version, platform);
+    return path.join(this.resourcePath, 'mariadb', v, platform);
   }
 
-  getRedisPath(version = '7.4') {
+  getRedisPath(version) {
+    const v = version || '7.4';
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    return path.join(this.resourcePath, 'redis', version, platform);
+    return path.join(this.resourcePath, 'redis', v, platform);
   }
 
   getMailpitPath() {

@@ -54,11 +54,13 @@ function BinaryManager() {
   const [webServerType, setWebServerType] = useState('nginx');
   const [phpIniEditor, setPhpIniEditor] = useState({ open: false, version: null });
   const [expandedSections, setExpandedSections] = useState({
+    php: false,
     mysql: false,
     mariadb: false,
     redis: false,
     nginx: false,
     apache: false,
+    nodejs: false,
   });
   
   // Service versions from backend config (with defaults)
@@ -72,10 +74,47 @@ function BinaryManager() {
     nodejs: ['22', '20', '18'],
   });
 
+  // Helper to merge predefined versions with any custom installed versions
+  const getMergedVersions = useCallback((service) => {
+    const predefined = serviceVersions[service] || [];
+    const installedVersions = installed[service];
+    
+    if (!installedVersions || typeof installedVersions !== 'object') {
+      return predefined;
+    }
+    
+    // Get all installed version keys
+    const installedKeys = Object.keys(installedVersions).filter(v => installedVersions[v]);
+    
+    // Merge: predefined first, then any custom versions not in predefined
+    const customVersions = installedKeys.filter(v => !predefined.includes(v));
+    
+    // Sort custom versions in descending order
+    customVersions.sort((a, b) => {
+      const aNum = parseFloat(a) || 0;
+      const bNum = parseFloat(b) || 0;
+      return bNum - aNum;
+    });
+    
+    // Insert custom versions at the beginning (they're likely newer)
+    return [...customVersions, ...predefined];
+  }, [serviceVersions, installed]);
+
   // Check for updates state
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [updateResult, setUpdateResult] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+
+  // Import modal state
+  const [importModal, setImportModal] = useState({
+    open: false,
+    service: null,
+    filePath: null,
+    fileName: null,
+    detectedVersion: null,
+    customVersion: '',
+    availableVersions: [],
+  });
 
   const loadInstalled = useCallback(async () => {
     try {
@@ -313,6 +352,185 @@ function BinaryManager() {
     }
   };
 
+  // Download source URLs for manual download
+  const downloadSources = {
+    php: {
+      url: 'https://windows.php.net/download/',
+      name: 'windows.php.net',
+      note: 'Download the "Non Thread Safe" (NTS) x64 ZIP version',
+    },
+    mysql: {
+      url: 'https://dev.mysql.com/downloads/mysql/',
+      name: 'dev.mysql.com',
+      note: 'Download the ZIP Archive (not MSI installer)',
+    },
+    mariadb: {
+      url: 'https://mariadb.org/download/',
+      name: 'mariadb.org',
+      note: 'Download the ZIP package for Windows',
+    },
+    redis: {
+      url: 'https://github.com/redis-windows/redis-windows/releases',
+      name: 'GitHub (redis-windows)',
+      note: 'Download the Windows x64 ZIP release',
+    },
+    nginx: {
+      url: 'https://nginx.org/en/download.html',
+      name: 'nginx.org',
+      note: 'Download the Windows ZIP package',
+    },
+    apache: {
+      url: 'https://www.apachelounge.com/download/',
+      name: 'Apache Lounge',
+      note: 'Download the Win64 ZIP (VS17 recommended)',
+    },
+    nodejs: {
+      url: 'https://nodejs.org/en/download/',
+      name: 'nodejs.org',
+      note: 'Download the Windows Binary (.zip) x64 version',
+    },
+    mailpit: {
+      url: 'https://github.com/axllent/mailpit/releases',
+      name: 'GitHub (axllent/mailpit)',
+      note: 'Download mailpit-windows-amd64.zip',
+    },
+    phpmyadmin: {
+      url: 'https://www.phpmyadmin.net/downloads/',
+      name: 'phpmyadmin.net',
+      note: 'Download the "all-languages" ZIP file',
+    },
+    composer: {
+      url: 'https://getcomposer.org/download/',
+      name: 'getcomposer.org',
+      note: 'Download composer.phar file',
+    },
+  };
+
+  // Version detection patterns for different services
+  const versionPatterns = {
+    php: /php-?(\d+\.\d+)(?:\.\d+)?/i,
+    mysql: /mysql-?(\d+\.\d+)(?:\.\d+)?/i,
+    mariadb: /mariadb-?(\d+\.\d+)(?:\.\d+)?/i,
+    redis: /redis-?(\d+\.\d+)(?:\.\d+)?/i,
+    nginx: /nginx-?(\d+\.\d+)(?:\.\d+)?/i,
+    apache: /(?:httpd|apache)-?(\d+\.\d+)(?:\.\d+)?/i,
+    nodejs: /node-?v?(\d+)(?:\.\d+)?/i,
+  };
+
+  // Detect version from filename
+  const detectVersionFromFilename = (service, filename) => {
+    const pattern = versionPatterns[service];
+    if (!pattern) return null;
+    
+    const match = filename.match(pattern);
+    if (match) {
+      // For Node.js, we only want major version (22, 20, 18, etc.)
+      if (service === 'nodejs') {
+        return match[1];
+      }
+      // For others, return major.minor (8.4, 1.28, etc.)
+      return match[1];
+    }
+    return null;
+  };
+
+  // Generic import handler - opens file picker and detects/prompts for version
+  const handleImportBinary = async (service, acceptedExtensions = '.zip,.tar.gz') => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = acceptedExtensions;
+    input.onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const filePath = file.path;
+      if (!filePath) {
+        alert('Could not get file path. Please try again.');
+        return;
+      }
+
+      const fileName = file.name;
+      const detectedVersion = detectVersionFromFilename(service, fileName);
+      
+      // Get available versions for this service
+      const availableVersions = serviceVersions[service] || [];
+
+      // If version detected and matches available versions, import directly
+      if (detectedVersion && availableVersions.includes(detectedVersion)) {
+        await executeImport(service, detectedVersion, filePath);
+      } else if (detectedVersion) {
+        // Version detected but not in predefined list - ask user to confirm or use custom
+        setImportModal({
+          open: true,
+          service,
+          filePath,
+          fileName,
+          detectedVersion,
+          customVersion: detectedVersion,
+          availableVersions,
+        });
+      } else {
+        // No version detected - prompt user
+        setImportModal({
+          open: true,
+          service,
+          filePath,
+          fileName,
+          detectedVersion: null,
+          customVersion: '',
+          availableVersions,
+        });
+      }
+    };
+    input.click();
+  };
+
+  // Execute the actual import
+  const executeImport = async (service, version, filePath) => {
+    const id = version ? `${service}-${version}` : service;
+    setDownloadingGlobal(id, true);
+    setProgressGlobal(id, { status: 'starting', progress: 0 });
+
+    try {
+      await window.devbox?.binaries.importBinary(service, version || 'default', filePath);
+    } catch (error) {
+      console.error(`Error importing ${service}:`, error);
+      setProgressGlobal(id, { status: 'error', error: error.message });
+      setDownloadingGlobal(id, false);
+    }
+  };
+
+  // Handle import modal confirmation
+  const handleConfirmImport = async () => {
+    const { service, filePath, customVersion } = importModal;
+    if (!customVersion.trim()) {
+      alert('Please enter or select a version.');
+      return;
+    }
+    setImportModal({ ...importModal, open: false });
+    await executeImport(service, customVersion.trim(), filePath);
+  };
+
+  // Simple import for non-versioned services (Mailpit, phpMyAdmin, Composer)
+  const handleImportSimple = async (service, acceptedExtensions = '.zip,.tar.gz') => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = acceptedExtensions;
+    input.onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const filePath = file.path;
+      if (!filePath) {
+        alert('Could not get file path. Please try again.');
+        return;
+      }
+      
+      await executeImport(service, null, filePath);
+    };
+    input.click();
+  };
+
   const handleImportApache = async (version = '2.4') => {
     // Use file input to select a file
     const input = document.createElement('input');
@@ -462,7 +680,8 @@ function BinaryManager() {
       name: 'MySQL',
       description: 'MySQL database server',
       icon: Database,
-      versions: serviceVersions.mysql,
+      versions: getMergedVersions('mysql'),
+      predefinedVersions: serviceVersions.mysql,
       defaultVersion: serviceVersions.mysql[0] || '8.4',
       sizes: { '8.4': '~290 MB', '8.0': '~280 MB', '5.7': '~250 MB' },
       category: 'database',
@@ -472,7 +691,8 @@ function BinaryManager() {
       name: 'MariaDB',
       description: 'MariaDB database server (MySQL compatible)',
       icon: Database,
-      versions: serviceVersions.mariadb,
+      versions: getMergedVersions('mariadb'),
+      predefinedVersions: serviceVersions.mariadb,
       defaultVersion: serviceVersions.mariadb[0] || '11.4',
       sizes: { '11.4': '~90 MB', '10.11': '~85 MB', '10.6': '~80 MB' },
       category: 'database',
@@ -482,7 +702,8 @@ function BinaryManager() {
       name: 'Redis',
       description: 'Redis in-memory data store',
       icon: Server,
-      versions: serviceVersions.redis,
+      versions: getMergedVersions('redis'),
+      predefinedVersions: serviceVersions.redis,
       defaultVersion: serviceVersions.redis[0] || '7.4',
       sizes: { '7.4': '~5 MB', '7.2': '~5 MB', '6.2': '~4 MB' },
       category: 'cache',
@@ -518,7 +739,8 @@ function BinaryManager() {
       name: 'Nginx',
       description: 'High-performance web server & reverse proxy',
       icon: Zap,
-      versions: serviceVersions.nginx,
+      versions: getMergedVersions('nginx'),
+      predefinedVersions: serviceVersions.nginx,
       defaultVersion: serviceVersions.nginx[0] || '1.28',
       sizes: { '1.28': '~2 MB', '1.26': '~2 MB', '1.24': '~2 MB' },
     },
@@ -527,7 +749,8 @@ function BinaryManager() {
       name: 'Apache',
       description: 'Web server (manual download for Windows)',
       icon: Globe,
-      versions: serviceVersions.apache,
+      versions: getMergedVersions('apache'),
+      predefinedVersions: serviceVersions.apache,
       defaultVersion: serviceVersions.apache[0] || '2.4',
       sizes: { '2.4': '~60 MB' },
       requiresManualDownload: true,
@@ -617,6 +840,102 @@ function BinaryManager() {
                   Apply Updates
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Version Modal */}
+      {importModal.open && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <Upload className="w-5 h-5 text-blue-500" />
+                Import {importModal.service?.charAt(0).toUpperCase() + importModal.service?.slice(1)}
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                File: {importModal.fileName}
+              </p>
+            </div>
+            
+            <div className="p-6">
+              {importModal.detectedVersion ? (
+                <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                  <p className="text-sm text-green-700 dark:text-green-400 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Detected version: <strong>{importModal.detectedVersion}</strong>
+                  </p>
+                </div>
+              ) : (
+                <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                  <p className="text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    Could not detect version from filename
+                  </p>
+                </div>
+              )}
+              
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Version to install as:
+              </label>
+              
+              {/* Quick select from available versions */}
+              {importModal.availableVersions.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {importModal.availableVersions.map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setImportModal({ ...importModal, customVersion: v })}
+                      className={clsx(
+                        'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                        importModal.customVersion === v
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                      )}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              )}
+              
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">or custom:</span>
+                <input
+                  type="text"
+                  value={importModal.customVersion}
+                  onChange={(e) => setImportModal({ ...importModal, customVersion: e.target.value })}
+                  placeholder="e.g., 8.4, 22, 1.28"
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                Enter the major.minor version (e.g., 8.4 for PHP 8.4.x, 22 for Node.js 22.x)
+              </p>
+            </div>
+            
+            <div className="p-4 bg-gray-50 dark:bg-gray-700/50 flex justify-end gap-3">
+              <button
+                onClick={() => setImportModal({ ...importModal, open: false })}
+                className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmImport}
+                disabled={!importModal.customVersion.trim()}
+                className={clsx(
+                  'px-4 py-2 rounded-lg transition-colors flex items-center gap-2',
+                  importModal.customVersion.trim()
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-gray-300 dark:bg-gray-600 text-gray-500 cursor-not-allowed'
+                )}
+              >
+                <Upload className="w-4 h-4" />
+                Import
+              </button>
             </div>
           </div>
         </div>
@@ -717,87 +1036,141 @@ function BinaryManager() {
           </span>
           PHP Versions
         </h2>
-        <div className="grid gap-3">
-          {(serviceVersions.php || []).map((version) => {
-            const id = `php-${version}`;
-            const isInstalled = installed.php[version];
-            const isDownloading = downloading[id];
-            const url = downloadUrls.php?.[version]?.url;
-
-            return (
+        <div className="card overflow-hidden">
+          {/* PHP Header */}
+          <div
+            className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
+            onClick={() => toggleSection('php')}
+          >
+            <div className="flex items-center gap-4">
               <div
-                key={version}
-                className="card p-4 flex items-center justify-between"
+                className={clsx(
+                  'w-12 h-12 rounded-lg flex items-center justify-center',
+                  getInstalledVersionsCount('php') > 0
+                    ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
+                )}
               >
-                <div className="flex items-center gap-4">
-                  <div
-                    className={clsx(
-                      'w-12 h-12 rounded-lg flex items-center justify-center font-bold',
-                      isInstalled
-                        ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
-                    )}
-                  >
-                    {version}
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-gray-900 dark:text-white">
-                      PHP {version}
-                    </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {isInstalled ? 'Installed' : 'Not installed'} • ~40 MB
-                    </p>
-                  </div>
-                </div>
+                <span className="font-bold text-lg">PHP</span>
+              </div>
+              <div>
+                <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                  PHP
+                  {getInstalledVersionsCount('php') > 0 && (
+                    <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
+                      {getInstalledVersionsCount('php')} version{getInstalledVersionsCount('php') > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  PHP scripting language for web development
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); window.devbox?.system.openExternal(downloadSources.php.url); }}
+                className="btn-icon text-gray-400 hover:text-gray-600"
+                title={downloadSources.php.note}
+              >
+                <ExternalLink className="w-4 h-4" />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleImportBinary('php'); }}
+                className="btn-secondary text-sm"
+                title={`Import PHP ZIP - ${downloadSources.php.note}`}
+              >
+                <Upload className="w-4 h-4" />
+                Import
+              </button>
+              {expandedSections.php ? (
+                <ChevronUp className="w-5 h-5 text-gray-400" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-400" />
+              )}
+            </div>
+          </div>
 
-                <div className="flex items-center gap-3">
-                  {isDownloading ? (
-                    getProgressDisplay(id)
-                  ) : isInstalled ? (
-                    <>
-                      <span className="badge-success flex items-center gap-1">
-                        <Check className="w-3 h-3" />
-                        Installed
+          {/* PHP Version List (Expandable) */}
+          {expandedSections.php && (
+            <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30">
+              {getMergedVersions('php').map((version) => {
+                const id = `php-${version}`;
+                const isInstalled = installed.php[version];
+                const isDownloading = downloading[id];
+                const isCustom = !serviceVersions.php?.includes(version);
+                const isDefault = version === serviceVersions.php?.[0];
+
+                return (
+                  <div
+                    key={version}
+                    className="p-3 flex items-center justify-between border-b last:border-b-0 border-gray-200 dark:border-gray-700"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className={clsx(
+                        'w-10 h-8 rounded flex items-center justify-center font-mono text-sm',
+                        isInstalled
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                      )}>
+                        {version}
                       </span>
-                      <button
-                        onClick={() => setPhpIniEditor({ open: true, version })}
-                        className="btn-icon text-gray-500 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20"
-                        title="Edit php.ini"
-                      >
-                        <Settings className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleRemove('php', version)}
-                        className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                        title="Remove"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      {url && (
+                      <div>
+                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                          PHP {version}
+                        </span>
+                        {isCustom && (
+                          <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full">
+                            Custom
+                          </span>
+                        )}
+                        {!isCustom && isDefault && (
+                          <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
+                            Latest
+                          </span>
+                        )}
+                        <span className="ml-2 text-xs text-gray-500">~40 MB</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isDownloading ? (
+                        getProgressDisplay(id)
+                      ) : isInstalled ? (
+                        <>
+                          <span className="badge-success flex items-center gap-1 text-xs">
+                            <Check className="w-3 h-3" />
+                            Installed
+                          </span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setPhpIniEditor({ open: true, version }); }}
+                            className="btn-icon text-gray-500 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20"
+                            title="Edit php.ini"
+                          >
+                            <Settings className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRemove('php', version); }}
+                            className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                            title="Remove"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      ) : (
                         <button
-                          onClick={() => window.devbox?.system.openExternal(url)}
-                          className="btn-icon text-gray-400 hover:text-gray-600"
-                          title="View download source"
+                          onClick={(e) => { e.stopPropagation(); handleDownloadPhp(version); }}
+                          className="btn-primary text-sm px-3 py-1"
                         >
-                          <ExternalLink className="w-4 h-4" />
+                          <Download className="w-3 h-3" />
+                          Download
                         </button>
                       )}
-                      <button
-                        onClick={() => handleDownloadPhp(version)}
-                        className="btn-primary"
-                      >
-                        <Download className="w-4 h-4" />
-                        Download
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -812,76 +1185,17 @@ function BinaryManager() {
             (Required for serving PHP projects)
           </span>
         </h2>
-        
-        {/* Web Server Selection */}
-        <div className="mb-4 p-4 card bg-gray-50 dark:bg-gray-800/50">
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-            Select your preferred web server for PHP projects:
-          </p>
-          <div className="flex gap-4">
-            <button
-              onClick={() => handleSetWebServer('nginx')}
-              className={clsx(
-                'flex-1 p-4 rounded-lg border-2 transition-all',
-                webServerType === 'nginx'
-                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
-              )}
-            >
-              <div className="flex items-center gap-3">
-                <Zap className={clsx(
-                  'w-6 h-6',
-                  webServerType === 'nginx' ? 'text-green-600' : 'text-gray-400'
-                )} />
-                <div className="text-left">
-                  <p className={clsx(
-                    'font-medium',
-                    webServerType === 'nginx' ? 'text-green-700 dark:text-green-400' : 'text-gray-700 dark:text-gray-300'
-                  )}>Nginx</p>
-                  <p className="text-xs text-gray-500">Recommended • Fast & lightweight</p>
-                </div>
-              </div>
-            </button>
-            <button
-              onClick={() => handleSetWebServer('apache')}
-              className={clsx(
-                'flex-1 p-4 rounded-lg border-2 transition-all',
-                webServerType === 'apache'
-                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
-              )}
-            >
-              <div className="flex items-center gap-3">
-                <Globe className={clsx(
-                  'w-6 h-6',
-                  webServerType === 'apache' ? 'text-green-600' : 'text-gray-400'
-                )} />
-                <div className="text-left">
-                  <p className={clsx(
-                    'font-medium',
-                    webServerType === 'apache' ? 'text-green-700 dark:text-green-400' : 'text-gray-700 dark:text-gray-300'
-                  )}>Apache</p>
-                  <p className="text-xs text-gray-500">.htaccess support • mod_rewrite</p>
-                </div>
-              </div>
-            </button>
-          </div>
-        </div>
 
         <div className="grid gap-3">
           {webServers.map((server) => {
             const installedCount = getInstalledVersionsCount(server.id);
             const hasInstalled = installedCount > 0;
-            const isSelected = webServerType === server.id;
             const isExpanded = expandedSections[server.id];
 
             return (
               <div
                 key={server.id}
-                className={clsx(
-                  'card overflow-hidden',
-                  isSelected && 'ring-2 ring-green-500 ring-offset-2 dark:ring-offset-gray-900'
-                )}
+                className="card overflow-hidden"
               >
                 {/* Server Header */}
                 <div
@@ -902,13 +1216,8 @@ function BinaryManager() {
                     <div>
                       <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
                         {server.name}
-                        {isSelected && (
-                          <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
-                            Active
-                          </span>
-                        )}
                         {hasInstalled && (
-                          <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
+                          <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
                             {installedCount} version{installedCount > 1 ? 's' : ''}
                           </span>
                         )}
@@ -919,6 +1228,21 @@ function BinaryManager() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); window.devbox?.system.openExternal(downloadSources[server.id]?.url); }}
+                      className="btn-icon text-gray-400 hover:text-gray-600"
+                      title={downloadSources[server.id]?.note}
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleImportBinary(server.id); }}
+                      className="btn-secondary text-sm"
+                      title={`Import ${server.name} ZIP`}
+                    >
+                      <Upload className="w-4 h-4" />
+                      Import
+                    </button>
                     {isExpanded ? (
                       <ChevronUp className="w-5 h-5 text-gray-400" />
                     ) : (
@@ -935,6 +1259,7 @@ function BinaryManager() {
                       const isInstalled = installed[server.id]?.[version];
                       const isDownloading = downloading[id];
                       const isDefault = version === server.defaultVersion;
+                      const isCustom = !server.predefinedVersions?.includes(version);
 
                       return (
                         <div
@@ -954,7 +1279,12 @@ function BinaryManager() {
                               <span className="text-sm text-gray-700 dark:text-gray-300">
                                 {server.name} {version}
                               </span>
-                              {isDefault && (
+                              {isCustom && (
+                                <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full">
+                                  Custom
+                                </span>
+                              )}
+                              {!isCustom && isDefault && (
                                 <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
                                   Latest
                                 </span>
@@ -986,7 +1316,7 @@ function BinaryManager() {
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleOpenApacheDownloadPage(); }}
                                   className="btn-secondary text-sm px-2 py-1 flex items-center gap-1"
-                                  title="Open Apache Lounge download page"
+                                  title={`Manual download: ${downloadSources.apache.note}`}
                                 >
                                   <ExternalLink className="w-3 h-3" />
                                   Download
@@ -1072,6 +1402,21 @@ function BinaryManager() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); window.devbox?.system.openExternal(downloadSources[service.id]?.url); }}
+                      className="btn-icon text-gray-400 hover:text-gray-600"
+                      title={downloadSources[service.id]?.note}
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleImportBinary(service.id); }}
+                      className="btn-secondary text-sm"
+                      title={`Import ${service.name} ZIP`}
+                    >
+                      <Upload className="w-4 h-4" />
+                      Import
+                    </button>
                     {isExpanded ? (
                       <ChevronUp className="w-5 h-5 text-gray-400" />
                     ) : (
@@ -1088,6 +1433,7 @@ function BinaryManager() {
                       const isInstalled = installed[service.id]?.[version];
                       const isDownloading = downloading[id];
                       const isDefault = version === service.defaultVersion;
+                      const isCustom = !service.predefinedVersions?.includes(version);
 
                       return (
                         <div
@@ -1107,7 +1453,12 @@ function BinaryManager() {
                               <span className="text-sm text-gray-700 dark:text-gray-300">
                                 {service.name} {version}
                               </span>
-                              {isDefault && (
+                              {isCustom && (
+                                <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full">
+                                  Custom
+                                </span>
+                              )}
+                              {!isCustom && isDefault && (
                                 <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
                                   Latest
                                 </span>
@@ -1202,15 +1553,21 @@ function BinaryManager() {
                     </>
                   ) : (
                     <>
-                      {service.url && (
-                        <button
-                          onClick={() => window.devbox?.system.openExternal(service.url)}
-                          className="btn-icon text-gray-400 hover:text-gray-600"
-                          title="View download source"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </button>
-                      )}
+                      <button
+                        onClick={() => window.devbox?.system.openExternal(downloadSources[service.id]?.url)}
+                        className="btn-icon text-gray-400 hover:text-gray-600"
+                        title={`Manual download: ${downloadSources[service.id]?.note}`}
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleImportSimple(service.id)}
+                        className="btn-secondary"
+                        title={`Import ${service.name} ZIP`}
+                      >
+                        <Upload className="w-4 h-4" />
+                        Import
+                      </button>
                       <button
                         onClick={() => handleDownloadService(service.id)}
                         className="btn-primary"
@@ -1238,90 +1595,138 @@ function BinaryManager() {
             (For npm/Vite/Frontend builds)
           </span>
         </h2>
-        <div className="grid gap-3">
-          {(serviceVersions.nodejs || []).map((version) => {
-            const id = `nodejs-${version}`;
-            const isInstalled = installed.nodejs?.[version];
-            const isDownloading = downloading[id];
-            const url = downloadUrls.nodejs?.[version]?.url;
-
-            return (
+        <div className="card overflow-hidden">
+          {/* Node.js Header */}
+          <div
+            className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
+            onClick={() => toggleSection('nodejs')}
+          >
+            <div className="flex items-center gap-4">
               <div
-                key={version}
-                className="card p-4 flex items-center justify-between"
+                className={clsx(
+                  'w-12 h-12 rounded-lg flex items-center justify-center text-xl',
+                  getInstalledVersionsCount('nodejs') > 0
+                    ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
+                )}
               >
-                <div className="flex items-center gap-4">
-                  <div
-                    className={clsx(
-                      'w-12 h-12 rounded-lg flex items-center justify-center text-xl',
-                      isInstalled
-                        ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
-                    )}
-                  >
-                    ⬢
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-gray-900 dark:text-white">
-                      Node.js {version}
-                      {version === '22' && (
-                        <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
-                          Current
-                        </span>
-                      )}
-                      {version === '20' && (
-                        <span className="ml-2 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
-                          LTS
-                        </span>
-                      )}
-                    </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {isInstalled ? 'Installed' : 'Not installed'} • ~35 MB • Includes npm & npx
-                    </p>
-                  </div>
-                </div>
+                ⬢
+              </div>
+              <div>
+                <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                  Node.js
+                  {getInstalledVersionsCount('nodejs') > 0 && (
+                    <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
+                      {getInstalledVersionsCount('nodejs')} version{getInstalledVersionsCount('nodejs') > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  JavaScript runtime for frontend builds (includes npm & npx)
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); window.devbox?.system.openExternal(downloadSources.nodejs.url); }}
+                className="btn-icon text-gray-400 hover:text-gray-600"
+                title={downloadSources.nodejs.note}
+              >
+                <ExternalLink className="w-4 h-4" />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleImportBinary('nodejs'); }}
+                className="btn-secondary text-sm"
+                title={`Import Node.js ZIP - ${downloadSources.nodejs.note}`}
+              >
+                <Upload className="w-4 h-4" />
+                Import
+              </button>
+              {expandedSections.nodejs ? (
+                <ChevronUp className="w-5 h-5 text-gray-400" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-400" />
+              )}
+            </div>
+          </div>
 
-                <div className="flex items-center gap-3">
-                  {isDownloading ? (
-                    getProgressDisplay(id)
-                  ) : isInstalled ? (
-                    <>
-                      <span className="badge-success flex items-center gap-1">
-                        <Check className="w-3 h-3" />
-                        Installed
+          {/* Node.js Version List (Expandable) */}
+          {expandedSections.nodejs && (
+            <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30">
+              {getMergedVersions('nodejs').map((version) => {
+                const id = `nodejs-${version}`;
+                const isInstalled = installed.nodejs?.[version];
+                const isDownloading = downloading[id];
+                const isCustom = !serviceVersions.nodejs?.includes(version);
+
+                return (
+                  <div
+                    key={version}
+                    className="p-3 flex items-center justify-between border-b last:border-b-0 border-gray-200 dark:border-gray-700"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className={clsx(
+                        'w-10 h-8 rounded flex items-center justify-center font-mono text-sm',
+                        isInstalled
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                      )}>
+                        {version}
                       </span>
-                      <button
-                        onClick={() => handleRemove('nodejs', version)}
-                        className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                        title="Remove"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      {url && (
+                      <div>
+                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                          Node.js {version}
+                        </span>
+                        {isCustom && (
+                          <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full">
+                            Custom
+                          </span>
+                        )}
+                        {!isCustom && version === '22' && (
+                          <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
+                            Current
+                          </span>
+                        )}
+                        {!isCustom && version === '20' && (
+                          <span className="ml-2 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
+                            LTS
+                          </span>
+                        )}
+                        <span className="ml-2 text-xs text-gray-500">~35 MB</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isDownloading ? (
+                        getProgressDisplay(id)
+                      ) : isInstalled ? (
+                        <>
+                          <span className="badge-success flex items-center gap-1 text-xs">
+                            <Check className="w-3 h-3" />
+                            Installed
+                          </span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRemove('nodejs', version); }}
+                            className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                            title="Remove"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      ) : (
                         <button
-                          onClick={() => window.devbox?.system.openExternal(url)}
-                          className="btn-icon text-gray-400 hover:text-gray-600"
-                          title="View download source"
+                          onClick={(e) => { e.stopPropagation(); handleDownloadNodejs(version); }}
+                          className="btn-primary text-sm px-3 py-1"
                         >
-                          <ExternalLink className="w-4 h-4" />
+                          <Download className="w-3 h-3" />
+                          Download
                         </button>
                       )}
-                      <button
-                        onClick={() => handleDownloadNodejs(version)}
-                        className="btn-primary"
-                      >
-                        <Download className="w-4 h-4" />
-                        Download
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1382,11 +1787,19 @@ function BinaryManager() {
               ) : (
                 <>
                   <button
-                    onClick={() => window.devbox?.system.openExternal('https://getcomposer.org')}
+                    onClick={() => window.devbox?.system.openExternal(downloadSources.composer.url)}
                     className="btn-icon text-gray-400 hover:text-gray-600"
-                    title="View download source"
+                    title={`Manual download: ${downloadSources.composer.note}`}
                   >
                     <ExternalLink className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleImportSimple('composer', '.phar')}
+                    className="btn-secondary"
+                    title="Import composer.phar file"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Import
                   </button>
                   <button
                     onClick={() => handleDownloadService('composer')}

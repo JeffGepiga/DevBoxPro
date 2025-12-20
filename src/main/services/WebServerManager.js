@@ -40,36 +40,41 @@ class WebServerManager {
   }
 
   // Get path to nginx executable
-  getNginxPath(version = '1.28') {
+  getNginxPath(version) {
+    const v = version || '1.28';
     const platform = this.getPlatform();
     const exe = platform === 'win' ? 'nginx.exe' : 'nginx';
-    return path.join(this.resourcesPath, 'nginx', version, platform, exe);
+    return path.join(this.resourcesPath, 'nginx', v, platform, exe);
   }
 
   // Get base nginx directory (for config paths)
-  getNginxBasePath(version = '1.28') {
+  getNginxBasePath(version) {
+    const v = version || '1.28';
     const platform = this.getPlatform();
-    return path.join(this.resourcesPath, 'nginx', version, platform);
+    return path.join(this.resourcesPath, 'nginx', v, platform);
   }
 
   // Get path to Apache executable
-  getApachePath(version = '2.4') {
+  getApachePath(version) {
+    const v = version || '2.4';
     const platform = this.getPlatform();
     const exe = platform === 'win' ? 'bin/httpd.exe' : 'bin/httpd';
-    return path.join(this.resourcesPath, 'apache', version, platform, exe);
+    return path.join(this.resourcesPath, 'apache', v, platform, exe);
   }
 
   // Get base apache directory (for config paths)
-  getApacheBasePath(version = '2.4') {
+  getApacheBasePath(version) {
+    const v = version || '2.4';
     const platform = this.getPlatform();
-    return path.join(this.resourcesPath, 'apache', version, platform);
+    return path.join(this.resourcesPath, 'apache', v, platform);
   }
 
   // Get path to PHP-CGI/FPM
-  getPhpCgiPath(version = '8.3') {
+  getPhpCgiPath(version) {
+    const v = version || '8.3';
     const platform = this.getPlatform();
     const exe = platform === 'win' ? 'php-cgi.exe' : 'php-fpm';
-    return path.join(this.resourcesPath, 'php', version, platform, exe);
+    return path.join(this.resourcesPath, 'php', v, platform, exe);
   }
 
   // Check if web server is installed

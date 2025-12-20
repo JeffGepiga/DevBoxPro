@@ -1819,7 +1819,7 @@ AddType application/x-httpd-php-source .phps
 
   // Generic import method for custom binaries
   async importBinary(serviceName, version, filePath) {
-    const id = `${serviceName}-${version}`;
+    const id = version && version !== 'default' ? `${serviceName}-${version}` : serviceName;
     const platform = this.getPlatform();
     
     try {
@@ -1830,8 +1830,48 @@ AddType application/x-httpd-php-source .phps
         throw new Error('File not found: ' + filePath);
       }
       
-      // Validate it's a valid archive
       const ext = path.extname(filePath).toLowerCase();
+      
+      // Handle Composer .phar file specially (not an archive)
+      if (serviceName === 'composer' && ext === '.phar') {
+        const composerPath = path.join(this.resourcesPath, 'composer');
+        await fs.ensureDir(composerPath);
+        const destPath = path.join(composerPath, 'composer.phar');
+        await fs.copy(filePath, destPath);
+        this.emitProgress(id, { status: 'completed', progress: 100 });
+        return { success: true, version: 'latest', path: composerPath };
+      }
+      
+      // Handle phpMyAdmin specially (no version subfolder)
+      if (serviceName === 'phpmyadmin') {
+        const extractPath = path.join(this.resourcesPath, 'phpmyadmin');
+        await fs.remove(extractPath);
+        await fs.ensureDir(extractPath);
+        
+        this.emitProgress(id, { status: 'extracting', progress: 50 });
+        await this.extractArchive(filePath, extractPath, id);
+        await this.normalizeExtractedStructure(serviceName, extractPath);
+        await this.createPhpMyAdminConfig(extractPath);
+        
+        this.emitProgress(id, { status: 'completed', progress: 100 });
+        return { success: true, version: 'latest', path: extractPath };
+      }
+      
+      // Handle Mailpit specially (no version subfolder)
+      if (serviceName === 'mailpit') {
+        const extractPath = path.join(this.resourcesPath, 'mailpit', platform);
+        await fs.remove(extractPath);
+        await fs.ensureDir(extractPath);
+        
+        this.emitProgress(id, { status: 'extracting', progress: 50 });
+        await this.extractArchive(filePath, extractPath, id);
+        await this.normalizeExtractedStructure(serviceName, extractPath);
+        
+        this.emitProgress(id, { status: 'completed', progress: 100 });
+        return { success: true, version: 'latest', path: extractPath };
+      }
+      
+      // Validate it's a valid archive for other services
       if (ext === '.zip') {
         const isValid = await this.validateZipFile(filePath);
         if (!isValid) {
@@ -1852,6 +1892,16 @@ AddType application/x-httpd-php-source .phps
       
       // Handle special folder structures
       await this.normalizeExtractedStructure(serviceName, extractPath);
+      
+      // Create php.ini for PHP imports
+      if (serviceName === 'php') {
+        await this.createPhpIni(extractPath, version);
+      }
+      
+      // Create Apache config for Apache imports
+      if (serviceName === 'apache') {
+        await this.createApacheConfig(extractPath);
+      }
       
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true, version, path: extractPath };
@@ -2030,7 +2080,7 @@ AddType application/x-httpd-php-source .phps
       // Clean up
       await fs.remove(downloadPath);
 
-      this.emitProgress(id, { status: 'complete', progress: 100 });
+      this.emitProgress(id, { status: 'completed', progress: 100 });
 
       return {
         success: true,

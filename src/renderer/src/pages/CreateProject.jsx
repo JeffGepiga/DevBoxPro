@@ -698,12 +698,13 @@ function StepProjectType({ formData, updateFormData }) {
 }
 
 function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersions, setPathManuallySet, defaultProjectsPath, serviceConfig }) {
-  // Use available versions if provided, otherwise fall back to config versions
-  const allPhpVersions = serviceConfig?.versions?.php || [];
-  // Only show PHP versions that are actually installed
-  const phpVersions = availablePhpVersions && availablePhpVersions.length > 0 
-    ? allPhpVersions.filter(v => availablePhpVersions.includes(v))
-    : [];
+  // Use available (installed) versions - these already include custom imported versions
+  // Sort them in descending order (newest first)
+  const phpVersions = (availablePhpVersions || []).slice().sort((a, b) => {
+    const aNum = parseFloat(a) || 0;
+    const bNum = parseFloat(b) || 0;
+    return bNum - aNum;
+  });
   const hasNoPhpInstalled = phpVersions.length === 0;
   
   return (
