@@ -891,10 +891,14 @@ class ProjectManager {
     const resourcePath = this.configStore.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     
-    // Check PHP version
+    // Check PHP version - check filesystem directly for both php and php-cgi
     const phpVersion = project.phpVersion || '8.3';
-    const phpVersions = this.managers.php?.phpVersions || {};
-    if (!phpVersions[phpVersion]?.available) {
+    const phpExe = platform === 'win' ? 'php.exe' : 'php';
+    const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
+    const phpPath = path.join(resourcePath, 'php', phpVersion, platform);
+    const phpExists = await fs.pathExists(path.join(phpPath, phpExe));
+    const phpCgiExists = await fs.pathExists(path.join(phpPath, phpCgiExe));
+    if (!phpExists || !phpCgiExists) {
       missing.push(`PHP ${phpVersion}`);
     }
     
@@ -939,16 +943,20 @@ class ProjectManager {
   // Start PHP-CGI process for FastCGI
   async startPhpCgi(project, port) {
     const phpVersion = project.phpVersion || '8.3';
+    const { app } = require('electron');
+    const resourcePath = this.configStore.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
     
-    // Check if PHP version is available
-    const phpVersions = this.managers.php?.phpVersions || {};
-    if (!phpVersions[phpVersion]?.available) {
+    // Check if PHP version is available - check filesystem directly
+    const phpExe = platform === 'win' ? 'php.exe' : 'php';
+    const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
+    const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
+    const phpPath = path.join(phpDir, phpExe);
+    const phpCgiPath = path.join(phpDir, phpCgiExe);
+    
+    if (!await fs.pathExists(phpPath)) {
       throw new Error(`PHP ${phpVersion} is not installed. Please install it from the Binary Manager.`);
     }
-    
-    const phpPath = this.managers.php.getPhpBinaryPath(phpVersion);
-    const phpDir = path.dirname(phpPath);
-    const phpCgiPath = path.join(phpDir, process.platform === 'win32' ? 'php-cgi.exe' : 'php-cgi');
     
     // Check if php-cgi exists
     if (!await fs.pathExists(phpCgiPath)) {
