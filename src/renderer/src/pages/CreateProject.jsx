@@ -450,6 +450,14 @@ function CreateProject() {
     }
   };
 
+  const handleFixManually = () => {
+    setShowInstallProgress(false);
+    if (createdProject) {
+      // Navigate to the project so user can fix it manually
+      navigate(`/projects/${createdProject.id}?tab=terminal`);
+    }
+  };
+
   return (
     <div className="p-8 max-w-4xl mx-auto">
       {/* Installation Progress Modal */}
@@ -458,7 +466,9 @@ function CreateProject() {
         output={installOutput}
         isComplete={installComplete}
         hasError={installError}
+        projectName={formData.name}
         onClose={handleInstallClose}
+        onFixManually={createdProject ? handleFixManually : null}
       />
 
       {/* Header */}

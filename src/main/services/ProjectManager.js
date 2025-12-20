@@ -115,9 +115,60 @@ class ProjectManager {
   }
 
   async createProject(config, mainWindow = null) {
-    const id = uuidv4();
     const settings = this.configStore.get('settings', {});
     const existingProjects = this.configStore.get('projects', []);
+
+    // Check if a project already exists at this path
+    const normalizedPath = path.normalize(config.path).toLowerCase();
+    const existingProject = existingProjects.find(p => 
+      path.normalize(p.path).toLowerCase() === normalizedPath
+    );
+    
+    if (existingProject) {
+      // Project at this path already exists - check if it was a failed installation
+      if (existingProject.installing || existingProject.installError) {
+        // Remove the failed project and allow re-creation
+        const filteredProjects = existingProjects.filter(p => p.id !== existingProject.id);
+        this.configStore.set('projects', filteredProjects);
+        console.log(`Removed failed project "${existingProject.name}" at ${existingProject.path} for retry`);
+        
+        // Clean up any partial files from the failed installation if it's a fresh install retry
+        if (config.installFresh) {
+          try {
+            const projectDir = config.path;
+            if (await fs.pathExists(projectDir)) {
+              const files = await fs.readdir(projectDir);
+              // Only clean if it looks like a partial installation (has vendor or artisan but not complete)
+              const hasVendor = files.includes('vendor');
+              const hasArtisan = files.includes('artisan');
+              const hasComposerJson = files.includes('composer.json');
+              
+              if (hasVendor || hasArtisan || hasComposerJson) {
+                console.log(`Cleaning up partial installation at ${projectDir}`);
+                await fs.remove(projectDir);
+              }
+            }
+          } catch (cleanupError) {
+            console.warn('Could not clean up partial installation:', cleanupError.message);
+          }
+        }
+      } else {
+        throw new Error(`A project already exists at this path: ${config.path}\n\nProject name: "${existingProject.name}"\n\nPlease choose a different location or delete the existing project first.`);
+      }
+    }
+
+    // Check if a project with the same name already exists (to avoid confusion)
+    // Re-fetch after potentially removing failed project
+    const projectsAfterCleanup = this.configStore.get('projects', []);
+    const sameNameProject = projectsAfterCleanup.find(p => 
+      p.name.toLowerCase() === config.name.toLowerCase()
+    );
+    
+    if (sameNameProject) {
+      throw new Error(`A project with the name "${config.name}" already exists.\n\nPlease choose a different name.`);
+    }
+
+    const id = uuidv4();
 
     // Validate that required PHP version is installed before creating project
     const phpVersion = config.phpVersion || '8.3';
@@ -132,8 +183,11 @@ class ProjectManager {
       throw new Error(`PHP ${phpVersion} is not installed. Please download it from the Binary Manager before creating a project.`);
     }
 
+    // Re-fetch projects list (it may have changed after removing failed project)
+    const currentProjects = this.configStore.get('projects', []);
+
     // Find available port
-    const usedPorts = existingProjects.map((p) => p.port);
+    const usedPorts = currentProjects.map((p) => p.port);
     let port = settings.portRangeStart || 8000;
     while (usedPorts.includes(port)) {
       port++;
@@ -141,7 +195,7 @@ class ProjectManager {
 
     // SSL port (443 base + offset)
     let sslPort = 443;
-    const usedSslPorts = existingProjects.map((p) => p.sslPort).filter(Boolean);
+    const usedSslPorts = currentProjects.map((p) => p.sslPort).filter(Boolean);
     while (usedSslPorts.includes(sslPort)) {
       sslPort++;
     }
@@ -269,8 +323,10 @@ class ProjectManager {
     }
 
     // Save project first (before installation which might take time)
-    existingProjects.push(project);
-    this.configStore.set('projects', existingProjects);
+    // Re-fetch to ensure we have latest list
+    const projectsToSave = this.configStore.get('projects', []);
+    projectsToSave.push(project);
+    this.configStore.set('projects', projectsToSave);
 
     // Auto-install CLI if not already installed
     await this.ensureCliInstalled();
@@ -407,11 +463,22 @@ class ProjectManager {
       
     } catch (error) {
       console.error('Failed to install framework:', error);
+      // Mark installation as failed but keep the project usable
+      // User can fix it manually (e.g., run composer install in terminal)
       project.installError = error.message;
       project.installing = false;
+      project.needsManualSetup = true; // Flag to indicate manual setup needed
       this.updateProjectInStore(project);
       
       sendOutput(`✗ Installation failed: ${error.message}`, 'error');
+      sendOutput('', 'info');
+      sendOutput('─────────────────────────────────────────────────────────────', 'info');
+      sendOutput('💡 You can fix this manually:', 'info');
+      sendOutput('   1. Click "I\'ll Fix It Manually" to go to your project', 'info');
+      sendOutput('   2. Open a terminal in your project folder', 'info');
+      sendOutput('   3. Run: composer install', 'info');
+      sendOutput('   4. Run: php artisan key:generate (for Laravel)', 'info');
+      sendOutput('─────────────────────────────────────────────────────────────', 'info');
       sendOutput('', 'complete');
     }
   }

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Terminal, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Terminal, CheckCircle, XCircle, Loader2, Wrench } from 'lucide-react';
 import clsx from 'clsx';
 
-function InstallationProgress({ isVisible, output, isComplete, hasError, onClose }) {
+function InstallationProgress({ isVisible, output, isComplete, hasError, onClose, onFixManually, projectName }) {
   const outputRef = useRef(null);
 
   useEffect(() => {
@@ -32,28 +32,60 @@ function InstallationProgress({ isVisible, output, isComplete, hasError, onClose
               <h3 className="font-semibold text-gray-900 dark:text-white">
                 {isComplete
                   ? hasError
-                    ? 'Installation Failed'
+                    ? 'Installation Issue'
                     : 'Installation Complete'
                   : 'Installing Laravel...'}
               </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 {isComplete
                   ? hasError
-                    ? 'An error occurred during installation'
+                    ? 'You can fix this manually or retry later'
                     : 'Your Laravel project is ready'
                   : 'This may take a few minutes...'}
               </p>
             </div>
           </div>
           {isComplete && (
-            <button
-              onClick={onClose}
-              className="btn-primary"
-            >
-              {hasError ? 'Close' : 'View Project'}
-            </button>
+            <div className="flex items-center gap-2">
+              {hasError && onFixManually && (
+                <button
+                  onClick={onFixManually}
+                  className="btn-primary flex items-center gap-2"
+                >
+                  <Wrench className="w-4 h-4" />
+                  I'll Fix It Manually
+                </button>
+              )}
+              {!hasError && (
+                <button
+                  onClick={onClose}
+                  className="btn-primary"
+                >
+                  View Project
+                </button>
+              )}
+              {hasError && !onFixManually && (
+                <button
+                  onClick={onClose}
+                  className="btn-secondary"
+                >
+                  Close
+                </button>
+              )}
+            </div>
           )}
         </div>
+
+        {/* Error Help Message */}
+        {isComplete && hasError && (
+          <div className="px-6 py-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              <strong>Don't worry!</strong> Your project "{projectName || 'project'}" has been created. 
+              You can fix the issue manually by opening a terminal in the project folder and running the failed command again.
+              Common fixes include: installing missing PHP extensions, checking your internet connection, or running <code className="bg-amber-100 dark:bg-amber-800 px-1 rounded">composer install</code> manually.
+            </p>
+          </div>
+        )}
 
         {/* Terminal Output */}
         <div className="flex-1 bg-gray-900 overflow-hidden">
