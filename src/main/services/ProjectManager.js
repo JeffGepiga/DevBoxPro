@@ -17,7 +17,7 @@ function spawnHidden(command, args, options = {}) {
       ...options,
       windowsHide: true,
     });
-    
+
     return proc;
   } else {
     return spawn(command, args, {
@@ -60,7 +60,7 @@ class ProjectManager {
 
     try {
       const status = await cli.checkCliInstalled();
-      
+
       // Install CLI script if not installed
       if (!status.installed) {
         await cli.installCli();
@@ -120,10 +120,10 @@ class ProjectManager {
 
     // Check if a project already exists at this path
     const normalizedPath = path.normalize(config.path).toLowerCase();
-    const existingProject = existingProjects.find(p => 
+    const existingProject = existingProjects.find(p =>
       path.normalize(p.path).toLowerCase() === normalizedPath
     );
-    
+
     if (existingProject) {
       // Project at this path already exists - check if it was a failed installation
       if (existingProject.installing || existingProject.installError) {
@@ -131,7 +131,7 @@ class ProjectManager {
         const filteredProjects = existingProjects.filter(p => p.id !== existingProject.id);
         this.configStore.set('projects', filteredProjects);
         console.log(`Removed failed project "${existingProject.name}" at ${existingProject.path} for retry`);
-        
+
         // Clean up any partial files from the failed installation if it's a fresh install retry
         if (config.installFresh) {
           try {
@@ -142,7 +142,7 @@ class ProjectManager {
               const hasVendor = files.includes('vendor');
               const hasArtisan = files.includes('artisan');
               const hasComposerJson = files.includes('composer.json');
-              
+
               if (hasVendor || hasArtisan || hasComposerJson) {
                 console.log(`Cleaning up partial installation at ${projectDir}`);
                 await fs.remove(projectDir);
@@ -160,10 +160,10 @@ class ProjectManager {
     // Check if a project with the same name already exists (to avoid confusion)
     // Re-fetch after potentially removing failed project
     const projectsAfterCleanup = this.configStore.get('projects', []);
-    const sameNameProject = projectsAfterCleanup.find(p => 
+    const sameNameProject = projectsAfterCleanup.find(p =>
       p.name.toLowerCase() === config.name.toLowerCase()
     );
-    
+
     if (sameNameProject) {
       throw new Error(`A project with the name "${config.name}" already exists.\n\nPlease choose a different name.`);
     }
@@ -178,7 +178,7 @@ class ProjectManager {
     const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
     const phpExe = platform === 'win' ? 'php.exe' : 'php';
     const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
-    
+
     if (!await fs.pathExists(path.join(phpDir, phpExe)) || !await fs.pathExists(path.join(phpDir, phpCgiExe))) {
       throw new Error(`PHP ${phpVersion} is not installed. Please download it from the Binary Manager before creating a project.`);
     }
@@ -253,10 +253,10 @@ class ProjectManager {
       nodejsVersion: project.services.nodejs ? project.services.nodejsVersion : null,
       projectType: project.type,
     };
-    
+
     const compatibility = this.compatibilityManager.checkCompatibility(compatibilityConfig);
     project.compatibilityWarnings = compatibility.warnings || [];
-    
+
     // If there are warnings and user hasn't acknowledged them, return warnings for UI to display
     if (compatibility.hasIssues && !config.compatibilityWarningsAcknowledged) {
       // Still create the project but include warnings for the UI to display
@@ -277,7 +277,7 @@ class ProjectManager {
           await this.managers.database.setActiveDatabaseType('mysql');
           dbVersion = project.services.mysqlVersion || '8.4';
         }
-        
+
         await this.managers.database?.createDatabase(dbName, dbVersion);
       } catch (error) {
         console.warn('Could not create database:', error.message);
@@ -335,7 +335,7 @@ class ProjectManager {
     if (config.installFresh) {
       // Mark project as installing
       project.installing = true;
-      
+
       // Run installation in background (don't await)
       this.runInstallation(project, mainWindow).catch(error => {
         console.error('Background installation failed:', error);
@@ -374,13 +374,13 @@ class ProjectManager {
             return;
           }
         }
-        
+
         await this.installLaravel(project, mainWindow);
-        
+
       } else if (project.type === 'wordpress') {
         await this.installWordPress(project.path, mainWindow);
       }
-      
+
       // Create virtual host now that the project files exist
       try {
         await this.createVirtualHost(project);
@@ -388,24 +388,24 @@ class ProjectManager {
       } catch (error) {
         sendOutput(`Warning: Could not create virtual host: ${error.message}`, 'warning');
       }
-      
+
       // Run php artisan optimize for Laravel projects
       if (project.type === 'laravel') {
         try {
           sendOutput('Optimizing application...', 'info');
           sendOutput('$ php artisan optimize', 'command');
-          
+
           const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
           const platform = process.platform === 'win32' ? 'win' : 'mac';
           const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
           const phpPath = path.join(resourcePath, 'php', project.phpVersion, platform, phpExe);
-          
+
           if (await fs.pathExists(phpPath)) {
             await new Promise((resolve) => {
-              const proc = spawn(phpPath, ['artisan', 'optimize'], { 
-                cwd: project.path, 
+              const proc = spawn(phpPath, ['artisan', 'optimize'], {
+                cwd: project.path,
                 stdio: ['ignore', 'pipe', 'pipe'],
-                windowsHide: true 
+                windowsHide: true
               });
               proc.stdout.on('data', (data) => sendOutput(data.toString(), 'stdout'));
               proc.stderr.on('data', (data) => sendOutput(data.toString(), 'stderr'));
@@ -422,11 +422,11 @@ class ProjectManager {
           sendOutput(`Warning: Could not optimize application: ${e.message}`, 'warning');
         }
       }
-      
+
       // Mark installation complete
       project.installing = false;
       this.updateProjectInStore(project);
-      
+
       // Show thank you message
       sendOutput('', 'info');
       sendOutput('═══════════════════════════════════════════════════════════════', 'info');
@@ -440,7 +440,7 @@ class ProjectManager {
       sendOutput('', 'info');
       sendOutput('Starting your project now...', 'info');
       sendOutput('═══════════════════════════════════════════════════════════════', 'info');
-      
+
       // Auto-start the project
       try {
         await this.startProject(project.id);
@@ -448,10 +448,10 @@ class ProjectManager {
       } catch (startError) {
         sendOutput(`Warning: Could not auto-start project: ${startError.message}`, 'warning');
       }
-      
+
       // Signal completion with redirect info
       sendOutput('', 'complete');
-      
+
       // Send redirect signal to frontend
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('installation:complete', {
@@ -460,7 +460,7 @@ class ProjectManager {
           ssl: project.ssl,
         });
       }
-      
+
     } catch (error) {
       console.error('Failed to install framework:', error);
       // Mark installation as failed but keep the project usable
@@ -469,7 +469,7 @@ class ProjectManager {
       project.installing = false;
       project.needsManualSetup = true; // Flag to indicate manual setup needed
       this.updateProjectInStore(project);
-      
+
       sendOutput(`✗ Installation failed: ${error.message}`, 'error');
       sendOutput('', 'info');
       sendOutput('─────────────────────────────────────────────────────────────', 'info');
@@ -499,13 +499,13 @@ class ProjectManager {
     const projectName = project.name || 'laravel';
     const useNodejs = project.services?.nodejs !== false; // Default to true for backwards compatibility
     const nodejsVersion = project.services?.nodejsVersion || '20';
-    
+
     const parentPath = path.dirname(projectPath);
     const folderName = path.basename(projectPath);
-    
+
     // Ensure parent directory exists
     await fs.ensureDir(parentPath);
-    
+
     // Run composer create-project
     const binary = this.managers.binaryDownload;
     if (!binary) {
@@ -517,7 +517,7 @@ class ProjectManager {
       // Clean up the text
       const cleanText = text.toString().replace(/\r\n/g, '\n').trim();
       if (!cleanText) return;
-      
+
       if (mainWindow && !mainWindow.isDestroyed()) {
         try {
           mainWindow.webContents.send('terminal:output', {
@@ -554,7 +554,7 @@ class ProjectManager {
     try {
       const envExamplePath = path.join(projectPath, '.env.example');
       const envPath = path.join(projectPath, '.env');
-      
+
       if (await fs.pathExists(envExamplePath) && !await fs.pathExists(envPath)) {
         onOutput('Creating .env file...', 'info');
         await fs.copy(envExamplePath, envPath);
@@ -569,14 +569,14 @@ class ProjectManager {
       const envPath = path.join(projectPath, '.env');
       if (await fs.pathExists(envPath)) {
         let envContent = await fs.readFile(envPath, 'utf-8');
-        
+
         // Update APP_NAME
         envContent = envContent.replace(/^APP_NAME=.*/m, `APP_NAME="${projectName}"`);
-        
+
         // Update APP_URL
         const projectDomain = `${projectName.toLowerCase().replace(/[^a-z0-9]/g, '-')}.test`;
         envContent = envContent.replace(/^APP_URL=.*/m, `APP_URL=http://${projectDomain}`);
-        
+
         // Update DB settings if project has MySQL enabled
         const project = this.configStore.get('projects', []).find(p => p.path === projectPath);
         if (project) {
@@ -586,36 +586,36 @@ class ProjectManager {
           const dbUser = dbInfo.user || 'root';
           const dbPassword = dbInfo.password || '';
           const dbPort = dbInfo.port || 3306;
-          
+
           envContent = envContent.replace(/^DB_DATABASE=.*/m, `DB_DATABASE=${dbName}`);
           envContent = envContent.replace(/^DB_USERNAME=.*/m, `DB_USERNAME=${dbUser}`);
           envContent = envContent.replace(/^DB_PASSWORD=.*/m, `DB_PASSWORD=${dbPassword}`);
           envContent = envContent.replace(/^DB_PORT=.*/m, `DB_PORT=${dbPort}`);
         }
-        
+
         await fs.writeFile(envPath, envContent);
         onOutput('✓ .env file configured', 'success');
       }
     } catch (e) {
       onOutput(`Warning: Could not update .env file: ${e.message}`, 'warning');
     }
-    
+
     // Generate application key
     try {
       onOutput('Generating application key...', 'info');
       onOutput('$ php artisan key:generate', 'command');
-      
+
       const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
       const platform = process.platform === 'win32' ? 'win' : 'mac';
       const resourcePath = this.configStore.get('resourcePath') || require('path').join(require('electron').app.getPath('userData'), 'resources');
       const phpPath = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
-      
+
       if (await fs.pathExists(phpPath)) {
         await new Promise((resolve, reject) => {
-          const proc = spawn(phpPath, ['artisan', 'key:generate'], { 
-            cwd: projectPath, 
+          const proc = spawn(phpPath, ['artisan', 'key:generate'], {
+            cwd: projectPath,
             stdio: ['ignore', 'pipe', 'pipe'],
-            windowsHide: true 
+            windowsHide: true
           });
           proc.stdout.on('data', (data) => onOutput(data.toString(), 'stdout'));
           proc.stderr.on('data', (data) => onOutput(data.toString(), 'stderr'));
@@ -647,14 +647,14 @@ class ProjectManager {
         if (await fs.pathExists(packageJsonPath)) {
           onOutput('Installing npm packages...', 'info');
           onOutput('$ npm install', 'command');
-          
+
           // Use selected Node.js version
           const platform = process.platform === 'win32' ? 'win' : 'mac';
           const resourcePath = this.configStore.get('resourcePath') || require('path').join(require('electron').app.getPath('userData'), 'resources');
           const nodeDir = path.join(resourcePath, 'nodejs', nodejsVersion, platform);
-          
+
           let npmCmd = 'npm';
-          
+
           // Check if we have local Node.js
           if (await fs.pathExists(nodeDir)) {
             if (process.platform === 'win32') {
@@ -663,7 +663,7 @@ class ProjectManager {
               npmCmd = path.join(nodeDir, 'bin', 'npm');
             }
           }
-          
+
           await new Promise((resolve) => {
             const npmProc = spawn(npmCmd, ['install'], {
               cwd: projectPath,
@@ -672,12 +672,12 @@ class ProjectManager {
               windowsHide: true,
               env: {
                 ...process.env,
-                PATH: process.platform === 'win32' 
+                PATH: process.platform === 'win32'
                   ? `${nodeDir};${process.env.PATH}`
                   : `${path.join(nodeDir, 'bin')}:${process.env.PATH}`,
               },
             });
-            
+
             npmProc.stdout.on('data', (data) => onOutput(data.toString(), 'stdout'));
             npmProc.stderr.on('data', (data) => onOutput(data.toString(), 'stderr'));
             npmProc.on('close', (code) => {
@@ -702,18 +702,18 @@ class ProjectManager {
     onOutput('', 'info');
     onOutput('🎉 Laravel project created successfully!', 'success');
     onOutput(`Project location: ${projectPath}`, 'info');
-    
+
     return { success: true };
   }
 
   async installWordPress(projectPath) {
     // Ensure directory exists
     await fs.ensureDir(projectPath);
-    
+
     // Download WordPress
     const wpUrl = 'https://wordpress.org/latest.zip';
     const downloadPath = path.join(projectPath, 'wordpress.zip');
-    
+
     // TODO: Implement WordPress download and extraction
     console.log('WordPress installation not yet implemented');
   }
@@ -770,18 +770,18 @@ class ProjectManager {
     }
 
     const envPath = path.join(project.path, '.env');
-    
+
     if (!await fs.pathExists(envPath)) {
       return;
     }
 
     let envContent = await fs.readFile(envPath, 'utf-8');
-    
+
     // Update each environment variable
     for (const [key, value] of Object.entries(project.environment)) {
       const regex = new RegExp(`^${key}=.*$`, 'm');
       const newLine = `${key}=${value}`;
-      
+
       if (regex.test(envContent)) {
         // Replace existing line
         envContent = envContent.replace(regex, newLine);
@@ -804,14 +804,14 @@ class ProjectManager {
     }
 
     const envPath = path.join(project.path, '.env');
-    
+
     if (!await fs.pathExists(envPath)) {
       return {};
     }
 
     const envContent = await fs.readFile(envPath, 'utf-8');
     const environment = {};
-    
+
     // Parse .env file line by line
     const lines = envContent.split('\n');
     for (const line of lines) {
@@ -820,23 +820,23 @@ class ProjectManager {
       if (!trimmed || trimmed.startsWith('#')) {
         continue;
       }
-      
+
       // Parse KEY=VALUE format
       const equalsIndex = trimmed.indexOf('=');
       if (equalsIndex > 0) {
         const key = trimmed.substring(0, equalsIndex).trim();
         let value = trimmed.substring(equalsIndex + 1).trim();
-        
+
         // Remove surrounding quotes if present
-        if ((value.startsWith('"') && value.endsWith('"')) || 
-            (value.startsWith("'") && value.endsWith("'"))) {
+        if ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))) {
           value = value.slice(1, -1);
         }
-        
+
         environment[key] = value;
       }
     }
-    
+
     return environment;
   }
 
@@ -910,23 +910,27 @@ class ProjectManager {
         throw new Error(errorMsg);
       }
 
-      // Start required services first
+      // Calculate PHP-CGI port (unique per project) - needed for vhost config
+      const phpFpmPort = 9000 + (parseInt(project.id.slice(-4), 16) % 1000);
+
+      // Regenerate virtual host config BEFORE starting services
+      // This ensures the vhost config has correct paths for the current web server version
+      await this.createVirtualHost(project, phpFpmPort);
+
+      // Start required services (nginx/apache, mysql, redis, etc.)
       const serviceResult = await this.startProjectServices(project);
-      
+
       // Check if critical services failed
       if (!serviceResult.success) {
-        const errorMsg = serviceResult.errors.length > 0 
-          ? serviceResult.errors.join('; ') 
+        const errorMsg = serviceResult.errors.length > 0
+          ? serviceResult.errors.join('; ')
           : `Critical services failed to start: ${serviceResult.criticalFailures.join(', ')}`;
         throw new Error(errorMsg);
       }
 
-      // Calculate PHP-CGI port (unique per project)
-      const phpFpmPort = 9000 + (parseInt(project.id.slice(-4), 16) % 1000);
-
       let phpCgiProcess = null;
       let actualPhpFpmPort = phpFpmPort;
-      
+
       // Only start PHP-CGI process for Nginx (uses FastCGI)
       // Apache uses Action/AddHandler CGI approach - invokes PHP-CGI directly per request
       const webServer = project.webServer || 'nginx';
@@ -934,11 +938,12 @@ class ProjectManager {
         const phpCgiResult = await this.startPhpCgi(project, phpFpmPort);
         phpCgiProcess = phpCgiResult.process;
         actualPhpFpmPort = phpCgiResult.port;
+
+        // If port changed due to availability, regenerate vhost with correct port
+        if (actualPhpFpmPort !== phpFpmPort) {
+          await this.createVirtualHost(project, actualPhpFpmPort);
+        }
       }
-      
-      // Regenerate virtual host config to ensure correct port
-      // Pass the actual PHP-CGI port in case it differs from the calculated one
-      await this.createVirtualHost(project, actualPhpFpmPort);
 
       this.runningProjects.set(id, {
         phpCgiProcess: phpCgiProcess,
@@ -980,7 +985,7 @@ class ProjectManager {
     const { app } = require('electron');
     const resourcePath = this.configStore.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    
+
     // Check PHP version - check filesystem directly for both php and php-cgi
     const phpVersion = project.phpVersion || '8.3';
     const phpExe = platform === 'win' ? 'php.exe' : 'php';
@@ -991,15 +996,44 @@ class ProjectManager {
     if (!phpExists || !phpCgiExists) {
       missing.push(`PHP ${phpVersion}`);
     }
-    
-    // Check web server
+
+    // Check web server - auto-fix if configured version doesn't exist
     const webServer = project.webServer || 'nginx';
-    const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
+    let webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
     const webServerPath = path.join(resourcePath, webServer, webServerVersion, platform);
+
     if (!await fs.pathExists(webServerPath)) {
-      missing.push(`${webServer === 'nginx' ? 'Nginx' : 'Apache'} ${webServerVersion}`);
+      // Try to find an available version
+      const webServerDir = path.join(resourcePath, webServer);
+      let availableVersion = null;
+
+      if (await fs.pathExists(webServerDir)) {
+        const versions = await fs.readdir(webServerDir);
+        for (const v of versions) {
+          const vPath = path.join(webServerDir, v, platform);
+          if (await fs.pathExists(vPath)) {
+            availableVersion = v;
+            break;
+          }
+        }
+      }
+
+      if (availableVersion) {
+        // Auto-fix: Update project config with available version
+        const projects = this.configStore.get('projects', []);
+        const index = projects.findIndex(p => p.id === project.id);
+        if (index !== -1) {
+          projects[index].webServerVersion = availableVersion;
+          this.configStore.set('projects', projects);
+          // Also update the project object in memory
+          project.webServerVersion = availableVersion;
+          this.managers.log?.systemInfo(`Auto-updated ${project.name} web server version from ${webServerVersion} to ${availableVersion}`);
+        }
+      } else {
+        missing.push(`${webServer === 'nginx' ? 'Nginx' : 'Apache'} ${webServerVersion}`);
+      }
     }
-    
+
     // Check MySQL if enabled
     if (project.services?.mysql) {
       const mysqlVersion = project.services.mysqlVersion || '8.4';
@@ -1008,7 +1042,7 @@ class ProjectManager {
         missing.push(`MySQL ${mysqlVersion}`);
       }
     }
-    
+
     // Check MariaDB if enabled
     if (project.services?.mariadb) {
       const mariadbVersion = project.services.mariadbVersion || '11.4';
@@ -1017,7 +1051,7 @@ class ProjectManager {
         missing.push(`MariaDB ${mariadbVersion}`);
       }
     }
-    
+
     // Check Redis if enabled
     if (project.services?.redis) {
       const redisVersion = project.services.redisVersion || '7.4';
@@ -1026,7 +1060,7 @@ class ProjectManager {
         missing.push(`Redis ${redisVersion}`);
       }
     }
-    
+
     return missing;
   }
 
@@ -1036,18 +1070,18 @@ class ProjectManager {
     const { app } = require('electron');
     const resourcePath = this.configStore.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    
+
     // Check if PHP version is available - check filesystem directly
     const phpExe = platform === 'win' ? 'php.exe' : 'php';
     const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
     const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
     const phpPath = path.join(phpDir, phpExe);
     const phpCgiPath = path.join(phpDir, phpCgiExe);
-    
+
     if (!await fs.pathExists(phpPath)) {
       throw new Error(`PHP ${phpVersion} is not installed at:\n${phpPath}\n\nPlease install PHP ${phpVersion} from the Binary Manager.`);
     }
-    
+
     // Check if php-cgi exists
     if (!await fs.pathExists(phpCgiPath)) {
       throw new Error(`PHP-CGI not found for PHP ${phpVersion} at:\n${phpCgiPath}\n\nThe PHP installation may be incomplete. Please reinstall PHP ${phpVersion} from the Binary Manager.`);
@@ -1075,7 +1109,7 @@ class ProjectManager {
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-      
+
       phpCgiProcess.stdout?.on('data', (data) => {
         this.managers.log?.project(project.id, `[php-cgi] ${data.toString()}`);
       });
@@ -1125,14 +1159,14 @@ class ProjectManager {
     const maxWait = 5000;
     const startTime = Date.now();
     let isListening = false;
-    
+
     while (Date.now() - startTime < maxWait && !isListening) {
       isListening = !await isPortAvailable(actualPort);
       if (!isListening) {
         await new Promise(resolve => setTimeout(resolve, 200));
       }
     }
-    
+
     if (!isListening) {
       console.warn(`PHP-CGI may not have started properly on port ${actualPort}`);
     }
@@ -1183,7 +1217,7 @@ class ProjectManager {
    */
   async stopAllProjects() {
     const runningProjectIds = Array.from(this.runningProjects.keys());
-    
+
     if (runningProjectIds.length === 0) {
       // Still do cleanup in case of orphan processes
       if (process.platform === 'win32') {
@@ -1191,7 +1225,7 @@ class ProjectManager {
       }
       return { success: true, stoppedCount: 0 };
     }
-    
+
     const results = [];
     for (const id of runningProjectIds) {
       try {
@@ -1209,11 +1243,11 @@ class ProjectManager {
     }
 
     const stoppedCount = results.filter(r => r.success).length;
-    
-    return { 
-      success: results.every(r => r.success), 
+
+    return {
+      success: results.every(r => r.success),
       stoppedCount,
-      results 
+      results
     };
   }
 
@@ -1226,8 +1260,8 @@ class ProjectManager {
     const processes = ['php-cgi.exe', 'php.exe'];
     for (const proc of processes) {
       try {
-        execSync(`taskkill /F /IM ${proc} 2>nul`, { 
-          windowsHide: true, 
+        execSync(`taskkill /F /IM ${proc} 2>nul`, {
+          windowsHide: true,
           timeout: 5000,
           stdio: 'ignore'
         });
@@ -1262,7 +1296,7 @@ class ProjectManager {
     // Web server is critical - project cannot run without it
     const webServer = project.webServer || 'nginx';
     const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
-    
+
     const servicesToStart = [];
 
     // Only start the web server the project needs (with version)
@@ -1310,31 +1344,31 @@ class ProjectManager {
     for (const service of servicesToStart) {
       try {
         const status = serviceManager.serviceStatus.get(service.name);
-        
+
         // For versioned services, check if the correct version is running
         const isVersioned = serviceManager.serviceConfigs[service.name]?.versioned;
         const requestedVersion = service.version;
         const runningVersion = status?.version;
-        
+
         // Check if we need to start (or start a different version)
         const needsStart = !status || status.status !== 'running';
         const needsDifferentVersion = isVersioned && requestedVersion && runningVersion && runningVersion !== requestedVersion;
-        
+
         // For web servers, check if we should restart to claim standard ports
-        if ((service.name === 'nginx' || service.name === 'apache') && 
-            status && status.status === 'running' && !needsDifferentVersion) {
+        if ((service.name === 'nginx' || service.name === 'apache') &&
+          status && status.status === 'running' && !needsDifferentVersion) {
           // Check if this web server is on alternate ports but could use standard ports
           const ports = serviceManager.getServicePorts(service.name);
           const isOnAlternatePorts = ports?.httpPort === 8081;
           const standardPortsAvailable = serviceManager.standardPortOwner === null;
-          
+
           if (isOnAlternatePorts && standardPortsAvailable) {
             await serviceManager.restartService(service.name, requestedVersion);
             results.started.push(service.name);
             continue;
           }
         }
-        
+
         // If a different version is needed, we can run both simultaneously
         // Check if the requested version is already running
         if (isVersioned && requestedVersion) {
@@ -1344,10 +1378,10 @@ class ProjectManager {
             continue;
           }
         }
-        
+
         if (needsStart || (isVersioned && !serviceManager.isVersionRunning(service.name, requestedVersion))) {
           const result = await serviceManager.startService(service.name, requestedVersion);
-          
+
           // Check if service actually started (could be not_installed)
           if (result.status === 'not_installed') {
             const versionStr = requestedVersion ? ` ${requestedVersion}` : '';
@@ -1370,7 +1404,7 @@ class ProjectManager {
         console.warn(errorMsg);
         results.failed.push(service.name);
         results.errors.push(errorMsg);
-        
+
         if (service.critical) {
           results.criticalFailures.push(service.name);
           results.success = false;
@@ -1473,7 +1507,7 @@ class ProjectManager {
         const dbUser = dbInfo.user || 'root';
         const dbPassword = dbInfo.password || '';
         const dbPort = dbInfo.port || 3306;
-        
+
         return {
           ...baseEnv,
           APP_NAME: projectName,
@@ -1503,7 +1537,7 @@ class ProjectManager {
         const dbPassword = dbInfo.password || '';
         const dbPort = dbInfo.port || 3306;
         const dbName = this.sanitizeDatabaseName(projectName);
-        
+
         return {
           ...baseEnv,
           DATABASE_URL: `mysql://${dbUser}:${dbPassword}@127.0.0.1:${dbPort}/${dbName}`,
@@ -1534,12 +1568,12 @@ class ProjectManager {
   async updateHostsFile(project) {
     // Add all project domains to hosts file
     const domainsToAdd = [];
-    
+
     // Add main domain
     if (project.domain) {
       domainsToAdd.push(project.domain);
     }
-    
+
     // Add any additional domains
     if (project.domains && Array.isArray(project.domains)) {
       for (const domain of project.domains) {
@@ -1548,7 +1582,7 @@ class ProjectManager {
         }
       }
     }
-    
+
     // Add each domain to hosts file
     for (const domain of domainsToAdd) {
       try {
@@ -1562,7 +1596,7 @@ class ProjectManager {
   // Create virtual host configuration for the project
   async createVirtualHost(project, phpFpmPort = null) {
     const webServer = project.webServer || this.configStore.get('settings.webServer', 'nginx');
-    
+
     if (webServer === 'nginx') {
       await this.createNginxVhost(project, phpFpmPort);
       // Reload nginx to pick up config changes
@@ -1596,13 +1630,13 @@ class ProjectManager {
     await fs.ensureDir(sitesDir);
 
     const documentRoot = this.getDocumentRoot(project);
-    
+
     // Ensure document root exists
     await fs.ensureDir(documentRoot);
-    
+
     // Use override port if provided, otherwise calculate default
     const phpFpmPort = overridePhpFpmPort || (9000 + (parseInt(project.id.slice(-4), 16) % 1000));
-    
+
     // Get dynamic ports from ServiceManager
     const serviceManager = this.managers.service;
     const nginxPorts = serviceManager?.getServicePorts('nginx');
@@ -1662,7 +1696,7 @@ server {
     let certPath = path.join(sslDir, 'cert.pem');
     let keyPath = path.join(sslDir, 'key.pem');
     let certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
-    
+
     // Auto-create SSL certificates if SSL is enabled but certs don't exist
     if (project.ssl && !certsExist) {
       try {
@@ -1673,11 +1707,11 @@ server {
         console.warn(`Failed to create SSL certificates for ${project.domain}:`, error.message);
       }
     }
-    
+
     if (project.ssl && !certsExist) {
       console.warn(`SSL enabled for ${project.domain} but certificates not found at ${sslDir}. Skipping SSL block.`);
     }
-    
+
     if (project.ssl && certsExist) {
       config += `
 # HTTPS Server (SSL)
@@ -1753,24 +1787,24 @@ server {
     await fs.ensureDir(vhostsDir);
 
     const documentRoot = this.getDocumentRoot(project);
-    
+
     // Ensure document root exists
     await fs.ensureDir(documentRoot);
-    
+
     const idSlice = project.id.slice(-4);
     const parsedInt = parseInt(idSlice, 16);
     const modResult = parsedInt % 1000;
     let phpFpmPort = 9000 + modResult;
-    
+
     // Ensure port is a valid number and convert to string explicitly
     if (isNaN(phpFpmPort) || phpFpmPort < 9000 || phpFpmPort > 9999) {
       console.error(`[Apache Vhost] Invalid PHP-CGI port calculated: ${phpFpmPort}. Using default 9000.`);
       phpFpmPort = 9000;
     }
-    
+
     // Convert to string and validate - ensure no extra characters
     const phpFpmPortStr = String(phpFpmPort).trim();
-    
+
     // Get dynamic ports from ServiceManager
     const serviceManager = this.managers.service;
     const apachePorts = serviceManager?.getServicePorts('apache');
@@ -1920,14 +1954,14 @@ server {
   // Add domain to hosts file (requires admin privileges)
   async addToHostsFile(domain) {
     if (!domain) return;
-    
-    const hostsPath = process.platform === 'win32' 
+
+    const hostsPath = process.platform === 'win32'
       ? 'C:\\Windows\\System32\\drivers\\etc\\hosts'
       : '/etc/hosts';
 
     try {
       const hostsContent = await fs.readFile(hostsPath, 'utf-8');
-      
+
       // Check if domain already exists (check both with and without www)
       const domainRegex = new RegExp(`^\\s*127\\.0\\.0\\.1\\s+${domain.replace('.', '\\.')}\\s*$`, 'm');
       if (domainRegex.test(hostsContent)) {
@@ -1939,7 +1973,7 @@ server {
         `127.0.0.1\t${domain}`,
         `127.0.0.1\twww.${domain}`
       ];
-      
+
       // Try to append using sudo-prompt for proper elevation
       const sudo = require('sudo-prompt');
       const options = {
@@ -1952,19 +1986,19 @@ server {
         const { app } = require('electron');
         const tempDir = app.getPath('temp');
         const scriptPath = path.join(tempDir, 'devbox-hosts-update.bat');
-        
+
         // Build the batch commands to echo each entry
-        const batchContent = entries.map(entry => 
+        const batchContent = entries.map(entry =>
           `echo ${entry}>> "${hostsPath}"`
         ).join('\r\n');
-        
+
         await fs.writeFile(scriptPath, batchContent);
-        
+
         return new Promise((resolve) => {
           sudo.exec(`cmd /c "${scriptPath}"`, options, async (error, stdout, stderr) => {
             // Clean up temp file
-            try { await fs.remove(scriptPath); } catch (e) {}
-            
+            try { await fs.remove(scriptPath); } catch (e) { }
+
             if (error) {
               console.warn(`Could not update hosts file automatically: ${error.message}`);
               resolve({ success: false, error: error.message });
@@ -1977,7 +2011,7 @@ server {
         // On macOS/Linux, use sudo-prompt with tee
         const entry = entries.join('\n');
         const command = `sh -c "echo '${entry}' >> ${hostsPath}"`;
-        
+
         return new Promise((resolve) => {
           sudo.exec(command, options, (error, stdout, stderr) => {
             if (error) {
@@ -1998,45 +2032,45 @@ server {
   // Remove domain from hosts file
   async removeFromHostsFile(domain) {
     if (!domain) return;
-    
+
     const hostsPath = process.platform === 'win32'
       ? 'C:\\Windows\\System32\\drivers\\etc\\hosts'
       : '/etc/hosts';
 
     try {
       let hostsContent = await fs.readFile(hostsPath, 'utf-8');
-      
+
       // Remove lines containing the domain
       const lines = hostsContent.split('\n').filter(line => {
         const trimmed = line.trim();
         // Only filter out DevBox Pro entries for this domain
         return !trimmed.includes(domain) || !trimmed.startsWith('127.0.0.1');
       });
-      
+
       const newContent = lines.join('\n');
-      
+
       if (newContent !== hostsContent) {
         const sudo = require('sudo-prompt');
         const options = {
           name: 'DevBox Pro',
           icns: undefined
         };
-        
+
         if (process.platform === 'win32') {
           const { app } = require('electron');
           const tempDir = app.getPath('temp');
           const tempHostsPath = path.join(tempDir, 'hosts-new');
-          
+
           // Write new content to temp file
           await fs.writeFile(tempHostsPath, newContent);
-          
+
           // Use sudo to copy the temp file to the hosts location
           const command = `copy /Y "${tempHostsPath}" "${hostsPath}"`;
-          
+
           return new Promise((resolve) => {
             sudo.exec(`cmd /c ${command}`, options, async (error, stdout, stderr) => {
-              try { await fs.remove(tempHostsPath); } catch (e) {}
-              
+              try { await fs.remove(tempHostsPath); } catch (e) { }
+
               if (error) {
                 console.warn(`Could not remove ${domain} from hosts file: ${error.message}`);
                 resolve({ success: false, error: error.message });
@@ -2050,13 +2084,13 @@ server {
           const { app } = require('electron');
           const tempDir = app.getPath('temp');
           const tempHostsPath = path.join(tempDir, 'hosts-new');
-          
+
           await fs.writeFile(tempHostsPath, newContent);
-          
+
           return new Promise((resolve) => {
             sudo.exec(`cp "${tempHostsPath}" "${hostsPath}"`, options, async (error, stdout, stderr) => {
-              try { await fs.remove(tempHostsPath); } catch (e) {}
-              
+              try { await fs.remove(tempHostsPath); } catch (e) { }
+
               if (error) {
                 console.warn(`Could not remove ${domain} from hosts file: ${error.message}`);
                 resolve({ success: false, error: error.message });
@@ -2068,7 +2102,7 @@ server {
           });
         }
       }
-      
+
       return { success: true, nothingToRemove: true };
     } catch (error) {
       console.warn(`Could not update hosts file: ${error.message}`);
@@ -2080,7 +2114,7 @@ server {
   async removeVirtualHost(project) {
     const { app } = require('electron');
     const dataPath = path.join(app.getPath('userData'), 'data');
-    
+
     // Remove nginx config
     const nginxConfig = path.join(dataPath, 'nginx', 'sites', `${project.id}.conf`);
     if (await fs.pathExists(nginxConfig)) {
@@ -2107,14 +2141,14 @@ server {
     }
 
     const oldWebServer = project.webServer || 'nginx';
-    
+
     // If same web server, nothing to do
     if (oldWebServer === newWebServer) {
       return { success: true, webServer: newWebServer, message: 'Already using this web server' };
     }
 
     const wasRunning = this.runningProjects.has(projectId);
-    
+
     // Stop the project if running
     if (wasRunning) {
       await this.stopProject(projectId);
@@ -2125,12 +2159,12 @@ server {
 
     // Check if any other projects are still using the old web server
     const allProjects = this.configStore.get('projects', []);
-    const otherProjectsOnOldServer = allProjects.filter(p => 
-      p.id !== projectId && 
+    const otherProjectsOnOldServer = allProjects.filter(p =>
+      p.id !== projectId &&
       (p.webServer || 'nginx') === oldWebServer &&
       this.runningProjects.has(p.id)
     );
-    
+
     // If no other projects use the old web server, stop it to free up ports
     if (otherProjectsOnOldServer.length === 0) {
       console.log(`No other projects using ${oldWebServer}, stopping it to free ports...`);
@@ -2183,7 +2217,7 @@ server {
     }
 
     // Get all registered project paths (normalized)
-    const registeredPaths = this.getAllProjects().map((p) => 
+    const registeredPaths = this.getAllProjects().map((p) =>
       path.normalize(p.path).toLowerCase()
     );
 
@@ -2426,7 +2460,7 @@ server {
     // Check compatibility of new configuration
     const compatConfig = {
       phpVersion: updates.phpVersion || project.phpVersion,
-      mysqlVersion: (updates.services?.mysql ?? project.services?.mysql) 
+      mysqlVersion: (updates.services?.mysql ?? project.services?.mysql)
         ? (updates.services?.mysqlVersion || project.services?.mysqlVersion) : null,
       mariadbVersion: (updates.services?.mariadb ?? project.services?.mariadb)
         ? (updates.services?.mariadbVersion || project.services?.mariadbVersion) : null,

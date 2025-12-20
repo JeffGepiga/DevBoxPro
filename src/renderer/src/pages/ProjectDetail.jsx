@@ -27,6 +27,13 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
+// Node.js icon SVG component
+const NodeJsIcon = ({ className }) => (
+  <svg viewBox="0 0 448 512" className={className} fill="currentColor">
+    <path d="M224 508c-6.7 0-13.5-1.8-19.4-5.2l-61.7-36.5c-9.2-5.2-4.7-7-1.7-8 12.3-4.3 14.8-5.2 27.9-12.7 1.4-.8 3.2-.5 4.6.4l47.4 28.1c1.7 1 4.1 1 5.7 0l184.7-106.6c1.7-1 2.8-3 2.8-5V149.3c0-2.1-1.1-4-2.9-5.1L226.8 37.7c-1.7-1-4-1-5.7 0L36.6 144.3c-1.8 1-2.9 3-2.9 5.1v213.1c0 2 1.1 4 2.9 4.9l50.6 29.2c27.5 13.7 44.3-2.4 44.3-18.7V167.5c0-3 2.4-5.3 5.4-5.3h23.4c2.9 0 5.4 2.3 5.4 5.3V378c0 36.6-20 57.6-54.7 57.6-10.7 0-19.1 0-42.5-11.6l-48.4-27.9C8.1 389.2.7 376.3.7 362.4V149.3c0-13.8 7.4-26.8 19.4-33.7L204.6 8.9c11.7-6.6 27.2-6.6 38.8 0l184.7 106.7c12 6.9 19.4 19.8 19.4 33.7v213.1c0 13.8-7.4 26.7-19.4 33.7L243.4 502.8c-5.9 3.4-12.6 5.2-19.4 5.2zm149.1-210.1c0-39.9-27-50.5-83.7-58-57.4-7.6-63.2-11.5-63.2-24.9 0-11.1 4.9-25.9 47.4-25.9 37.9 0 51.9 8.2 57.7 33.8.5 2.4 2.7 4.2 5.2 4.2h24c1.5 0 2.9-.6 3.9-1.7s1.5-2.6 1.4-4.1c-3.7-44.1-33-64.6-92.2-64.6-52.7 0-84.1 22.2-84.1 59.5 0 40.4 31.3 51.6 81.8 56.6 60.5 5.9 65.2 14.8 65.2 26.7 0 20.6-16.6 29.4-55.5 29.4-48.9 0-59.6-12.3-63.2-36.6-.4-2.6-2.6-4.5-5.3-4.5h-23.9c-3 0-5.3 2.4-5.3 5.3 0 31.1 16.9 68.2 97.8 68.2 58.4-.1 92-23.2 92-63.4z" />
+  </svg>
+);
+
 function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -128,7 +135,7 @@ function ProjectDetail() {
   };
   const handleDeleteConfirm = async () => {
     if (deleteConfirmText !== 'delete') return;
-    
+
     setIsDeleting(true);
     try {
       await deleteProject(id, deleteFiles);
@@ -211,8 +218,8 @@ function ProjectDetail() {
                   <ExternalLink className="w-4 h-4" />
                   Open
                 </button>
-                <button 
-                  onClick={handleStop} 
+                <button
+                  onClick={handleStop}
                   disabled={isStopping}
                   className="btn-danger"
                 >
@@ -225,8 +232,8 @@ function ProjectDetail() {
                 </button>
               </>
             ) : (
-              <button 
-                onClick={handleStart} 
+              <button
+                onClick={handleStart}
                 disabled={isStarting}
                 className="btn-success"
               >
@@ -285,9 +292,9 @@ function ProjectDetail() {
       )}
       {activeTab === 'terminal' && (
         <div className="h-[500px]">
-          <ProjectTerminal 
-            projectId={id} 
-            projectPath={project.path} 
+          <ProjectTerminal
+            projectId={id}
+            projectPath={project.path}
             phpVersion={project.phpVersion}
             autoFocus={true}
           />
@@ -431,14 +438,14 @@ function OverviewTab({ project, processes, refreshProjects }) {
     nginx: [],
     apache: [],
   });
-  
+
   // Load available PHP versions, binaries status, and service config
   useEffect(() => {
     const loadData = async () => {
       try {
         const status = await window.devbox?.binaries.getStatus();
         setBinariesStatus(status || {});
-        
+
         // Get installed PHP versions from binaries status (real-time disk check)
         const getInstalledVersions = (service) => {
           if (!status[service]) return [];
@@ -447,14 +454,14 @@ function OverviewTab({ project, processes, refreshProjects }) {
             .map(([version]) => version)
             .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
         };
-        
+
         // Set PHP versions from binaries status
         const installedPhpVersions = getInstalledVersions('php').map(version => ({
           version,
           available: true,
         }));
         setPhpVersions(installedPhpVersions);
-        
+
         // Load service config and filter to only installed versions
         const config = await window.devbox?.binaries.getServiceConfig();
         if (config?.versions && status) {
@@ -473,17 +480,17 @@ function OverviewTab({ project, processes, refreshProjects }) {
     };
     loadData();
   }, []);
-  
+
   // Check if there are pending changes
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
-  
+
   // Get effective value (pending change or current project value)
   const getEffectiveValue = (key) => {
     if (key in pendingChanges) return pendingChanges[key];
     if (key === 'services') return project.services || {};
     return project[key];
   };
-  
+
   const handlePhpVersionChange = (newVersion) => {
     if (newVersion === project.phpVersion) {
       const { phpVersion, ...rest } = pendingChanges;
@@ -492,11 +499,11 @@ function OverviewTab({ project, processes, refreshProjects }) {
       setPendingChanges({ ...pendingChanges, phpVersion: newVersion });
     }
   };
-  
+
   const handleServiceToggle = (serviceName) => {
     const currentServices = getEffectiveValue('services');
     let newServices = { ...currentServices };
-    
+
     // For databases, make them mutually exclusive
     if (serviceName === 'mysql' || serviceName === 'mariadb') {
       const isEnabling = !currentServices[serviceName];
@@ -512,13 +519,13 @@ function OverviewTab({ project, processes, refreshProjects }) {
       // For other services, just toggle
       newServices[serviceName] = !currentServices[serviceName];
     }
-    
+
     // Check if services match original
     const originalServices = project.services || {};
     const hasServiceChanges = Object.keys(newServices).some(
       key => newServices[key] !== (originalServices[key] || false)
     );
-    
+
     if (!hasServiceChanges) {
       const { services, ...rest } = pendingChanges;
       setPendingChanges(rest);
@@ -526,14 +533,14 @@ function OverviewTab({ project, processes, refreshProjects }) {
       setPendingChanges({ ...pendingChanges, services: newServices });
     }
   };
-  
+
   const handleServiceVersionChange = (serviceName, version) => {
     const currentServices = getEffectiveValue('services');
     const versionKey = `${serviceName}Version`;
     const originalVersion = project.services?.[versionKey];
-    
+
     let newServices = { ...currentServices, [versionKey]: version };
-    
+
     // Check if version matches original
     if (version === originalVersion) {
       // Remove from pending if it matches original
@@ -541,15 +548,15 @@ function OverviewTab({ project, processes, refreshProjects }) {
         if (key === versionKey) return false;
         return newServices[key] !== (project.services?.[key] || false);
       });
-      
+
       if (!hasOtherServiceChanges && !pendingChanges.services) {
         return; // No changes needed
       }
     }
-    
+
     setPendingChanges({ ...pendingChanges, services: newServices });
   };
-  
+
   const handleWebServerChange = (newServer) => {
     if (newServer === project.webServer) {
       const { webServer, ...rest } = pendingChanges;
@@ -558,7 +565,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
       setPendingChanges({ ...pendingChanges, webServer: newServer });
     }
   };
-  
+
   const handleWebServerVersionChange = (newVersion) => {
     if (newVersion === project.webServerVersion) {
       const { webServerVersion, ...rest } = pendingChanges;
@@ -567,29 +574,29 @@ function OverviewTab({ project, processes, refreshProjects }) {
       setPendingChanges({ ...pendingChanges, webServerVersion: newVersion });
     }
   };
-  
+
   const handleSaveChanges = async () => {
     if (!hasPendingChanges) return;
-    
+
     setSavingSettings(true);
     try {
       // If web server is changing, use switchWebServer API
       if (pendingChanges.webServer) {
         await window.devbox?.projects.switchWebServer(project.id, pendingChanges.webServer);
       }
-      
+
       // Update other project settings
       const { webServer, ...otherChanges } = pendingChanges;
       if (Object.keys(otherChanges).length > 0) {
         await window.devbox?.projects.update(project.id, otherChanges);
       }
-      
+
       // Clear pending changes
       setPendingChanges({});
-      
+
       // Refresh projects to get updated data
       await refreshProjects?.();
-      
+
       // If project is running, ask to restart
       if (project.isRunning) {
         if (window.confirm('Settings saved! Do you want to restart the project to apply changes?')) {
@@ -603,7 +610,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
       setSavingSettings(false);
     }
   };
-  
+
   const handleDiscardChanges = () => {
     setPendingChanges({});
   };
@@ -619,7 +626,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
     { id: 'mysql', name: 'MySQL', icon: '🗄️', installed: isAnyVersionInstalled(binariesStatus?.mysql), isDatabase: true, hasVersions: true },
     { id: 'mariadb', name: 'MariaDB', icon: '🗃️', installed: isAnyVersionInstalled(binariesStatus?.mariadb), isDatabase: true, hasVersions: true },
     { id: 'redis', name: 'Redis', icon: '⚡', installed: isAnyVersionInstalled(binariesStatus?.redis), hasVersions: true },
-    { id: 'nodejs', name: 'Node.js', icon: '🟢', installed: isAnyVersionInstalled(binariesStatus?.nodejs), hasVersions: true },
+    { id: 'nodejs', name: 'Node.js', icon: <NodeJsIcon className="w-5 h-5 text-green-600" />, installed: isAnyVersionInstalled(binariesStatus?.nodejs), hasVersions: true },
     { id: 'mailpit', name: 'Mailpit', icon: '📧', installed: binariesStatus?.mailpit?.installed === true },
     { id: 'phpmyadmin', name: 'phpMyAdmin', icon: '🔧', installed: binariesStatus?.phpmyadmin?.installed === true },
     { id: 'queue', name: 'Queue Worker', icon: '📋', installed: true }, // Always available for Laravel
@@ -653,331 +660,331 @@ function OverviewTab({ project, processes, refreshProjects }) {
           </div>
         </div>
       )}
-      
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Project Info */}
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Project Information
-        </h3>
-        <dl className="space-y-4">
-          <div className="flex justify-between">
-            <dt className="text-gray-500 dark:text-gray-400">Type</dt>
-            <dd className="font-medium text-gray-900 dark:text-white capitalize">
-              {project.type}
-            </dd>
-          </div>
-          <div className="flex justify-between items-center">
-            <dt className="text-gray-500 dark:text-gray-400">PHP Version</dt>
-            <dd className="flex items-center gap-2">
-              {(() => {
-                const currentVersion = getEffectiveValue('phpVersion');
-                const isCurrentInstalled = phpVersions.some(v => v.version === currentVersion);
-                const displayVersions = isCurrentInstalled 
-                  ? phpVersions 
-                  : [{ version: currentVersion, notInstalled: true }, ...phpVersions];
-                
-                return (
-                  <>
-                    <select
-                      value={currentVersion}
-                      onChange={(e) => handlePhpVersionChange(e.target.value)}
-                      className={clsx(
-                        "input py-1 px-2 text-sm w-24",
-                        !isCurrentInstalled && "border-red-500 dark:border-red-500"
-                      )}
-                    >
-                      {displayVersions.map((v) => (
-                        <option 
-                          key={v.version} 
-                          value={v.version}
-                          className={v.notInstalled ? 'text-red-500' : ''}
-                        >
-                          {v.version}{v.notInstalled ? ' (not installed)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                    {!isCurrentInstalled && (
-                      <AlertTriangle className="w-4 h-4 text-red-500" title="PHP version not installed" />
-                    )}
-                  </>
-                );
-              })()}
-            </dd>
-          </div>
-          <div className="flex justify-between">
-            <dt className="text-gray-500 dark:text-gray-400">Port</dt>
-            <dd className="font-medium text-gray-900 dark:text-white">
-              {project.port} (HTTP) / {project.sslPort || 'N/A'} (HTTPS)
-            </dd>
-          </div>
-          <div className="flex justify-between">
-            <dt className="text-gray-500 dark:text-gray-400">SSL</dt>
-            <dd className="font-medium text-gray-900 dark:text-white">
-              {project.ssl ? 'Enabled' : 'Disabled'}
-            </dd>
-          </div>
-          <div className="flex justify-between">
-            <dt className="text-gray-500 dark:text-gray-400">Status</dt>
-            <dd>
-              <span className={clsx('badge', project.isRunning ? 'badge-success' : 'badge-neutral')}>
-                {project.isRunning ? 'Running' : 'Stopped'}
-              </span>
-            </dd>
-          </div>
-          <div className="flex justify-between items-center">
-            <dt className="text-gray-500 dark:text-gray-400">Auto-start</dt>
-            <dd>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={getEffectiveValue('autoStart') || false}
-                  onChange={(e) => {
-                    const newValue = e.target.checked;
-                    if (newValue === (project.autoStart || false)) {
-                      const { autoStart, ...rest } = pendingChanges;
-                      setPendingChanges(rest);
-                    } else {
-                      setPendingChanges({ ...pendingChanges, autoStart: newValue });
-                    }
-                  }}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
-              </label>
-            </dd>
-          </div>
-        </dl>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">
-          When auto-start is enabled, this project will start automatically when DevBox Pro launches.
-        </p>
-      </div>
+        {/* Project Info */}
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Project Information
+          </h3>
+          <dl className="space-y-4">
+            <div className="flex justify-between">
+              <dt className="text-gray-500 dark:text-gray-400">Type</dt>
+              <dd className="font-medium text-gray-900 dark:text-white capitalize">
+                {project.type}
+              </dd>
+            </div>
+            <div className="flex justify-between items-center">
+              <dt className="text-gray-500 dark:text-gray-400">PHP Version</dt>
+              <dd className="flex items-center gap-2">
+                {(() => {
+                  const currentVersion = getEffectiveValue('phpVersion');
+                  const isCurrentInstalled = phpVersions.some(v => v.version === currentVersion);
+                  const displayVersions = isCurrentInstalled
+                    ? phpVersions
+                    : [{ version: currentVersion, notInstalled: true }, ...phpVersions];
 
-      {/* Domains */}
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Domains
-        </h3>
-        <ul className="space-y-2">
-          {project.domains?.map((domain, index) => (
-            <li key={index} className="flex items-center gap-2">
-              <Globe className="w-4 h-4 text-gray-400" />
-              <span className="text-gray-900 dark:text-white">{domain}</span>
-            </li>
-          ))}
-          {project.domain && !project.domains?.includes(project.domain) && (
-            <li className="flex items-center gap-2">
-              <Globe className="w-4 h-4 text-gray-400" />
-              <span className="text-gray-900 dark:text-white">{project.domain}</span>
-            </li>
-          )}
-        </ul>
-        {project.ssl && (
-          <p className="mt-3 text-sm text-green-600 dark:text-green-400">
-            🔒 HTTPS enabled for all domains
-          </p>
-        )}
-      </div>
-
-      {/* Web Server */}
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Web Server
-        </h3>
-        <div className="grid grid-cols-2 gap-4">
-          {['nginx', 'apache'].map((server) => {
-            const effectiveServer = getEffectiveValue('webServer');
-            const effectiveVersion = getEffectiveValue('webServerVersion');
-            const isSelected = effectiveServer === server;
-            const isChanged = pendingChanges.webServer && pendingChanges.webServer !== project.webServer;
-            const versionChanged = pendingChanges.webServerVersion && pendingChanges.webServerVersion !== project.webServerVersion;
-            const serverVersions = versionOptions[server] || [];
-            const isInstalled = serverVersions.length > 0;
-            
-            return (
-              <button
-                key={server}
-                onClick={() => isInstalled && handleWebServerChange(server)}
-                disabled={!isInstalled}
-                className={clsx(
-                  'p-4 rounded-lg border-2 text-left transition-all',
-                  !isInstalled && 'opacity-50 cursor-not-allowed',
-                  isSelected
-                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                )}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {server === 'nginx' ? (
-                      <Server className="w-5 h-5 text-green-500" />
-                    ) : (
-                      <Layers className="w-5 h-5 text-orange-500" />
-                    )}
-                    <span className="font-medium text-gray-900 dark:text-white capitalize">{server}</span>
-                  </div>
-                  {/* Version selector */}
-                  {isSelected && serverVersions.length > 0 && (
-                    <select
-                      value={effectiveVersion || serverVersions[0]}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        handleWebServerVersionChange(e.target.value);
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      className="input py-1 px-2 text-xs w-16"
-                    >
-                      {serverVersions.map((v) => (
-                        <option key={v} value={v}>{v}</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                {!isInstalled ? (
-                  <span className="text-xs mt-1 block text-gray-500 dark:text-gray-400">
-                    Not installed
-                  </span>
-                ) : isSelected ? (
-                  <span className={clsx(
-                    'text-xs mt-1 block',
-                    (isChanged || versionChanged) && effectiveServer === server
-                      ? 'text-yellow-600 dark:text-yellow-400'
-                      : 'text-primary-600 dark:text-primary-400'
-                  )}>
-                    {(isChanged || versionChanged) && effectiveServer === server ? 'Modified' : 'Active'}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-        {(pendingChanges.webServer || pendingChanges.webServerVersion) && (
-          <p className="mt-3 text-xs text-yellow-600 dark:text-yellow-400">
-            Web server configuration will change after saving
-          </p>
-        )}
-      </div>
-
-      {/* Services - Now with toggle buttons and version selectors */}
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Services
-        </h3>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-          Note: Only one database (MySQL or MariaDB) can be active at a time. Select specific versions for legacy app compatibility.
-        </p>
-        <div className="space-y-3">
-          {serviceDefinitions.map((service) => {
-            const effectiveServices = getEffectiveValue('services');
-            const isEnabled = effectiveServices[service.id] || false;
-            const isInstalled = service.installed;
-            const isChanged = pendingChanges.services && 
-              pendingChanges.services[service.id] !== (project.services?.[service.id] || false);
-            const currentVersion = effectiveServices[`${service.id}Version`] || versionOptions[service.id]?.[0];
-            const versionChanged = pendingChanges.services?.[`${service.id}Version`] !== undefined &&
-              pendingChanges.services[`${service.id}Version`] !== project.services?.[`${service.id}Version`];
-            
-            return (
-              <div
-                key={service.id}
-                className={clsx(
-                  'p-3 rounded-lg border-2 transition-all',
-                  isEnabled
-                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                    : 'border-gray-200 dark:border-gray-700',
-                  !isInstalled && 'opacity-50'
-                )}
-              >
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => isInstalled && handleServiceToggle(service.id)}
-                    disabled={!isInstalled}
-                    className="flex items-center gap-3 text-left flex-1"
-                  >
-                    <span className="text-xl">{service.icon}</span>
-                    <div>
-                      <span className={clsx(
-                        'font-medium',
-                        isEnabled ? 'text-green-700 dark:text-green-400' : 'text-gray-700 dark:text-gray-300'
-                      )}>
-                        {service.name}
-                      </span>
-                      {!isInstalled && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400 block">
-                          Not installed
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                  <div className="flex items-center gap-3">
-                    {(isChanged || versionChanged) && (
-                      <span className="text-xs text-yellow-600 dark:text-yellow-400">Modified</span>
-                    )}
-                    {/* Version selector for services that support it */}
-                    {service.hasVersions && isEnabled && (
+                  return (
+                    <>
                       <select
                         value={currentVersion}
+                        onChange={(e) => handlePhpVersionChange(e.target.value)}
+                        className={clsx(
+                          "input py-1 px-2 text-sm w-24",
+                          !isCurrentInstalled && "border-red-500 dark:border-red-500"
+                        )}
+                      >
+                        {displayVersions.map((v) => (
+                          <option
+                            key={v.version}
+                            value={v.version}
+                            className={v.notInstalled ? 'text-red-500' : ''}
+                          >
+                            {v.version}{v.notInstalled ? ' (not installed)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {!isCurrentInstalled && (
+                        <AlertTriangle className="w-4 h-4 text-red-500" title="PHP version not installed" />
+                      )}
+                    </>
+                  );
+                })()}
+              </dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-gray-500 dark:text-gray-400">Port</dt>
+              <dd className="font-medium text-gray-900 dark:text-white">
+                {project.port} (HTTP) / {project.sslPort || 'N/A'} (HTTPS)
+              </dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-gray-500 dark:text-gray-400">SSL</dt>
+              <dd className="font-medium text-gray-900 dark:text-white">
+                {project.ssl ? 'Enabled' : 'Disabled'}
+              </dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-gray-500 dark:text-gray-400">Status</dt>
+              <dd>
+                <span className={clsx('badge', project.isRunning ? 'badge-success' : 'badge-neutral')}>
+                  {project.isRunning ? 'Running' : 'Stopped'}
+                </span>
+              </dd>
+            </div>
+            <div className="flex justify-between items-center">
+              <dt className="text-gray-500 dark:text-gray-400">Auto-start</dt>
+              <dd>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={getEffectiveValue('autoStart') || false}
+                    onChange={(e) => {
+                      const newValue = e.target.checked;
+                      if (newValue === (project.autoStart || false)) {
+                        const { autoStart, ...rest } = pendingChanges;
+                        setPendingChanges(rest);
+                      } else {
+                        setPendingChanges({ ...pendingChanges, autoStart: newValue });
+                      }
+                    }}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                </label>
+              </dd>
+            </div>
+          </dl>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">
+            When auto-start is enabled, this project will start automatically when DevBox Pro launches.
+          </p>
+        </div>
+
+        {/* Domains */}
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Domains
+          </h3>
+          <ul className="space-y-2">
+            {project.domains?.map((domain, index) => (
+              <li key={index} className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-gray-400" />
+                <span className="text-gray-900 dark:text-white">{domain}</span>
+              </li>
+            ))}
+            {project.domain && !project.domains?.includes(project.domain) && (
+              <li className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-gray-400" />
+                <span className="text-gray-900 dark:text-white">{project.domain}</span>
+              </li>
+            )}
+          </ul>
+          {project.ssl && (
+            <p className="mt-3 text-sm text-green-600 dark:text-green-400">
+              🔒 HTTPS enabled for all domains
+            </p>
+          )}
+        </div>
+
+        {/* Web Server */}
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Web Server
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            {['nginx', 'apache'].map((server) => {
+              const effectiveServer = getEffectiveValue('webServer');
+              const effectiveVersion = getEffectiveValue('webServerVersion');
+              const isSelected = effectiveServer === server;
+              const isChanged = pendingChanges.webServer && pendingChanges.webServer !== project.webServer;
+              const versionChanged = pendingChanges.webServerVersion && pendingChanges.webServerVersion !== project.webServerVersion;
+              const serverVersions = versionOptions[server] || [];
+              const isInstalled = serverVersions.length > 0;
+
+              return (
+                <button
+                  key={server}
+                  onClick={() => isInstalled && handleWebServerChange(server)}
+                  disabled={!isInstalled}
+                  className={clsx(
+                    'p-4 rounded-lg border-2 text-left transition-all',
+                    !isInstalled && 'opacity-50 cursor-not-allowed',
+                    isSelected
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {server === 'nginx' ? (
+                        <Server className="w-5 h-5 text-green-500" />
+                      ) : (
+                        <Layers className="w-5 h-5 text-orange-500" />
+                      )}
+                      <span className="font-medium text-gray-900 dark:text-white capitalize">{server}</span>
+                    </div>
+                    {/* Version selector */}
+                    {isSelected && serverVersions.length > 0 && (
+                      <select
+                        value={effectiveVersion || serverVersions[0]}
                         onChange={(e) => {
                           e.stopPropagation();
-                          handleServiceVersionChange(service.id, e.target.value);
+                          handleWebServerVersionChange(e.target.value);
                         }}
                         onClick={(e) => e.stopPropagation()}
-                        className="input py-1 px-2 text-xs w-20"
+                        className="input py-1 px-2 text-xs w-16"
                       >
-                        {versionOptions[service.id]?.map((v) => {
-                          // Check installed status from binariesStatus (not availableVersions)
-                          const isVersionInstalled = binariesStatus?.[service.id]?.[v]?.installed === true;
-                          return (
-                            <option key={v} value={v} disabled={!isVersionInstalled}>
-                              {v} {!isVersionInstalled ? '(not installed)' : ''}
-                            </option>
-                          );
-                        })}
+                        {serverVersions.map((v) => (
+                          <option key={v} value={v}>{v}</option>
+                        ))}
                       </select>
                     )}
+                  </div>
+                  {!isInstalled ? (
+                    <span className="text-xs mt-1 block text-gray-500 dark:text-gray-400">
+                      Not installed
+                    </span>
+                  ) : isSelected ? (
+                    <span className={clsx(
+                      'text-xs mt-1 block',
+                      (isChanged || versionChanged) && effectiveServer === server
+                        ? 'text-yellow-600 dark:text-yellow-400'
+                        : 'text-primary-600 dark:text-primary-400'
+                    )}>
+                      {(isChanged || versionChanged) && effectiveServer === server ? 'Modified' : 'Active'}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          {(pendingChanges.webServer || pendingChanges.webServerVersion) && (
+            <p className="mt-3 text-xs text-yellow-600 dark:text-yellow-400">
+              Web server configuration will change after saving
+            </p>
+          )}
+        </div>
+
+        {/* Services - Now with toggle buttons and version selectors */}
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Services
+          </h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            Note: Only one database (MySQL or MariaDB) can be active at a time. Select specific versions for legacy app compatibility.
+          </p>
+          <div className="space-y-3">
+            {serviceDefinitions.map((service) => {
+              const effectiveServices = getEffectiveValue('services');
+              const isEnabled = effectiveServices[service.id] || false;
+              const isInstalled = service.installed;
+              const isChanged = pendingChanges.services &&
+                pendingChanges.services[service.id] !== (project.services?.[service.id] || false);
+              const currentVersion = effectiveServices[`${service.id}Version`] || versionOptions[service.id]?.[0];
+              const versionChanged = pendingChanges.services?.[`${service.id}Version`] !== undefined &&
+                pendingChanges.services[`${service.id}Version`] !== project.services?.[`${service.id}Version`];
+
+              return (
+                <div
+                  key={service.id}
+                  className={clsx(
+                    'p-3 rounded-lg border-2 transition-all',
+                    isEnabled
+                      ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                      : 'border-gray-200 dark:border-gray-700',
+                    !isInstalled && 'opacity-50'
+                  )}
+                >
+                  <div className="flex items-center justify-between">
                     <button
                       onClick={() => isInstalled && handleServiceToggle(service.id)}
                       disabled={!isInstalled}
-                      className={clsx(
-                        'w-10 h-6 rounded-full transition-colors relative',
-                        isEnabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600',
-                        !isInstalled && 'cursor-not-allowed'
-                      )}
+                      className="flex items-center gap-3 text-left flex-1"
                     >
-                      <div className={clsx(
-                        'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                        isEnabled ? 'translate-x-5' : 'translate-x-1'
-                      )} />
+                      <span className="text-xl">{service.icon}</span>
+                      <div>
+                        <span className={clsx(
+                          'font-medium',
+                          isEnabled ? 'text-green-700 dark:text-green-400' : 'text-gray-700 dark:text-gray-300'
+                        )}>
+                          {service.name}
+                        </span>
+                        {!isInstalled && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400 block">
+                            Not installed
+                          </span>
+                        )}
+                      </div>
                     </button>
+                    <div className="flex items-center gap-3">
+                      {(isChanged || versionChanged) && (
+                        <span className="text-xs text-yellow-600 dark:text-yellow-400">Modified</span>
+                      )}
+                      {/* Version selector for services that support it */}
+                      {service.hasVersions && isEnabled && (
+                        <select
+                          value={currentVersion}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            handleServiceVersionChange(service.id, e.target.value);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="input py-1 px-2 text-xs w-20"
+                        >
+                          {versionOptions[service.id]?.map((v) => {
+                            // Check installed status from binariesStatus (not availableVersions)
+                            const isVersionInstalled = binariesStatus?.[service.id]?.[v]?.installed === true;
+                            return (
+                              <option key={v} value={v} disabled={!isVersionInstalled}>
+                                {v} {!isVersionInstalled ? '(not installed)' : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      )}
+                      <button
+                        onClick={() => isInstalled && handleServiceToggle(service.id)}
+                        disabled={!isInstalled}
+                        className={clsx(
+                          'w-10 h-6 rounded-full transition-colors relative',
+                          isEnabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600',
+                          !isInstalled && 'cursor-not-allowed'
+                        )}
+                      >
+                        <div className={clsx(
+                          'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
+                          isEnabled ? 'translate-x-5' : 'translate-x-1'
+                        )} />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-        <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-          Click to toggle services. Select version for legacy app support. Changes will take effect after saving and restarting.
-        </p>
-      </div>
-
-      {/* Workers Summary */}
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Workers
-        </h3>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">
-              {runningProcesses.length}
-            </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              of {processes.length} running
-            </p>
+              );
+            })}
           </div>
-          <Cpu className="w-12 h-12 text-gray-300 dark:text-gray-600" />
+          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            Click to toggle services. Select version for legacy app support. Changes will take effect after saving and restarting.
+          </p>
+        </div>
+
+        {/* Workers Summary */}
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Workers
+          </h3>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-3xl font-bold text-gray-900 dark:text-white">
+                {runningProcesses.length}
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                of {processes.length} running
+              </p>
+            </div>
+            <Cpu className="w-12 h-12 text-gray-300 dark:text-gray-600" />
+          </div>
         </div>
       </div>
-    </div>
     </div>
   );
 }
@@ -1255,12 +1262,12 @@ function EnvironmentTab({ project, onRefresh }) {
     try {
       // Update project with new environment
       await window.devbox?.projects.update(project.id, { environment });
-      
+
       // For Laravel projects, run optimize to apply changes
       if (project.type === 'laravel') {
         setIsOptimizing(true);
         setSaveMessage({ type: 'info', text: 'Running Laravel cache optimization...' });
-        
+
         try {
           // Clear and rebuild all caches
           await window.devbox?.php.runArtisan(project.id, 'config:clear');
@@ -1275,7 +1282,7 @@ function EnvironmentTab({ project, onRefresh }) {
       } else {
         setSaveMessage({ type: 'success', text: 'Environment variables saved!' });
       }
-      
+
       // Refresh project data
       onRefresh?.();
       setOriginalEnv(environment);

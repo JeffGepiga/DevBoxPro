@@ -28,19 +28,25 @@ const LaravelIcon = ({ className }) => (
 
 const SymfonyIcon = ({ className }) => (
   <svg viewBox="0 0 512 512" className={className} fill="currentColor">
-    <path d="M256 8C119 8 8 119 8 256s111 248 248 248 248-111 248-248S393 8 256 8zm133.74 143.54c-11.47.41-19.4-6.45-19.77-16.87-.27-9.18 6.68-13.44 6.53-18.85-.23-6.55-10.16-6.82-12.87-6.67-39.78 1.29-48.59 57-58.89 113.85 21.43 3.15 36.65-.72 45.14-6.22 12-7.75-3.34-15.72-1.42-24.56 4-18.16 32.55-19 32 5.3-.36 17.86-25.92 41.81-77.6 35.7-10.76 59.52-18.35 115-58.2 161.72-29 34.46-58.4 39.82-71.58 40.26-24.65.85-41-12.31-41.58-29.84-.56-17 14.45-26.26 24.31-26.59 21.89-.75 30.12 25.67 14.88 34-12.09 9.71.11 12.61 2.05 12.55 10.42-.36 17.34-5.51 22.18-9 24-17.56 43.1-71.07 51.58-107.34-32.48-4.94-43.32-31.5-43.1-53.86.17-17.88 9.77-57.39 93.88-57.39 14.27 0 25.59 1.64 34.51 4.06 9.61-59.95 19-82.3 63.24-82.8 21.73-.25 33.67 9.52 33.83 25.06.33 31.55-50.83 34.9-50.24.03z"/>
+    <path d="M256 8C119 8 8 119 8 256s111 248 248 248 248-111 248-248S393 8 256 8zm133.74 143.54c-11.47.41-19.4-6.45-19.77-16.87-.27-9.18 6.68-13.44 6.53-18.85-.23-6.55-10.16-6.82-12.87-6.67-39.78 1.29-48.59 57-58.89 113.85 21.43 3.15 36.65-.72 45.14-6.22 12-7.75-3.34-15.72-1.42-24.56 4-18.16 32.55-19 32 5.3-.36 17.86-25.92 41.81-77.6 35.7-10.76 59.52-18.35 115-58.2 161.72-29 34.46-58.4 39.82-71.58 40.26-24.65.85-41-12.31-41.58-29.84-.56-17 14.45-26.26 24.31-26.59 21.89-.75 30.12 25.67 14.88 34-12.09 9.71.11 12.61 2.05 12.55 10.42-.36 17.34-5.51 22.18-9 24-17.56 43.1-71.07 51.58-107.34-32.48-4.94-43.32-31.5-43.1-53.86.17-17.88 9.77-57.39 93.88-57.39 14.27 0 25.59 1.64 34.51 4.06 9.61-59.95 19-82.3 63.24-82.8 21.73-.25 33.67 9.52 33.83 25.06.33 31.55-50.83 34.9-50.24.03z" />
   </svg>
 );
 
 const WordPressIcon = ({ className }) => (
   <svg viewBox="0 0 512 512" className={className} fill="currentColor">
-    <path d="M61.7 169.4l101.5 278C92.2 413 43.3 340.2 43.3 256c0-30.9 6.6-60.1 18.4-86.6zm337.9 75.9c0-26.3-9.4-44.5-17.5-58.7-10.8-17.5-20.9-32.4-20.9-49.9 0-19.6 14.8-37.8 35.7-37.8.9 0 1.8.1 2.8.2-37.9-34.7-88.3-55.9-143.7-55.9-74.3 0-139.7 38.1-177.8 95.9 5 .2 9.7.3 13.7.3 22.2 0 56.7-2.7 56.7-2.7 11.5-.7 12.8 16.2 1.4 17.5 0 0-11.5 1.3-24.3 2l77.5 230.4L249.8 247l-33.1-90.8c-11.5-.7-22.3-2-22.3-2-11.5-.7-10.1-18.2 1.3-17.5 0 0 35.1 2.7 56 2.7 22.2 0 56.7-2.7 56.7-2.7 11.5-.7 12.8 16.2 1.4 17.5 0 0-11.5 1.3-24.3 2l76.9 228.7 21.2-70.9c9-29.4 16-50.5 16-68.7zm-139.9 29.3l-63.8 185.5c19.1 5.6 39.2 8.7 60.1 8.7 24.8 0 48.5-4.3 70.6-12.1-.6-.9-1.1-1.9-1.5-2.9l-65.4-179.2zm183-120.7c.9 6.8 1.4 14 1.4 21.9 0 21.6-4 45.8-16.2 76.2l-65 187.9C426.2 403 468.7 334.5 468.7 256c0-37-9.4-71.8-26-102.1zM504 256c0 136.8-111.3 248-248 248C119.2 504 8 392.7 8 256 8 119.2 119.2 8 256 8c136.7 0 248 111.2 248 248zm-11.4 0c0-130.5-106.2-236.6-236.6-236.6C125.5 19.4 19.4 125.5 19.4 256S125.6 492.6 256 492.6c130.5 0 236.6-106.1 236.6-236.6z"/>
+    <path d="M61.7 169.4l101.5 278C92.2 413 43.3 340.2 43.3 256c0-30.9 6.6-60.1 18.4-86.6zm337.9 75.9c0-26.3-9.4-44.5-17.5-58.7-10.8-17.5-20.9-32.4-20.9-49.9 0-19.6 14.8-37.8 35.7-37.8.9 0 1.8.1 2.8.2-37.9-34.7-88.3-55.9-143.7-55.9-74.3 0-139.7 38.1-177.8 95.9 5 .2 9.7.3 13.7.3 22.2 0 56.7-2.7 56.7-2.7 11.5-.7 12.8 16.2 1.4 17.5 0 0-11.5 1.3-24.3 2l77.5 230.4L249.8 247l-33.1-90.8c-11.5-.7-22.3-2-22.3-2-11.5-.7-10.1-18.2 1.3-17.5 0 0 35.1 2.7 56 2.7 22.2 0 56.7-2.7 56.7-2.7 11.5-.7 12.8 16.2 1.4 17.5 0 0-11.5 1.3-24.3 2l76.9 228.7 21.2-70.9c9-29.4 16-50.5 16-68.7zm-139.9 29.3l-63.8 185.5c19.1 5.6 39.2 8.7 60.1 8.7 24.8 0 48.5-4.3 70.6-12.1-.6-.9-1.1-1.9-1.5-2.9l-65.4-179.2zm183-120.7c.9 6.8 1.4 14 1.4 21.9 0 21.6-4 45.8-16.2 76.2l-65 187.9C426.2 403 468.7 334.5 468.7 256c0-37-9.4-71.8-26-102.1zM504 256c0 136.8-111.3 248-248 248C119.2 504 8 392.7 8 256 8 119.2 119.2 8 256 8c136.7 0 248 111.2 248 248zm-11.4 0c0-130.5-106.2-236.6-236.6-236.6C125.5 19.4 19.4 125.5 19.4 256S125.6 492.6 256 492.6c130.5 0 236.6-106.1 236.6-236.6z" />
   </svg>
 );
 
 const PhpIcon = ({ className }) => (
   <svg viewBox="0 0 640 512" className={className} fill="currentColor">
-    <path d="M320 104.5c171.4 0 303.2 72.2 303.2 151.5S491.3 407.5 320 407.5c-171.4 0-303.2-72.2-303.2-151.5S148.7 104.5 320 104.5m0-16.8C143.3 87.7 0 163 0 256s143.3 168.3 320 168.3S640 349 640 256 496.7 87.7 320 87.7zM218.2 242.5c-7.9 40.5-35.8 36.3-70.1 36.3l13.7-70.6c38 0 63.8-4.1 56.4 34.3zM97.4 350.3h36.7l8.7-44.8c41.1 0 66.6 3 90.2-19.1 26.1-24 32.9-66.7 14.3-88.1-9.7-11.2-25.3-16.7-46.5-16.7h-70.7L97.4 350.3zm185.7-213.6h36.5l-8.7 44.8c31.5 0 60.7-2.3 74.8 10.7 14.8 13.6 7.7 31-8.3 113.1h-37c15.4-79.4 18.3-86 12.7-92-5.4-5.8-17.7-4.6-47.4-4.6l-18.8 96.6h-36.5l32.7-168.6zM505 242.5c-8 41.1-36.7 36.3-70.1 36.3l13.7-70.6c38.2 0 63.8-4.1 56.4 34.3zM384.2 350.3H421l8.7-44.8c43.2 0 67.1 2.5 90.2-19.1 26.1-24 32.9-66.7 14.3-88.1-9.7-11.2-25.3-16.7-46.5-16.7H417l-32.8 168.7z"/>
+    <path d="M320 104.5c171.4 0 303.2 72.2 303.2 151.5S491.3 407.5 320 407.5c-171.4 0-303.2-72.2-303.2-151.5S148.7 104.5 320 104.5m0-16.8C143.3 87.7 0 163 0 256s143.3 168.3 320 168.3S640 349 640 256 496.7 87.7 320 87.7zM218.2 242.5c-7.9 40.5-35.8 36.3-70.1 36.3l13.7-70.6c38 0 63.8-4.1 56.4 34.3zM97.4 350.3h36.7l8.7-44.8c41.1 0 66.6 3 90.2-19.1 26.1-24 32.9-66.7 14.3-88.1-9.7-11.2-25.3-16.7-46.5-16.7h-70.7L97.4 350.3zm185.7-213.6h36.5l-8.7 44.8c31.5 0 60.7-2.3 74.8 10.7 14.8 13.6 7.7 31-8.3 113.1h-37c15.4-79.4 18.3-86 12.7-92-5.4-5.8-17.7-4.6-47.4-4.6l-18.8 96.6h-36.5l32.7-168.6zM505 242.5c-8 41.1-36.7 36.3-70.1 36.3l13.7-70.6c38.2 0 63.8-4.1 56.4 34.3zM384.2 350.3H421l8.7-44.8c43.2 0 67.1 2.5 90.2-19.1 26.1-24 32.9-66.7 14.3-88.1-9.7-11.2-25.3-16.7-46.5-16.7H417l-32.8 168.7z" />
+  </svg>
+);
+
+const NodeJsIcon = ({ className }) => (
+  <svg viewBox="0 0 448 512" className={className} fill="currentColor">
+    <path d="M224 508c-6.7 0-13.5-1.8-19.4-5.2l-61.7-36.5c-9.2-5.2-4.7-7-1.7-8 12.3-4.3 14.8-5.2 27.9-12.7 1.4-.8 3.2-.5 4.6.4l47.4 28.1c1.7 1 4.1 1 5.7 0l184.7-106.6c1.7-1 2.8-3 2.8-5V149.3c0-2.1-1.1-4-2.9-5.1L226.8 37.7c-1.7-1-4-1-5.7 0L36.6 144.3c-1.8 1-2.9 3-2.9 5.1v213.1c0 2 1.1 4 2.9 4.9l50.6 29.2c27.5 13.7 44.3-2.4 44.3-18.7V167.5c0-3 2.4-5.3 5.4-5.3h23.4c2.9 0 5.4 2.3 5.4 5.3V378c0 36.6-20 57.6-54.7 57.6-10.7 0-19.1 0-42.5-11.6l-48.4-27.9C8.1 389.2.7 376.3.7 362.4V149.3c0-13.8 7.4-26.8 19.4-33.7L204.6 8.9c11.7-6.6 27.2-6.6 38.8 0l184.7 106.7c12 6.9 19.4 19.8 19.4 33.7v213.1c0 13.8-7.4 26.7-19.4 33.7L243.4 502.8c-5.9 3.4-12.6 5.2-19.4 5.2zm149.1-210.1c0-39.9-27-50.5-83.7-58-57.4-7.6-63.2-11.5-63.2-24.9 0-11.1 4.9-25.9 47.4-25.9 37.9 0 51.9 8.2 57.7 33.8.5 2.4 2.7 4.2 5.2 4.2h24c1.5 0 2.9-.6 3.9-1.7s1.5-2.6 1.4-4.1c-3.7-44.1-33-64.6-92.2-64.6-52.7 0-84.1 22.2-84.1 59.5 0 40.4 31.3 51.6 81.8 56.6 60.5 5.9 65.2 14.8 65.2 26.7 0 20.6-16.6 29.4-55.5 29.4-48.9 0-59.6-12.3-63.2-36.6-.4-2.6-2.6-4.5-5.3-4.5h-23.9c-3 0-5.3 2.4-5.3 5.3 0 31.1 16.9 68.2 97.8 68.2 58.4-.1 92-23.2 92-63.4z" />
   </svg>
 );
 
@@ -177,11 +183,11 @@ function CreateProject() {
         .toLowerCase()
         .replace(/[^a-z0-9\s-]/g, '')
         .replace(/\s+/g, '-');
-      
+
       // Use platform-appropriate separator
       const separator = navigator.platform.toLowerCase().includes('win') ? '\\' : '/';
       const generatedPath = `${defaultProjectsPath}${separator}${safeFolderName}`;
-      
+
       setFormData(prev => ({ ...prev, path: generatedPath }));
     }
   }, [formData.name, defaultProjectsPath, pathManuallySet]);
@@ -191,29 +197,27 @@ function CreateProject() {
     const handleOutput = (data) => {
       // Add null check for data since different terminal events have different structures
       if (!data || !data.projectId) return;
-      console.log('Received terminal output:', data);
       if (data.projectId === 'installation') {
         // Check for completion signal
         if (data.type === 'complete') {
           setInstallComplete(true);
           return;
         }
-        
+
         // Don't add empty text
         if (!data.text) return;
-        
+
         // Check for error in type
         if (data.type === 'error') {
           setInstallError(true);
         }
-        
+
         setInstallOutput((prev) => [...prev, { text: data.text, type: data.type }]);
       }
     };
 
     // Handle installation complete event - auto redirect to project overview
     const handleInstallComplete = (event, data) => {
-      console.log('Installation complete:', data);
       if (data?.projectId) {
         // Small delay to let user see the success message
         setTimeout(() => {
@@ -247,37 +251,37 @@ function CreateProject() {
           const phpVersions = Object.entries(status.php || {})
             .filter(([_, info]) => info.installed)
             .map(([version]) => version);
-          
+
           // MySQL versions
           const mysqlVersions = Object.entries(status.mysql || {})
             .filter(([_, info]) => info.installed)
             .map(([version]) => version);
-          
+
           // MariaDB versions
           const mariadbVersions = Object.entries(status.mariadb || {})
             .filter(([_, info]) => info.installed)
             .map(([version]) => version);
-          
+
           // Redis versions
           const redisVersions = Object.entries(status.redis || {})
             .filter(([_, info]) => info.installed)
             .map(([version]) => version);
-          
+
           // Node.js versions
           const nodejsVersions = Object.entries(status.nodejs || {})
             .filter(([_, info]) => info.installed)
             .map(([version]) => version);
-          
+
           // Nginx versions
           const nginxVersions = Object.entries(status.nginx || {})
             .filter(([_, info]) => info.installed)
             .map(([version]) => version);
-          
+
           // Apache versions
           const apacheVersions = Object.entries(status.apache || {})
             .filter(([_, info]) => info.installed)
             .map(([version]) => version);
-          
+
           setBinariesStatus({
             loading: false,
             php: phpVersions,
@@ -359,9 +363,9 @@ function CreateProject() {
       // Auto-generate name from folder name if not set
       if (!formData.name) {
         const folderName = path.split(/[\\/]/).pop();
-        updateFormData({ 
+        updateFormData({
           name: folderName.charAt(0).toUpperCase() + folderName.slice(1),
-          path 
+          path
         });
       }
     }
@@ -378,8 +382,8 @@ function CreateProject() {
         return true;
       case 3:
         // Require at least one web server installed
-        return (binariesStatus.nginx && binariesStatus.nginx.length > 0) || 
-               (binariesStatus.apache && binariesStatus.apache.length > 0);
+        return (binariesStatus.nginx && binariesStatus.nginx.length > 0) ||
+          (binariesStatus.apache && binariesStatus.apache.length > 0);
       case 4:
         return true;
       default:
@@ -401,10 +405,10 @@ function CreateProject() {
 
   const handleCreate = async () => {
     setIsCreating(true);
-    
+
     // Reset and show installation progress if installing fresh
     const shouldShowProgress = formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress');
-    
+
     if (shouldShowProgress) {
       setInstallOutput([]); // Clear previous output
       setInstallComplete(false);
@@ -420,7 +424,7 @@ function CreateProject() {
 
       if (project) {
         setCreatedProject(project);
-        
+
         if (!shouldShowProgress) {
           // No installation needed, navigate directly
           navigate(`/projects/${project.id}`);
@@ -530,129 +534,129 @@ function CreateProject() {
       {/* Show wizard only if binaries are available */}
       {!binariesStatus.loading && hasRequiredBinaries() && (
         <>
-      {/* Progress Steps */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          {WIZARD_STEPS.map((step, index) => (
-            <React.Fragment key={step.id}>
-              <div className="flex flex-col items-center">
-                <div
-                  className={clsx(
-                    'w-10 h-10 rounded-full flex items-center justify-center mb-2 transition-colors',
-                    index < currentStep
-                      ? 'bg-green-500 text-white'
-                      : index === currentStep
-                      ? 'bg-primary-600 text-white'
-                      : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+          {/* Progress Steps */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
+              {WIZARD_STEPS.map((step, index) => (
+                <React.Fragment key={step.id}>
+                  <div className="flex flex-col items-center">
+                    <div
+                      className={clsx(
+                        'w-10 h-10 rounded-full flex items-center justify-center mb-2 transition-colors',
+                        index < currentStep
+                          ? 'bg-green-500 text-white'
+                          : index === currentStep
+                            ? 'bg-primary-600 text-white'
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+                      )}
+                    >
+                      {index < currentStep ? (
+                        <Check className="w-5 h-5" />
+                      ) : (
+                        <step.icon className="w-5 h-5" />
+                      )}
+                    </div>
+                    <span
+                      className={clsx(
+                        'text-xs font-medium',
+                        index <= currentStep
+                          ? 'text-gray-900 dark:text-white'
+                          : 'text-gray-500 dark:text-gray-400'
+                      )}
+                    >
+                      {step.title}
+                    </span>
+                  </div>
+                  {index < WIZARD_STEPS.length - 1 && (
+                    <div
+                      className={clsx(
+                        'flex-1 h-0.5 mx-4 mb-6',
+                        index < currentStep ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-700'
+                      )}
+                    />
                   )}
-                >
-                  {index < currentStep ? (
-                    <Check className="w-5 h-5" />
-                  ) : (
-                    <step.icon className="w-5 h-5" />
-                  )}
-                </div>
-                <span
-                  className={clsx(
-                    'text-xs font-medium',
-                    index <= currentStep
-                      ? 'text-gray-900 dark:text-white'
-                      : 'text-gray-500 dark:text-gray-400'
-                  )}
-                >
-                  {step.title}
-                </span>
-              </div>
-              {index < WIZARD_STEPS.length - 1 && (
-                <div
-                  className={clsx(
-                    'flex-1 h-0.5 mx-4 mb-6',
-                    index < currentStep ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-700'
-                  )}
-                />
-              )}
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
 
-      {/* Step Content */}
-      <div className="card p-8 mb-8">
-        {currentStep === 0 && (
-          <StepProjectType formData={formData} updateFormData={updateFormData} />
-        )}
-        {currentStep === 1 && (
-          <StepDetails
-            formData={formData}
-            updateFormData={updateFormData}
-            onSelectPath={handleSelectPath}
-            availablePhpVersions={binariesStatus.php}
-            setPathManuallySet={setPathManuallySet}
-            defaultProjectsPath={defaultProjectsPath}
-            serviceConfig={serviceConfig}
-          />
-        )}
-        {currentStep === 2 && (
-          <StepServices 
-            formData={formData} 
-            updateFormData={updateFormData} 
-            binariesStatus={binariesStatus} 
-            serviceConfig={serviceConfig}
-          />
-        )}
-        {currentStep === 3 && (
-          <StepDomain 
-            formData={formData} 
-            updateFormData={updateFormData} 
-            binariesStatus={binariesStatus}
-            serviceConfig={serviceConfig}
-          />
-        )}
-        {currentStep === 4 && <StepReview formData={formData} />}
-      </div>
-
-      {/* Navigation */}
-      <div className="flex justify-between">
-        <button
-          onClick={handleBack}
-          disabled={currentStep === 0}
-          className="btn-secondary"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </button>
-
-        {currentStep < WIZARD_STEPS.length - 1 ? (
-          <button
-            onClick={handleNext}
-            disabled={!canProceed()}
-            className="btn-primary"
-          >
-            Next
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        ) : (
-          <button
-            onClick={handleCreate}
-            disabled={isCreating}
-            className="btn-success"
-          >
-            {isCreating ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                {formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress')
-                  ? `Installing ${formData.type === 'laravel' ? 'Laravel' : 'WordPress'}...`
-                  : 'Creating...'}
-              </>
-            ) : (
-              <>
-                <Zap className="w-4 h-4" />
-                Create Project
-              </>
+          {/* Step Content */}
+          <div className="card p-8 mb-8">
+            {currentStep === 0 && (
+              <StepProjectType formData={formData} updateFormData={updateFormData} />
             )}
-          </button>
-        )}
-      </div>
+            {currentStep === 1 && (
+              <StepDetails
+                formData={formData}
+                updateFormData={updateFormData}
+                onSelectPath={handleSelectPath}
+                availablePhpVersions={binariesStatus.php}
+                setPathManuallySet={setPathManuallySet}
+                defaultProjectsPath={defaultProjectsPath}
+                serviceConfig={serviceConfig}
+              />
+            )}
+            {currentStep === 2 && (
+              <StepServices
+                formData={formData}
+                updateFormData={updateFormData}
+                binariesStatus={binariesStatus}
+                serviceConfig={serviceConfig}
+              />
+            )}
+            {currentStep === 3 && (
+              <StepDomain
+                formData={formData}
+                updateFormData={updateFormData}
+                binariesStatus={binariesStatus}
+                serviceConfig={serviceConfig}
+              />
+            )}
+            {currentStep === 4 && <StepReview formData={formData} />}
+          </div>
+
+          {/* Navigation */}
+          <div className="flex justify-between">
+            <button
+              onClick={handleBack}
+              disabled={currentStep === 0}
+              className="btn-secondary"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back
+            </button>
+
+            {currentStep < WIZARD_STEPS.length - 1 ? (
+              <button
+                onClick={handleNext}
+                disabled={!canProceed()}
+                className="btn-primary"
+              >
+                Next
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={handleCreate}
+                disabled={isCreating}
+                className="btn-success"
+              >
+                {isCreating ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    {formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress')
+                      ? `Installing ${formData.type === 'laravel' ? 'Laravel' : 'WordPress'}...`
+                      : 'Creating...'}
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4" />
+                    Create Project
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </>
       )}
     </div>
@@ -716,7 +720,7 @@ function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersi
     return bNum - aNum;
   });
   const hasNoPhpInstalled = phpVersions.length === 0;
-  
+
   return (
     <div>
       <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
@@ -810,7 +814,7 @@ function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersi
                   Install Fresh {formData.type === 'laravel' ? 'Laravel' : 'WordPress'}
                 </span>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {formData.type === 'laravel' 
+                  {formData.type === 'laravel'
                     ? 'Run "composer create-project laravel/laravel" to set up a new Laravel installation'
                     : 'Download and install a fresh WordPress copy'}
                 </p>
@@ -829,7 +833,7 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
     if (service === 'mysql' || service === 'mariadb') {
       const otherDb = service === 'mysql' ? 'mariadb' : 'mysql';
       const isEnabling = !formData.services[service];
-      
+
       updateFormData({
         services: {
           ...formData.services,
@@ -886,7 +890,7 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
       id: 'nodejs',
       name: 'Node.js',
       description: 'JavaScript runtime for frontend builds',
-      icon: '🟢',
+      icon: <NodeJsIcon className="w-6 h-6 text-green-600" />,
       versions: binariesStatus?.nodejs || [],
     },
     {
@@ -1009,8 +1013,8 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
                 disabled
                   ? 'opacity-50 cursor-not-allowed border-gray-200 dark:border-gray-700'
                   : formData.services[service.id]
-                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
               )}
             >
               <button
@@ -1129,7 +1133,10 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig })
           <label className="label">Web Server</label>
           <div className="grid grid-cols-2 gap-4">
             <button
-              onClick={() => nginxInstalled && updateFormData({ webServer: 'nginx' })}
+              onClick={() => nginxInstalled && updateFormData({
+                webServer: 'nginx',
+                webServerVersion: binariesStatus.nginx?.[0] || '1.28'
+              })}
               disabled={!nginxInstalled}
               className={clsx(
                 'p-4 rounded-xl border-2 text-left transition-all',
@@ -1162,7 +1169,10 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig })
             </button>
 
             <button
-              onClick={() => apacheInstalled && updateFormData({ webServer: 'apache' })}
+              onClick={() => apacheInstalled && updateFormData({
+                webServer: 'apache',
+                webServerVersion: binariesStatus.apache?.[0] || '2.4'
+              })}
               disabled={!apacheInstalled}
               className={clsx(
                 'p-4 rounded-xl border-2 text-left transition-all',
@@ -1194,7 +1204,52 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig })
               ) : null}
             </button>
           </div>
-          
+
+          {/* Version selector for selected web server */}
+          {formData.webServer === 'nginx' && binariesStatus.nginx?.length > 1 && (
+            <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <label className="text-xs text-gray-600 dark:text-gray-400 mb-2 block">Nginx Version</label>
+              <div className="flex gap-2 flex-wrap">
+                {binariesStatus.nginx.map(version => (
+                  <button
+                    key={version}
+                    onClick={() => updateFormData({ webServerVersion: version })}
+                    className={clsx(
+                      'px-3 py-1.5 rounded text-sm font-medium transition-all',
+                      formData.webServerVersion === version
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                    )}
+                  >
+                    {version}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {formData.webServer === 'apache' && binariesStatus.apache?.length > 1 && (
+            <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <label className="text-xs text-gray-600 dark:text-gray-400 mb-2 block">Apache Version</label>
+              <div className="flex gap-2 flex-wrap">
+                {binariesStatus.apache.map(version => (
+                  <button
+                    key={version}
+                    onClick={() => updateFormData({ webServerVersion: version })}
+                    className={clsx(
+                      'px-3 py-1.5 rounded text-sm font-medium transition-all',
+                      formData.webServerVersion === version
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                    )}
+                  >
+                    {version}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Warning if no web servers installed */}
           {!nginxInstalled && !apacheInstalled && (
             <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
@@ -1225,7 +1280,7 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig })
             </button>
           )}
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            A virtual host will be automatically created for both HTTP ({formData.domain || suggestedDomain || 'myproject.test'}) 
+            A virtual host will be automatically created for both HTTP ({formData.domain || suggestedDomain || 'myproject.test'})
             and HTTPS (https://{formData.domain || suggestedDomain || 'myproject.test'})
           </p>
         </div>
@@ -1345,7 +1400,7 @@ function StepReview({ formData }) {
                   Fresh {formData.type === 'laravel' ? 'Laravel' : 'WordPress'} Installation
                 </h3>
                 <p className="text-sm text-blue-700 dark:text-blue-300">
-                  {formData.type === 'laravel' 
+                  {formData.type === 'laravel'
                     ? `Will run "composer create-project" and generate app key${formData.services.nodejs ? ', then "npm install"' : ''} to set up a complete Laravel application.`
                     : 'Will download and install a fresh WordPress copy.'}
                 </p>

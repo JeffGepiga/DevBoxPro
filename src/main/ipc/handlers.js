@@ -1,26 +1,22 @@
-console.log('[IPC] Loading handlers.js module...');
 
 const { dialog, shell } = require('electron');
 const { app } = require('electron');
 const path = require('path');
 const fs = require('fs-extra');
 
-console.log('[IPC] Core modules loaded, loading serviceConfig...');
 
 // Import centralized service configuration
-const { 
-  SERVICE_VERSIONS, 
-  VERSION_PORT_OFFSETS, 
-  DEFAULT_PORTS, 
+const {
+  SERVICE_VERSIONS,
+  VERSION_PORT_OFFSETS,
+  DEFAULT_PORTS,
   SERVICE_INFO,
   getServicePort,
-  getDefaultVersion 
+  getDefaultVersion
 } = require('../../shared/serviceConfig');
 
-console.log('[IPC] serviceConfig loaded successfully');
 
 function setupIpcHandlers(ipcMain, managers, mainWindow) {
-  console.log('[IPC] Setting up IPC handlers...');
   const { config, project, php, service, database, ssl, supervisor, log } = managers;
 
   // ============ PROJECT HANDLERS ============
@@ -100,12 +96,12 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
     const config = editorConfigs[editor] || editorConfigs.vscode;
     const { spawn, execSync } = require('child_process');
-    
+
     // Check if the editor command is available
-    const checkCommand = process.platform === 'win32' 
-      ? `where ${config.command}` 
+    const checkCommand = process.platform === 'win32'
+      ? `where ${config.command}`
       : `which ${config.command}`;
-    
+
     try {
       execSync(checkCommand, { stdio: 'ignore' });
     } catch {
@@ -123,7 +119,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
           const cleanEnv = { ...process.env };
           delete cleanEnv.ICU_DATA;
           delete cleanEnv.ELECTRON_RUN_AS_NODE;
-          
+
           const child = spawn('cmd.exe', ['/c', 'start', '""', config.command, projectData.path], {
             detached: true,
             stdio: 'ignore',
@@ -139,7 +135,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
           });
           child.unref();
         }
-        
+
         // Small delay to ensure process started
         setTimeout(() => resolve(true), 100);
       } catch (error) {
@@ -153,13 +149,13 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     if (!projectData) throw new Error('Project not found');
 
     const webServer = projectData.webServer || 'nginx';
-    
+
     // Get dynamic ports from service manager for the project's web server
     // With first-come-first-served, either server could have 80/443 or 8081/8444
     const ports = service?.getServicePorts(webServer);
     const httpPort = ports?.httpPort || 80;
     const sslPort = ports?.sslPort || 443;
-    
+
     // Build URL with appropriate port
     let url;
     if (projectData.ssl) {
@@ -169,7 +165,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       const portSuffix = httpPort === 80 ? '' : `:${httpPort}`;
       url = `http://${projectData.domain}${portSuffix}`;
     }
-    
+
     await shell.openExternal(url);
     return true;
   });
@@ -461,6 +457,15 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return true;
   });
 
+  // System logs - for critical errors users can export
+  ipcMain.handle('logs:getSystemLogs', async (event, lines = 100) => {
+    return log.getSystemLogs(lines);
+  });
+
+  ipcMain.handle('logs:clearSystemLogs', async () => {
+    return log.clearSystemLogs();
+  });
+
   // ============ SETTINGS HANDLERS ============
   ipcMain.handle('settings:get', async (event, key) => {
     return config.get(key);
@@ -522,11 +527,11 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('system:clearAllData', async (event, deleteProjectFiles = false) => {
     const fs = require('fs-extra');
-    
+
     try {
       // Get all projects first if we need to delete their files
       const projects = config.get('projects', []);
-      
+
       // Force kill all processes FIRST on Windows before trying graceful stop
       // This prevents errors from trying to read config files during graceful shutdown
       if (process.platform === 'win32') {
@@ -542,20 +547,20 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
             // Ignore errors - process might not be running
           }
         }
-        
+
         // Kill PHP and Node processes from our path only
         const userDataPath = app.getPath('userData').replace(/\\/g, '\\\\');
         try {
           execSync(`wmic process where "name='php.exe' and (commandline like '%${userDataPath}%' or commandline like '%composer%' or commandline like '%artisan%')" call terminate 2>nul`, { windowsHide: true, timeout: 10000, stdio: 'ignore' });
-        } catch (e) {}
+        } catch (e) { }
         try {
           execSync(`wmic process where "name='node.exe' and commandline like '%${userDataPath}%'" call terminate 2>nul`, { windowsHide: true, timeout: 10000, stdio: 'ignore' });
-        } catch (e) {}
-        
+        } catch (e) { }
+
         // Wait a moment for processes to terminate
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      
+
       // Now clear the service manager's internal state (without trying to gracefully stop)
       if (service) {
         try {
@@ -574,7 +579,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
           console.error('Error clearing service state:', e);
         }
       }
-      
+
       // Clear project manager state
       if (project) {
         try {
@@ -583,7 +588,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
           console.error('Error clearing project state:', e);
         }
       }
-      
+
       // Delete project files if requested
       if (deleteProjectFiles) {
         for (const proj of projects) {
@@ -597,7 +602,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
           }
         }
       }
-      
+
       // Clear ALL resources (binaries, configs, everything)
       const resourcesPath = path.join(app.getPath('userData'), 'resources');
       if (await fs.pathExists(resourcesPath)) {
@@ -622,7 +627,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
           }
         }
       }
-      
+
       // Clear CLI directory
       const cliPath = path.join(app.getPath('userData'), 'cli');
       if (await fs.pathExists(cliPath)) {
@@ -633,7 +638,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
           console.error('Error clearing CLI directory:', e);
         }
       }
-      
+
       // Clear cached binary config
       const cachedConfigPath = path.join(app.getPath('userData'), 'binaries-config.json');
       if (await fs.pathExists(cachedConfigPath)) {
@@ -644,24 +649,24 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
           console.error('Error clearing cached binary config:', e);
         }
       }
-      
+
       // Clear all configuration
       config.set('projects', []);
       config.delete('databases');
       config.delete('services');
       config.delete('settings.cliAlias');
-      
+
       // Keep some basic settings but reset others
       const currentSettings = config.get('settings', {});
       config.set('settings', {
         defaultProjectsPath: currentSettings.defaultProjectsPath, // Keep this
         theme: currentSettings.theme, // Keep theme preference
       });
-      
-      return { 
-        success: true, 
-        message: deleteProjectFiles 
-          ? 'All data, binaries, and project files have been cleared. Please restart the application.' 
+
+      return {
+        success: true,
+        message: deleteProjectFiles
+          ? 'All data, binaries, and project files have been cleared. Please restart the application.'
           : 'All data and binaries have been cleared. Project files were preserved. Please restart the application.',
         requiresRestart: true
       };
@@ -724,8 +729,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   // ============ BINARY DOWNLOAD HANDLERS ============
   // Note: binaryDownload may not be initialized immediately, access via managers object
-  console.log('[IPC] Registering binary download handlers...');
-  
+
   ipcMain.handle('binaries:getInstalled', async () => {
     if (!managers.binaryDownload) return {};
     return managers.binaryDownload.getInstalledBinaries();
@@ -741,7 +745,6 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     if (!managers.binaryDownload) throw new Error('Binary manager not initialized yet');
     return managers.binaryDownload.checkForUpdates();
   });
-  console.log('[IPC] Registered binaries:checkForUpdates handler');
 
   // Apply updates from remote config
   ipcMain.handle('binaries:applyUpdates', async () => {
@@ -752,57 +755,57 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   ipcMain.handle('binaries:getStatus', async () => {
     if (!managers.binaryDownload) return { php: {}, mysql: {}, mariadb: {}, redis: {}, nginx: {}, apache: {}, nodejs: {}, mailpit: false, phpmyadmin: false, composer: false };
     const installed = await managers.binaryDownload.getInstalledBinaries();
-      
-      // Transform to a more detailed status format for versioned services
-      const status = {
-        php: {},
-        mysql: {},       // Now versioned
-        mariadb: {},     // Now versioned
-        redis: {},       // Now versioned
-        mailpit: { installed: installed.mailpit },
-        phpmyadmin: { installed: installed.phpmyadmin },
-        nginx: {},       // Now versioned
-        apache: {},      // Now versioned
-        nodejs: {},
-        composer: { installed: installed.composer },
-      };
 
-      // Transform PHP versions
-      for (const [version, isInstalled] of Object.entries(installed.php || {})) {
-        status.php[version] = { installed: isInstalled };
-      }
+    // Transform to a more detailed status format for versioned services
+    const status = {
+      php: {},
+      mysql: {},       // Now versioned
+      mariadb: {},     // Now versioned
+      redis: {},       // Now versioned
+      mailpit: { installed: installed.mailpit },
+      phpmyadmin: { installed: installed.phpmyadmin },
+      nginx: {},       // Now versioned
+      apache: {},      // Now versioned
+      nodejs: {},
+      composer: { installed: installed.composer },
+    };
 
-      // Transform Node.js versions
-      for (const [version, isInstalled] of Object.entries(installed.nodejs || {})) {
-        status.nodejs[version] = { installed: isInstalled };
-      }
+    // Transform PHP versions
+    for (const [version, isInstalled] of Object.entries(installed.php || {})) {
+      status.php[version] = { installed: isInstalled };
+    }
 
-      // Transform MySQL versions
-      for (const [version, isInstalled] of Object.entries(installed.mysql || {})) {
-        status.mysql[version] = { installed: isInstalled };
-      }
+    // Transform Node.js versions
+    for (const [version, isInstalled] of Object.entries(installed.nodejs || {})) {
+      status.nodejs[version] = { installed: isInstalled };
+    }
 
-      // Transform MariaDB versions
-      for (const [version, isInstalled] of Object.entries(installed.mariadb || {})) {
-        status.mariadb[version] = { installed: isInstalled };
-      }
+    // Transform MySQL versions
+    for (const [version, isInstalled] of Object.entries(installed.mysql || {})) {
+      status.mysql[version] = { installed: isInstalled };
+    }
 
-      // Transform Redis versions
-      for (const [version, isInstalled] of Object.entries(installed.redis || {})) {
-        status.redis[version] = { installed: isInstalled };
-      }
+    // Transform MariaDB versions
+    for (const [version, isInstalled] of Object.entries(installed.mariadb || {})) {
+      status.mariadb[version] = { installed: isInstalled };
+    }
 
-      // Transform Nginx versions
-      for (const [version, isInstalled] of Object.entries(installed.nginx || {})) {
-        status.nginx[version] = { installed: isInstalled };
-      }
+    // Transform Redis versions
+    for (const [version, isInstalled] of Object.entries(installed.redis || {})) {
+      status.redis[version] = { installed: isInstalled };
+    }
 
-      // Transform Apache versions
-      for (const [version, isInstalled] of Object.entries(installed.apache || {})) {
-        status.apache[version] = { installed: isInstalled };
-      }
+    // Transform Nginx versions
+    for (const [version, isInstalled] of Object.entries(installed.nginx || {})) {
+      status.nginx[version] = { installed: isInstalled };
+    }
 
-      return status;
+    // Transform Apache versions
+    for (const [version, isInstalled] of Object.entries(installed.apache || {})) {
+      status.apache[version] = { installed: isInstalled };
+    }
+
+    return status;
   });
 
   // Get available versions for each service
@@ -925,7 +928,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const phpPath = path.join(managers.binaryDownload.resourcesPath, 'php', version, platform);
     const iniPath = path.join(phpPath, 'php.ini');
-    
+
     if (await fs.pathExists(iniPath)) {
       return await fs.readFile(iniPath, 'utf8');
     }
@@ -937,7 +940,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const phpPath = path.join(managers.binaryDownload.resourcesPath, 'php', version, platform);
     const iniPath = path.join(phpPath, 'php.ini');
-    
+
     await fs.writeFile(iniPath, content, 'utf8');
     return { success: true };
   });
@@ -946,7 +949,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const phpPath = path.join(managers.binaryDownload.resourcesPath, 'php', version, platform);
-    
+
     await managers.binaryDownload.createPhpIni(phpPath, version);
     return { success: true };
   });
@@ -1007,7 +1010,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     const { spawn } = require('child_process');
     const path = require('path');
     const { app } = require('electron');
-    
+
     const projectData = project.getProject(projectId);
     if (!projectData && projectId !== 'system' && projectId !== 'terminal') {
       throw new Error('Project not found');
@@ -1015,7 +1018,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
     const cwd = options.cwd || projectData?.path || process.cwd();
     const phpVersion = options.phpVersion || projectData?.phpVersion || '8.4';
-    
+
     return new Promise((resolve, reject) => {
       let stdout = '';
       let stderr = '';
@@ -1026,7 +1029,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       const resourcePath = config.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
       const phpExe = platform === 'win' ? 'php.exe' : 'php';
       const phpBinary = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
-      
+
       if (command.startsWith('php ') || command === 'php') {
         // Use project's PHP version
         cmd = phpBinary;
@@ -1181,11 +1184,11 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('cli:syncProjectConfigs', async () => {
     if (!managers.cli) throw new Error('CLI manager not initialized');
-    
+
     // Get projects count and sync
     const projects = managers.cli.configStore.get('projects', []);
     await managers.cli.syncProjectsFile();
-    
+
     // Return array format for UI compatibility
     return projects.map(p => ({ id: p.id, success: true }));
   });

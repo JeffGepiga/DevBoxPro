@@ -293,39 +293,39 @@ class DatabaseManager {
     const safeName = this.sanitizeName(name);
     const dbType = this.getActiveDatabaseType();
 
-    // Check if service is running, if not try to start it
-    if (!this.isServiceRunning()) {
-      console.log(`${dbType} service is not running, attempting to start it...`);
+    // Determine which version to use
+    let dbVersion = version;
+    if (!dbVersion) {
+      const settings = this.configStore.get('settings', {});
+      dbVersion = dbType === 'mariadb'
+        ? (settings.mariadbVersion || '11.4')
+        : (settings.mysqlVersion || '8.4');
+    }
+
+    // Check if the SPECIFIC version is running, if not try to start it
+    if (!this.isServiceRunning(dbType, dbVersion)) {
+      console.log(`${dbType} ${dbVersion} is not running, attempting to start it...`);
 
       if (this.managers.service) {
         try {
-          // Use provided version, or fall back to settings
-          let dbVersion = version;
-          if (!dbVersion) {
-            const settings = this.configStore.get('settings', {});
-            dbVersion = dbType === 'mariadb'
-              ? (settings.mariadbVersion || '11.4')
-              : (settings.mysqlVersion || '8.4');
-          }
-
           console.log(`Starting ${dbType} version ${dbVersion}...`);
           await this.managers.service.startService(dbType, dbVersion);
 
           // Wait a bit for the service to be ready
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 3000));
 
           // Verify it's running now
-          if (!this.isServiceRunning()) {
-            throw new Error(`${dbType} service failed to start`);
+          if (!this.isServiceRunning(dbType, dbVersion)) {
+            throw new Error(`${dbType} ${dbVersion} failed to start`);
           }
 
-          console.log(`${dbType} service started successfully`);
+          console.log(`${dbType} ${dbVersion} started successfully`);
         } catch (startError) {
-          console.error(`Failed to start ${dbType}:`, startError.message);
-          throw new Error(`Cannot create database: ${dbType} service is not running and failed to start. Please start ${dbType} manually first.`);
+          console.error(`Failed to start ${dbType} ${dbVersion}:`, startError.message);
+          throw new Error(`Cannot create database: ${dbType} ${dbVersion} is not running and failed to start. Please start it manually first.`);
         }
       } else {
-        throw new Error(`Cannot create database: ${dbType} service is not running. Please start it first.`);
+        throw new Error(`Cannot create database: ${dbType} ${dbVersion} is not running. Please start it first.`);
       }
     }
 

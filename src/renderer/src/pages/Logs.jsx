@@ -96,6 +96,18 @@ function Logs() {
             ...parseLogLine(line),
           }));
         }
+      } else if (selectedSource === 'system') {
+        // Load system logs (critical errors, warnings, startup issues)
+        const systemLogs = await window.devbox?.logs.getSystemLogs(200);
+        if (systemLogs) {
+          logEntries = systemLogs.map((line) => ({
+            source: 'system',
+            sourceId: 'system',
+            sourceName: 'System',
+            raw: line,
+            ...parseLogLine(line),
+          }));
+        }
       }
 
       // Sort by timestamp
@@ -161,6 +173,8 @@ function Logs() {
     } else if (selectedSource.startsWith('service:')) {
       const serviceName = selectedSource.replace('service:', '');
       await window.devbox?.logs.clearServiceLogs(serviceName);
+    } else if (selectedSource === 'system') {
+      await window.devbox?.logs.clearSystemLogs();
     }
     loadLogs();
   };
@@ -253,6 +267,9 @@ function Logs() {
                   {service.name || name}
                 </option>
               ))}
+            </optgroup>
+            <optgroup label="System">
+              <option value="system">System Issues</option>
             </optgroup>
           </select>
 

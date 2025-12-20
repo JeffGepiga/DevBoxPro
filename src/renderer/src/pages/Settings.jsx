@@ -61,19 +61,9 @@ function Settings() {
       // If credentials changed, sync to all database versions
       if (credentialsChanged) {
         try {
-          console.log('Database credentials changed, syncing to all versions...');
-          const result = await window.devbox?.database.syncCredentialsToAllVersions(newUser, newPassword, oldPassword);
-          console.log('Credential sync result:', result);
-
-          // Check for any failures
-          const allResults = [...(result?.mysql || []), ...(result?.mariadb || [])];
-          const failures = allResults.filter(r => !r.success);
-          if (failures.length > 0) {
-            console.warn('Some credential syncs failed:', failures);
-          }
+          await window.devbox?.database.syncCredentialsToAllVersions(newUser, newPassword, oldPassword);
         } catch (syncError) {
-          console.error('Failed to sync credentials:', syncError);
-          // Don't fail the whole save, just log the error
+          // Sync error logged to system log on backend
         }
       }
 

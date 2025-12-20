@@ -74,7 +74,7 @@ contextBridge.exposeInMainWorld('devbox', {
     setActiveDatabaseType: (dbType, version) => ipcRenderer.invoke('database:setActiveDatabaseType', dbType, version),
     getDatabaseInfo: () => ipcRenderer.invoke('database:getDatabaseInfo'),
     resetCredentials: (user, password) => ipcRenderer.invoke('database:resetCredentials', user, password),
-    syncCredentialsToAllVersions: (newUser, newPassword, oldPassword) => 
+    syncCredentialsToAllVersions: (newUser, newPassword, oldPassword) =>
       ipcRenderer.invoke('database:syncCredentialsToAllVersions', newUser, newPassword, oldPassword),
     onImportProgress: (callback) => {
       const handler = (event, data) => callback(data);
@@ -114,8 +114,10 @@ contextBridge.exposeInMainWorld('devbox', {
   logs: {
     getProjectLogs: (projectId, lines) => ipcRenderer.invoke('logs:getProjectLogs', projectId, lines),
     getServiceLogs: (service, lines) => ipcRenderer.invoke('logs:getServiceLogs', service, lines),
+    getSystemLogs: (lines) => ipcRenderer.invoke('logs:getSystemLogs', lines),
     clearProjectLogs: (projectId) => ipcRenderer.invoke('logs:clearProjectLogs', projectId),
     clearServiceLogs: (serviceName) => ipcRenderer.invoke('logs:clearServiceLogs', serviceName),
+    clearSystemLogs: () => ipcRenderer.invoke('logs:clearSystemLogs'),
     streamLogs: (projectId) => ipcRenderer.invoke('logs:streamLogs', projectId),
   },
 

@@ -187,7 +187,7 @@ class ServiceManager extends EventEmitter {
         const result = await this.startService(service);
         results.push({ service, success: result.success, status: result.status });
       } catch (error) {
-        console.error(`Error starting ${service}:`, error);
+        this.managers.log?.systemError(`Error starting ${service}`, { error: error.message });
         results.push({ service, success: false, error: error.message });
       }
     }
@@ -249,7 +249,7 @@ class ServiceManager extends EventEmitter {
 
       return { success: status.status === 'running', service: serviceName, version, status: status.status };
     } catch (error) {
-      console.error(`Failed to start ${config.name}${versionSuffix}:`, error);
+      this.managers.log?.systemError(`Failed to start ${config.name}${versionSuffix}`, { error: error.message });
       const status = this.serviceStatus.get(serviceName);
       status.status = 'error';
       status.error = error.message;
@@ -682,7 +682,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
           }
         }
       } catch (error) {
-        console.warn('Error during Nginx cleanup:', error.message);
+        this.managers.log?.systemWarn('Error during Nginx cleanup', { error: error.message });
       }
     }
 
@@ -696,7 +696,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
           // Ignore - no processes to kill
         }
       } catch (error) {
-        console.warn('Error during Apache cleanup:', error.message);
+        this.managers.log?.systemWarn('Error during Apache cleanup', { error: error.message });
       }
     }
 
@@ -751,7 +751,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       try {
         await this.managers.project.stopAllProjects();
       } catch (error) {
-        console.error('Error stopping projects:', error);
+        this.managers.log?.systemError('Error stopping projects', { error: error.message });
       }
     }
 
@@ -760,7 +760,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       try {
         await this.killProcess(proc);
       } catch (error) {
-        console.error(`Error stopping process ${processKey}:`, error);
+        this.managers.log?.systemError(`Error stopping process ${processKey}`, { error: error.message });
       }
     }
     this.processes.clear();
@@ -855,7 +855,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
     // Check if Nginx binary exists
     if (!await fs.pathExists(nginxExe)) {
-      console.log(`Nginx ${version} binary not found. Please download Nginx from the Binary Manager.`);
+      this.managers.log?.systemError(`Nginx ${version} binary not found. Please download Nginx from the Binary Manager.`);
       const status = this.serviceStatus.get('nginx');
       status.status = 'not_installed';
       status.error = `Nginx ${version} binary not found. Please download from Binary Manager.`;
@@ -1009,7 +1009,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     }
 
     if (!testResult.success) {
-      console.error('Nginx configuration test failed:', testResult.error);
+      this.managers.log?.systemError('Nginx configuration test failed', { error: testResult.error });
       throw new Error(`Nginx configuration error: ${testResult.error}`);
     }
 
@@ -1029,7 +1029,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       });
 
       proc.on('error', (error) => {
-        console.error('Nginx process error:', error);
+        this.managers.log?.systemError('Nginx process error', { error: error.message });
         const status = this.serviceStatus.get('nginx');
         status.status = 'error';
         status.error = error.message;
@@ -1057,7 +1057,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       });
 
       proc.on('error', (error) => {
-        console.error('Nginx process error:', error);
+        this.managers.log?.systemError('Nginx process error', { error: error.message });
         const status = this.serviceStatus.get('nginx');
         status.status = 'error';
         status.error = error.message;
@@ -1086,7 +1086,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
-      console.error(`Nginx ${version} failed to become ready:`, error);
+      this.managers.log?.systemError(`Nginx ${version} failed to become ready`, { error: error.message });
       status.status = 'error';
       status.error = `Nginx ${version} failed to start properly: ${error.message}`;
       this.runningVersions.get('nginx').delete(version);
@@ -1127,13 +1127,13 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         if (code === 0) {
           resolve();
         } else {
-          console.error(`Nginx reload failed with code ${code}`);
+          this.managers.log?.systemError(`Nginx reload failed with code ${code}`);
           reject(new Error(`Nginx reload failed with code ${code}`));
         }
       });
 
       proc.on('error', (error) => {
-        console.error('Nginx reload error:', error);
+        this.managers.log?.systemError('Nginx reload error', { error: error.message });
         reject(error);
       });
     });
@@ -1168,7 +1168,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       try {
         await this.restartService('apache');
       } catch (error) {
-        console.error('Apache restart failed:', error);
+        this.managers.log?.systemError('Apache restart failed', { error: error.message });
         throw error;
       }
     } else {
@@ -1182,13 +1182,13 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
           if (code === 0) {
             resolve();
           } else {
-            console.error(`Apache reload failed with code ${code}`);
+            this.managers.log?.systemError(`Apache reload failed with code ${code}`);
             reject(new Error(`Apache reload failed with code ${code}`));
           }
         });
 
         proc.on('error', (error) => {
-          console.error('Apache reload error:', error);
+          this.managers.log?.systemError('Apache reload error', { error: error.message });
           reject(error);
         });
       });
@@ -1260,7 +1260,7 @@ http {
 
     // Check if Apache binary exists
     if (!await fs.pathExists(httpdExe)) {
-      console.log(`Apache ${version} binary not found. Please download Apache from the Binary Manager.`);
+      this.managers.log?.systemError(`Apache ${version} binary not found. Please download Apache from the Binary Manager.`);
       const status = this.serviceStatus.get('apache');
       status.status = 'not_installed';
       status.error = `Apache ${version} binary not found. Please download from Binary Manager.`;
@@ -1403,7 +1403,7 @@ http {
     }
 
     if (!testResult.success) {
-      console.error('Apache configuration test failed:', testResult.error);
+      this.managers.log?.systemError('Apache configuration test failed', { error: testResult.error });
       throw new Error(`Apache configuration error: ${testResult.error}`);
     }
 
@@ -1423,7 +1423,7 @@ http {
     });
 
     proc.on('error', (error) => {
-      console.error('Apache process error:', error);
+      this.managers.log?.systemError('Apache process error', { error: error.message });
       const status = this.serviceStatus.get('apache');
       status.status = 'error';
       status.error = error.message;
@@ -1452,7 +1452,7 @@ http {
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
-      console.error(`Apache ${version} failed to become ready:`, error);
+      this.managers.log?.systemError(`Apache ${version} failed to become ready`, { error: error.message });
       status.status = 'error';
       status.error = `Apache ${version} failed to start properly: ${error.message}`;
       this.runningVersions.get('apache').delete(version);
@@ -1518,7 +1518,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
     // Check if MySQL binary exists
     if (!await fs.pathExists(mysqldPath)) {
-      console.log(`MySQL ${version} binary not found. Please download MySQL from the Binary Manager.`);
+      this.managers.log?.systemError(`MySQL ${version} binary not found. Please download MySQL from the Binary Manager.`);
       const status = this.serviceStatus.get('mysql');
       status.status = 'not_installed';
       status.error = `MySQL ${version} binary not found. Please download from Binary Manager.`;
@@ -1528,7 +1528,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     // Check if this specific version is already running
     const processKey = this.getProcessKey('mysql', version);
     if (this.processes.has(processKey)) {
-      console.log(`MySQL ${version} is already running`);
+      // MySQL already running - no action needed
       return;
     }
 
@@ -1559,7 +1559,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       try {
         await this.initializeMySQLData(mysqlPath, dataDir);
       } catch (error) {
-        console.error('MySQL initialization failed:', error.message);
+        this.managers.log?.systemError('MySQL initialization failed', { error: error.message });
         const status = this.serviceStatus.get('mysql');
         status.status = 'error';
         status.error = `Initialization failed: ${error.message}`;
@@ -1594,7 +1594,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       });
 
       proc.on('error', (error) => {
-        console.error('MySQL process error:', error);
+        this.managers.log?.systemError('MySQL process error', { error: error.message });
         const status = this.serviceStatus.get('mysql');
         status.status = 'error';
         status.error = error.message;
@@ -1622,7 +1622,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       });
 
       proc.on('error', (error) => {
-        console.error('MySQL process error:', error);
+        this.managers.log?.systemError('MySQL process error', { error: error.message });
         const status = this.serviceStatus.get('mysql');
         status.status = 'error';
         status.error = error.message;
@@ -1651,7 +1651,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       status.startedAt = Date.now();
       // Credentials are applied via init-file before MySQL accepts connections
     } catch (error) {
-      console.error(`MySQL ${version} failed to start:`, error.message);
+      this.managers.log?.systemError(`MySQL ${version} failed to start`, { error: error.message });
       status.status = 'error';
       status.error = 'Failed to start within timeout. Check logs for details.';
       // Clean up the runningVersions entry on failure
@@ -1667,7 +1667,8 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
   async syncCredentialsToAllVersions(newUser, newPassword, oldPassword = '') {
     const results = { mysql: [], mariadb: [] };
 
-    console.log(`Database credentials changed: user=${newUser}, password=${newPassword ? 'set' : 'empty'}`);
+    // Credential change logged to system log
+    this.managers.log?.systemInfo(`Database credentials changed: user=${newUser}, password=${newPassword ? 'set' : 'empty'}`);
 
     // Copy running versions to array BEFORE iterating (avoid modifying while iterating)
     const runningMySql = this.runningVersions.get('mysql');
@@ -1676,18 +1677,18 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     if (mysqlVersionsToRestart.length > 0) {
       for (const version of mysqlVersionsToRestart) {
         try {
-          console.log(`Restarting MySQL ${version} to apply new credentials...`);
+          this.managers.log?.systemInfo(`Restarting MySQL ${version} to apply new credentials...`);
           await this.stopService('mysql', version);
           await new Promise(resolve => setTimeout(resolve, 1000));
           await this.startService('mysql', version);
           results.mysql.push({ version, success: true });
         } catch (error) {
-          console.error(`Failed to restart MySQL ${version}:`, error.message);
+          this.managers.log?.systemError(`Failed to restart MySQL ${version}`, { error: error.message });
           results.mysql.push({ version, success: false, error: error.message });
         }
       }
     } else {
-      console.log('No running MySQL versions to restart.');
+      // No running MySQL versions - nothing to restart
     }
 
     // Copy running versions to array BEFORE iterating
@@ -1697,18 +1698,18 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     if (mariadbVersionsToRestart.length > 0) {
       for (const version of mariadbVersionsToRestart) {
         try {
-          console.log(`Restarting MariaDB ${version} to apply new credentials...`);
+          this.managers.log?.systemInfo(`Restarting MariaDB ${version} to apply new credentials...`);
           await this.stopService('mariadb', version);
           await new Promise(resolve => setTimeout(resolve, 1000));
           await this.startService('mariadb', version);
           results.mariadb.push({ version, success: true });
         } catch (error) {
-          console.error(`Failed to restart MariaDB ${version}:`, error.message);
+          this.managers.log?.systemError(`Failed to restart MariaDB ${version}`, { error: error.message });
           results.mariadb.push({ version, success: false, error: error.message });
         }
       }
     } else {
-      console.log('No running MariaDB versions to restart.');
+      // No running MariaDB versions - nothing to restart
     }
 
     return results;
@@ -1893,7 +1894,7 @@ FLUSH PRIVILEGES;
       this.managers.log?.service('mysql', data.toString(), 'error');
     });
     proc.on('error', (error) => {
-      console.error('MySQL process error:', error);
+      this.managers.log?.systemError('MySQL process error', { error: error.message });
     });
     proc.on('exit', (code) => {
       const status = this.serviceStatus.get('mysql');
@@ -2000,7 +2001,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 
     // Check if MariaDB binary exists
     if (!await fs.pathExists(mariadbd)) {
-      console.log(`MariaDB ${version} binary not found. Please download MariaDB from the Binary Manager.`);
+      this.managers.log?.systemError(`MariaDB ${version} binary not found. Please download MariaDB from the Binary Manager.`);
       const status = this.serviceStatus.get('mariadb');
       status.status = 'not_installed';
       status.error = `MariaDB ${version} binary not found. Please download from Binary Manager.`;
@@ -2010,7 +2011,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     // Check if this specific version is already running
     const processKey = this.getProcessKey('mariadb', version);
     if (this.processes.has(processKey)) {
-      console.log(`MariaDB ${version} is already running`);
+      // MariaDB already running - no action needed
       return;
     }
 
@@ -2062,7 +2063,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     });
 
     proc.on('error', (error) => {
-      console.error('MariaDB process error:', error);
+      this.managers.log?.systemError('MariaDB process error', { error: error.message });
       const status = this.serviceStatus.get('mariadb');
       status.status = 'error';
       status.error = error.message;
@@ -2091,7 +2092,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       status.startedAt = Date.now();
       // Credentials are applied via init-file before MariaDB accepts connections
     } catch (error) {
-      console.error(`MariaDB ${version} failed to start:`, error.message);
+      this.managers.log?.systemError(`MariaDB ${version} failed to start`, { error: error.message });
       status.status = 'error';
       status.error = 'Failed to start within timeout. Check logs for details.';
       this.runningVersions.get('mariadb').delete(version);
@@ -2143,7 +2144,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       this.managers.log?.service('mariadb', data.toString(), 'error');
     });
     proc.on('error', (error) => {
-      console.error('MariaDB process error:', error);
+      this.managers.log?.systemError('MariaDB process error', { error: error.message });
     });
     proc.on('exit', (code) => {
       const status = this.serviceStatus.get('mariadb');
@@ -2252,7 +2253,7 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
 
     // Check if Redis binary exists
     if (!await fs.pathExists(redisServerPath)) {
-      console.log(`Redis ${version} binary not found. Please download Redis from the Binary Manager.`);
+      this.managers.log?.systemError(`Redis ${version} binary not found. Please download Redis from the Binary Manager.`);
       const status = this.serviceStatus.get('redis');
       status.status = 'not_installed';
       status.error = `Redis ${version} binary not found. Please download from Binary Manager.`;
@@ -2323,7 +2324,7 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
-      console.error(`Redis ${version} failed to become ready:`, error);
+      this.managers.log?.systemError(`Redis ${version} failed to become ready`, { error: error.message });
       status.status = 'error';
       status.error = `Redis ${version} failed to start properly: ${error.message}`;
       this.runningVersions.get('redis').delete(version);
@@ -2352,7 +2353,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
 
     // Check if Mailpit binary exists
     if (!await fs.pathExists(mailpitBin)) {
-      console.log('Mailpit binary not found. Please download Mailpit from the Binary Manager.');
+      this.managers.log?.systemError('Mailpit binary not found. Please download Mailpit from the Binary Manager.');
       const status = this.serviceStatus.get('mailpit');
       status.status = 'not_installed';
       status.error = 'Mailpit binary not found. Please download from Binary Manager.';
@@ -2422,7 +2423,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
-      console.error(`Mailpit failed to become ready:`, error);
+      this.managers.log?.systemError('Mailpit failed to become ready', { error: error.message });
       status.status = 'error';
       status.error = `Mailpit failed to start properly: ${error.message}`;
       throw error;
@@ -2437,7 +2438,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
     // Check if any PHP version is available
     const availableVersions = phpManager.getAvailableVersions().filter(v => v.available);
     if (availableVersions.length === 0) {
-      console.log('No PHP version available. Please download PHP from the Binary Manager.');
+      this.managers.log?.systemError('No PHP version available. Please download PHP from the Binary Manager.');
       const status = this.serviceStatus.get('phpmyadmin');
       status.status = 'not_installed';
       status.error = 'No PHP version available. Please download from Binary Manager.';
@@ -2448,7 +2449,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
     try {
       phpPath = phpManager.getPhpBinaryPath(defaultPhp);
     } catch (error) {
-      console.log('PHP binary not found. Please download PHP from the Binary Manager.');
+      this.managers.log?.systemError('PHP binary not found. Please download PHP from the Binary Manager.');
       const status = this.serviceStatus.get('phpmyadmin');
       status.status = 'not_installed';
       status.error = 'PHP binary not found. Please download from Binary Manager.';
@@ -2457,7 +2458,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
 
     // Check if PHP binary exists
     if (!await fs.pathExists(phpPath)) {
-      console.log('PHP binary not found. Please download PHP from the Binary Manager.');
+      this.managers.log?.systemError('PHP binary not found. Please download PHP from the Binary Manager.');
       const status = this.serviceStatus.get('phpmyadmin');
       status.status = 'not_installed';
       status.error = 'PHP binary not found. Please download from Binary Manager.';
@@ -2479,7 +2480,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
 
     // Check if phpMyAdmin is installed
     if (!await fs.pathExists(phpmyadminPath)) {
-      console.log('phpMyAdmin not found. Please download phpMyAdmin from the Binary Manager.');
+      this.managers.log?.systemError('phpMyAdmin not found. Please download phpMyAdmin from the Binary Manager.');
       const status = this.serviceStatus.get('phpmyadmin');
       status.status = 'not_installed';
       status.error = 'phpMyAdmin not found. Please download from Binary Manager.';
@@ -2550,7 +2551,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
-      console.error(`phpMyAdmin failed to become ready:`, error);
+      this.managers.log?.systemError('phpMyAdmin failed to become ready', { error: error.message });
       status.status = 'error';
       status.error = `phpMyAdmin failed to start properly: ${error.message}`;
       throw error;

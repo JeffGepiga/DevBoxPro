@@ -15,16 +15,12 @@ class LogManager extends EventEmitter {
   }
 
   async initialize() {
-    console.log('Initializing LogManager...');
-
     const dataPath = path.join(app.getPath('userData'), 'data');
     this.logsPath = path.join(dataPath, 'logs');
 
     await fs.ensureDir(this.logsPath);
     await fs.ensureDir(path.join(this.logsPath, 'projects'));
     await fs.ensureDir(path.join(this.logsPath, 'services'));
-
-    console.log('LogManager initialized');
   }
 
   // Log methods
@@ -42,6 +38,20 @@ class LogManager extends EventEmitter {
 
   debug(message, data = null) {
     this.writeLog('app', 'debug', message, data);
+  }
+
+  // System-level logging for critical issues (startup failures, SSL errors, etc.)
+  // These are intended for end-users to export and share with developers
+  systemError(message, data = null) {
+    this.writeLog('system', 'error', message, data);
+  }
+
+  systemWarn(message, data = null) {
+    this.writeLog('system', 'warn', message, data);
+  }
+
+  systemInfo(message, data = null) {
+    this.writeLog('system', 'info', message, data);
   }
 
   project(projectId, message, level = 'info') {
@@ -91,7 +101,7 @@ class LogManager extends EventEmitter {
       const logLine = `[${timestamp}] [${level.toUpperCase()}] ${message}\n`;
       await fs.appendFile(logFile, logLine);
     } catch (error) {
-      console.error('Error writing to log:', error);
+      // Silent fail - avoid circular logging
     }
   }
 
@@ -115,7 +125,7 @@ class LogManager extends EventEmitter {
         }
       }
     } catch (error) {
-      console.error('Error rotating log:', error);
+      // Silent fail - avoid circular logging
     }
   }
 
@@ -135,6 +145,12 @@ class LogManager extends EventEmitter {
     return this.readLastLines(logFile, lines);
   }
 
+  // Get system logs (critical errors, warnings, startup issues)
+  async getSystemLogs(lines = 100) {
+    const logFile = path.join(this.logsPath, 'system.log');
+    return this.readLastLines(logFile, lines);
+  }
+
   async readLastLines(filePath, numLines) {
     try {
       if (!(await fs.pathExists(filePath))) {
@@ -145,7 +161,7 @@ class LogManager extends EventEmitter {
       const lines = content.trim().split('\n');
       return lines.slice(-numLines);
     } catch (error) {
-      console.error('Error reading log file:', error);
+      // Silent fail - file may not exist yet
       return [];
     }
   }
@@ -168,6 +184,17 @@ class LogManager extends EventEmitter {
       return { success: true };
     } catch (error) {
       throw new Error(`Failed to clear logs: ${error.message}`);
+    }
+  }
+
+  // Clear system logs
+  async clearSystemLogs() {
+    const logFile = path.join(this.logsPath, 'system.log');
+    try {
+      await fs.writeFile(logFile, '');
+      return { success: true };
+    } catch (error) {
+      throw new Error(`Failed to clear system logs: ${error.message}`);
     }
   }
 
