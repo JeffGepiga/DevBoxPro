@@ -74,6 +74,8 @@ contextBridge.exposeInMainWorld('devbox', {
     setActiveDatabaseType: (dbType) => ipcRenderer.invoke('database:setActiveDatabaseType', dbType),
     getDatabaseInfo: () => ipcRenderer.invoke('database:getDatabaseInfo'),
     resetCredentials: (user, password) => ipcRenderer.invoke('database:resetCredentials', user, password),
+    syncCredentialsToAllVersions: (newUser, newPassword, oldPassword) => 
+      ipcRenderer.invoke('database:syncCredentialsToAllVersions', newUser, newPassword, oldPassword),
     onImportProgress: (callback) => {
       const handler = (event, data) => callback(data);
       ipcRenderer.on('database:importProgress', handler);

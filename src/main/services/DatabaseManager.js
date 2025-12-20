@@ -106,7 +106,8 @@ class DatabaseManager {
     return false;
   }
 
-  // Reset database credentials by restarting with skip-grant-tables
+  // Reset database credentials by restarting with --init-file
+  // This is more reliable than skip-grant-tables + manual queries
   async resetCredentials(newUser = 'root', newPassword = '') {
     const dbType = this.getActiveDatabaseType();
     console.log(`Resetting ${dbType} credentials: user=${newUser}`);
@@ -117,7 +118,7 @@ class DatabaseManager {
         throw new Error('Service manager not available');
       }
 
-      // Force stop the database service and kill any orphan processes
+      // Force stop the database service (only the active version)
       console.log(`Stopping ${dbType} for credential reset...`);
       try {
         await this.managers.service.stopService(dbType);
@@ -125,90 +126,25 @@ class DatabaseManager {
         console.log(`Stop service warning: ${e.message}`);
       }
       
-      // Kill any remaining processes
-      if (dbType === 'mysql') {
-        await this.managers.service.killOrphanMySQLProcesses?.();
-      } else {
-        await this.managers.service.killOrphanMariaDBProcesses?.();
-      }
-      
       // Wait for service to fully stop
       await new Promise(resolve => setTimeout(resolve, 3000));
 
-      // Start with skip-grant-tables
-      console.log(`Starting ${dbType} with skip-grant-tables...`);
-      await this.managers.service.startServiceWithOptions(dbType, { skipGrantTables: true });
-      
-      // Wait a bit more for service to be fully ready
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Create init file with credential reset SQL
+      const initFilePath = await this.createCredentialResetInitFile(newUser, newPassword);
+      console.log(`Created init file: ${initFilePath}`);
 
-      // Now run the credential reset queries (no auth needed with skip-grant-tables)
-      const passwordClause = newPassword ? `'${newPassword}'` : "''";
+      // Start with skip-grant-tables AND init-file
+      console.log(`Starting ${dbType} with skip-grant-tables and init-file...`);
+      await this.managers.service.startServiceWithOptions(dbType, { 
+        skipGrantTables: true,
+        initFile: initFilePath
+      });
       
-      let querySuccess = false;
-      try {
-        // For MySQL 8.0+ we need to flush privileges first when using skip-grant-tables
-        console.log('Flushing privileges...');
-        await this.runDbQueryNoAuth(`FLUSH PRIVILEGES`);
-        
-        // Create/update users - wrap each in try/catch to continue on partial failure
-        console.log('Creating/updating users...');
-        try {
-          await this.runDbQueryNoAuth(`CREATE USER IF NOT EXISTS '${newUser}'@'localhost' IDENTIFIED BY ${passwordClause}`);
-        } catch (e) { console.log(`Create user localhost: ${e.message}`); }
-        
-        try {
-          await this.runDbQueryNoAuth(`CREATE USER IF NOT EXISTS '${newUser}'@'127.0.0.1' IDENTIFIED BY ${passwordClause}`);
-        } catch (e) { console.log(`Create user 127.0.0.1: ${e.message}`); }
-        
-        try {
-          await this.runDbQueryNoAuth(`CREATE USER IF NOT EXISTS '${newUser}'@'%' IDENTIFIED BY ${passwordClause}`);
-        } catch (e) { console.log(`Create user %: ${e.message}`); }
-        
-        // Alter passwords
-        console.log('Setting passwords...');
-        if (newPassword) {
-          try {
-            await this.runDbQueryNoAuth(`ALTER USER '${newUser}'@'localhost' IDENTIFIED BY '${newPassword}'`);
-          } catch (e) { console.log(`Alter user localhost: ${e.message}`); }
-          try {
-            await this.runDbQueryNoAuth(`ALTER USER '${newUser}'@'127.0.0.1' IDENTIFIED BY '${newPassword}'`);
-          } catch (e) { console.log(`Alter user 127.0.0.1: ${e.message}`); }
-          try {
-            await this.runDbQueryNoAuth(`ALTER USER '${newUser}'@'%' IDENTIFIED BY '${newPassword}'`);
-          } catch (e) { console.log(`Alter user %: ${e.message}`); }
-        } else {
-          try {
-            await this.runDbQueryNoAuth(`ALTER USER '${newUser}'@'localhost' IDENTIFIED BY ''`);
-          } catch (e) { console.log(`Alter user localhost: ${e.message}`); }
-          try {
-            await this.runDbQueryNoAuth(`ALTER USER '${newUser}'@'127.0.0.1' IDENTIFIED BY ''`);
-          } catch (e) { console.log(`Alter user 127.0.0.1: ${e.message}`); }
-          try {
-            await this.runDbQueryNoAuth(`ALTER USER '${newUser}'@'%' IDENTIFIED BY ''`);
-          } catch (e) { console.log(`Alter user %: ${e.message}`); }
-        }
-        
-        // Grant privileges
-        console.log('Granting privileges...');
-        try {
-          await this.runDbQueryNoAuth(`GRANT ALL PRIVILEGES ON *.* TO '${newUser}'@'localhost' WITH GRANT OPTION`);
-        } catch (e) { console.log(`Grant localhost: ${e.message}`); }
-        try {
-          await this.runDbQueryNoAuth(`GRANT ALL PRIVILEGES ON *.* TO '${newUser}'@'127.0.0.1' WITH GRANT OPTION`);
-        } catch (e) { console.log(`Grant 127.0.0.1: ${e.message}`); }
-        try {
-          await this.runDbQueryNoAuth(`GRANT ALL PRIVILEGES ON *.* TO '${newUser}'@'%' WITH GRANT OPTION`);
-        } catch (e) { console.log(`Grant %: ${e.message}`); }
-        
-        await this.runDbQueryNoAuth('FLUSH PRIVILEGES');
-        querySuccess = true;
-        console.log('Credential queries completed successfully');
-      } catch (queryError) {
-        console.error('Error running credential queries:', queryError);
-      }
+      // Wait for service to be fully ready and init file to execute
+      console.log('Waiting for init file to execute...');
+      await new Promise(resolve => setTimeout(resolve, 5000));
 
-      // Stop the service again
+      // Stop the service
       console.log(`Stopping ${dbType} skip-grant-tables mode...`);
       try {
         await this.managers.service.stopService(dbType);
@@ -216,19 +152,18 @@ class DatabaseManager {
         console.log(`Stop service warning: ${e.message}`);
       }
       
-      // Kill any remaining processes
-      if (dbType === 'mysql') {
-        await this.managers.service.killOrphanMySQLProcesses?.();
-      } else {
-        await this.managers.service.killOrphanMariaDBProcesses?.();
-      }
-      
       // Wait for service to fully stop
       await new Promise(resolve => setTimeout(resolve, 3000));
 
+      // Clean up init file
+      try {
+        await fs.remove(initFilePath);
+      } catch (e) {
+        console.log(`Could not remove init file: ${e.message}`);
+      }
+
       // Restart normally
-      console.log(`Restarting ${dbType} normally...`);
-      await this.managers.service.startService(dbType);
+      console.log(`Restarting ${dbType} normally...`);      await this.managers.service.startService(dbType);
       
       // Wait for service to start
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -255,54 +190,74 @@ class DatabaseManager {
     }
   }
 
+  // Create an init file with SQL commands to reset credentials
+  async createCredentialResetInitFile(newUser, newPassword) {
+    const dbType = this.getActiveDatabaseType();
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const initFilePath = path.join(dataPath, dbType, 'credential_reset.sql');
+    
+    // Escape password for SQL
+    const escapedPassword = newPassword.replace(/'/g, "''");
+    
+    // Build SQL commands - these run with skip-grant-tables so no auth needed
+    const sqlCommands = [
+      `FLUSH PRIVILEGES;`,
+      `CREATE USER IF NOT EXISTS '${newUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';`,
+      `CREATE USER IF NOT EXISTS '${newUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';`,
+      `CREATE USER IF NOT EXISTS '${newUser}'@'%' IDENTIFIED BY '${escapedPassword}';`,
+      `ALTER USER '${newUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';`,
+      `ALTER USER '${newUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';`,
+      `ALTER USER '${newUser}'@'%' IDENTIFIED BY '${escapedPassword}';`,
+      `GRANT ALL PRIVILEGES ON *.* TO '${newUser}'@'localhost' WITH GRANT OPTION;`,
+      `GRANT ALL PRIVILEGES ON *.* TO '${newUser}'@'127.0.0.1' WITH GRANT OPTION;`,
+      `GRANT ALL PRIVILEGES ON *.* TO '${newUser}'@'%' WITH GRANT OPTION;`,
+      `FLUSH PRIVILEGES;`,
+    ];
+    
+    await fs.ensureDir(path.dirname(initFilePath));
+    await fs.writeFile(initFilePath, sqlCommands.join('\n'), 'utf8');
+    
+    return initFilePath;
+  }
+
   // Run a query without authentication (for skip-grant-tables mode)
-  // Uses named pipe on Windows since MySQL 8.0+ skip-grant-tables disables networking
+  // With skip-grant-tables, MySQL allows connections without password verification
   async runDbQueryNoAuth(query, database = null) {
     const clientPath = this.getDbClientPath();
     const dbType = this.getActiveDatabaseType();
-    const settings = this.configStore.get('settings', {});
-    const defaults = { mysql: '8.4', mariadb: '11.4' };
-    const version = settings[`${dbType}Version`] || defaults[dbType];
+    
+    // Get the actual port from ServiceManager (skip-grant-tables mode uses same port)
+    let port = 3306;
+    if (this.managers.service) {
+      const serviceConfig = this.managers.service.serviceConfigs[dbType];
+      if (serviceConfig?.actualPort) {
+        port = serviceConfig.actualPort;
+      }
+    }
+
+    // Check if client exists
+    if (!fs.existsSync(clientPath)) {
+      throw new Error(`MySQL client not found at ${clientPath}. Please install the database binary.`);
+    }
 
     return new Promise((resolve, reject) => {
-      let args;
-      
-      if (process.platform === 'win32') {
-        // On Windows, use named pipe since skip-grant-tables disables TCP
-        const pipeName = dbType === 'mysql' 
-          ? `MYSQL_${version.replace(/\./g, '')}_SKIP`
-          : `MARIADB_${version.replace(/\./g, '')}_SKIP`;
-        args = [
-          `--pipe`,
-          `--socket=${pipeName}`,
-          '-uroot',
-          '-N',
-          '-B',
-          '-e',
-          query,
-        ];
-      } else {
-        // On Unix, use socket file
-        const { app } = require('electron');
-        const dataPath = path.join(app.getPath('userData'), 'data');
-        const socketPath = dbType === 'mysql'
-          ? path.join(dataPath, 'mysql', version, 'data', 'mysql_skip.sock')
-          : path.join(dataPath, 'mariadb', version, 'data', 'mariadb_skip.sock');
-        args = [
-          `--socket=${socketPath}`,
-          '-uroot',
-          '-N',
-          '-B',
-          '-e',
-          query,
-        ];
-      }
+      // Use TCP connection - skip-grant-tables mode allows root without password
+      const args = [
+        `-h127.0.0.1`,
+        `-P${port}`,
+        '-uroot',
+        '--skip-password',  // Explicitly skip password prompt
+        '-N',
+        '-B',
+        '-e',
+        query,
+      ];
 
       if (database) {
         args.push(database);
       }
 
-      console.log(`Running query with args:`, args.join(' '));
+      console.log(`[runDbQueryNoAuth] Running query on port ${port}: ${query.substring(0, 50)}...`);
 
       const proc = spawn(clientPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -322,7 +277,7 @@ class DatabaseManager {
 
       proc.on('close', (code) => {
         if (code !== 0) {
-          console.warn(`Query warning: ${stderr}`);
+          console.warn(`[runDbQueryNoAuth] Query warning: ${stderr}`);
           // Don't reject for warnings, only for errors
           if (stderr.includes('ERROR')) {
             reject(new Error(`Query failed: ${stderr}`));
@@ -1079,6 +1034,13 @@ class DatabaseManager {
     const user = settings.dbUser || this.dbConfig.user;
     const password = settings.dbPassword || this.dbConfig.password;
 
+    // Check if client exists
+    if (!fs.existsSync(clientPath)) {
+      throw new Error(`MySQL client not found at ${clientPath}. Please install the database binary from the Binaries page.`);
+    }
+
+    console.log(`[DatabaseManager] Running query on port ${port} as user '${user}' (password: ${password ? 'YES' : 'NO'})`);
+
     return new Promise((resolve, reject) => {
       const args = [
         `-h${this.dbConfig.host}`,
@@ -1138,7 +1100,15 @@ class DatabaseManager {
 
           resolve(rows);
         } else {
-          reject(new Error(`Query failed: ${stderr}`));
+          // Provide helpful error message for access denied errors
+          if (stderr.includes('Access denied') || stderr.includes('1045')) {
+            const hint = password 
+              ? 'The stored credentials may be incorrect.' 
+              : 'No password is configured in DevBox Pro settings.';
+            reject(new Error(`Database access denied for user '${user}'. ${hint} Go to Settings > Database to update credentials, or use "Reset Credentials" to reset them.`));
+          } else {
+            reject(new Error(`Query failed: ${stderr}`));
+          }
         }
       });
 
@@ -1232,10 +1202,35 @@ class DatabaseManager {
     
     // Use version in path if available
     if (version) {
-      return path.join(this.resourcePath, dbType, version, platform, 'bin', binName);
+      const versionPath = path.join(this.resourcePath, dbType, version, platform, 'bin', binName);
+      if (fs.existsSync(versionPath)) {
+        return versionPath;
+      }
+      console.log(`[DatabaseManager] MySQL client not found at version path: ${versionPath}`);
     }
     
-    // Fallback to old path structure
+    // Fallback: Try to find any available mysql client
+    const dbTypePath = path.join(this.resourcePath, dbType);
+    if (fs.existsSync(dbTypePath)) {
+      try {
+        const versions = fs.readdirSync(dbTypePath).filter(v => {
+          const binPath = path.join(dbTypePath, v, platform, 'bin', binName);
+          return fs.existsSync(binPath);
+        });
+        
+        if (versions.length > 0) {
+          // Prefer newer versions (sort descending)
+          versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+          const foundPath = path.join(dbTypePath, versions[0], platform, 'bin', binName);
+          console.log(`[DatabaseManager] Using fallback MySQL client: ${foundPath}`);
+          return foundPath;
+        }
+      } catch (e) {
+        console.error(`[DatabaseManager] Error scanning for MySQL client:`, e.message);
+      }
+    }
+    
+    // Last resort fallback to old path structure (without version)
     return path.join(this.resourcePath, dbType, platform, 'bin', binName);
   }
 
@@ -1256,10 +1251,35 @@ class DatabaseManager {
     
     // Use version in path if available
     if (version) {
-      return path.join(this.resourcePath, dbType, version, platform, 'bin', binName);
+      const versionPath = path.join(this.resourcePath, dbType, version, platform, 'bin', binName);
+      if (fs.existsSync(versionPath)) {
+        return versionPath;
+      }
+      console.log(`[DatabaseManager] mysqldump not found at version path: ${versionPath}`);
     }
     
-    // Fallback to old path structure
+    // Fallback: Try to find any available mysqldump
+    const dbTypePath = path.join(this.resourcePath, dbType);
+    if (fs.existsSync(dbTypePath)) {
+      try {
+        const versions = fs.readdirSync(dbTypePath).filter(v => {
+          const binPath = path.join(dbTypePath, v, platform, 'bin', binName);
+          return fs.existsSync(binPath);
+        });
+        
+        if (versions.length > 0) {
+          // Prefer newer versions (sort descending)
+          versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+          const foundPath = path.join(dbTypePath, versions[0], platform, 'bin', binName);
+          console.log(`[DatabaseManager] Using fallback mysqldump: ${foundPath}`);
+          return foundPath;
+        }
+      } catch (e) {
+        console.error(`[DatabaseManager] Error scanning for mysqldump:`, e.message);
+      }
+    }
+    
+    // Last resort fallback to old path structure (without version)
     return path.join(this.resourcePath, dbType, platform, 'bin', binName);
   }
 

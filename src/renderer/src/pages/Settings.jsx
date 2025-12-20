@@ -45,9 +45,37 @@ function Settings() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Check if database credentials changed
+      const oldUser = settings.settings?.dbUser || 'root';
+      const oldPassword = settings.settings?.dbPassword || '';
+      const newUser = localSettings.dbUser || 'root';
+      const newPassword = localSettings.dbPassword || '';
+      const credentialsChanged = oldUser !== newUser || oldPassword !== newPassword;
+      
+      // Save all settings
       for (const [key, value] of Object.entries(localSettings)) {
         await window.devbox?.settings.set(`settings.${key}`, value);
       }
+      
+      // If credentials changed, sync to all database versions
+      if (credentialsChanged) {
+        try {
+          console.log('Database credentials changed, syncing to all versions...');
+          const result = await window.devbox?.database.syncCredentialsToAllVersions(newUser, newPassword, oldPassword);
+          console.log('Credential sync result:', result);
+          
+          // Check for any failures
+          const allResults = [...(result?.mysql || []), ...(result?.mariadb || [])];
+          const failures = allResults.filter(r => !r.success);
+          if (failures.length > 0) {
+            console.warn('Some credential syncs failed:', failures);
+          }
+        } catch (syncError) {
+          console.error('Failed to sync credentials:', syncError);
+          // Don't fail the whole save, just log the error
+        }
+      }
+      
       // Refresh settings in context so other components get the updated values
       await refreshSettings();
       setSaved(true);

@@ -270,9 +270,9 @@ class ServiceManager extends EventEmitter {
     if (options.skipGrantTables) {
       
       if (serviceName === 'mysql') {
-        await this.startMySQLWithSkipGrant(version);
+        await this.startMySQLWithSkipGrant(version, options.initFile);
       } else {
-        await this.startMariaDBWithSkipGrant(version);
+        await this.startMariaDBWithSkipGrant(version, options.initFile);
       }
       
       const status = this.serviceStatus.get(serviceName);
@@ -287,7 +287,7 @@ class ServiceManager extends EventEmitter {
     return this.startService(serviceName, version);
   }
 
-  async startMySQLWithSkipGrant(version = '8.4') {
+  async startMySQLWithSkipGrant(version = '8.4', initFile = null) {
     const mysqlPath = this.getMySQLPath(version);
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
     
@@ -295,8 +295,13 @@ class ServiceManager extends EventEmitter {
       throw new Error(`MySQL ${version} binary not found`);
     }
 
-    // Kill any orphan processes
-    await this.killOrphanMySQLProcesses();
+    // Only kill the tracked process for this specific version, not all MySQL processes
+    const processKey = this.getProcessKey('mysql', version);
+    const existingProc = this.processes.get(processKey);
+    if (existingProc) {
+      await this.killProcess(existingProc);
+      this.processes.delete(processKey);
+    }
 
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'mysql', version, 'data');
@@ -313,7 +318,7 @@ class ServiceManager extends EventEmitter {
 
     // Create a temporary config with skip-grant-tables
     const configPath = path.join(dataPath, 'mysql', version, 'my_skipgrant.cnf');
-    await this.createMySQLConfigWithSkipGrant(configPath, dataDir, port, version);
+    await this.createMySQLConfigWithSkipGrant(configPath, dataDir, port, version, initFile);
 
     let proc;
     if (process.platform === 'win32') {
@@ -439,9 +444,12 @@ class ServiceManager extends EventEmitter {
     throw new Error(`Port ${port} not ready within ${timeout}ms`);
   }
 
-  async createMySQLConfigWithSkipGrant(configPath, dataDir, port, version = '8.4') {
+  async createMySQLConfigWithSkipGrant(configPath, dataDir, port, version = '8.4', initFile = null) {
     const mysqlPath = this.getMySQLPath(version);
     const isWindows = process.platform === 'win32';
+    
+    // Build init-file line if provided
+    const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
     
     let config;
     if (isWindows) {
@@ -456,7 +464,7 @@ pid-file=${path.join(dataDir, 'mysql_skip.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
 skip-grant-tables
 skip-networking=0
-innodb_buffer_pool_size=128M
+${initFileLine}innodb_buffer_pool_size=128M
 innodb_redo_log_capacity=100M
 max_connections=100
 loose-mysqlx=0
@@ -474,7 +482,7 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
 pid-file=${path.join(dataDir, 'mysql_skip.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
 skip-grant-tables
-
+${initFileLine}
 [client]
 port=${port}
 socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
@@ -485,7 +493,7 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
     await fs.writeFile(configPath, config);
   }
 
-  async startMariaDBWithSkipGrant(version = '11.4') {
+  async startMariaDBWithSkipGrant(version = '11.4', initFile = null) {
     const mariadbPath = this.getMariaDBPath(version);
     const mariadbd = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
     
@@ -493,8 +501,13 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
       throw new Error(`MariaDB ${version} binary not found`);
     }
 
-    // Kill any orphan processes
-    await this.killOrphanMariaDBProcesses();
+    // Only kill the tracked process for this specific version, not all MariaDB processes
+    const processKey = this.getProcessKey('mariadb', version);
+    const existingProc = this.processes.get(processKey);
+    if (existingProc) {
+      await this.killProcess(existingProc);
+      this.processes.delete(processKey);
+    }
 
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'mariadb', version, 'data');
@@ -510,7 +523,7 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
 
     // Create a temporary config with skip-grant-tables
     const configPath = path.join(dataPath, 'mariadb', version, 'my_skipgrant.cnf');
-    await this.createMariaDBConfigWithSkipGrant(configPath, dataDir, port, version, mariadbPath);
+    await this.createMariaDBConfigWithSkipGrant(configPath, dataDir, port, version, mariadbPath, initFile);
     
     let proc;
     if (process.platform === 'win32') {
@@ -547,8 +560,11 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
     status.status = 'running';
   }
 
-  async createMariaDBConfigWithSkipGrant(configPath, dataDir, port, version, mariadbPath) {
+  async createMariaDBConfigWithSkipGrant(configPath, dataDir, port, version, mariadbPath, initFile = null) {
     const isWindows = process.platform === 'win32';
+    
+    // Build init-file line if provided
+    const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
     
     let config;
     if (isWindows) {
@@ -562,7 +578,7 @@ socket=MARIADB_${version.replace(/\./g, '')}_SKIP
 pid-file=${path.join(dataDir, 'mariadb_skip.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
 skip-grant-tables
-innodb_buffer_pool_size=128M
+${initFileLine}innodb_buffer_pool_size=128M
 max_connections=100
 
 [client]
@@ -577,7 +593,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 pid-file=${path.join(dataDir, 'mariadb_skip.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
 skip-grant-tables
-
+${initFileLine}
 [client]
 port=${port}
 socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
@@ -1509,8 +1525,12 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       return;
     }
 
-    // Kill any orphan MySQL processes before starting
-    await this.killOrphanMySQLProcesses();
+    // Check if this specific version is already running
+    const processKey = this.getProcessKey('mysql', version);
+    if (this.processes.has(processKey)) {
+      console.log(`MySQL ${version} is already running`);
+      return;
+    }
 
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'mysql', version, 'data');
@@ -1534,10 +1554,12 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
     // Check if MySQL data directory needs initialization
     const isInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
+    let needsCredentialSync = false;
 
     if (!isInitialized) {
       try {
         await this.initializeMySQLData(mysqlPath, dataDir);
+        needsCredentialSync = true; // Mark for credential sync after startup
       } catch (error) {
         console.error('MySQL initialization failed:', error.message);
         const status = this.serviceStatus.get('mysql');
@@ -1625,6 +1647,11 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       await this.waitForService('mysql', 30000);
       status.status = 'running';
       status.startedAt = Date.now();
+      
+      // If this was a fresh initialization, sync credentials from settings
+      if (needsCredentialSync) {
+        await this.syncMySQLCredentials(version, port);
+      }
     } catch (error) {
       console.error(`MySQL ${version} failed to start:`, error.message);
       status.status = 'error';
@@ -1632,6 +1659,372 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       // Clean up the runningVersions entry on failure
       this.runningVersions.get('mysql').delete(version);
     }
+  }
+
+  /**
+   * Sync credentials to all initialized database versions.
+   * Called when user changes credentials in Settings.
+   * This updates credentials in all versions so they all use the same password.
+   */
+  async syncCredentialsToAllVersions(newUser, newPassword, oldPassword = '') {
+    const results = { mysql: [], mariadb: [] };
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    
+    // Get all initialized MySQL versions
+    const mysqlDataPath = path.join(dataPath, 'mysql');
+    if (await fs.pathExists(mysqlDataPath)) {
+      const mysqlVersions = await fs.readdir(mysqlDataPath);
+      for (const version of mysqlVersions) {
+        const dataDir = path.join(mysqlDataPath, version, 'data', 'mysql');
+        if (await fs.pathExists(dataDir)) {
+          try {
+            await this.syncCredentialsForMySQLVersion(version, newUser, newPassword, oldPassword);
+            results.mysql.push({ version, success: true });
+          } catch (error) {
+            results.mysql.push({ version, success: false, error: error.message });
+          }
+        }
+      }
+    }
+    
+    // Get all initialized MariaDB versions
+    const mariadbDataPath = path.join(dataPath, 'mariadb');
+    if (await fs.pathExists(mariadbDataPath)) {
+      const mariadbVersions = await fs.readdir(mariadbDataPath);
+      for (const version of mariadbVersions) {
+        const dataDir = path.join(mariadbDataPath, version, 'data', 'mysql');
+        if (await fs.pathExists(dataDir)) {
+          try {
+            await this.syncCredentialsForMariaDBVersion(version, newUser, newPassword, oldPassword);
+            results.mariadb.push({ version, success: true });
+          } catch (error) {
+            results.mariadb.push({ version, success: false, error: error.message });
+          }
+        }
+      }
+    }
+    
+    return results;
+  }
+  
+  /**
+   * Sync credentials to a specific MySQL version.
+   * Tries to connect with old password first, then updates to new password.
+   * If old password fails, uses skip-grant-tables to reset.
+   */
+  async syncCredentialsForMySQLVersion(version, newUser, newPassword, oldPassword = '') {
+    console.log(`Syncing credentials for MySQL ${version}...`);
+    
+    const mysqlPath = this.getMySQLPath(version);
+    const clientPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysql.exe' : 'mysql');
+    
+    if (!await fs.pathExists(clientPath)) {
+      throw new Error(`MySQL ${version} client not found`);
+    }
+    
+    // Check if this version is currently running
+    const isRunning = this.runningVersions.get('mysql')?.has(version);
+    const versionInfo = this.runningVersions.get('mysql')?.get(version);
+    let port = versionInfo?.port;
+    let wasRunning = isRunning;
+    let startedForSync = false;
+    
+    // If not running, we need to start it temporarily
+    if (!isRunning) {
+      console.log(`MySQL ${version}: Starting temporarily for credential sync...`);
+      await this.startMySQLWithSkipGrant(version);
+      startedForSync = true;
+      // Get the port it started on
+      port = this.runningVersions.get('mysql')?.get(version)?.port || this.serviceConfigs.mysql.actualPort;
+      
+      // Wait for it to be ready
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    
+    try {
+      if (startedForSync) {
+        // Started with skip-grant-tables, can update directly without auth
+        await this.updateMySQLCredentials(clientPath, port, newUser, newPassword, '');
+      } else {
+        // Try with old password first
+        try {
+          await this.updateMySQLCredentials(clientPath, port, newUser, newPassword, oldPassword);
+        } catch (error) {
+          // Old password didn't work, need to restart with skip-grant-tables
+          console.log(`MySQL ${version}: Old password failed, restarting with skip-grant-tables...`);
+          await this.stopService('mysql', version);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          await this.startMySQLWithSkipGrant(version);
+          port = this.runningVersions.get('mysql')?.get(version)?.port || this.serviceConfigs.mysql.actualPort;
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          await this.updateMySQLCredentials(clientPath, port, newUser, newPassword, '');
+          startedForSync = true; // Mark so we restart normally at the end
+        }
+      }
+      
+      console.log(`MySQL ${version}: Credentials updated successfully`);
+    } finally {
+      // If we started with skip-grant-tables, restart normally
+      if (startedForSync) {
+        console.log(`MySQL ${version}: Restarting normally...`);
+        await this.stopService('mysql', version);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        if (wasRunning) {
+          // Was running before, start it back up normally
+          await this.startMySQLDirect(version);
+        }
+      }
+    }
+  }
+  
+  /**
+   * Sync credentials to a specific MariaDB version.
+   */
+  async syncCredentialsForMariaDBVersion(version, newUser, newPassword, oldPassword = '') {
+    console.log(`Syncing credentials for MariaDB ${version}...`);
+    
+    const mariadbPath = this.getMariaDBPath(version);
+    const clientPath = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mysql.exe' : 'mysql');
+    
+    if (!await fs.pathExists(clientPath)) {
+      throw new Error(`MariaDB ${version} client not found`);
+    }
+    
+    // Check if this version is currently running
+    const isRunning = this.runningVersions.get('mariadb')?.has(version);
+    const versionInfo = this.runningVersions.get('mariadb')?.get(version);
+    let port = versionInfo?.port;
+    let wasRunning = isRunning;
+    let startedForSync = false;
+    
+    // If not running, we need to start it temporarily
+    if (!isRunning) {
+      console.log(`MariaDB ${version}: Starting temporarily for credential sync...`);
+      await this.startMariaDBWithSkipGrant(version);
+      startedForSync = true;
+      port = this.runningVersions.get('mariadb')?.get(version)?.port || this.serviceConfigs.mariadb.actualPort;
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    
+    try {
+      if (startedForSync) {
+        await this.updateMySQLCredentials(clientPath, port, newUser, newPassword, '');
+      } else {
+        try {
+          await this.updateMySQLCredentials(clientPath, port, newUser, newPassword, oldPassword);
+        } catch (error) {
+          console.log(`MariaDB ${version}: Old password failed, restarting with skip-grant-tables...`);
+          await this.stopService('mariadb', version);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          await this.startMariaDBWithSkipGrant(version);
+          port = this.runningVersions.get('mariadb')?.get(version)?.port || this.serviceConfigs.mariadb.actualPort;
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          await this.updateMySQLCredentials(clientPath, port, newUser, newPassword, '');
+          startedForSync = true;
+        }
+      }
+      
+      console.log(`MariaDB ${version}: Credentials updated successfully`);
+    } finally {
+      if (startedForSync) {
+        console.log(`MariaDB ${version}: Restarting normally...`);
+        await this.stopService('mariadb', version);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        if (wasRunning) {
+          await this.startMariaDBDirect(version);
+        }
+      }
+    }
+  }
+  
+  /**
+   * Update MySQL/MariaDB credentials using the mysql client
+   */
+  async updateMySQLCredentials(clientPath, port, newUser, newPassword, currentPassword) {
+    const escapedPassword = newPassword.replace(/'/g, "''");
+    const queries = [
+      `ALTER USER '${newUser}'@'localhost' IDENTIFIED BY '${escapedPassword}'`,
+      `ALTER USER '${newUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}'`,
+      `FLUSH PRIVILEGES`,
+    ];
+    
+    for (const query of queries) {
+      await this.runMySQLQuery(clientPath, port, newUser, currentPassword, query);
+    }
+  }
+  
+  // Create init file for MySQL credential reset
+  async createMySQLCredentialResetInitFile(user, password) {
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const initFile = path.join(dataPath, 'mysql_credential_reset.sql');
+    
+    const escapedPassword = password.replace(/'/g, "''");
+    const sql = `
+-- Reset credentials
+ALTER USER '${user}'@'localhost' IDENTIFIED BY '${escapedPassword}';
+ALTER USER '${user}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';
+FLUSH PRIVILEGES;
+`;
+    
+    await fs.writeFile(initFile, sql);
+    return initFile;
+  }
+
+  // Sync credentials from settings to a newly initialized MySQL instance
+  async syncMySQLCredentials(version, port) {
+    const settings = this.configStore?.get('settings', {});
+    const dbUser = settings.dbUser || 'root';
+    const dbPassword = settings.dbPassword || '';
+    
+    // If no password is set in settings, nothing to sync
+    if (!dbPassword) {
+      console.log(`MySQL ${version}: No password in settings, skipping credential sync`);
+      return;
+    }
+    
+    console.log(`MySQL ${version}: Syncing credentials from settings...`);
+    
+    try {
+      const mysqlPath = this.getMySQLPath(version);
+      const clientPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysql.exe' : 'mysql');
+      
+      if (!await fs.pathExists(clientPath)) {
+        console.error(`MySQL client not found at ${clientPath}`);
+        return;
+      }
+      
+      // Connect without password (fresh install) and set the password
+      const queries = [
+        `ALTER USER '${dbUser}'@'localhost' IDENTIFIED BY '${dbPassword.replace(/'/g, "''")}'`,
+        `ALTER USER '${dbUser}'@'127.0.0.1' IDENTIFIED BY '${dbPassword.replace(/'/g, "''")}' `,
+        `FLUSH PRIVILEGES`,
+      ];
+      
+      for (const query of queries) {
+        await this.runMySQLQuery(clientPath, port, dbUser, '', query);
+      }
+      
+      console.log(`MySQL ${version}: Credentials synced successfully`);
+    } catch (error) {
+      console.error(`MySQL ${version}: Failed to sync credentials:`, error.message);
+      // Don't throw - the database is still usable, just with default credentials
+    }
+  }
+  
+  // Helper to run a MySQL query
+  async runMySQLQuery(clientPath, port, user, password, query) {
+    return new Promise((resolve, reject) => {
+      const args = [
+        `-h127.0.0.1`,
+        `-P${port}`,
+        `-u${user}`,
+        '-N',
+        '-B',
+        '-e',
+        query,
+      ];
+      
+      if (password) {
+        args.splice(3, 0, `-p${password}`);
+      }
+      
+      const proc = spawn(clientPath, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+      
+      let stderr = '';
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          // Ignore "Using a password" warnings
+          if (stderr.includes('ERROR')) {
+            reject(new Error(stderr));
+          } else {
+            resolve();
+          }
+        }
+      });
+      
+      proc.on('error', reject);
+    });
+  }
+
+  // Start MySQL directly without credential verification (used after credential reset to avoid infinite loop)
+  async startMySQLDirect(version = '8.4') {
+    const mysqlPath = this.getMySQLPath(version);
+    const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
+    
+    if (!await fs.pathExists(mysqldPath)) {
+      throw new Error(`MySQL ${version} binary not found`);
+    }
+
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataDir = path.join(dataPath, 'mysql', version, 'data');
+    const configPath = path.join(dataPath, 'mysql', version, 'my.cnf');
+    
+    // Find available port
+    const defaultPort = this.getVersionPort('mysql', version, this.serviceConfigs.mysql.defaultPort);
+    let port = defaultPort;
+    
+    if (!await isPortAvailable(port)) {
+      port = await findAvailablePort(defaultPort, 100);
+      if (!port) {
+        throw new Error(`Could not find available port for MySQL`);
+      }
+    }
+    
+    this.serviceConfigs.mysql.actualPort = port;
+    
+    // Update config with new port
+    await this.createMySQLConfig(configPath, dataDir, port, version);
+    
+    let proc;
+    if (process.platform === 'win32') {
+      proc = spawnHidden(mysqldPath, [`--defaults-file=${configPath}`], {
+        cwd: mysqlPath,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } else {
+      proc = spawn(mysqldPath, [`--defaults-file=${configPath}`], {
+        cwd: mysqlPath,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
+    }
+    
+    proc.stdout?.on('data', (data) => {
+      this.managers.log?.service('mysql', data.toString());
+    });
+    proc.stderr?.on('data', (data) => {
+      this.managers.log?.service('mysql', data.toString(), 'error');
+    });
+    proc.on('error', (error) => {
+      console.error('MySQL process error:', error);
+    });
+    proc.on('exit', (code) => {
+      const status = this.serviceStatus.get('mysql');
+      if (status.status === 'running') {
+        status.status = 'stopped';
+      }
+    });
+    
+    this.processes.set(this.getProcessKey('mysql', version), proc);
+    const status = this.serviceStatus.get('mysql');
+    status.port = port;
+    status.version = version;
+    
+    this.runningVersions.get('mysql').set(version, { port, startedAt: new Date() });
+
+    // Wait for MySQL to be ready
+    await this.waitForService('mysql', 30000);
+    status.status = 'running';
+    status.startedAt = Date.now();
   }
 
   async initializeMySQLData(mysqlPath, dataDir, version = '8.4') {
@@ -1725,8 +2118,12 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       return;
     }
 
-    // Kill any orphan MariaDB processes before starting
-    await this.killOrphanMariaDBProcesses();
+    // Check if this specific version is already running
+    const processKey = this.getProcessKey('mariadb', version);
+    if (this.processes.has(processKey)) {
+      console.log(`MariaDB ${version} is already running`);
+      return;
+    }
 
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'mariadb', version, 'data');
@@ -1747,9 +2144,11 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 
     // Check if MariaDB data directory needs initialization
     const isInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
+    let needsCredentialSync = false;
 
     if (!isInitialized) {
       await this.initializeMariaDBData(mariadbPath, dataDir);
+      needsCredentialSync = true; // Mark for credential sync after startup
     }
 
     const configPath = path.join(dataPath, 'mariadb', version, 'my.cnf');
@@ -1799,12 +2198,121 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       await this.waitForService('mariadb', 30000);
       status.status = 'running';
       status.startedAt = Date.now();
+      
+      // If this was a fresh initialization, sync credentials from settings
+      if (needsCredentialSync) {
+        await this.syncMariaDBCredentials(version, port);
+      }
     } catch (error) {
       console.error(`MariaDB ${version} failed to start:`, error.message);
       status.status = 'error';
       status.error = 'Failed to start within timeout. Check logs for details.';
       this.runningVersions.get('mariadb').delete(version);
     }
+  }
+
+  // Sync credentials from settings to a newly initialized MariaDB instance
+  async syncMariaDBCredentials(version, port) {
+    const settings = this.configStore?.get('settings', {});
+    const dbUser = settings.dbUser || 'root';
+    const dbPassword = settings.dbPassword || '';
+    
+    // If no password is set in settings, nothing to sync
+    if (!dbPassword) {
+      console.log(`MariaDB ${version}: No password in settings, skipping credential sync`);
+      return;
+    }
+    
+    console.log(`MariaDB ${version}: Syncing credentials from settings...`);
+    
+    try {
+      const mariadbPath = this.getMariaDBPath(version);
+      const clientPath = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mysql.exe' : 'mysql');
+      
+      if (!await fs.pathExists(clientPath)) {
+        console.error(`MariaDB client not found at ${clientPath}`);
+        return;
+      }
+      
+      // Connect without password (fresh install) and set the password
+      const queries = [
+        `ALTER USER '${dbUser}'@'localhost' IDENTIFIED BY '${dbPassword.replace(/'/g, "''")}'`,
+        `ALTER USER '${dbUser}'@'127.0.0.1' IDENTIFIED BY '${dbPassword.replace(/'/g, "''")}'`,
+        `FLUSH PRIVILEGES`,
+      ];
+      
+      for (const query of queries) {
+        await this.runMySQLQuery(clientPath, port, dbUser, '', query);
+      }
+      
+      console.log(`MariaDB ${version}: Credentials synced successfully`);
+    } catch (error) {
+      console.error(`MariaDB ${version}: Failed to sync credentials:`, error.message);
+    }
+  }
+
+  // Start MariaDB directly without credential verification (used after credential reset)
+  async startMariaDBDirect(version = '11.4') {
+    const mariadbPath = this.getMariaDBPath(version);
+    const mariadbd = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
+    
+    if (!await fs.pathExists(mariadbd)) {
+      throw new Error(`MariaDB ${version} binary not found`);
+    }
+
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataDir = path.join(dataPath, 'mariadb', version, 'data');
+    const configPath = path.join(dataPath, 'mariadb', version, 'my.cnf');
+    
+    // Find available port
+    const defaultPort = this.getVersionPort('mariadb', version, this.serviceConfigs.mariadb.defaultPort);
+    let port = defaultPort;
+    
+    if (!await isPortAvailable(port)) {
+      port = await findAvailablePort(defaultPort, 100);
+      if (!port) {
+        throw new Error(`Could not find available port for MariaDB`);
+      }
+    }
+    
+    this.serviceConfigs.mariadb.actualPort = port;
+    
+    // Update config
+    await this.createMariaDBConfig(configPath, dataDir, port, version);
+
+    const proc = spawn(mariadbd, [`--defaults-file=${configPath}`], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+      windowsHide: true,
+    });
+
+    proc.stdout.on('data', (data) => {
+      this.managers.log?.service('mariadb', data.toString());
+    });
+    proc.stderr.on('data', (data) => {
+      this.managers.log?.service('mariadb', data.toString(), 'error');
+    });
+    proc.on('error', (error) => {
+      console.error('MariaDB process error:', error);
+    });
+    proc.on('exit', (code) => {
+      const status = this.serviceStatus.get('mariadb');
+      if (status.status === 'running') {
+        status.status = 'stopped';
+      }
+    });
+
+    this.processes.set(this.getProcessKey('mariadb', version), proc);
+    const status = this.serviceStatus.get('mariadb');
+    status.pid = proc.pid;
+    status.port = port;
+    status.version = version;
+    
+    this.runningVersions.get('mariadb').set(version, { port, startedAt: new Date() });
+
+    await this.waitForService('mariadb', 30000);
+    status.status = 'running';
+    status.startedAt = Date.now();
   }
 
   async initializeMariaDBData(mariadbPath, dataDir, version = '11.4') {
@@ -2398,9 +2906,28 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
           : new Date(status.startedAt).getTime();
         uptime = Date.now() - startedAtTime;
       }
+      
+      // For versioned services, include all running versions
+      const runningVersionsMap = this.runningVersions.get(key);
+      let runningVersions = null;
+      if (runningVersionsMap && runningVersionsMap.size > 0) {
+        runningVersions = {};
+        for (const [version, info] of runningVersionsMap) {
+          const versionUptime = info.startedAt 
+            ? Date.now() - (info.startedAt instanceof Date ? info.startedAt.getTime() : new Date(info.startedAt).getTime())
+            : null;
+          runningVersions[version] = {
+            port: info.port,
+            startedAt: info.startedAt,
+            uptime: versionUptime,
+          };
+        }
+      }
+      
       result[key] = {
         ...status,
         uptime,
+        runningVersions, // Include all running versions info
       };
     }
     return result;

@@ -77,13 +77,14 @@ function Databases() {
       setResetForm({ user: info?.user || 'root', password: '' });
       
       // Auto-select first running database, or first installed one
-      const mysqlRunning = services?.mysql?.status === 'running' ? services.mysql.version : null;
-      const mariadbRunning = services?.mariadb?.status === 'running' ? services.mariadb.version : null;
+      // Get first running MySQL version from runningVersions
+      const mysqlRunningVersions = services?.mysql?.runningVersions ? Object.keys(services.mysql.runningVersions) : [];
+      const mariadbRunningVersions = services?.mariadb?.runningVersions ? Object.keys(services.mariadb.runningVersions) : [];
       
-      if (mysqlRunning) {
-        setSelectedDatabase({ type: 'mysql', version: mysqlRunning });
-      } else if (mariadbRunning) {
-        setSelectedDatabase({ type: 'mariadb', version: mariadbRunning });
+      if (mysqlRunningVersions.length > 0) {
+        setSelectedDatabase({ type: 'mysql', version: mysqlRunningVersions[0] });
+      } else if (mariadbRunningVersions.length > 0) {
+        setSelectedDatabase({ type: 'mariadb', version: mariadbRunningVersions[0] });
       } else {
         // Select first installed version
         const mysqlVersions = status?.mysql ? Object.entries(status.mysql).filter(([_, v]) => v?.installed).map(([ver]) => ver) : [];
@@ -107,9 +108,9 @@ function Databases() {
       return;
     }
     
-    // Check if the selected database version is running
+    // Check if the selected database version is running (using runningVersions)
     const serviceStatus = servicesStatus[selectedDatabase.type];
-    const isRunning = serviceStatus?.status === 'running' && serviceStatus?.version === selectedDatabase.version;
+    const isRunning = !!serviceStatus?.runningVersions?.[selectedDatabase.version];
     
     if (!isRunning) {
       setDatabases([]);
@@ -314,10 +315,9 @@ function Databases() {
     ...mariadbVersions.map(v => ({ type: 'mariadb', version: v, label: `MariaDB ${v}` })),
   ];
   
-  // Check if selected database version is running
+  // Check if selected database version is running (using runningVersions)
   const isSelectedRunning = selectedDatabase && 
-    servicesStatus[selectedDatabase.type]?.status === 'running' &&
-    servicesStatus[selectedDatabase.type]?.version === selectedDatabase.version;
+    !!servicesStatus[selectedDatabase.type]?.runningVersions?.[selectedDatabase.version];
   
   const selectedLabel = selectedDatabase 
     ? `${selectedDatabase.type === 'mysql' ? 'MySQL' : 'MariaDB'} ${selectedDatabase.version}`
@@ -434,12 +434,14 @@ function Databases() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {installedDatabases.map((db) => {
               const serviceStatus = servicesStatus[db.type];
-              const isRunning = serviceStatus?.status === 'running' && serviceStatus?.version === db.version;
+              // Check if this specific version is running using runningVersions
+              const versionInfo = serviceStatus?.runningVersions?.[db.version];
+              const isRunning = !!versionInfo;
               const isSelected = selectedDatabase?.type === db.type && selectedDatabase?.version === db.version;
               const versionKey = `${db.type}-${db.version}`;
               const isStarting = startingVersion === versionKey;
               const isStopping = stoppingVersion === versionKey;
-              const port = isRunning ? serviceStatus?.port : null;
+              const port = isRunning ? versionInfo?.port : null;
               
               return (
                 <div

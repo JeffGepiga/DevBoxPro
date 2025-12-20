@@ -377,6 +377,12 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return database.resetCredentials(user, password);
   });
 
+  // Sync credentials to all initialized database versions (MySQL + MariaDB)
+  // Called when user changes credentials in Settings
+  ipcMain.handle('database:syncCredentialsToAllVersions', async (event, newUser, newPassword, oldPassword) => {
+    return service.syncCredentialsToAllVersions(newUser, newPassword, oldPassword);
+  });
+
   // ============ SSL HANDLERS ============
   ipcMain.handle('ssl:getCertificates', async () => {
     return ssl.listCertificates();

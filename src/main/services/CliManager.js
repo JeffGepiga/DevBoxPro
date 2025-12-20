@@ -694,9 +694,6 @@ esac
       // Normalize the target path - remove trailing slashes
       const normalizedTarget = targetPath.replace(/[\\/]+$/, '');
       
-      // Use spawn with -File parameter to avoid complex escaping issues
-      const { spawn } = require('child_process');
-      
       // Create a simple inline script that checks the PATH
       const psScript = `
 $targetPath = '${normalizedTarget.replace(/'/g, "''")}'
@@ -711,8 +708,14 @@ if ($found) { 'FOUND' } else { 'NOTFOUND' }
       
       const child = spawn('powershell', ['-NoProfile', '-Command', psScript], {
         windowsHide: true,
-        timeout: 5000,
       });
+      
+      // Set a timeout manually
+      const timeout = setTimeout(() => {
+        child.kill();
+        console.error('PowerShell PATH check timed out');
+        resolve(false);
+      }, 5000);
       
       let stdout = '';
       let stderr = '';
@@ -726,11 +729,13 @@ if ($found) { 'FOUND' } else { 'NOTFOUND' }
       });
       
       child.on('error', (error) => {
+        clearTimeout(timeout);
         console.error('Error checking Windows PATH:', error);
         resolve(false);
       });
       
       child.on('close', (code) => {
+        clearTimeout(timeout);
         if (code !== 0) {
           console.error('PowerShell PATH check failed:', stderr);
           resolve(false);
