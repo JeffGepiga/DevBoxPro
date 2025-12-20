@@ -51,7 +51,7 @@ class DatabaseManager {
       throw new Error('Invalid database type. Must be "mysql" or "mariadb"');
     }
     this.configStore.setSetting('activeDatabaseType', dbType);
-    
+
     // If version provided, also set it
     if (version) {
       this.configStore.setSetting('activeDatabaseVersion', version);
@@ -59,7 +59,7 @@ class DatabaseManager {
     } else {
       console.log(`Active database type set to: ${dbType}`);
     }
-    
+
     return { success: true, type: dbType, version };
   }
 
@@ -83,7 +83,7 @@ class DatabaseManager {
     const dbType = this.getActiveDatabaseType();
     const version = this.getActiveDatabaseVersion();
     const settings = this.configStore.get('settings', {});
-    
+
     // Try to get the actual port from ServiceManager for the specific version
     if (this.managers.service) {
       // Check if the specific version is running
@@ -95,7 +95,7 @@ class DatabaseManager {
           return versionInfo.port;
         }
       }
-      
+
       // Version not running - calculate expected port based on version offset
       const serviceConfig = this.managers.service.serviceConfigs[dbType];
       const basePort = serviceConfig?.defaultPort || 3306;
@@ -104,7 +104,7 @@ class DatabaseManager {
       console.log(`${dbType} ${version} not running, expected port: ${expectedPort}`);
       return expectedPort;
     }
-    
+
     // Fallback to default port
     const defaultPort = dbType === 'mariadb' ? 3306 : (settings.mysqlPort || 3306);
     console.log(`${dbType} using fallback port: ${defaultPort}`);
@@ -115,7 +115,7 @@ class DatabaseManager {
   isServiceRunning(dbType = null, version = null) {
     const type = dbType || this.getActiveDatabaseType();
     const ver = version || this.getActiveDatabaseVersion();
-    
+
     if (this.managers.service) {
       const runningVersions = this.managers.service.runningVersions.get(type);
       if (runningVersions && runningVersions.has(ver)) {
@@ -125,87 +125,25 @@ class DatabaseManager {
     return false;
   }
 
-  // Reset database credentials by restarting with --init-file
-  // This is more reliable than skip-grant-tables + manual queries
+  // Reset database credentials by saving them to ConfigStore
+  // Credentials are applied when databases start via the init-file mechanism
   async resetCredentials(newUser = 'root', newPassword = '') {
-    const dbType = this.getActiveDatabaseType();
-    console.log(`Resetting ${dbType} credentials: user=${newUser}`);
+    console.log(`Saving database credentials to ConfigStore: user=${newUser}`);
 
     try {
-      // Check if service manager is available
-      if (!this.managers.service) {
-        throw new Error('Service manager not available');
-      }
-
-      // Force stop the database service (only the active version)
-      console.log(`Stopping ${dbType} for credential reset...`);
-      try {
-        await this.managers.service.stopService(dbType);
-      } catch (e) {
-        console.log(`Stop service warning: ${e.message}`);
-      }
-      
-      // Wait for service to fully stop
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Create init file with credential reset SQL
-      const initFilePath = await this.createCredentialResetInitFile(newUser, newPassword);
-      console.log(`Created init file: ${initFilePath}`);
-
-      // Start with skip-grant-tables AND init-file
-      console.log(`Starting ${dbType} with skip-grant-tables and init-file...`);
-      await this.managers.service.startServiceWithOptions(dbType, { 
-        skipGrantTables: true,
-        initFile: initFilePath
-      });
-      
-      // Wait for service to be fully ready and init file to execute
-      console.log('Waiting for init file to execute...');
-      await new Promise(resolve => setTimeout(resolve, 5000));
-
-      // Stop the service
-      console.log(`Stopping ${dbType} skip-grant-tables mode...`);
-      try {
-        await this.managers.service.stopService(dbType);
-      } catch (e) {
-        console.log(`Stop service warning: ${e.message}`);
-      }
-      
-      // Wait for service to fully stop
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Clean up init file
-      try {
-        await fs.remove(initFilePath);
-      } catch (e) {
-        console.log(`Could not remove init file: ${e.message}`);
-      }
-
-      // Restart normally
-      console.log(`Restarting ${dbType} normally...`);      await this.managers.service.startService(dbType);
-      
-      // Wait for service to start
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Save the new credentials in settings
+      // Save the new credentials in settings (ConfigStore is the source of truth)
       this.configStore.setSetting('dbUser', newUser);
       this.configStore.setSetting('dbPassword', newPassword);
 
-      // Update local config
+      // Update local config for immediate use
       this.dbConfig.user = newUser;
       this.dbConfig.password = newPassword;
 
-      console.log('Database credentials reset successfully');
+      console.log('Database credentials saved. They will be applied when databases are started/restarted.');
       return { success: true };
     } catch (error) {
-      console.error('Error resetting credentials:', error);
-      // Try to restart the service normally if something went wrong
-      try {
-        await this.managers.service?.startService(dbType);
-      } catch (e) {
-        console.error('Error restarting service:', e);
-      }
-      throw new Error(`Failed to reset credentials: ${error.message}`);
+      console.error('Error saving credentials:', error);
+      throw new Error(`Failed to save credentials: ${error.message}`);
     }
   }
 
@@ -214,10 +152,10 @@ class DatabaseManager {
     const dbType = this.getActiveDatabaseType();
     const dataPath = path.join(app.getPath('userData'), 'data');
     const initFilePath = path.join(dataPath, dbType, 'credential_reset.sql');
-    
+
     // Escape password for SQL
     const escapedPassword = newPassword.replace(/'/g, "''");
-    
+
     // Build SQL commands - these run with skip-grant-tables so no auth needed
     const sqlCommands = [
       `FLUSH PRIVILEGES;`,
@@ -232,10 +170,10 @@ class DatabaseManager {
       `GRANT ALL PRIVILEGES ON *.* TO '${newUser}'@'%' WITH GRANT OPTION;`,
       `FLUSH PRIVILEGES;`,
     ];
-    
+
     await fs.ensureDir(path.dirname(initFilePath));
     await fs.writeFile(initFilePath, sqlCommands.join('\n'), 'utf8');
-    
+
     return initFilePath;
   }
 
@@ -244,7 +182,7 @@ class DatabaseManager {
   async runDbQueryNoAuth(query, database = null) {
     const clientPath = this.getDbClientPath();
     const dbType = this.getActiveDatabaseType();
-    
+
     // Get the actual port from ServiceManager (skip-grant-tables mode uses same port)
     let port = 3306;
     if (this.managers.service) {
@@ -337,13 +275,13 @@ class DatabaseManager {
 
   async listDatabases() {
     const dbType = this.getActiveDatabaseType();
-    
+
     // Check if service is running first - just return empty array if not
     if (!this.isServiceRunning()) {
       console.log(`${dbType} service is not running, returning empty database list`);
       return [];
     }
-    
+
     const result = await this.runDbQuery('SHOW DATABASES');
     return result.map((row) => ({
       name: (row.Database || '').trim(),
@@ -354,33 +292,33 @@ class DatabaseManager {
   async createDatabase(name, version = null) {
     const safeName = this.sanitizeName(name);
     const dbType = this.getActiveDatabaseType();
-    
+
     // Check if service is running, if not try to start it
     if (!this.isServiceRunning()) {
       console.log(`${dbType} service is not running, attempting to start it...`);
-      
+
       if (this.managers.service) {
         try {
           // Use provided version, or fall back to settings
           let dbVersion = version;
           if (!dbVersion) {
             const settings = this.configStore.get('settings', {});
-            dbVersion = dbType === 'mariadb' 
+            dbVersion = dbType === 'mariadb'
               ? (settings.mariadbVersion || '11.4')
               : (settings.mysqlVersion || '8.4');
           }
-          
+
           console.log(`Starting ${dbType} version ${dbVersion}...`);
           await this.managers.service.startService(dbType, dbVersion);
-          
+
           // Wait a bit for the service to be ready
           await new Promise(resolve => setTimeout(resolve, 2000));
-          
+
           // Verify it's running now
           if (!this.isServiceRunning()) {
             throw new Error(`${dbType} service failed to start`);
           }
-          
+
           console.log(`${dbType} service started successfully`);
         } catch (startError) {
           console.error(`Failed to start ${dbType}:`, startError.message);
@@ -390,7 +328,7 @@ class DatabaseManager {
         throw new Error(`Cannot create database: ${dbType} service is not running. Please start it first.`);
       }
     }
-    
+
     await this.runDbQuery(`CREATE DATABASE IF NOT EXISTS \`${safeName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
     console.log(`Database created: ${safeName}`);
     return { success: true, name: safeName };
@@ -424,14 +362,14 @@ class DatabaseManager {
     }
 
     console.log(`Importing database: original="${databaseName}", sanitized="${safeName}", mode=${mode}`);
-    
+
     // Verify database exists before importing
     const databases = await this.listDatabases();
     const dbExists = databases.some(db => db.name === safeName || db.name === databaseName);
     if (!dbExists) {
       throw new Error(`Database '${databaseName}' does not exist. Please create it first.`);
     }
-    
+
     progressCallback?.({ status: 'starting', message: 'Starting import...' });
 
     const isGzipped = filePath.toLowerCase().endsWith('.gz');
@@ -458,7 +396,7 @@ class DatabaseManager {
         const fileStats = await fs.stat(filePath);
         const totalSize = fileStats.size;
         let processedBytes = 0;
-        
+
         progressCallback?.({ status: 'importing', message: 'Importing to database (streaming)...', progress: 0 });
 
         const args = [
@@ -466,11 +404,11 @@ class DatabaseManager {
           `-P${port}`,
           `-u${user}`,
         ];
-        
+
         if (password) {
           args.push(`-p${password}`);
         }
-        
+
         // Use sanitized database name (trimmed and safe)
         args.push(safeName);
 
@@ -486,7 +424,7 @@ class DatabaseManager {
 
         // Create read stream with progress tracking
         const readStream = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 }); // 64KB chunks
-        
+
         readStream.on('data', (chunk) => {
           processedBytes += chunk.length;
           const progress = Math.round((processedBytes / totalSize) * 100);
@@ -494,10 +432,10 @@ class DatabaseManager {
           if (progress % 5 === 0) {
             const sizeMB = (processedBytes / (1024 * 1024)).toFixed(1);
             const totalMB = (totalSize / (1024 * 1024)).toFixed(1);
-            progressCallback?.({ 
-              status: 'importing', 
+            progressCallback?.({
+              status: 'importing',
               message: `Importing... ${sizeMB}MB / ${totalMB}MB (${progress}%)`,
-              progress 
+              progress
             });
           }
         });
@@ -508,15 +446,15 @@ class DatabaseManager {
         // Set up the pipeline
         if (isGzipped) {
           progressCallback?.({ status: 'importing', message: 'Decompressing and importing (streaming)...', progress: 0 });
-          
+
           // Use streaming decompression - much faster and memory efficient
           const gunzip = zlib.createGunzip();
-          
+
           gunzip.on('error', (err) => {
             proc.stdin.end();
             reject(new Error(`Decompression error: ${err.message}`));
           });
-          
+
           readStream.pipe(gunzip).pipe(sqlProcessor).pipe(proc.stdin);
         } else {
           readStream.pipe(sqlProcessor).pipe(proc.stdin);
@@ -571,10 +509,10 @@ class DatabaseManager {
     return new Transform({
       transform(chunk, encoding, callback) {
         buffer += chunk.toString('utf8');
-        
+
         // Find the last complete statement
         let processUpTo = -1;
-        
+
         for (let i = buffer.length - 1; i >= 0; i--) {
           if (buffer[i] === ';') {
             const after = buffer.substring(i + 1, i + 20);
@@ -584,7 +522,7 @@ class DatabaseManager {
             }
           }
         }
-        
+
         if (processUpTo === -1) {
           if (buffer.length > 10 * 1024 * 1024) {
             console.log('[SQL Processor] Buffer too large, flushing');
@@ -594,42 +532,42 @@ class DatabaseManager {
           callback();
           return;
         }
-        
+
         let toProcess = buffer.substring(0, processUpTo + 1);
         buffer = buffer.substring(processUpTo + 1);
-        
+
         // First pass: Find and modify CREATE TABLE statements
         toProcess = toProcess.replace(
           /CREATE TABLE\s+`(\w+)`\s*\(([\s\S]*?)\)\s*(ENGINE[\s\S]*?;)/gi,
           (match, tableName, tableDefinition, enginePart) => {
             const tableNameLower = tableName.toLowerCase();
-            
+
             // Split by lines and process
             const lines = tableDefinition.split('\n');
             const filteredLines = [];
             let columnIndex = 0;
             const virtualIndices = [];
-            
+
             for (let i = 0; i < lines.length; i++) {
               const line = lines[i];
               const trimmed = line.trim();
-              
+
               // Skip empty lines
               if (!trimmed) {
                 continue;
               }
-              
+
               // Keep PRIMARY KEY, KEY, CONSTRAINT, etc. as-is
               if (/^(PRIMARY KEY|KEY|UNIQUE KEY|CONSTRAINT|FOREIGN KEY|INDEX|CHECK)\b/i.test(trimmed)) {
                 filteredLines.push(trimmed);
                 continue;
               }
-              
+
               // Check if this is a column definition
               const colMatch = trimmed.match(/^`(\w+)`/);
               if (colMatch) {
                 const columnName = colMatch[1];
-                
+
                 // Check if it's a virtual/generated column
                 if (/GENERATED\s+ALWAYS\s+AS|AS\s*\(.*\)\s*(VIRTUAL|STORED)/i.test(trimmed)) {
                   virtualIndices.push(columnIndex);
@@ -638,21 +576,21 @@ class DatabaseManager {
                   // Don't add this line
                   continue;
                 }
-                
+
                 columnIndex++;
               }
-              
+
               filteredLines.push(trimmed);
             }
-            
+
             if (virtualIndices.length > 0) {
               generatedColumns.set(tableNameLower, virtualIndices);
               console.log(`[SQL Processor] Table '${tableName}' has ${virtualIndices.length} generated columns removed`);
-              
+
               // Rebuild with proper commas
               // Remove trailing commas from all lines first
               const cleanedLines = filteredLines.map(line => line.replace(/,\s*$/, ''));
-              
+
               // Add commas to all lines except the last one
               const finalLines = cleanedLines.map((line, idx) => {
                 if (idx < cleanedLines.length - 1) {
@@ -660,52 +598,52 @@ class DatabaseManager {
                 }
                 return '  ' + line;
               });
-              
+
               const newDefinition = '\n' + finalLines.join('\n') + '\n';
               return `CREATE TABLE \`${tableName}\` (${newDefinition}) ${enginePart}`;
             }
-            
+
             return match;
           }
         );
-        
+
         // Second pass: Process INSERT statements
         const insertRegex = /INSERT INTO `(\w+)` VALUES\s*/gi;
         let lastIndex = 0;
         let result = '';
         let insertMatch;
-        
+
         while ((insertMatch = insertRegex.exec(toProcess)) !== null) {
           const tableName = insertMatch[1].toLowerCase();
           const virtualIndices = generatedColumns.get(tableName);
-          
+
           result += toProcess.substring(lastIndex, insertMatch.index);
-          
+
           if (!virtualIndices || virtualIndices.length === 0) {
             result += insertMatch[0];
             lastIndex = insertRegex.lastIndex;
             continue;
           }
-          
+
           console.log(`[SQL Processor] Processing INSERT for ${insertMatch[1]}, removing positions: ${virtualIndices.join(', ')}`);
-          
+
           const valuesStart = insertRegex.lastIndex;
           let valuesEnd = toProcess.indexOf(';', valuesStart);
           if (valuesEnd === -1) valuesEnd = toProcess.length;
-          
+
           const valuesSection = toProcess.substring(valuesStart, valuesEnd);
           const processedValues = self.removeColumnsFromValues(valuesSection, virtualIndices);
-          
+
           result += `INSERT INTO \`${insertMatch[1]}\` VALUES ${processedValues}`;
           lastIndex = valuesEnd;
         }
-        
+
         result += toProcess.substring(lastIndex);
-        
+
         this.push(result);
         callback();
       },
-      
+
       flush(callback) {
         if (buffer.trim()) {
           console.log('[SQL Processor] Flushing remaining buffer');
@@ -722,21 +660,21 @@ class DatabaseManager {
    */
   removeColumnsFromValues(valuesSection, indicesToRemove) {
     if (indicesToRemove.length === 0) return valuesSection;
-    
+
     // Parse value sets using proper state machine
     const valueSets = this.parseValueSets(valuesSection);
-    
+
     console.log(`[SQL Processor] Parsed ${valueSets.length} value sets, removing indices: ${indicesToRemove.join(', ')}`);
-    
+
     // Process each value set
     const processedSets = valueSets.map((valueSet, setIdx) => {
       const values = this.splitValues(valueSet);
-      
+
       if (setIdx === 0) {
         console.log(`[SQL Processor] First value set has ${values.length} values, removing ${indicesToRemove.length} at indices: ${indicesToRemove.join(',')}`);
         console.log(`[SQL Processor] Values preview: ${values.slice(0, 3).map(v => v.substring(0, 20)).join(' | ')} ...`);
       }
-      
+
       // Filter out the generated column indices
       const filteredValues = [];
       for (let i = 0; i < values.length; i++) {
@@ -744,14 +682,14 @@ class DatabaseManager {
           filteredValues.push(values[i]);
         }
       }
-      
+
       if (setIdx === 0) {
         console.log(`[SQL Processor] After removal: ${filteredValues.length} values`);
       }
-      
+
       return '(' + filteredValues.join(',') + ')';
     });
-    
+
     return processedSets.join(',');
   }
 
@@ -765,25 +703,25 @@ class DatabaseManager {
     let inString = false;
     let stringChar = '';
     let i = 0;
-    
+
     while (i < valuesSection.length) {
       const char = valuesSection[i];
       const nextChar = valuesSection[i + 1] || '';
-      
+
       // Handle escape sequences in strings
       if (inString && char === '\\') {
         current += char + nextChar;
         i += 2;
         continue;
       }
-      
+
       // Handle doubled quotes (MySQL escape)
       if (inString && char === stringChar && nextChar === stringChar) {
         current += char + nextChar;
         i += 2;
         continue;
       }
-      
+
       // Toggle string state
       if ((char === "'" || char === '"') && !inString) {
         inString = true;
@@ -792,7 +730,7 @@ class DatabaseManager {
         i++;
         continue;
       }
-      
+
       if (inString && char === stringChar) {
         inString = false;
         stringChar = '';
@@ -800,7 +738,7 @@ class DatabaseManager {
         i++;
         continue;
       }
-      
+
       // Handle parentheses only when not in string
       if (!inString) {
         if (char === '(') {
@@ -814,7 +752,7 @@ class DatabaseManager {
           i++;
           continue;
         }
-        
+
         if (char === ')') {
           depth--;
           if (depth === 0) {
@@ -827,21 +765,21 @@ class DatabaseManager {
           i++;
           continue;
         }
-        
+
         // Skip commas between value sets (depth 0)
         if (char === ',' && depth === 0) {
           i++;
           continue;
         }
       }
-      
+
       // Add character if we're inside a value set
       if (depth > 0) {
         current += char;
       }
       i++;
     }
-    
+
     return valueSets;
   }
 
@@ -856,25 +794,25 @@ class DatabaseManager {
     let stringChar = '';
     let parenDepth = 0;
     let i = 0;
-    
+
     while (i < valueSet.length) {
       const char = valueSet[i];
       const nextChar = valueSet[i + 1] || '';
-      
+
       // Handle escape sequences
       if (inString && char === '\\') {
         current += char + nextChar;
         i += 2;
         continue;
       }
-      
+
       // Handle doubled quotes (MySQL escape)
       if (inString && char === stringChar && nextChar === stringChar) {
         current += char + nextChar;
         i += 2;
         continue;
       }
-      
+
       // Toggle string state
       if ((char === "'" || char === '"') && !inString) {
         inString = true;
@@ -883,7 +821,7 @@ class DatabaseManager {
         i++;
         continue;
       }
-      
+
       if (inString && char === stringChar) {
         inString = false;
         stringChar = '';
@@ -891,7 +829,7 @@ class DatabaseManager {
         i++;
         continue;
       }
-      
+
       // Track nested parentheses (for functions like NOW(), CONCAT())
       if (!inString) {
         if (char === '(') {
@@ -900,14 +838,14 @@ class DatabaseManager {
           i++;
           continue;
         }
-        
+
         if (char === ')') {
           parenDepth--;
           current += char;
           i++;
           continue;
         }
-        
+
         // Split on comma only when not in string and not in nested parens
         if (char === ',' && parenDepth === 0) {
           values.push(current);
@@ -916,16 +854,16 @@ class DatabaseManager {
           continue;
         }
       }
-      
+
       current += char;
       i++;
     }
-    
+
     // Don't forget the last value
     if (current !== '' || values.length > 0) {
       values.push(current);
     }
-    
+
     return values;
   }
 
@@ -936,18 +874,18 @@ class DatabaseManager {
     // Remove GENERATED/VIRTUAL column definitions from CREATE TABLE statements
     // These need to be added back separately via ALTER TABLE after data import
     const virtualColumnPattern = /`\w+`\s+\w+(?:\([^)]*\))?\s+(?:GENERATED ALWAYS )?AS\s*\([^)]+\)\s*(?:VIRTUAL|STORED)?(?:\s+(?:NOT NULL|NULL))?(?:\s+COMMENT\s+'[^']*')?,?\s*\n?/gi;
-    
+
     let processedSql = sql;
-    
+
     // Remove virtual columns from CREATE TABLE statements
     processedSql = processedSql.replace(virtualColumnPattern, '');
-    
+
     // Clean up any trailing commas before closing parenthesis in CREATE TABLE
     processedSql = processedSql.replace(/,(\s*\n?\s*\))/g, '$1');
-    
+
     // Remove any double newlines
     processedSql = processedSql.replace(/\n\n+/g, '\n');
-    
+
     return processedSql;
   }
 
@@ -982,11 +920,11 @@ class DatabaseManager {
         '--quick',
         '--lock-tables=false',
       ];
-      
+
       if (password) {
         args.push(`-p${password}`);
       }
-      
+
       args.push(safeName);
 
       progressCallback?.({ status: 'dumping', message: 'Creating database dump...' });
@@ -1004,7 +942,7 @@ class DatabaseManager {
 
       let stderr = '';
       let dataReceived = false;
-      
+
       proc.stdout.on('data', () => {
         if (!dataReceived) {
           dataReceived = true;
@@ -1015,8 +953,8 @@ class DatabaseManager {
       proc.stderr.on('data', (data) => {
         const msg = data.toString();
         // Filter out common warnings that aren't errors
-        if (!msg.includes('Using a password on the command line') && 
-            !msg.includes('Warning:')) {
+        if (!msg.includes('Using a password on the command line') &&
+          !msg.includes('Warning:')) {
           stderr += msg;
         }
       });
@@ -1050,8 +988,10 @@ class DatabaseManager {
     const clientPath = this.getDbClientPath();
     const port = this.getActualPort();
     const settings = this.configStore.get('settings', {});
-    const user = settings.dbUser || this.dbConfig.user;
-    const password = settings.dbPassword || this.dbConfig.password;
+    // Use settings if present, otherwise fall back to dbConfig
+    // Note: checks for undefined because empty string is a valid password
+    const user = settings.dbUser !== undefined ? settings.dbUser : this.dbConfig.user;
+    const password = settings.dbPassword !== undefined ? settings.dbPassword : this.dbConfig.password;
 
     // Check if client exists
     if (!fs.existsSync(clientPath)) {
@@ -1121,10 +1061,10 @@ class DatabaseManager {
         } else {
           // Provide helpful error message for access denied errors
           if (stderr.includes('Access denied') || stderr.includes('1045')) {
-            const hint = password 
-              ? 'The stored credentials may be incorrect.' 
-              : 'No password is configured in DevBox Pro settings.';
-            reject(new Error(`Database access denied for user '${user}'. ${hint} Go to Settings > Database to update credentials, or use "Reset Credentials" to reset them.`));
+            const hint = password
+              ? 'The stored credentials may be incorrect.'
+              : 'The database may have a password set but none is configured in settings.';
+            reject(new Error(`Database access denied for user '${user}'. ${hint} You may need to restart the database or check Settings > Network.`));
           } else {
             reject(new Error(`Query failed: ${stderr}`));
           }
@@ -1150,21 +1090,21 @@ class DatabaseManager {
     try {
       // Get list of all tables
       const tables = await this.getTables(databaseName);
-      
+
       if (tables.length === 0) {
         console.log(`No tables to drop in ${databaseName}`);
         return;
       }
-      
+
       console.log(`Dropping ${tables.length} tables in ${databaseName}...`);
-      
+
       // Build a single SQL statement with foreign key checks disabled
       // This ensures everything runs in the same session
       const dropStatements = tables.map(table => `DROP TABLE IF EXISTS \`${table}\``).join('; ');
       const combinedSql = `SET FOREIGN_KEY_CHECKS = 0; ${dropStatements}; SET FOREIGN_KEY_CHECKS = 1;`;
-      
+
       await this.runDbQuery(combinedSql, databaseName);
-      
+
       console.log(`All ${tables.length} tables dropped from ${databaseName}`);
     } catch (error) {
       console.error(`Error dropping tables in ${databaseName}:`, error);
@@ -1209,7 +1149,7 @@ class DatabaseManager {
     const dbType = this.getActiveDatabaseType();
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const binName = process.platform === 'win32' ? 'mysql.exe' : 'mysql';
-    
+
     // Get the running version from ServiceManager
     let version = null;
     if (this.managers.service) {
@@ -1218,7 +1158,7 @@ class DatabaseManager {
         version = serviceStatus.version;
       }
     }
-    
+
     // Use version in path if available
     if (version) {
       const versionPath = path.join(this.resourcePath, dbType, version, platform, 'bin', binName);
@@ -1227,7 +1167,7 @@ class DatabaseManager {
       }
       console.log(`[DatabaseManager] MySQL client not found at version path: ${versionPath}`);
     }
-    
+
     // Fallback: Try to find any available mysql client
     const dbTypePath = path.join(this.resourcePath, dbType);
     if (fs.existsSync(dbTypePath)) {
@@ -1236,7 +1176,7 @@ class DatabaseManager {
           const binPath = path.join(dbTypePath, v, platform, 'bin', binName);
           return fs.existsSync(binPath);
         });
-        
+
         if (versions.length > 0) {
           // Prefer newer versions (sort descending)
           versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
@@ -1248,7 +1188,7 @@ class DatabaseManager {
         console.error(`[DatabaseManager] Error scanning for MySQL client:`, e.message);
       }
     }
-    
+
     // Last resort fallback to old path structure (without version)
     return path.join(this.resourcePath, dbType, platform, 'bin', binName);
   }
@@ -1258,7 +1198,7 @@ class DatabaseManager {
     const dbType = this.getActiveDatabaseType();
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const binName = process.platform === 'win32' ? 'mysqldump.exe' : 'mysqldump';
-    
+
     // Get the running version from ServiceManager
     let version = null;
     if (this.managers.service) {
@@ -1267,7 +1207,7 @@ class DatabaseManager {
         version = serviceStatus.version;
       }
     }
-    
+
     // Use version in path if available
     if (version) {
       const versionPath = path.join(this.resourcePath, dbType, version, platform, 'bin', binName);
@@ -1276,7 +1216,7 @@ class DatabaseManager {
       }
       console.log(`[DatabaseManager] mysqldump not found at version path: ${versionPath}`);
     }
-    
+
     // Fallback: Try to find any available mysqldump
     const dbTypePath = path.join(this.resourcePath, dbType);
     if (fs.existsSync(dbTypePath)) {
@@ -1285,7 +1225,7 @@ class DatabaseManager {
           const binPath = path.join(dbTypePath, v, platform, 'bin', binName);
           return fs.existsSync(binPath);
         });
-        
+
         if (versions.length > 0) {
           // Prefer newer versions (sort descending)
           versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
@@ -1297,7 +1237,7 @@ class DatabaseManager {
         console.error(`[DatabaseManager] Error scanning for mysqldump:`, e.message);
       }
     }
-    
+
     // Last resort fallback to old path structure (without version)
     return path.join(this.resourcePath, dbType, platform, 'bin', binName);
   }

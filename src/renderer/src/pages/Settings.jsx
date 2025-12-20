@@ -43,6 +43,7 @@ function Settings() {
   };
 
   const handleSave = async () => {
+    if (saving) return; // Prevent re-submission
     setSaving(true);
     try {
       // Check if database credentials changed
@@ -51,19 +52,19 @@ function Settings() {
       const newUser = localSettings.dbUser || 'root';
       const newPassword = localSettings.dbPassword || '';
       const credentialsChanged = oldUser !== newUser || oldPassword !== newPassword;
-      
+
       // Save all settings
       for (const [key, value] of Object.entries(localSettings)) {
         await window.devbox?.settings.set(`settings.${key}`, value);
       }
-      
+
       // If credentials changed, sync to all database versions
       if (credentialsChanged) {
         try {
           console.log('Database credentials changed, syncing to all versions...');
           const result = await window.devbox?.database.syncCredentialsToAllVersions(newUser, newPassword, oldPassword);
           console.log('Credential sync result:', result);
-          
+
           // Check for any failures
           const allResults = [...(result?.mysql || []), ...(result?.mariadb || [])];
           const failures = allResults.filter(r => !r.success);
@@ -75,7 +76,7 @@ function Settings() {
           // Don't fail the whole save, just log the error
         }
       }
-      
+
       // Refresh settings in context so other components get the updated values
       await refreshSettings();
       setSaved(true);
@@ -311,10 +312,10 @@ function CliSettings({ settings, updateSetting }) {
       try {
         const status = await window.devbox?.cli?.getStatus();
         setCliStatus(status);
-        
+
         const currentAlias = await window.devbox?.cli?.getAlias();
         setAlias(currentAlias || 'dvp');
-        
+
         const instr = await window.devbox?.cli?.getInstructions();
         setInstructions(instr);
       } catch (error) {
@@ -330,7 +331,7 @@ function CliSettings({ settings, updateSetting }) {
     try {
       const result = await window.devbox?.cli?.install();
       setMessage({ type: 'success', text: `CLI tool installed successfully! Alias: ${result.alias}` });
-      
+
       // Refresh status
       const status = await window.devbox?.cli?.getStatus();
       setCliStatus(status);
@@ -349,7 +350,7 @@ function CliSettings({ settings, updateSetting }) {
     try {
       const result = await window.devbox?.cli?.addToPath();
       setMessage({ type: 'success', text: result.message + ' ' + result.note });
-      
+
       // Refresh status
       const status = await window.devbox?.cli?.getStatus();
       setCliStatus(status);
@@ -376,8 +377,8 @@ function CliSettings({ settings, updateSetting }) {
       const results = await window.devbox?.cli?.syncProjectConfigs();
       const success = results.filter(r => r.success).length;
       const failed = results.filter(r => !r.success).length;
-      setMessage({ 
-        type: failed > 0 ? 'warning' : 'success', 
+      setMessage({
+        type: failed > 0 ? 'warning' : 'success',
         text: `Synced ${success} project(s)${failed > 0 ? `, ${failed} failed` : ''}`
       });
     } catch (error) {
@@ -458,7 +459,7 @@ function CliSettings({ settings, updateSetting }) {
             )}
             {cliStatus?.installed ? 'Reinstall CLI' : 'Install CLI'}
           </button>
-          
+
           {cliStatus?.installed && !cliStatus?.inPath && (
             <button
               onClick={handleAddToPath}
@@ -589,35 +590,6 @@ function CliSettings({ settings, updateSetting }) {
 }
 
 function NetworkSettings({ settings, updateSetting }) {
-  const [resetting, setResetting] = useState(false);
-  const [resetSuccess, setResetSuccess] = useState(false);
-  const [resetError, setResetError] = useState(null);
-
-  const handleResetCredentials = async () => {
-    const user = settings.dbUser || 'root';
-    const password = settings.dbPassword || '';
-    
-    if (!user.trim()) {
-      setResetError('Username is required');
-      return;
-    }
-
-    setResetting(true);
-    setResetError(null);
-    setResetSuccess(false);
-    
-    try {
-      await window.devbox?.database.resetCredentials(user, password);
-      setResetSuccess(true);
-      setTimeout(() => setResetSuccess(false), 3000);
-    } catch (error) {
-      console.error('Error resetting credentials:', error);
-      setResetError(error.message);
-    } finally {
-      setResetting(false);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div className="card p-6">
@@ -627,8 +599,8 @@ function NetworkSettings({ settings, updateSetting }) {
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
           <p className="text-sm text-blue-700 dark:text-blue-300">
             <AlertCircle className="w-4 h-4 inline mr-1" />
-            <strong>Global credentials:</strong> This username and password is shared across all MySQL and MariaDB versions. 
-            When you click "Save Settings" at the top, credentials will be synced to all initialized database instances automatically.
+            <strong>Global credentials:</strong> This username and password is shared across all MySQL and MariaDB versions.
+            When you save, running databases will be restarted to apply the new credentials.
           </p>
         </div>
         <div className="space-y-4">
@@ -657,44 +629,7 @@ function NetworkSettings({ settings, updateSetting }) {
             </p>
           </div>
 
-          <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Locked out? Force reset credentials
-            </h4>
-            <button
-              onClick={handleResetCredentials}
-              disabled={resetting}
-              className="btn-secondary flex items-center gap-2"
-            >
-              {resetting ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  Resetting credentials...
-                </>
-              ) : (
-                <>
-                  <RotateCcw className="w-4 h-4" />
-                  Force Reset Database Credentials
-                </>
-              )}
-            </button>
-            <p className="text-xs text-gray-500 mt-2">
-              Use this if you're locked out and can't access the database. This will start the database in skip-grant-tables mode 
-              (bypasses authentication), reset the credentials, then restart normally. Works even if the database is not running.
-            </p>
-            {resetSuccess && (
-              <p className="text-sm text-green-600 dark:text-green-400 mt-2 flex items-center gap-1">
-                <CheckCircle className="w-4 h-4" />
-                Credentials reset successfully!
-              </p>
-            )}
-            {resetError && (
-              <p className="text-sm text-red-600 dark:text-red-400 mt-2 flex items-center gap-1">
-                <AlertCircle className="w-4 h-4" />
-                {resetError}
-              </p>
-            )}
-          </div>
+
         </div>
       </div>
 
@@ -789,11 +724,11 @@ function AppearanceSettings({ settings, updateSetting }) {
   // Apply theme when setting changes
   const handleThemeChange = (theme) => {
     updateSetting('theme', theme);
-    
+
     // Apply theme immediately
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const shouldBeDark = theme === 'dark' || (theme === 'system' && prefersDark);
-    
+
     if (shouldBeDark) {
       document.documentElement.classList.add('dark');
     } else {
@@ -824,7 +759,7 @@ function AppearanceSettings({ settings, updateSetting }) {
           ))}
         </div>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-3">
-          {settings.theme === 'system' 
+          {settings.theme === 'system'
             ? 'Theme follows your system preference'
             : `Using ${settings.theme} theme`}
         </p>
@@ -837,13 +772,13 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
   const [checkingBinaryUpdates, setCheckingBinaryUpdates] = useState(false);
   const [binaryUpdateResult, setBinaryUpdateResult] = useState(null);
   const [applyingBinaryUpdates, setApplyingBinaryUpdates] = useState(false);
-  
+
   const [checkingCompatibilityUpdates, setCheckingCompatibilityUpdates] = useState(false);
   const [compatibilityUpdateResult, setCompatibilityUpdateResult] = useState(null);
   const [applyingCompatibilityUpdates, setApplyingCompatibilityUpdates] = useState(false);
-  
+
   const [configInfo, setConfigInfo] = useState({ binaries: null, compatibility: null });
-  
+
   // Clear data modal state
   const [showClearDataModal, setShowClearDataModal] = useState(false);
   const [clearConfirmText, setClearConfirmText] = useState('');
@@ -923,14 +858,14 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
     // Check for correct confirmation text based on whether project files will be deleted
     const requiredConfirmText = clearProjectFiles ? 'DELETE ALL' : 'confirm';
     if (clearConfirmText !== requiredConfirmText) return;
-    
+
     setIsClearing(true);
     setClearResult(null);
-    
+
     try {
       const result = await window.devbox?.system?.clearAllData?.(clearProjectFiles);
       setClearResult({ success: true, message: result?.message || 'All data cleared successfully!' });
-      
+
       // Close modal after delay
       setTimeout(() => {
         setShowClearDataModal(false);
@@ -967,7 +902,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
           Check for updates to binary download URLs and compatibility rules from the DevBox Pro repository.
         </p>
-        
+
         {/* Binary Updates */}
         <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
           <div className="flex items-center justify-between mb-2">
@@ -1022,7 +957,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
           {binaryUpdateResult && (
             <div className={clsx(
               'mt-3 p-3 rounded-lg text-sm',
-              binaryUpdateResult.success 
+              binaryUpdateResult.success
                 ? binaryUpdateResult.hasUpdates
                   ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200'
                   : binaryUpdateResult.applied
@@ -1113,7 +1048,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
           {compatibilityUpdateResult && (
             <div className={clsx(
               'mt-3 p-3 rounded-lg text-sm',
-              compatibilityUpdateResult.success 
+              compatibilityUpdateResult.success
                 ? compatibilityUpdateResult.hasUpdates
                   ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200'
                   : compatibilityUpdateResult.applied
@@ -1261,7 +1196,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
                         ⚠️ DANGER: This will DELETE ALL your project source code!
                       </p>
                       <p className="text-sm text-red-700 dark:text-red-400 mt-2">
-                        All files in your project directories will be permanently deleted. 
+                        All files in your project directories will be permanently deleted.
                         This includes your source code, assets, databases, and any uncommitted changes.
                       </p>
                       <p className="text-sm font-semibold text-red-800 dark:text-red-300 mt-2">

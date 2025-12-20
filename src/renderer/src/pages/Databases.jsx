@@ -44,11 +44,21 @@ function Databases() {
     return () => clearInterval(interval);
   }, []);
 
+  // Note: Don't auto-load databases on selectedDatabase change alone
+  // because the active database type/version needs to be set first (via setActiveDatabaseType)
+  // Databases are loaded explicitly after setActiveDatabaseType completes in handleSelectDatabase
   useEffect(() => {
+    // Only reload if services status changes (e.g. a service starts/stops)
+    // This handles the case where user starts a stopped database version
     if (selectedDatabase) {
-      loadDatabases();
+      // Check if we need to reload due to running state change
+      const serviceStatus = servicesStatus[selectedDatabase.type];
+      const isRunning = !!serviceStatus?.runningVersions?.[selectedDatabase.version];
+      if (isRunning) {
+        loadDatabases();
+      }
     }
-  }, [selectedDatabase, servicesStatus]);
+  }, [servicesStatus]);
 
   const loadServicesStatus = async () => {
     try {
@@ -70,25 +80,41 @@ function Databases() {
       setBinariesStatus(status);
       setDbInfo(info);
       setServicesStatus(services || {});
-      
+
       // Auto-select first running database, or first installed one
       // Get first running MySQL version from runningVersions
       const mysqlRunningVersions = services?.mysql?.runningVersions ? Object.keys(services.mysql.runningVersions) : [];
       const mariadbRunningVersions = services?.mariadb?.runningVersions ? Object.keys(services.mariadb.runningVersions) : [];
-      
+
+      let autoSelectedType = null;
+      let autoSelectedVersion = null;
+
       if (mysqlRunningVersions.length > 0) {
-        setSelectedDatabase({ type: 'mysql', version: mysqlRunningVersions[0] });
+        autoSelectedType = 'mysql';
+        autoSelectedVersion = mysqlRunningVersions[0];
       } else if (mariadbRunningVersions.length > 0) {
-        setSelectedDatabase({ type: 'mariadb', version: mariadbRunningVersions[0] });
+        autoSelectedType = 'mariadb';
+        autoSelectedVersion = mariadbRunningVersions[0];
       } else {
         // Select first installed version
         const mysqlVersions = status?.mysql ? Object.entries(status.mysql).filter(([_, v]) => v?.installed).map(([ver]) => ver) : [];
         const mariadbVersions = status?.mariadb ? Object.entries(status.mariadb).filter(([_, v]) => v?.installed).map(([ver]) => ver) : [];
         if (mysqlVersions.length > 0) {
-          setSelectedDatabase({ type: 'mysql', version: mysqlVersions[0] });
+          autoSelectedType = 'mysql';
+          autoSelectedVersion = mysqlVersions[0];
         } else if (mariadbVersions.length > 0) {
-          setSelectedDatabase({ type: 'mariadb', version: mariadbVersions[0] });
+          autoSelectedType = 'mariadb';
+          autoSelectedVersion = mariadbVersions[0];
         }
+      }
+
+      // Set active type/version in backend (but don't query databases yet)
+      // Databases will be loaded when user explicitly clicks on a version or starts one
+      if (autoSelectedType && autoSelectedVersion) {
+        setSelectedDatabase({ type: autoSelectedType, version: autoSelectedVersion });
+        await window.devbox?.database.setActiveDatabaseType(autoSelectedType, autoSelectedVersion);
+        // Don't auto-query databases on startup - wait for user interaction
+        // This avoids credential mismatch errors on startup
       }
     } catch (error) {
       console.error('Error loading initial data:', error);
@@ -102,17 +128,17 @@ function Databases() {
       setLoading(false);
       return;
     }
-    
+
     // Check if the selected database version is running (using runningVersions)
     const serviceStatus = servicesStatus[selectedDatabase.type];
     const isRunning = !!serviceStatus?.runningVersions?.[selectedDatabase.version];
-    
+
     if (!isRunning) {
       setDatabases([]);
       setLoading(false);
       return;
     }
-    
+
     setLoading(true);
     setServiceError(null);
     try {
@@ -133,6 +159,13 @@ function Databases() {
     try {
       await window.devbox?.database.setActiveDatabaseType(type, version);
       setServiceError(null);
+      // Now load databases for this specific version
+      // Check if running first
+      const serviceStatus = servicesStatus[type];
+      const isRunning = !!serviceStatus?.runningVersions?.[version];
+      if (isRunning) {
+        await loadDatabases();
+      }
     } catch (error) {
       console.error('Error switching database:', error);
     }
@@ -149,6 +182,8 @@ function Databases() {
       // Auto-select this database after starting
       setSelectedDatabase({ type, version });
       await window.devbox?.database.setActiveDatabaseType(type, version);
+      // Load databases for the newly started version
+      await loadDatabases();
     } catch (error) {
       console.error('Error starting service:', error);
       setServiceError(`Failed to start ${type} ${version}: ${error.message}`);
@@ -206,7 +241,7 @@ function Databases() {
       const safeName = name.trim().replace(/[<>:"/\\|?*\r\n]/g, '_');
       // Use save dialog for export
       const filePath = await window.devbox?.system.saveFile({
-        defaultPath: `${safeName}_backup_${new Date().toISOString().slice(0,10)}.sql.gz`,
+        defaultPath: `${safeName}_backup_${new Date().toISOString().slice(0, 10)}.sql.gz`,
         filters: [
           { name: 'Compressed SQL', extensions: ['sql.gz', 'gz'] },
           { name: 'SQL Files', extensions: ['sql'] },
@@ -241,10 +276,10 @@ function Databases() {
 
   const executeImport = async (mode) => {
     if (!showImportModal) return;
-    
+
     const { dbName, filePath } = showImportModal;
     setShowImportModal(null);
-    
+
     try {
       setDatabaseOperation({ type: 'import', status: 'starting', message: 'Starting import...', dbName });
       await window.devbox?.database.importDatabase(dbName, filePath, mode);
@@ -278,21 +313,21 @@ function Databases() {
       .map(([version]) => version)
       .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
   };
-  
+
   const mysqlVersions = getInstalledVersions('mysql');
   const mariadbVersions = getInstalledVersions('mariadb');
-  
+
   // Build list of all installed database versions
   const installedDatabases = [
     ...mysqlVersions.map(v => ({ type: 'mysql', version: v, label: `MySQL ${v}` })),
     ...mariadbVersions.map(v => ({ type: 'mariadb', version: v, label: `MariaDB ${v}` })),
   ];
-  
+
   // Check if selected database version is running (using runningVersions)
-  const isSelectedRunning = selectedDatabase && 
+  const isSelectedRunning = selectedDatabase &&
     !!servicesStatus[selectedDatabase.type]?.runningVersions?.[selectedDatabase.version];
-  
-  const selectedLabel = selectedDatabase 
+
+  const selectedLabel = selectedDatabase
     ? `${selectedDatabase.type === 'mysql' ? 'MySQL' : 'MariaDB'} ${selectedDatabase.version}`
     : 'No database installed';
 
@@ -315,16 +350,16 @@ function Databases() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button 
-            onClick={openPhpMyAdmin} 
+          <button
+            onClick={openPhpMyAdmin}
             className="btn-secondary"
             disabled={!isSelectedRunning}
           >
             <ExternalLink className="w-4 h-4" />
             phpMyAdmin
           </button>
-          <button 
-            onClick={() => setShowCreateModal(true)} 
+          <button
+            onClick={() => setShowCreateModal(true)}
             className="btn-primary"
             disabled={!isSelectedRunning}
           >
@@ -338,11 +373,11 @@ function Databases() {
       {databaseOperation && (
         <div className={clsx(
           'card p-4 mb-6 border-2 flex items-center justify-between',
-          databaseOperation.status === 'error' 
-            ? 'border-red-400 bg-red-50 dark:bg-red-900/20' 
+          databaseOperation.status === 'error'
+            ? 'border-red-400 bg-red-50 dark:bg-red-900/20'
             : databaseOperation.status === 'complete'
-            ? 'border-green-400 bg-green-50 dark:bg-green-900/20'
-            : 'border-blue-400 bg-blue-50 dark:bg-blue-900/20'
+              ? 'border-green-400 bg-green-50 dark:bg-green-900/20'
+              : 'border-blue-400 bg-blue-50 dark:bg-blue-900/20'
         )}>
           <div className="flex items-center gap-3">
             {databaseOperation.status === 'error' ? (
@@ -358,8 +393,8 @@ function Databases() {
               </p>
               <p className={clsx(
                 'text-sm',
-                databaseOperation.status === 'error' 
-                  ? 'text-red-600 dark:text-red-400' 
+                databaseOperation.status === 'error'
+                  ? 'text-red-600 dark:text-red-400'
                   : 'text-gray-500 dark:text-gray-400'
               )}>
                 {databaseOperation.message}
@@ -398,7 +433,7 @@ function Databases() {
               Manage credentials in Settings → Network
             </span>
           </div>
-          
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {installedDatabases.map((db) => {
               const serviceStatus = servicesStatus[db.type];
@@ -410,7 +445,7 @@ function Databases() {
               const isStarting = startingVersion === versionKey;
               const isStopping = stoppingVersion === versionKey;
               const port = isRunning ? versionInfo?.port : null;
-              
+
               return (
                 <div
                   key={versionKey}
@@ -438,7 +473,7 @@ function Databases() {
                       </span>
                     )}
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     {isRunning ? (
                       <>
@@ -488,7 +523,7 @@ function Databases() {
               );
             })}
           </div>
-          
+
           {/* Connection info for selected running database */}
           {isSelectedRunning && dbInfo && (
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -504,7 +539,7 @@ function Databases() {
               </p>
             </div>
           )}
-          
+
           {serviceError && (
             <p className="text-sm text-red-600 dark:text-red-400 mt-3">
               {serviceError}
@@ -652,7 +687,7 @@ function Databases() {
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
               Choose how to import into <span className="font-medium text-gray-900 dark:text-white">{showImportModal.dbName}</span>
             </p>
-            
+
             <div className="space-y-3">
               <button
                 onClick={() => executeImport('clean')}
@@ -670,7 +705,7 @@ function Databases() {
                   </div>
                 </div>
               </button>
-              
+
               <button
                 onClick={() => executeImport('merge')}
                 className="w-full p-4 border-2 border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-left group"
@@ -688,7 +723,7 @@ function Databases() {
                 </div>
               </button>
             </div>
-            
+
             <div className="flex justify-end mt-6">
               <button
                 onClick={() => setShowImportModal(null)}

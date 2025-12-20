@@ -20,7 +20,7 @@ function spawnHidden(command, args, options = {}) {
       windowsHide: true,
       // Don't detach on Windows - it causes issues with console windows
     });
-    
+
     return proc;
   } else {
     return spawn(command, args, {
@@ -43,7 +43,7 @@ class ServiceManager extends EventEmitter {
     // Track which web server owns the standard ports (80/443)
     // First web server to start gets these ports
     this.standardPortOwner = null;
-    
+
     // Standard and alternate ports for web servers
     this.webServerPorts = {
       standard: { http: 80, https: 443 },
@@ -145,7 +145,7 @@ class ServiceManager extends EventEmitter {
         version: null,
         versioned: config.versioned || false,
       });
-      
+
       // Initialize running versions tracker
       if (config.versioned) {
         this.runningVersions.set(key, new Map()); // version -> { port, pid, startedAt }
@@ -154,22 +154,22 @@ class ServiceManager extends EventEmitter {
 
     // Ensure data directories exist for versioned services
     const dataPath = path.join(app.getPath('userData'), 'data');
-    
+
     // MySQL version directories
     for (const version of (SERVICE_VERSIONS.mysql || [])) {
       await fs.ensureDir(path.join(dataPath, 'mysql', version, 'data'));
     }
-    
+
     // MariaDB version directories
     for (const version of (SERVICE_VERSIONS.mariadb || [])) {
       await fs.ensureDir(path.join(dataPath, 'mariadb', version, 'data'));
     }
-    
+
     // Redis version directories
     for (const version of (SERVICE_VERSIONS.redis || [])) {
       await fs.ensureDir(path.join(dataPath, 'redis', version));
     }
-    
+
     // Nginx and Apache config directories
     await fs.ensureDir(path.join(dataPath, 'nginx'));
     await fs.ensureDir(path.join(dataPath, 'apache'));
@@ -268,21 +268,21 @@ class ServiceManager extends EventEmitter {
     const version = defaults[serviceName];
 
     if (options.skipGrantTables) {
-      
+
       if (serviceName === 'mysql') {
         await this.startMySQLWithSkipGrant(version, options.initFile);
       } else {
         await this.startMariaDBWithSkipGrant(version, options.initFile);
       }
-      
+
       const status = this.serviceStatus.get(serviceName);
       status.status = 'running';
       status.startedAt = new Date();
       status.version = version;
-      
+
       return { success: true, service: serviceName, version };
     }
-    
+
     // Otherwise use normal start
     return this.startService(serviceName, version);
   }
@@ -290,7 +290,7 @@ class ServiceManager extends EventEmitter {
   async startMySQLWithSkipGrant(version = '8.4', initFile = null) {
     const mysqlPath = this.getMySQLPath(version);
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
-    
+
     if (!await fs.pathExists(mysqldPath)) {
       throw new Error(`MySQL ${version} binary not found`);
     }
@@ -305,15 +305,15 @@ class ServiceManager extends EventEmitter {
 
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'mysql', version, 'data');
-    
+
     // Use the same port detection as normal start
     const defaultPort = this.getVersionPort('mysql', version, this.serviceConfigs.mysql.defaultPort);
     let port = defaultPort;
-    
+
     if (!await isPortAvailable(port)) {
       port = await findAvailablePort(defaultPort, 100);
     }
-    
+
     this.serviceConfigs.mysql.actualPort = port;
 
     // Create a temporary config with skip-grant-tables
@@ -333,14 +333,14 @@ class ServiceManager extends EventEmitter {
         detached: true,
       });
     }
-    
+
     // Track when MySQL reports ready
     let mysqlReady = false;
-    
+
     proc.stdout?.on('data', (data) => {
       // Capture but don't log to console
     });
-    
+
     proc.stderr?.on('data', (data) => {
       const output = data.toString().trim();
       // Check for ready message in stderr (MySQL logs to stderr)
@@ -348,12 +348,12 @@ class ServiceManager extends EventEmitter {
         mysqlReady = true;
       }
     });
-    
+
     this.processes.set(this.getProcessKey('mysql', version), proc);
     const status = this.serviceStatus.get('mysql');
     status.port = port;
     status.version = version;
-    
+
     this.runningVersions.get('mysql').set(version, { port, startedAt: new Date() });
 
     // Wait for MySQL to report ready via named pipe (since skip-grant-tables disables TCP)
@@ -369,32 +369,32 @@ class ServiceManager extends EventEmitter {
       await new Promise(resolve => setTimeout(resolve, 5000));
       return;
     }
-    
+
     const startTime = Date.now();
     const net = require('net');
     const fullPipePath = `\\\\.\\pipe\\${pipeName}`;
-    
+
     while (Date.now() - startTime < timeout) {
       try {
         await new Promise((resolve, reject) => {
           const socket = new net.Socket();
           socket.setTimeout(2000);
-          
+
           socket.on('connect', () => {
             socket.destroy();
             resolve(true);
           });
-          
+
           socket.on('timeout', () => {
             socket.destroy();
             reject(new Error('timeout'));
           });
-          
+
           socket.on('error', (err) => {
             socket.destroy();
             reject(err);
           });
-          
+
           socket.connect(fullPipePath);
         });
         return; // Pipe is ready
@@ -403,7 +403,7 @@ class ServiceManager extends EventEmitter {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
-    
+
     // If pipe check timed out, just continue anyway - MySQL might still be working
   }
 
@@ -411,28 +411,28 @@ class ServiceManager extends EventEmitter {
   async waitForPortReady(port, timeout = 30000) {
     const startTime = Date.now();
     const net = require('net');
-    
+
     while (Date.now() - startTime < timeout) {
       try {
         await new Promise((resolve, reject) => {
           const socket = new net.Socket();
           socket.setTimeout(1000);
-          
+
           socket.on('connect', () => {
             socket.destroy();
             resolve(true);
           });
-          
+
           socket.on('timeout', () => {
             socket.destroy();
             reject(new Error('timeout'));
           });
-          
+
           socket.on('error', (err) => {
             socket.destroy();
             reject(err);
           });
-          
+
           socket.connect(port, '127.0.0.1');
         });
         return; // Port is ready
@@ -447,10 +447,10 @@ class ServiceManager extends EventEmitter {
   async createMySQLConfigWithSkipGrant(configPath, dataDir, port, version = '8.4', initFile = null) {
     const mysqlPath = this.getMySQLPath(version);
     const isWindows = process.platform === 'win32';
-    
+
     // Build init-file line if provided
     const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
-    
+
     let config;
     if (isWindows) {
       config = `[mysqld]
@@ -488,7 +488,7 @@ port=${port}
 socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
 `;
     }
-    
+
     await fs.ensureDir(path.dirname(configPath));
     await fs.writeFile(configPath, config);
   }
@@ -496,7 +496,7 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
   async startMariaDBWithSkipGrant(version = '11.4', initFile = null) {
     const mariadbPath = this.getMariaDBPath(version);
     const mariadbd = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
-    
+
     if (!await fs.pathExists(mariadbd)) {
       throw new Error(`MariaDB ${version} binary not found`);
     }
@@ -511,20 +511,20 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
 
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'mariadb', version, 'data');
-    
+
     const defaultPort = this.getVersionPort('mariadb', version, this.serviceConfigs.mariadb.defaultPort);
     let port = defaultPort;
-    
+
     if (!await isPortAvailable(port)) {
       port = await findAvailablePort(defaultPort, 100);
     }
-    
+
     this.serviceConfigs.mariadb.actualPort = port;
 
     // Create a temporary config with skip-grant-tables
     const configPath = path.join(dataPath, 'mariadb', version, 'my_skipgrant.cnf');
     await this.createMariaDBConfigWithSkipGrant(configPath, dataDir, port, version, mariadbPath, initFile);
-    
+
     let proc;
     if (process.platform === 'win32') {
       proc = spawnHidden(mariadbd, [`--defaults-file=${configPath}`], {
@@ -538,20 +538,20 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
         detached: true,
       });
     }
-    
+
     proc.stdout?.on('data', (data) => {
       // Capture but don't log to console
     });
-    
+
     proc.stderr?.on('data', (data) => {
       // Capture but don't log to console
     });
-    
+
     this.processes.set(this.getProcessKey('mariadb', version), proc);
     const status = this.serviceStatus.get('mariadb');
     status.port = port;
     status.version = version;
-    
+
     this.runningVersions.get('mariadb').set(version, { port, startedAt: new Date() });
 
     // Wait for MariaDB to be ready via named pipe
@@ -562,10 +562,10 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
 
   async createMariaDBConfigWithSkipGrant(configPath, dataDir, port, version, mariadbPath, initFile = null) {
     const isWindows = process.platform === 'win32';
-    
+
     // Build init-file line if provided
     const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
-    
+
     let config;
     if (isWindows) {
       config = `[mysqld]
@@ -599,7 +599,7 @@ port=${port}
 socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 `;
     }
-    
+
     await fs.ensureDir(path.dirname(configPath));
     await fs.writeFile(configPath, config);
   }
@@ -624,7 +624,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       await this.killProcess(process);
       this.processes.delete(processKey);
     }
-    
+
     // Remove from running versions tracker
     if (config.versioned && version) {
       const versions = this.runningVersions.get(serviceName);
@@ -632,7 +632,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         versions.delete(version);
       }
     }
-    
+
     // For Nginx on Windows, also try to stop gracefully and kill any remaining workers
     if (serviceName === 'nginx' && require('os').platform() === 'win32') {
       try {
@@ -642,15 +642,15 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         const nginxExe = path.join(nginxPath, 'nginx.exe');
         const dataPath = path.join(app.getPath('userData'), 'data');
         const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
-        
+
         if (await fs.pathExists(nginxExe)) {
           const { execSync } = require('child_process');
-          
+
           // First check if nginx is actually running before trying to stop it
           let nginxRunning = false;
           try {
-            const result = execSync('tasklist /FI "IMAGENAME eq nginx.exe" /NH 2>nul', { 
-              windowsHide: true, 
+            const result = execSync('tasklist /FI "IMAGENAME eq nginx.exe" /NH 2>nul', {
+              windowsHide: true,
               timeout: 5000,
               encoding: 'utf8'
             });
@@ -659,11 +659,11 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
             // If tasklist fails, assume not running
             nginxRunning = false;
           }
-          
+
           // Only send stop signal if nginx is actually running
           if (nginxRunning) {
             try {
-              execSync(`"${nginxExe}" -s stop -c "${confPath}" 2>nul`, { 
+              execSync(`"${nginxExe}" -s stop -c "${confPath}" 2>nul`, {
                 cwd: nginxPath,
                 windowsHide: true,
                 timeout: 5000,
@@ -672,7 +672,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
             } catch (e) {
               // Ignore errors - process may already be dead
             }
-            
+
             // Kill any remaining nginx processes
             try {
               execSync('taskkill /F /IM nginx.exe 2>nul', { windowsHide: true, timeout: 5000, stdio: 'ignore' });
@@ -685,7 +685,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         console.warn('Error during Nginx cleanup:', error.message);
       }
     }
-    
+
     // For Apache on Windows, kill any remaining httpd processes
     if (serviceName === 'apache' && require('os').platform() === 'win32') {
       try {
@@ -699,7 +699,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         console.warn('Error during Apache cleanup:', error.message);
       }
     }
-    
+
     // Wait a moment for ports to be released
     await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -707,7 +707,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     if ((serviceName === 'nginx' || serviceName === 'apache') && this.standardPortOwner === serviceName) {
       this.standardPortOwner = null;
     }
-    
+
     // Clear actual port values so they get recalculated on next start
     if (serviceName === 'nginx' || serviceName === 'apache') {
       delete config.actualHttpPort;
@@ -745,7 +745,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
   async stopAllServices() {
     const results = [];
-    
+
     // First, stop all running projects
     if (this.managers.project) {
       try {
@@ -754,7 +754,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         console.error('Error stopping projects:', error);
       }
     }
-    
+
     // Stop all tracked processes first
     for (const [processKey, proc] of this.processes) {
       try {
@@ -764,12 +764,12 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       }
     }
     this.processes.clear();
-    
+
     // Clear all running versions tracking
     for (const [serviceName, versions] of this.runningVersions) {
       versions.clear();
     }
-    
+
     // Then stop all services (this also does cleanup)
     for (const serviceName of Object.keys(this.serviceConfigs)) {
       try {
@@ -779,12 +779,12 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         results.push({ service: serviceName, success: false, error: error.message });
       }
     }
-    
+
     // Force kill any remaining orphan processes on Windows
     if (process.platform === 'win32') {
       await this.forceKillOrphanProcesses();
     }
-    
+
     // Reset service statuses
     for (const [serviceName, status] of this.serviceStatus) {
       status.status = 'stopped';
@@ -792,10 +792,10 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       status.startedAt = null;
       status.version = null;
     }
-    
+
     // Reset port ownership
     this.standardPortOwner = null;
-    
+
     return results;
   }
 
@@ -805,22 +805,22 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
    */
   async forceKillOrphanProcesses() {
     const { execSync, exec } = require('child_process');
-    
+
     // First try to kill known service processes by image name
     const processesToKill = [
       'nginx.exe',
-      'httpd.exe', 
+      'httpd.exe',
       'mysqld.exe',
       'mariadbd.exe',
       'redis-server.exe',
       'mailpit.exe',
       'php-cgi.exe',
     ];
-    
+
     for (const processName of processesToKill) {
       try {
-        execSync(`taskkill /F /IM ${processName} 2>nul`, { 
-          windowsHide: true, 
+        execSync(`taskkill /F /IM ${processName} 2>nul`, {
+          windowsHide: true,
           timeout: 5000,
           stdio: 'ignore'
         });
@@ -828,7 +828,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         // Ignore - no processes to kill or already dead
       }
     }
-    
+
     // Kill PHP processes running from our resources path (for phpMyAdmin)
     const resourcesPath = this.resourcePath.replace(/\\/g, '\\\\');
     try {
@@ -836,11 +836,11 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       const wmicCmd = `wmic process where "name='php.exe' and commandline like '%${resourcesPath}%'" get processid 2>nul`;
       const result = execSync(wmicCmd, { windowsHide: true, timeout: 5000 }).toString();
       const pids = result.split('\\n').filter(line => /^\\d+$/.test(line.trim())).map(line => line.trim());
-      
+
       for (const pid of pids) {
         try {
           execSync(`taskkill /F /PID ${pid} 2>nul`, { windowsHide: true, timeout: 5000, stdio: 'ignore' });
-        } catch (e) {}
+        } catch (e) { }
       }
     } catch (e) {
       // Ignore errors
@@ -852,7 +852,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const nginxPath = this.getNginxPath(version);
     const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'nginx');
-    
+
     // Check if Nginx binary exists
     if (!await fs.pathExists(nginxExe)) {
       console.log(`Nginx ${version} binary not found. Please download Nginx from the Binary Manager.`);
@@ -865,15 +865,15 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     const dataPath = path.join(app.getPath('userData'), 'data');
     const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
     const logsPath = path.join(dataPath, 'nginx', 'logs');
-    
+
     // Determine which ports to use based on first-come-first-served
     let httpPort, sslPort;
-    
+
     if (this.standardPortOwner === null) {
       // No web server owns standard ports yet - try to claim them
       const standardHttp = this.webServerPorts.standard.http;
       const standardHttps = this.webServerPorts.standard.https;
-      
+
       if (await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps)) {
         // Claim standard ports
         httpPort = standardHttp;
@@ -893,7 +893,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       httpPort = this.webServerPorts.alternate.http;
       sslPort = this.webServerPorts.alternate.https;
     }
-    
+
     // Verify chosen ports are available, find alternatives if not
     if (!await isPortAvailable(httpPort)) {
       httpPort = await findAvailablePort(httpPort, 100);
@@ -901,23 +901,23 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         throw new Error(`Could not find available HTTP port for Nginx`);
       }
     }
-    
+
     if (!await isPortAvailable(sslPort)) {
       sslPort = await findAvailablePort(sslPort, 100);
       if (!sslPort) {
         throw new Error(`Could not find available HTTPS port for Nginx`);
       }
     }
-    
+
     // Store the actual ports being used
     this.serviceConfigs.nginx.actualHttpPort = httpPort;
     this.serviceConfigs.nginx.actualSslPort = sslPort;
-    
+
     // Ensure directories exist
     await fs.ensureDir(path.join(dataPath, 'nginx'));
     await fs.ensureDir(logsPath);
     await fs.ensureDir(path.join(dataPath, 'nginx', 'conf.d'));
-    
+
     // Ensure nginx temp directories exist (required on Windows)
     await fs.ensureDir(path.join(nginxPath, 'temp', 'client_body_temp'));
     await fs.ensureDir(path.join(nginxPath, 'temp', 'proxy_temp'));
@@ -933,7 +933,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     const testConfig = async () => {
       const { execSync } = require('child_process');
       try {
-        execSync(`"${nginxExe}" -t -c "${confPath}" -p "${nginxPath}"`, { 
+        execSync(`"${nginxExe}" -t -c "${confPath}" -p "${nginxPath}"`, {
           cwd: nginxPath,
           windowsHide: true,
           timeout: 10000,
@@ -947,37 +947,37 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         const stdout = configError.stdout || '';
         const message = configError.message || '';
         const errorMsg = `${stderr} ${stdout} ${message}`;
-        
+
         // Check for port binding errors (Windows error 10013 = permission denied, 10048 = already in use)
-        const portBindError = errorMsg.includes('10013') || errorMsg.includes('10048') || 
-                              errorMsg.includes('bind()') || errorMsg.includes('Address already in use');
+        const portBindError = errorMsg.includes('10013') || errorMsg.includes('10048') ||
+          errorMsg.includes('bind()') || errorMsg.includes('Address already in use');
         return { success: false, error: errorMsg, isPortError: portBindError };
       }
     };
 
     let testResult = await testConfig();
-    
+
     // If we got a port binding error, try alternate ports
     if (!testResult.success && testResult.isPortError) {
       // Always try alternate ports on port binding errors
       const newHttpPort = this.webServerPorts.alternate.http;
       const newSslPort = this.webServerPorts.alternate.https;
-      
+
       // Find available alternate ports
       let altHttpPort = newHttpPort;
       let altSslPort = newSslPort;
-      
+
       if (!await isPortAvailable(altHttpPort)) {
         altHttpPort = await findAvailablePort(altHttpPort, 100);
       }
       if (!await isPortAvailable(altSslPort)) {
         altSslPort = await findAvailablePort(altSslPort, 100);
       }
-      
+
       if (altHttpPort && altSslPort) {
         httpPort = altHttpPort;
         sslPort = altSslPort;
-        
+
         // Clear all existing vhost files - they have the old ports hardcoded
         // They will be regenerated when projects start
         const sitesDir = path.join(dataPath, 'nginx', 'sites');
@@ -991,23 +991,23 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         } catch (e) {
           // Sites dir may not exist yet
         }
-        
+
         // Update the config with new ports
         await this.createNginxConfig(confPath, logsPath, httpPort, sslPort, version);
-        
+
         // Update port ownership - we couldn't get standard ports
         if (this.standardPortOwner === 'nginx') {
           this.standardPortOwner = null;
         }
-        
+
         // Update actual ports
         this.serviceConfigs.nginx.actualHttpPort = httpPort;
         this.serviceConfigs.nginx.actualSslPort = sslPort;
-        
+
         testResult = await testConfig();
       }
     }
-    
+
     if (!testResult.success) {
       console.error('Nginx configuration test failed:', testResult.error);
       throw new Error(`Nginx configuration error: ${testResult.error}`);
@@ -1019,7 +1019,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         cwd: nginxPath,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-      
+
       proc.stdout?.on('data', (data) => {
         this.managers.log?.service('nginx', data.toString());
       });
@@ -1027,7 +1027,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       proc.stderr?.on('data', (data) => {
         this.managers.log?.service('nginx', data.toString(), 'error');
       });
-      
+
       proc.on('error', (error) => {
         console.error('Nginx process error:', error);
         const status = this.serviceStatus.get('nginx');
@@ -1076,7 +1076,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     status.port = httpPort;
     status.sslPort = sslPort;
     status.version = version;
-    
+
     // Track this version as running
     this.runningVersions.get('nginx').set(version, { port: httpPort, sslPort, startedAt: new Date() });
 
@@ -1101,7 +1101,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       const status = this.serviceStatus.get('nginx');
       version = status?.version || '1.28';
     }
-    
+
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const nginxPath = this.getNginxPath(version);
     const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'sbin/nginx');
@@ -1146,7 +1146,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       const status = this.serviceStatus.get('apache');
       version = status?.version || '2.4';
     }
-    
+
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const apachePath = this.getApachePath(version);
     const httpdExe = path.join(apachePath, 'bin', process.platform === 'win32' ? 'httpd.exe' : 'httpd');
@@ -1201,16 +1201,16 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     // Use getNginxPath to get the correct versioned path
     const nginxPath = this.getNginxPath(version);
     const mimeTypesPath = path.join(nginxPath, 'conf', 'mime.types').replace(/\\/g, '/');
-    
+
     // WebServerManager stores sites in userData/data/nginx/sites, so we need to match that path
     const webServerDataPath = dataPath;
     const sitesPath = path.join(webServerDataPath, 'nginx', 'sites').replace(/\\/g, '/');
     const pidPath = path.join(webServerDataPath, 'nginx', 'nginx.pid').replace(/\\/g, '/');
-    
+
     // Ensure sites directory exists
     await fs.ensureDir(path.join(webServerDataPath, 'nginx', 'sites'));
     await fs.ensureDir(path.join(webServerDataPath, 'nginx', 'logs'));
-    
+
     const config = `worker_processes 1;
 pid ${pidPath};
 error_log ${logsPath.replace(/\\/g, '/')}/error.log;
@@ -1257,7 +1257,7 @@ http {
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const apachePath = this.getApachePath(version);
     const httpdExe = path.join(apachePath, 'bin', process.platform === 'win32' ? 'httpd.exe' : 'httpd');
-    
+
     // Check if Apache binary exists
     if (!await fs.pathExists(httpdExe)) {
       console.log(`Apache ${version} binary not found. Please download Apache from the Binary Manager.`);
@@ -1270,7 +1270,7 @@ http {
     const dataPath = path.join(app.getPath('userData'), 'data');
     const confPath = path.join(dataPath, 'apache', 'httpd.conf');
     const logsPath = path.join(dataPath, 'apache', 'logs');
-    
+
     // Ensure directories exist
     await fs.ensureDir(path.join(dataPath, 'apache'));
     await fs.ensureDir(logsPath);
@@ -1279,12 +1279,12 @@ http {
 
     // Determine which ports to use based on first-come-first-served
     let httpPort, httpsPort;
-    
+
     if (this.standardPortOwner === null) {
       // No web server owns standard ports yet - try to claim them
       const standardHttp = this.webServerPorts.standard.http;
       const standardHttps = this.webServerPorts.standard.https;
-      
+
       if (await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps)) {
         // Claim standard ports
         httpPort = standardHttp;
@@ -1304,7 +1304,7 @@ http {
       httpPort = this.webServerPorts.alternate.http;
       httpsPort = this.webServerPorts.alternate.https;
     }
-    
+
     // Verify chosen ports are available, find alternatives if not
     if (!await isPortAvailable(httpPort)) {
       httpPort = await findAvailablePort(httpPort, 100);
@@ -1312,14 +1312,14 @@ http {
         throw new Error(`Could not find available HTTP port for Apache`);
       }
     }
-    
+
     if (!await isPortAvailable(httpsPort)) {
       httpsPort = await findAvailablePort(httpsPort, 100);
       if (!httpsPort) {
         throw new Error(`Could not find available HTTPS port for Apache`);
       }
     }
-    
+
     // Store the actual ports being used
     this.serviceConfigs.apache.actualHttpPort = httpPort;
     this.serviceConfigs.apache.actualSslPort = httpsPort;
@@ -1332,7 +1332,7 @@ http {
     const testConfig = async () => {
       const { execSync } = require('child_process');
       try {
-        execSync(`"${httpdExe}" -t -f "${confPath}"`, { 
+        execSync(`"${httpdExe}" -t -f "${confPath}"`, {
           cwd: apachePath,
           windowsHide: true,
           timeout: 10000,
@@ -1342,36 +1342,36 @@ http {
       } catch (configError) {
         const errorMsg = configError.stderr || configError.message || '';
         // Check for port binding errors (Windows error 10013 = permission denied, 10048 = already in use)
-        const portBindError = errorMsg.includes('10013') || errorMsg.includes('10048') || 
-                              errorMsg.includes('could not bind') || errorMsg.includes('Address already in use') ||
-                              errorMsg.includes('make_sock');
+        const portBindError = errorMsg.includes('10013') || errorMsg.includes('10048') ||
+          errorMsg.includes('could not bind') || errorMsg.includes('Address already in use') ||
+          errorMsg.includes('make_sock');
         return { success: false, error: errorMsg, isPortError: portBindError };
       }
     };
 
     let testResult = await testConfig();
-    
+
     // If we got a port binding error, try alternate ports
     if (!testResult.success && testResult.isPortError) {
       // Always try alternate ports on port binding errors
       const newHttpPort = this.webServerPorts.alternate.http;
       const newHttpsPort = this.webServerPorts.alternate.https;
-      
+
       // Find available alternate ports
       let altHttpPort = newHttpPort;
       let altHttpsPort = newHttpsPort;
-      
+
       if (!await isPortAvailable(altHttpPort)) {
         altHttpPort = await findAvailablePort(altHttpPort, 100);
       }
       if (!await isPortAvailable(altHttpsPort)) {
         altHttpsPort = await findAvailablePort(altHttpsPort, 100);
       }
-      
+
       if (altHttpPort && altHttpsPort) {
         httpPort = altHttpPort;
         httpsPort = altHttpsPort;
-        
+
         // Clear all existing vhost files - they have the old ports hardcoded
         // They will be regenerated when projects start
         const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
@@ -1385,28 +1385,28 @@ http {
         } catch (e) {
           // Vhosts dir may not exist yet
         }
-        
+
         // Update the config with new ports
         await this.createApacheConfig(apachePath, confPath, logsPath, httpPort, httpsPort);
-        
+
         // Update port ownership - we couldn't get standard ports
         if (this.standardPortOwner === 'apache') {
           this.standardPortOwner = null;
         }
-        
+
         // Update actual ports
         this.serviceConfigs.apache.actualHttpPort = httpPort;
         this.serviceConfigs.apache.actualSslPort = httpsPort;
-        
+
         testResult = await testConfig();
       }
     }
-    
+
     if (!testResult.success) {
       console.error('Apache configuration test failed:', testResult.error);
       throw new Error(`Apache configuration error: ${testResult.error}`);
     }
-    
+
     const proc = spawn(httpdExe, ['-f', confPath], {
       cwd: apachePath,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -1442,7 +1442,7 @@ http {
     status.port = httpPort;
     status.sslPort = httpsPort;
     status.version = version;
-    
+
     // Track this version as running
     this.runningVersions.get('apache').set(version, { port: httpPort, sslPort: httpsPort, startedAt: new Date() });
 
@@ -1463,7 +1463,7 @@ http {
   async createApacheConfig(apachePath, confPath, logsPath, httpPort = 8081, httpsPort = 8444) {
     const dataPath = path.join(app.getPath('userData'), 'data');
     const mimeTypesPath = path.join(apachePath, 'conf', 'mime.types').replace(/\\/g, '/');
-    
+
     const config = `ServerRoot "${apachePath.replace(/\\/g, '/')}"
 Listen ${httpPort}
 Listen ${httpsPort}
@@ -1515,7 +1515,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
   async startMySQL(version = '8.4') {
     const mysqlPath = this.getMySQLPath(version);
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
-    
+
     // Check if MySQL binary exists
     if (!await fs.pathExists(mysqldPath)) {
       console.log(`MySQL ${version} binary not found. Please download MySQL from the Binary Manager.`);
@@ -1534,18 +1534,18 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'mysql', version, 'data');
-    
+
     // Find available port dynamically based on version
     const defaultPort = this.getVersionPort('mysql', version, this.serviceConfigs.mysql.defaultPort);
     let port = defaultPort;
-    
+
     if (!await isPortAvailable(port)) {
       port = await findAvailablePort(defaultPort, 100);
       if (!port) {
         throw new Error(`Could not find available port for MySQL starting from ${defaultPort}`);
       }
     }
-    
+
     // Store the actual port being used
     this.serviceConfigs.mysql.actualPort = port;
 
@@ -1576,7 +1576,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     // Create MySQL config with init-file
     await fs.ensureDir(path.dirname(configPath));
     await this.createMySQLConfig(configPath, dataDir, port, version, initFile);
-    
+
     let proc;
     if (process.platform === 'win32') {
       // On Windows, use spawnHidden to run without console window
@@ -1584,7 +1584,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
         cwd: mysqlPath,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-      
+
       proc.stdout?.on('data', (data) => {
         this.managers.log?.service('mysql', data.toString());
       });
@@ -1592,7 +1592,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       proc.stderr?.on('data', (data) => {
         this.managers.log?.service('mysql', data.toString(), 'error');
       });
-      
+
       proc.on('error', (error) => {
         console.error('MySQL process error:', error);
         const status = this.serviceStatus.get('mysql');
@@ -1612,7 +1612,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
       });
-      
+
       proc.stdout.on('data', (data) => {
         this.managers.log?.service('mysql', data.toString());
       });
@@ -1620,7 +1620,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       proc.stderr.on('data', (data) => {
         this.managers.log?.service('mysql', data.toString(), 'error');
       });
-      
+
       proc.on('error', (error) => {
         console.error('MySQL process error:', error);
         const status = this.serviceStatus.get('mysql');
@@ -1635,12 +1635,12 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
         }
       });
     }
-    
+
     this.processes.set(this.getProcessKey('mysql', version), proc);
     const status = this.serviceStatus.get('mysql');
     status.port = port;
     status.version = version;
-    
+
     // Track this version as running
     this.runningVersions.get('mysql').set(version, { port, startedAt: new Date() });
 
@@ -1662,16 +1662,19 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
   /**
    * Sync credentials to all initialized database versions.
    * Called when user changes credentials in Settings.
-   * Credentials changed - restart running databases to apply new credentials from ConfigStore.
-   * Since credentials are now applied via init-file on startup, we just need to restart.
+   * Restarts running databases to apply new credentials from ConfigStore.
    */
   async syncCredentialsToAllVersions(newUser, newPassword, oldPassword = '') {
     const results = { mysql: [], mariadb: [] };
-    
-    // Restart any running MySQL versions to pick up new credentials
+
+    console.log(`Database credentials changed: user=${newUser}, password=${newPassword ? 'set' : 'empty'}`);
+
+    // Copy running versions to array BEFORE iterating (avoid modifying while iterating)
     const runningMySql = this.runningVersions.get('mysql');
-    if (runningMySql) {
-      for (const [version, info] of runningMySql.entries()) {
+    const mysqlVersionsToRestart = runningMySql ? Array.from(runningMySql.keys()) : [];
+
+    if (mysqlVersionsToRestart.length > 0) {
+      for (const version of mysqlVersionsToRestart) {
         try {
           console.log(`Restarting MySQL ${version} to apply new credentials...`);
           await this.stopService('mysql', version);
@@ -1683,12 +1686,16 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
           results.mysql.push({ version, success: false, error: error.message });
         }
       }
+    } else {
+      console.log('No running MySQL versions to restart.');
     }
-    
-    // Restart any running MariaDB versions to pick up new credentials
+
+    // Copy running versions to array BEFORE iterating
     const runningMariaDB = this.runningVersions.get('mariadb');
-    if (runningMariaDB) {
-      for (const [version, info] of runningMariaDB.entries()) {
+    const mariadbVersionsToRestart = runningMariaDB ? Array.from(runningMariaDB.keys()) : [];
+
+    if (mariadbVersionsToRestart.length > 0) {
+      for (const version of mariadbVersionsToRestart) {
         try {
           console.log(`Restarting MariaDB ${version} to apply new credentials...`);
           await this.stopService('mariadb', version);
@@ -1700,11 +1707,13 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
           results.mariadb.push({ version, success: false, error: error.message });
         }
       }
+    } else {
+      console.log('No running MariaDB versions to restart.');
     }
-    
+
     return results;
   }
-  
+
   /**
    * Update MySQL/MariaDB credentials using the mysql client
    */
@@ -1715,17 +1724,17 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       `ALTER USER '${newUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}'`,
       `FLUSH PRIVILEGES`,
     ];
-    
+
     for (const query of queries) {
       await this.runMySQLQuery(clientPath, port, newUser, currentPassword, query);
     }
   }
-  
+
   // Create init file for MySQL credential reset
   async createMySQLCredentialResetInitFile(user, password) {
     const dataPath = path.join(app.getPath('userData'), 'data');
     const initFile = path.join(dataPath, 'mysql_credential_reset.sql');
-    
+
     const escapedPassword = password.replace(/'/g, "''");
     const sql = `
 -- Reset credentials
@@ -1733,7 +1742,7 @@ ALTER USER '${user}'@'localhost' IDENTIFIED BY '${escapedPassword}';
 ALTER USER '${user}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';
 FLUSH PRIVILEGES;
 `;
-    
+
     await fs.writeFile(initFile, sql);
     return initFile;
   }
@@ -1751,25 +1760,38 @@ FLUSH PRIVILEGES;
   async createCredentialsInitFile(serviceName, version) {
     const dataPath = path.join(app.getPath('userData'), 'data');
     const initFile = path.join(dataPath, serviceName, version, 'credentials_init.sql');
-    
+
     // Get credentials from ConfigStore (the source of truth)
-    const settings = this.configStore?.get('settings', {});
+    const settings = this.configStore?.get('settings', {}) || {};
     const dbUser = settings.dbUser || 'root';
     const dbPassword = settings.dbPassword || '';
-    
+
     await fs.ensureDir(path.dirname(initFile));
-    
+
     const escapedPassword = dbPassword.replace(/'/g, "''");
-    
-    // SQL to ensure user has correct password
-    // Only update localhost - that's the only one guaranteed to exist
-    // The 127.0.0.1 user may not exist on fresh installs
+
+    // SQL to ensure user has correct password for both localhost and 127.0.0.1
+    // We need both because:
+    // - 'localhost' is used for socket/pipe connections  
+    // - '127.0.0.1' is used for TCP connections (which our queries use)
+    // Use DROP and CREATE to ensure clean slate (avoids issues with previous plugins/auth methods)
     const sql = `-- Auto-generated credentials from DevBox Pro ConfigStore
 -- This file runs on every startup to ensure credentials match settings
-ALTER USER '${dbUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';
+-- Drop users to ensure clean slate
+DROP USER IF EXISTS '${dbUser}'@'localhost';
+DROP USER IF EXISTS '${dbUser}'@'127.0.0.1';
+DROP USER IF EXISTS '${dbUser}'@'%';
+-- Create users with specified password
+CREATE USER '${dbUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';
+CREATE USER '${dbUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';
+CREATE USER '${dbUser}'@'%' IDENTIFIED BY '${escapedPassword}';
+-- Grant all privileges
+GRANT ALL PRIVILEGES ON *.* TO '${dbUser}'@'localhost' WITH GRANT OPTION;
+GRANT ALL PRIVILEGES ON *.* TO '${dbUser}'@'127.0.0.1' WITH GRANT OPTION;
+GRANT ALL PRIVILEGES ON *.* TO '${dbUser}'@'%' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 `;
-    
+
     await fs.writeFile(initFile, sql);
     return initFile;
   }
@@ -1786,21 +1808,21 @@ FLUSH PRIVILEGES;
         '-e',
         query,
       ];
-      
+
       if (password) {
         args.splice(3, 0, `-p${password}`);
       }
-      
+
       const proc = spawn(clientPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });
-      
+
       let stderr = '';
       proc.stderr.on('data', (data) => {
         stderr += data.toString();
       });
-      
+
       proc.on('close', (code) => {
         if (code === 0) {
           resolve();
@@ -1813,7 +1835,7 @@ FLUSH PRIVILEGES;
           }
         }
       });
-      
+
       proc.on('error', reject);
     });
   }
@@ -1822,7 +1844,7 @@ FLUSH PRIVILEGES;
   async startMySQLDirect(version = '8.4') {
     const mysqlPath = this.getMySQLPath(version);
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
-    
+
     if (!await fs.pathExists(mysqldPath)) {
       throw new Error(`MySQL ${version} binary not found`);
     }
@@ -1830,26 +1852,26 @@ FLUSH PRIVILEGES;
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'mysql', version, 'data');
     const configPath = path.join(dataPath, 'mysql', version, 'my.cnf');
-    
+
     // Find available port
     const defaultPort = this.getVersionPort('mysql', version, this.serviceConfigs.mysql.defaultPort);
     let port = defaultPort;
-    
+
     if (!await isPortAvailable(port)) {
       port = await findAvailablePort(defaultPort, 100);
       if (!port) {
         throw new Error(`Could not find available port for MySQL`);
       }
     }
-    
+
     this.serviceConfigs.mysql.actualPort = port;
-    
+
     // Create init-file with credentials from ConfigStore
     const initFile = await this.createCredentialsInitFile('mysql', version);
-    
+
     // Update config with new port and init-file
     await this.createMySQLConfig(configPath, dataDir, port, version, initFile);
-    
+
     let proc;
     if (process.platform === 'win32') {
       proc = spawnHidden(mysqldPath, [`--defaults-file=${configPath}`], {
@@ -1863,7 +1885,7 @@ FLUSH PRIVILEGES;
         detached: true,
       });
     }
-    
+
     proc.stdout?.on('data', (data) => {
       this.managers.log?.service('mysql', data.toString());
     });
@@ -1879,12 +1901,12 @@ FLUSH PRIVILEGES;
         status.status = 'stopped';
       }
     });
-    
+
     this.processes.set(this.getProcessKey('mysql', version), proc);
     const status = this.serviceStatus.get('mysql');
     status.port = port;
     status.version = version;
-    
+
     this.runningVersions.get('mysql').set(version, { port, startedAt: new Date() });
 
     // Wait for MySQL to be ready
@@ -1924,10 +1946,10 @@ FLUSH PRIVILEGES;
   async createMySQLConfig(configPath, dataDir, port, version = '8.4', initFile = null) {
     const isWindows = process.platform === 'win32';
     const mysqlPath = this.getMySQLPath(version);
-    
+
     // Build init-file line if provided (for applying credentials from ConfigStore)
     const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
-    
+
     let config;
     if (isWindows) {
       // Windows-specific config for MySQL
@@ -1975,7 +1997,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const mariadbPath = this.getMariaDBPath(version);
     const mariadbd = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
-    
+
     // Check if MariaDB binary exists
     if (!await fs.pathExists(mariadbd)) {
       console.log(`MariaDB ${version} binary not found. Please download MariaDB from the Binary Manager.`);
@@ -1994,18 +2016,18 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'mariadb', version, 'data');
-    
+
     // Find available port dynamically based on version
     const defaultPort = this.getVersionPort('mariadb', version, this.serviceConfigs.mariadb.defaultPort);
     let port = defaultPort;
-    
+
     if (!await isPortAvailable(port)) {
       port = await findAvailablePort(defaultPort, 100);
       if (!port) {
         throw new Error(`Could not find available port for MariaDB starting from ${defaultPort}`);
       }
     }
-    
+
     // Store the actual port being used
     this.serviceConfigs.mariadb.actualPort = port;
 
@@ -2058,7 +2080,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     status.pid = proc.pid;
     status.port = port;
     status.version = version;
-    
+
     // Track this version as running
     this.runningVersions.get('mariadb').set(version, { port, startedAt: new Date() });
 
@@ -2080,7 +2102,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
   async startMariaDBDirect(version = '11.4') {
     const mariadbPath = this.getMariaDBPath(version);
     const mariadbd = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
-    
+
     if (!await fs.pathExists(mariadbd)) {
       throw new Error(`MariaDB ${version} binary not found`);
     }
@@ -2088,23 +2110,23 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'mariadb', version, 'data');
     const configPath = path.join(dataPath, 'mariadb', version, 'my.cnf');
-    
+
     // Find available port
     const defaultPort = this.getVersionPort('mariadb', version, this.serviceConfigs.mariadb.defaultPort);
     let port = defaultPort;
-    
+
     if (!await isPortAvailable(port)) {
       port = await findAvailablePort(defaultPort, 100);
       if (!port) {
         throw new Error(`Could not find available port for MariaDB`);
       }
     }
-    
+
     this.serviceConfigs.mariadb.actualPort = port;
-    
+
     // Create init-file with credentials from ConfigStore
     const initFile = await this.createCredentialsInitFile('mariadb', version);
-    
+
     // Update config with init-file
     await this.createMariaDBConfig(configPath, dataDir, port, version, initFile);
 
@@ -2135,7 +2157,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     status.pid = proc.pid;
     status.port = port;
     status.version = version;
-    
+
     this.runningVersions.get('mariadb').set(version, { port, startedAt: new Date() });
 
     await this.waitForService('mariadb', 30000);
@@ -2146,7 +2168,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
   async initializeMariaDBData(mariadbPath, dataDir, version = '11.4') {
     // MariaDB uses mysql_install_db or mariadb-install-db
     const installDb = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadb-install-db.exe' : 'mariadb-install-db');
-    
+
     await fs.ensureDir(dataDir);
 
     return new Promise((resolve, reject) => {
@@ -2175,10 +2197,10 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     await fs.ensureDir(path.dirname(configPath));
     const isWindows = process.platform === 'win32';
     const mariadbPath = this.getMariaDBPath(version);
-    
+
     // Build init-file line if provided (for applying credentials from ConfigStore)
     const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
-    
+
     let config;
     if (isWindows) {
       // Windows-specific config - no socket, use TCP/IP and named pipe
@@ -2239,33 +2261,33 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
 
     const dataPath = path.join(app.getPath('userData'), 'data');
     const dataDir = path.join(dataPath, 'redis', version, 'data');
-    
+
     // Ensure data directory exists
     await fs.ensureDir(dataDir);
-    
+
     // Find available port dynamically based on version
     const defaultPort = this.getVersionPort('redis', version, this.serviceConfigs.redis.defaultPort);
     let port = defaultPort;
-    
+
     if (!await isPortAvailable(port)) {
       port = await findAvailablePort(defaultPort, 100);
       if (!port) {
         throw new Error(`Could not find available port for Redis starting from ${defaultPort}`);
       }
     }
-    
+
     // Store the actual port being used
     this.serviceConfigs.redis.actualPort = port;
 
     const configPath = path.join(dataPath, 'redis', version, 'redis.conf');
     await this.createRedisConfig(configPath, dataDir, port, version);
-    
+
     let proc;
     if (process.platform === 'win32') {
       proc = spawnHidden(redisServerPath, [configPath], {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-      
+
       proc.stdout?.on('data', (data) => {
         this.managers.log?.service('redis', data.toString());
       });
@@ -2292,7 +2314,7 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
     const status = this.serviceStatus.get('redis');
     status.port = port;
     status.version = version;
-    
+
     // Track this version as running
     this.runningVersions.get('redis').set(version, { port, startedAt: new Date() });
 
@@ -2340,24 +2362,24 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
     // Find available ports dynamically
     const defaultPort = this.serviceConfigs.mailpit.defaultPort;
     const defaultSmtpPort = this.serviceConfigs.mailpit.smtpPort;
-    
+
     let port = defaultPort;
     let smtpPort = defaultSmtpPort;
-    
+
     if (!await isPortAvailable(port)) {
       port = await findAvailablePort(defaultPort, 100);
       if (!port) {
         throw new Error(`Could not find available web port for Mailpit starting from ${defaultPort}`);
       }
     }
-    
+
     if (!await isPortAvailable(smtpPort)) {
       smtpPort = await findAvailablePort(defaultSmtpPort, 100);
       if (!smtpPort) {
         throw new Error(`Could not find available SMTP port for Mailpit starting from ${defaultSmtpPort}`);
       }
     }
-    
+
     // Store the actual ports being used
     this.serviceConfigs.mailpit.actualPort = port;
     this.serviceConfigs.mailpit.actualSmtpPort = smtpPort;
@@ -2367,7 +2389,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       proc = spawnHidden(mailpitBin, ['--listen', `127.0.0.1:${port}`, '--smtp', `127.0.0.1:${smtpPort}`], {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-      
+
       proc.stdout?.on('data', (data) => {
         this.managers.log?.service('mailpit', data.toString());
       });
@@ -2411,7 +2433,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
   async startPhpMyAdmin() {
     const phpManager = this.managers.php;
     const defaultPhp = phpManager.getDefaultVersion();
-    
+
     // Check if any PHP version is available
     const availableVersions = phpManager.getAvailableVersions().filter(v => v.available);
     if (availableVersions.length === 0) {
@@ -2432,7 +2454,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       status.error = 'PHP binary not found. Please download from Binary Manager.';
       return;
     }
-    
+
     // Check if PHP binary exists
     if (!await fs.pathExists(phpPath)) {
       console.log('PHP binary not found. Please download PHP from the Binary Manager.');
@@ -2454,7 +2476,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
     }
 
     const phpmyadminPath = path.join(this.resourcePath, 'phpmyadmin');
-    
+
     // Check if phpMyAdmin is installed
     if (!await fs.pathExists(phpmyadminPath)) {
       console.log('phpMyAdmin not found. Please download phpMyAdmin from the Binary Manager.');
@@ -2469,7 +2491,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
     const mysqlStatus = this.serviceStatus.get('mysql');
     const mariadbStatus = this.serviceStatus.get('mariadb');
     const hasDatabaseRunning = mysqlStatus?.status === 'running' || mariadbStatus?.status === 'running';
-    
+
     if (!hasDatabaseRunning) {
       // phpMyAdmin will start but may not be fully functional until a database is started
     }
@@ -2477,14 +2499,14 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
     // Find available port dynamically
     const defaultPort = this.serviceConfigs.phpmyadmin.defaultPort;
     let port = defaultPort;
-    
+
     if (!await isPortAvailable(port)) {
       port = await findAvailablePort(defaultPort, 100);
       if (!port) {
         throw new Error(`Could not find available port for phpMyAdmin starting from ${defaultPort}`);
       }
     }
-    
+
     // Store the actual port being used
     this.serviceConfigs.phpmyadmin.actualPort = port;
 
@@ -2496,7 +2518,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       proc = spawnHidden(phpPath, ['-S', `127.0.0.1:${port}`, '-t', phpmyadminPath, '-c', phpDir], {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-      
+
       proc.stdout?.on('data', (data) => {
         this.managers.log?.service('phpmyadmin', data.toString());
       });
@@ -2733,19 +2755,19 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       let uptime = null;
       if (status.startedAt) {
         // Handle both Date objects and ISO strings
-        const startedAtTime = status.startedAt instanceof Date 
-          ? status.startedAt.getTime() 
+        const startedAtTime = status.startedAt instanceof Date
+          ? status.startedAt.getTime()
           : new Date(status.startedAt).getTime();
         uptime = Date.now() - startedAtTime;
       }
-      
+
       // For versioned services, include all running versions
       const runningVersionsMap = this.runningVersions.get(key);
       let runningVersions = null;
       if (runningVersionsMap && runningVersionsMap.size > 0) {
         runningVersions = {};
         for (const [version, info] of runningVersionsMap) {
-          const versionUptime = info.startedAt 
+          const versionUptime = info.startedAt
             ? Date.now() - (info.startedAt instanceof Date ? info.startedAt.getTime() : new Date(info.startedAt).getTime())
             : null;
           runningVersions[version] = {
@@ -2755,7 +2777,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
           };
         }
       }
-      
+
       result[key] = {
         ...status,
         uptime,
@@ -2775,7 +2797,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
     if (!config) {
       return null;
     }
-    
+
     // If actual ports are set, use those
     if (config.actualHttpPort) {
       return {
@@ -2783,7 +2805,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
         sslPort: config.actualSslPort || config.sslPort,
       };
     }
-    
+
     // For web servers, predict ports based on port ownership
     if (serviceName === 'nginx' || serviceName === 'apache') {
       // Check who owns standard ports
@@ -2817,7 +2839,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
         };
       }
     }
-    
+
     // For non-web servers, use default ports
     return {
       httpPort: config.actualHttpPort || config.defaultPort,
