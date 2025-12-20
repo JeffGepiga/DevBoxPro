@@ -34,6 +34,7 @@ function BinaryManager() {
     downloading, 
     setDownloading: setDownloadingGlobal,
     setDownloadProgress: setProgressGlobal,
+    clearDownload,
   } = useApp();
   
   const [installed, setInstalled] = useState({
@@ -109,16 +110,56 @@ function BinaryManager() {
     }
   }, []);
 
+  // Force refresh installed binaries (always re-check from disk)
+  const forceRefreshInstalled = useCallback(async () => {
+    try {
+      // This calls getInstalledBinaries which checks if files exist on disk
+      const result = await window.devbox?.binaries.getInstalled();
+      if (result) {
+        setInstalled(result);
+      }
+      return result;
+    } catch (error) {
+      console.error('Error refreshing installed binaries:', error);
+      return null;
+    }
+  }, []);
+
+  // Clean up stale downloads when installed state changes
+  // This handles cases where the 'completed' event was missed
+  useEffect(() => {
+    if (Object.keys(downloading).length === 0) return;
+    
+    // Check each downloading item against installed binaries
+    Object.entries(downloading).forEach(([id, isDownloading]) => {
+      if (!isDownloading) return;
+      
+      const [type, version] = id.split('-');
+      let isInstalled = false;
+      
+      if (version) {
+        // Versioned binary (e.g., php-8.4, nodejs-20)
+        isInstalled = installed[type]?.[version] === true;
+      } else {
+        // Non-versioned binary (e.g., composer, mailpit)
+        isInstalled = installed[type] === true;
+      }
+      
+      // If binary is installed but still showing as downloading, clear it
+      if (isInstalled) {
+        console.log(`[BinaryManager] Clearing stale download for ${id} - already installed`);
+        clearDownload(id);
+      }
+    });
+  }, [installed, downloading, clearDownload]);
+
   useEffect(() => {
     const init = async () => {
       setLoading(true);
       
-      // Load each independently to prevent one failure from blocking all
-      try {
-        await loadInstalled();
-      } catch (error) {
-        console.error('Error loading installed binaries:', error);
-      }
+      // Always force refresh installed binaries when Binary tab is visited
+      // This ensures we detect if user manually deleted binaries
+      await forceRefreshInstalled();
       
       try {
         await loadDownloadUrls();
@@ -147,12 +188,12 @@ function BinaryManager() {
     // Download progress is now handled by AppContext - just refresh installed list on complete
     const unsubscribe = window.devbox?.binaries.onProgress((id, progressData) => {
       if (progressData.status === 'completed') {
-        loadInstalled();
+        forceRefreshInstalled();
       }
     });
 
     return () => unsubscribe?.();
-  }, [loadInstalled, loadDownloadUrls, loadServiceConfig]);
+  }, [forceRefreshInstalled, loadDownloadUrls, loadServiceConfig]);
 
   const handleSetWebServer = async (type) => {
     try {

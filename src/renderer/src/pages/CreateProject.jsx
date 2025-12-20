@@ -15,36 +15,66 @@ import {
   Download,
   Server,
   Layers,
+  Code,
 } from 'lucide-react';
 import clsx from 'clsx';
+
+// Framework icons as SVG components
+const LaravelIcon = ({ className }) => (
+  <svg viewBox="0 0 50 52" className={className} fill="currentColor">
+    <path d="M49.626 11.564a.809.809 0 0 1 .028.209v10.972a.8.8 0 0 1-.402.694l-9.209 5.302V39.25c0 .286-.152.55-.4.694L20.42 51.01c-.044.025-.092.041-.14.058-.018.006-.035.017-.054.022a.805.805 0 0 1-.41 0c-.022-.006-.042-.018-.063-.026-.044-.016-.09-.03-.132-.054L.402 39.944A.801.801 0 0 1 0 39.25V6.334c0-.072.01-.142.028-.21.006-.023.02-.044.028-.067.015-.042.029-.085.051-.124.015-.026.037-.047.055-.071.023-.032.044-.065.071-.093.023-.023.053-.04.079-.06.029-.024.055-.05.088-.069h.001l9.61-5.533a.802.802 0 0 1 .8 0l9.61 5.533h.002c.032.02.059.045.088.068.026.02.055.038.078.06.028.029.048.062.072.094.017.024.04.045.054.071.023.04.036.082.052.124.008.023.022.044.028.068a.809.809 0 0 1 .028.209v20.559l8.008-4.611v-10.51c0-.07.01-.141.028-.208.007-.024.02-.045.028-.068.016-.042.03-.085.052-.124.015-.026.037-.047.054-.071.024-.032.044-.065.072-.093.023-.023.052-.04.078-.06.03-.024.056-.05.088-.069h.001l9.611-5.533a.801.801 0 0 1 .8 0l9.61 5.533c.034.02.06.045.09.068.025.02.054.038.077.06.028.029.048.062.072.094.018.024.04.045.054.071.023.039.036.082.052.124.009.023.022.044.028.068zm-1.574 10.718v-9.124l-3.363 1.936-4.646 2.675v9.124l8.01-4.611zm-9.61 16.505v-9.13l-4.57 2.61-13.05 7.448v9.216l17.62-10.144zM1.602 7.719v31.068L19.22 48.93v-9.214l-9.204-5.209-.003-.002-.004-.002c-.031-.018-.057-.044-.086-.066-.025-.02-.054-.036-.076-.058l-.002-.003c-.026-.025-.044-.056-.066-.084-.02-.027-.044-.05-.06-.078l-.001-.003c-.018-.03-.029-.066-.042-.1-.013-.03-.03-.058-.038-.09v-.001c-.01-.038-.012-.078-.016-.117-.004-.03-.012-.06-.012-.09v-.002-21.481L4.965 9.654 1.602 7.72zm8.81-5.994L2.405 6.334l8.005 4.609 8.006-4.61-8.006-4.608zm4.164 28.764l4.645-2.674V7.719l-3.363 1.936-4.646 2.675v20.096l3.364-1.937zM39.243 7.164l-8.006 4.609 8.006 4.609 8.005-4.61-8.005-4.608zm-.801 10.605l-4.646-2.675-3.363-1.936v9.124l4.645 2.674 3.364 1.937v-9.124zM20.02 38.33l11.743-6.704 5.87-3.35-8-4.606-9.211 5.303-8.395 4.833 7.993 4.524z" />
+  </svg>
+);
+
+const SymfonyIcon = ({ className }) => (
+  <svg viewBox="0 0 512 512" className={className} fill="currentColor">
+    <path d="M256 8C119 8 8 119 8 256s111 248 248 248 248-111 248-248S393 8 256 8zm133.74 143.54c-11.47.41-19.4-6.45-19.77-16.87-.27-9.18 6.68-13.44 6.53-18.85-.23-6.55-10.16-6.82-12.87-6.67-39.78 1.29-48.59 57-58.89 113.85 21.43 3.15 36.65-.72 45.14-6.22 12-7.75-3.34-15.72-1.42-24.56 4-18.16 32.55-19 32 5.3-.36 17.86-25.92 41.81-77.6 35.7-10.76 59.52-18.35 115-58.2 161.72-29 34.46-58.4 39.82-71.58 40.26-24.65.85-41-12.31-41.58-29.84-.56-17 14.45-26.26 24.31-26.59 21.89-.75 30.12 25.67 14.88 34-12.09 9.71.11 12.61 2.05 12.55 10.42-.36 17.34-5.51 22.18-9 24-17.56 43.1-71.07 51.58-107.34-32.48-4.94-43.32-31.5-43.1-53.86.17-17.88 9.77-57.39 93.88-57.39 14.27 0 25.59 1.64 34.51 4.06 9.61-59.95 19-82.3 63.24-82.8 21.73-.25 33.67 9.52 33.83 25.06.33 31.55-50.83 34.9-50.24.03z"/>
+  </svg>
+);
+
+const WordPressIcon = ({ className }) => (
+  <svg viewBox="0 0 512 512" className={className} fill="currentColor">
+    <path d="M61.7 169.4l101.5 278C92.2 413 43.3 340.2 43.3 256c0-30.9 6.6-60.1 18.4-86.6zm337.9 75.9c0-26.3-9.4-44.5-17.5-58.7-10.8-17.5-20.9-32.4-20.9-49.9 0-19.6 14.8-37.8 35.7-37.8.9 0 1.8.1 2.8.2-37.9-34.7-88.3-55.9-143.7-55.9-74.3 0-139.7 38.1-177.8 95.9 5 .2 9.7.3 13.7.3 22.2 0 56.7-2.7 56.7-2.7 11.5-.7 12.8 16.2 1.4 17.5 0 0-11.5 1.3-24.3 2l77.5 230.4L249.8 247l-33.1-90.8c-11.5-.7-22.3-2-22.3-2-11.5-.7-10.1-18.2 1.3-17.5 0 0 35.1 2.7 56 2.7 22.2 0 56.7-2.7 56.7-2.7 11.5-.7 12.8 16.2 1.4 17.5 0 0-11.5 1.3-24.3 2l76.9 228.7 21.2-70.9c9-29.4 16-50.5 16-68.7zm-139.9 29.3l-63.8 185.5c19.1 5.6 39.2 8.7 60.1 8.7 24.8 0 48.5-4.3 70.6-12.1-.6-.9-1.1-1.9-1.5-2.9l-65.4-179.2zm183-120.7c.9 6.8 1.4 14 1.4 21.9 0 21.6-4 45.8-16.2 76.2l-65 187.9C426.2 403 468.7 334.5 468.7 256c0-37-9.4-71.8-26-102.1zM504 256c0 136.8-111.3 248-248 248C119.2 504 8 392.7 8 256 8 119.2 119.2 8 256 8c136.7 0 248 111.2 248 248zm-11.4 0c0-130.5-106.2-236.6-236.6-236.6C125.5 19.4 19.4 125.5 19.4 256S125.6 492.6 256 492.6c130.5 0 236.6-106.1 236.6-236.6z"/>
+  </svg>
+);
+
+const PhpIcon = ({ className }) => (
+  <svg viewBox="0 0 640 512" className={className} fill="currentColor">
+    <path d="M320 104.5c171.4 0 303.2 72.2 303.2 151.5S491.3 407.5 320 407.5c-171.4 0-303.2-72.2-303.2-151.5S148.7 104.5 320 104.5m0-16.8C143.3 87.7 0 163 0 256s143.3 168.3 320 168.3S640 349 640 256 496.7 87.7 320 87.7zM218.2 242.5c-7.9 40.5-35.8 36.3-70.1 36.3l13.7-70.6c38 0 63.8-4.1 56.4 34.3zM97.4 350.3h36.7l8.7-44.8c41.1 0 66.6 3 90.2-19.1 26.1-24 32.9-66.7 14.3-88.1-9.7-11.2-25.3-16.7-46.5-16.7h-70.7L97.4 350.3zm185.7-213.6h36.5l-8.7 44.8c31.5 0 60.7-2.3 74.8 10.7 14.8 13.6 7.7 31-8.3 113.1h-37c15.4-79.4 18.3-86 12.7-92-5.4-5.8-17.7-4.6-47.4-4.6l-18.8 96.6h-36.5l32.7-168.6zM505 242.5c-8 41.1-36.7 36.3-70.1 36.3l13.7-70.6c38.2 0 63.8-4.1 56.4 34.3zM384.2 350.3H421l8.7-44.8c43.2 0 67.1 2.5 90.2-19.1 26.1-24 32.9-66.7 14.3-88.1-9.7-11.2-25.3-16.7-46.5-16.7H417l-32.8 168.7z"/>
+  </svg>
+);
 
 const PROJECT_TYPES = [
   {
     id: 'laravel',
     name: 'Laravel',
     description: 'Full-stack PHP framework with Eloquent ORM',
-    icon: '🔴',
+    icon: LaravelIcon,
+    iconColor: 'text-red-500',
     features: ['Artisan CLI', 'Queue Workers', 'Scheduler'],
   },
   {
     id: 'symfony',
     name: 'Symfony',
     description: 'Professional PHP framework for web applications',
-    icon: '🟡',
+    icon: SymfonyIcon,
+    iconColor: 'text-yellow-500',
     features: ['Console Commands', 'Doctrine ORM'],
   },
   {
     id: 'wordpress',
     name: 'WordPress',
     description: 'Popular CMS for websites and blogs',
-    icon: '🔵',
+    icon: WordPressIcon,
+    iconColor: 'text-blue-500',
     features: ['WP-CLI Support', 'Multisite Ready'],
   },
   {
     id: 'custom',
     name: 'Custom PHP',
     description: 'Any PHP application or framework',
-    icon: '⚪',
+    icon: PhpIcon,
+    iconColor: 'text-indigo-500',
     features: ['Flexible Configuration'],
   },
 ];
@@ -342,11 +372,14 @@ function CreateProject() {
       case 0:
         return !!formData.type;
       case 1:
-        return !!formData.name && !!formData.path;
+        // Require name, path, and at least one PHP version installed
+        return !!formData.name && !!formData.path && binariesStatus.php.length > 0;
       case 2:
         return true;
       case 3:
-        return true;
+        // Require at least one web server installed
+        return (binariesStatus.nginx && binariesStatus.nginx.length > 0) || 
+               (binariesStatus.apache && binariesStatus.apache.length > 0);
       case 4:
         return true;
       default:
@@ -627,33 +660,38 @@ function StepProjectType({ formData, updateFormData }) {
       </p>
 
       <div className="grid grid-cols-2 gap-4">
-        {PROJECT_TYPES.map((type) => (
-          <button
-            key={type.id}
-            onClick={() => updateFormData({ type: type.id })}
-            className={clsx(
-              'p-6 rounded-xl border-2 text-left transition-all',
-              formData.type === type.id
-                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-            )}
-          >
-            <div className="text-3xl mb-3">{type.icon}</div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-              {type.name}
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-              {type.description}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {type.features.map((feature) => (
-                <span key={feature} className="badge badge-neutral">
-                  {feature}
-                </span>
-              ))}
-            </div>
-          </button>
-        ))}
+        {PROJECT_TYPES.map((type) => {
+          const IconComponent = type.icon;
+          return (
+            <button
+              key={type.id}
+              onClick={() => updateFormData({ type: type.id })}
+              className={clsx(
+                'p-6 rounded-xl border-2 text-left transition-all',
+                formData.type === type.id
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+              )}
+            >
+              <div className="mb-3">
+                <IconComponent className={clsx('w-10 h-10', type.iconColor)} />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                {type.name}
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                {type.description}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {type.features.map((feature) => (
+                  <span key={feature} className="badge badge-neutral">
+                    {feature}
+                  </span>
+                ))}
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -662,9 +700,12 @@ function StepProjectType({ formData, updateFormData }) {
 function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersions, setPathManuallySet, defaultProjectsPath, serviceConfig }) {
   // Use available versions if provided, otherwise fall back to config versions
   const allPhpVersions = serviceConfig?.versions?.php || [];
+  // Only show PHP versions that are actually installed
   const phpVersions = availablePhpVersions && availablePhpVersions.length > 0 
     ? allPhpVersions.filter(v => availablePhpVersions.includes(v))
-    : allPhpVersions;
+    : [];
+  const hasNoPhpInstalled = phpVersions.length === 0;
+  
   return (
     <div>
       <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
@@ -713,22 +754,34 @@ function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersi
 
         <div>
           <label className="label">PHP Version</label>
-          <div className="grid grid-cols-6 gap-2">
-            {phpVersions.map((version) => (
-              <button
-                key={version}
-                onClick={() => updateFormData({ phpVersion: version })}
-                className={clsx(
-                  'py-3 px-4 rounded-lg border-2 font-medium transition-all',
-                  formData.phpVersion === version
-                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
-                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                )}
-              >
-                PHP {version}
-              </button>
-            ))}
-          </div>
+          {hasNoPhpInstalled ? (
+            <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                <AlertTriangle className="w-5 h-5" />
+                <span className="font-medium">No PHP versions installed</span>
+              </div>
+              <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
+                Please install at least one PHP version from the Binary Manager before creating a project.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-6 gap-2">
+              {phpVersions.map((version) => (
+                <button
+                  key={version}
+                  onClick={() => updateFormData({ phpVersion: version })}
+                  className={clsx(
+                    'py-3 px-4 rounded-lg border-2 font-medium transition-all',
+                    formData.phpVersion === version
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                  )}
+                >
+                  PHP {version}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Fresh Install Toggle */}
@@ -1046,6 +1099,10 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig })
     ? `${formData.name.toLowerCase().replace(/\s+/g, '-')}.test`
     : '';
 
+  // Check if web servers are installed
+  const nginxInstalled = binariesStatus.nginx && binariesStatus.nginx.length > 0;
+  const apacheInstalled = binariesStatus.apache && binariesStatus.apache.length > 0;
+
   return (
     <div>
       <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
@@ -1061,9 +1118,11 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig })
           <label className="label">Web Server</label>
           <div className="grid grid-cols-2 gap-4">
             <button
-              onClick={() => updateFormData({ webServer: 'nginx' })}
+              onClick={() => nginxInstalled && updateFormData({ webServer: 'nginx' })}
+              disabled={!nginxInstalled}
               className={clsx(
                 'p-4 rounded-xl border-2 text-left transition-all',
+                !nginxInstalled && 'opacity-50 cursor-not-allowed',
                 formData.webServer === 'nginx'
                   ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
                   : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
@@ -1078,18 +1137,25 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig })
                   </p>
                 </div>
               </div>
-              {formData.webServer === 'nginx' && (
+              {!nginxInstalled ? (
+                <div className="mt-2 flex items-center gap-1 text-amber-600 dark:text-amber-400 text-sm">
+                  <AlertTriangle className="w-4 h-4" />
+                  Not installed
+                </div>
+              ) : formData.webServer === 'nginx' ? (
                 <div className="mt-2 flex items-center gap-1 text-primary-600 dark:text-primary-400 text-sm">
                   <Check className="w-4 h-4" />
                   Selected
                 </div>
-              )}
+              ) : null}
             </button>
 
             <button
-              onClick={() => updateFormData({ webServer: 'apache' })}
+              onClick={() => apacheInstalled && updateFormData({ webServer: 'apache' })}
+              disabled={!apacheInstalled}
               className={clsx(
                 'p-4 rounded-xl border-2 text-left transition-all',
+                !apacheInstalled && 'opacity-50 cursor-not-allowed',
                 formData.webServer === 'apache'
                   ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
                   : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
@@ -1104,14 +1170,29 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig })
                   </p>
                 </div>
               </div>
-              {formData.webServer === 'apache' && (
+              {!apacheInstalled ? (
+                <div className="mt-2 flex items-center gap-1 text-amber-600 dark:text-amber-400 text-sm">
+                  <AlertTriangle className="w-4 h-4" />
+                  Not installed
+                </div>
+              ) : formData.webServer === 'apache' ? (
                 <div className="mt-2 flex items-center gap-1 text-primary-600 dark:text-primary-400 text-sm">
                   <Check className="w-4 h-4" />
                   Selected
                 </div>
-              )}
+              ) : null}
             </button>
           </div>
+          
+          {/* Warning if no web servers installed */}
+          {!nginxInstalled && !apacheInstalled && (
+            <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 text-sm">
+                <AlertTriangle className="w-4 h-4" />
+                <span>No web server installed. Please install Nginx or Apache from the Binary Manager.</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Domain Input */}

@@ -137,6 +137,7 @@ export function AppProvider({ children }) {
 
     // Binary download progress listener - persistent across navigation
     const unsubBinaryProgress = window.devbox?.binaries.onProgress?.((id, progressData) => {
+      console.log('[AppContext] Download progress:', id, progressData);
       dispatch({ type: 'SET_DOWNLOAD_PROGRESS', payload: { id, progress: progressData } });
       
       if (progressData.status === 'completed' || progressData.status === 'error') {
@@ -149,13 +150,31 @@ export function AppProvider({ children }) {
     });
 
     // Sync with backend's active downloads on load (in case app was restarted during download)
+    // Also validate against installed binaries to clean up stale entries
     const syncActiveDownloads = async () => {
       try {
         const activeDownloads = await window.devbox?.binaries.getActiveDownloads();
+        const installedBinaries = await window.devbox?.binaries.getInstalled();
+        
         if (activeDownloads && Object.keys(activeDownloads).length > 0) {
           for (const [id, progress] of Object.entries(activeDownloads)) {
-            dispatch({ type: 'SET_DOWNLOADING', payload: { id, value: true } });
-            dispatch({ type: 'SET_DOWNLOAD_PROGRESS', payload: { id, progress } });
+            // Parse id to check if binary is already installed
+            const [type, version] = id.split('-');
+            let isInstalled = false;
+            
+            if (version) {
+              // Versioned binary (e.g., php-8.4, nodejs-20)
+              isInstalled = installedBinaries?.[type]?.[version] === true;
+            } else {
+              // Non-versioned binary (e.g., composer, mailpit)
+              isInstalled = installedBinaries?.[type] === true;
+            }
+            
+            // Only mark as downloading if not already installed
+            if (!isInstalled) {
+              dispatch({ type: 'SET_DOWNLOADING', payload: { id, value: true } });
+              dispatch({ type: 'SET_DOWNLOAD_PROGRESS', payload: { id, progress } });
+            }
           }
         }
       } catch (error) {

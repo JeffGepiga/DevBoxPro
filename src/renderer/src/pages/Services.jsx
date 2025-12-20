@@ -262,20 +262,33 @@ function Services() {
           }
         }
       } else {
-        // Non-versioned service
-        const isRunning = services[name]?.status === 'running';
-        cards.push({
-          type: 'simple',
-          serviceName: name,
-          info,
-          service: services[name] || { status: 'stopped' },
-          isRunning,
-        });
+        // Non-versioned service (mailpit, phpmyadmin)
+        // Check if installed first
+        const isInstalled = binariesStatus?.[name]?.installed === true;
+        
+        if (!isInstalled) {
+          // Not installed - show placeholder card
+          cards.push({
+            type: 'placeholder',
+            serviceName: name,
+            info,
+            allVersions: [], // No versions for simple services
+          });
+        } else {
+          const isRunning = services[name]?.status === 'running';
+          cards.push({
+            type: 'simple',
+            serviceName: name,
+            info,
+            service: services[name] || { status: 'stopped' },
+            isRunning,
+          });
+        }
       }
     }
 
     return cards;
-  }, [services, runningProjects, requiredServices, getInstalledVersions, runningVersions, getServicePort]);
+  }, [services, runningProjects, requiredServices, getInstalledVersions, runningVersions, getServicePort, binariesStatus]);
 
   const handleStartAll = async () => {
     // Mark all services as loading
