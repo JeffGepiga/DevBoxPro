@@ -119,6 +119,19 @@ class ProjectManager {
     const settings = this.configStore.get('settings', {});
     const existingProjects = this.configStore.get('projects', []);
 
+    // Validate that required PHP version is installed before creating project
+    const phpVersion = config.phpVersion || '8.3';
+    const { app } = require('electron');
+    const resourcePath = this.configStore.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
+    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
+    const phpExe = platform === 'win' ? 'php.exe' : 'php';
+    const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
+    
+    if (!await fs.pathExists(path.join(phpDir, phpExe)) || !await fs.pathExists(path.join(phpDir, phpCgiExe))) {
+      throw new Error(`PHP ${phpVersion} is not installed. Please download it from the Binary Manager before creating a project.`);
+    }
+
     // Find available port
     const usedPorts = existingProjects.map((p) => p.port);
     let port = settings.portRangeStart || 8000;
@@ -965,12 +978,12 @@ class ProjectManager {
     const phpCgiPath = path.join(phpDir, phpCgiExe);
     
     if (!await fs.pathExists(phpPath)) {
-      throw new Error(`PHP ${phpVersion} is not installed. Please install it from the Binary Manager.`);
+      throw new Error(`PHP ${phpVersion} is not installed at:\n${phpPath}\n\nPlease install PHP ${phpVersion} from the Binary Manager.`);
     }
     
     // Check if php-cgi exists
     if (!await fs.pathExists(phpCgiPath)) {
-      throw new Error(`PHP-CGI not found for PHP ${phpVersion}. The PHP installation may be incomplete. Please reinstall PHP ${phpVersion} from the Binary Manager.`);
+      throw new Error(`PHP-CGI not found for PHP ${phpVersion} at:\n${phpCgiPath}\n\nThe PHP installation may be incomplete. Please reinstall PHP ${phpVersion} from the Binary Manager.`);
     }
 
     // Check if port is available, find alternative if not

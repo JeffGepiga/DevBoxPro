@@ -119,10 +119,16 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         if (process.platform === 'win32') {
           // On Windows, use 'start' command via cmd.exe to fully detach
           // The empty string after 'start' is the window title (required when path has spaces)
+          // Clear Electron's ICU environment variables to prevent "Invalid file descriptor to ICU data" errors
+          const cleanEnv = { ...process.env };
+          delete cleanEnv.ICU_DATA;
+          delete cleanEnv.ELECTRON_RUN_AS_NODE;
+          
           const child = spawn('cmd.exe', ['/c', 'start', '""', config.command, projectData.path], {
             detached: true,
             stdio: 'ignore',
             windowsHide: true,
+            env: cleanEnv,
           });
           child.unref();
         } else {
