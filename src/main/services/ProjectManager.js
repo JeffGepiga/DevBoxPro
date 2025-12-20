@@ -1202,6 +1202,15 @@ class ProjectManager {
       }
 
       this.runningProjects.delete(id);
+
+      // Stop project services that are no longer needed by other running projects
+      if (project) {
+        const serviceResult = await this.stopProjectServices(project);
+        if (serviceResult.stopped?.length > 0) {
+          this.managers.log?.project(id, `Stopped unused services: ${serviceResult.stopped.join(', ')}`);
+        }
+      }
+
       this.managers.log?.project(id, `Project ${project?.name || id} stopped successfully`);
 
       return { success: true, wasRunning: true };
@@ -1209,6 +1218,96 @@ class ProjectManager {
       console.error(`Error stopping project:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Get the list of services a project depends on
+   * @param {Object} project - The project object
+   * @returns {Array} List of service dependencies with name and version
+   */
+  getProjectServiceDependencies(project) {
+    const services = [];
+
+    // Web server
+    const webServer = project.webServer || 'nginx';
+    const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
+    services.push({ name: webServer, version: webServerVersion });
+
+    // Database
+    if (project.services?.mysql) {
+      services.push({ name: 'mysql', version: project.services.mysqlVersion || '8.4' });
+    }
+    if (project.services?.mariadb) {
+      services.push({ name: 'mariadb', version: project.services.mariadbVersion || '11.4' });
+    }
+
+    // Redis
+    if (project.services?.redis) {
+      services.push({ name: 'redis', version: project.services.redisVersion || '7.4' });
+    }
+
+    // Mailpit
+    if (project.services?.mailpit) {
+      services.push({ name: 'mailpit', version: null });
+    }
+
+    // phpMyAdmin
+    if (project.services?.phpmyadmin) {
+      services.push({ name: 'phpmyadmin', version: null });
+    }
+
+    return services;
+  }
+
+  /**
+   * Stop services that are no longer needed by any running project
+   * @param {Object} project - The project that was just stopped
+   * @returns {Object} Result with stopped services and failures
+   */
+  async stopProjectServices(project) {
+    const serviceManager = this.managers.service;
+    if (!serviceManager) {
+      return { success: true, stopped: [], failed: [] };
+    }
+
+    // Get services this project uses
+    const projectServices = this.getProjectServiceDependencies(project);
+
+    // Get all OTHER running projects (excluding this one since it's already removed from runningProjects)
+    const otherRunningProjects = Array.from(this.runningProjects.keys())
+      .map(id => this.getProject(id))
+      .filter(p => p);
+
+    // For each service, check if any other project needs it
+    const servicesToStop = [];
+    for (const service of projectServices) {
+      const isNeededByOther = otherRunningProjects.some(otherProject => {
+        const otherServices = this.getProjectServiceDependencies(otherProject);
+        return otherServices.some(s =>
+          s.name === service.name &&
+          (s.version === service.version || s.version === null || service.version === null)
+        );
+      });
+
+      if (!isNeededByOther) {
+        servicesToStop.push(service);
+      }
+    }
+
+    // Stop services that are no longer needed
+    const results = { success: true, stopped: [], failed: [] };
+    for (const service of servicesToStop) {
+      try {
+        this.managers.log?.project(project.id, `Stopping ${service.name}${service.version ? ':' + service.version : ''} (no longer needed)...`);
+        await serviceManager.stopService(service.name, service.version);
+        results.stopped.push(`${service.name}${service.version ? ':' + service.version : ''}`);
+      } catch (error) {
+        this.managers.log?.project(project.id, `Failed to stop ${service.name}: ${error.message}`, 'error');
+        results.failed.push({ service: service.name, error: error.message });
+      }
+    }
+
+    return results;
   }
 
   /**
