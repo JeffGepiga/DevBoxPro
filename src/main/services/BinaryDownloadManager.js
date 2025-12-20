@@ -637,11 +637,22 @@ class BinaryDownloadManager {
     return appliedCount;
   }
 
-  // Enable common extensions in all installed PHP versions
+  // Enable common extensions in all installed PHP versions and fix configuration issues
   async enablePhpExtensions() {
     const platform = this.getPlatform();
     
-    for (const version of ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4']) {
+    // Dynamically scan for all installed PHP versions (including custom imports)
+    const phpBaseDir = path.join(this.resourcesPath, 'php');
+    if (!await fs.pathExists(phpBaseDir)) {
+      return;
+    }
+    
+    const versionDirs = await fs.readdir(phpBaseDir);
+    
+    for (const version of versionDirs) {
+      // Skip non-directory entries and platform folders from old structure
+      if (version === 'win' || version === 'mac' || version === 'downloads') continue;
+      
       const phpPath = path.join(this.resourcesPath, 'php', version, platform);
       const iniPath = path.join(phpPath, 'php.ini');
       
@@ -662,51 +673,70 @@ class BinaryDownloadManager {
             modified = true;
           }
           
+          // Ensure CA certificate bundle exists and is configured (Windows)
+          if (platform === 'win') {
+            const cacertPath = await this.ensureCaCertBundle(phpPath);
+            if (cacertPath) {
+              // Add or update curl.cainfo
+              if (!iniContent.includes('curl.cainfo')) {
+                // Add [curl] section if not exists
+                if (!iniContent.includes('[curl]')) {
+                  iniContent += `\n[curl]\ncurl.cainfo = "${cacertPath}"\n`;
+                } else {
+                  iniContent = iniContent.replace('[curl]', `[curl]\ncurl.cainfo = "${cacertPath}"`);
+                }
+                modified = true;
+              }
+              // Add or update openssl.cafile
+              if (!iniContent.includes('openssl.cafile')) {
+                if (!iniContent.includes('[openssl]')) {
+                  iniContent += `\n[openssl]\nopenssl.cafile = "${cacertPath}"\n`;
+                } else {
+                  iniContent = iniContent.replace('[openssl]', `[openssl]\nopenssl.cafile = "${cacertPath}"`);
+                }
+                modified = true;
+              }
+            }
+          }
+          
           // Fix extension format for Windows (add php_ prefix and .dll suffix if missing)
+          // Also comment out extensions that don't exist to prevent warnings
           if (platform === 'win') {
             const extensions = ['curl', 'fileinfo', 'gd', 'mbstring', 'mysqli', 'openssl', 'pdo_mysql', 'pdo_sqlite', 'sqlite3', 'zip'];
-            const missingExtensions = [];
             
             for (const ext of extensions) {
-              const extensionLine = `extension=php_${ext}.dll`;
+              const extensionDll = `php_${ext}.dll`;
+              const extPath = path.join(extDir.replace(/\//g, path.sep), extensionDll);
+              const extensionExists = await fs.pathExists(extPath);
+              const extensionLine = `extension=${extensionDll}`;
+              const commentedLine = `; extension=${extensionDll} ; Not available`;
               
-              // Check if extension is already properly enabled
-              if (iniContent.includes(extensionLine)) {
-                continue; // Already enabled with correct format
+              // Check if extension line exists (enabled or not)
+              const enabledPattern = new RegExp(`^extension=(?:php_)?${ext}(?:\\.dll)?\\s*$`, 'gm');
+              const commentedPattern = new RegExp(`^;\\s*extension=(?:php_)?${ext}(?:\\.dll)?.*$`, 'gm');
+              
+              if (extensionExists) {
+                // Extension exists - ensure it's enabled
+                if (!iniContent.match(enabledPattern)) {
+                  // Not enabled - check if commented
+                  if (iniContent.match(commentedPattern)) {
+                    // Uncomment and fix format
+                    iniContent = iniContent.replace(commentedPattern, extensionLine);
+                    modified = true;
+                  }
+                } else if (!iniContent.includes(extensionLine)) {
+                  // Enabled but wrong format - fix it
+                  iniContent = iniContent.replace(enabledPattern, extensionLine);
+                  modified = true;
+                }
+              } else {
+                // Extension doesn't exist - comment it out to prevent warnings
+                if (iniContent.match(enabledPattern)) {
+                  iniContent = iniContent.replace(enabledPattern, commentedLine);
+                  modified = true;
+                  console.log(`Disabled missing extension ${extensionDll} for PHP ${version}`);
+                }
               }
-              
-              // Replace extension=name with extension=php_name.dll
-              const simplePattern = new RegExp(`^extension=${ext}\\s*$`, 'gm');
-              if (simplePattern.test(iniContent)) {
-                iniContent = iniContent.replace(simplePattern, extensionLine);
-                modified = true;
-                continue;
-              }
-              
-              // Also enable commented extensions with correct format
-              const commentedPattern = new RegExp(`^;extension=${ext}\\s*$`, 'gm');
-              if (commentedPattern.test(iniContent)) {
-                iniContent = iniContent.replace(commentedPattern, extensionLine);
-                modified = true;
-                continue;
-              }
-              
-              const commentedPattern2 = new RegExp(`^;extension=php_${ext}\\.dll\\s*$`, 'gm');
-              if (commentedPattern2.test(iniContent)) {
-                iniContent = iniContent.replace(commentedPattern2, extensionLine);
-                modified = true;
-                continue;
-              }
-              
-              // Extension not found at all - add it to the list of missing extensions
-              missingExtensions.push(extensionLine);
-            }
-            
-            // Add any missing extensions to the end of the file
-            if (missingExtensions.length > 0) {
-              iniContent = iniContent.trimEnd() + '\n' + missingExtensions.join('\n') + '\n';
-              modified = true;
-              console.log(`Added missing extensions to PHP ${version}: ${missingExtensions.join(', ')}`);
             }
           }
           
@@ -1281,6 +1311,26 @@ class BinaryDownloadManager {
     const extPrefix = platform === 'win' ? 'php_' : '';
     const extSuffix = platform === 'win' ? '.dll' : '.so';
     
+    // Download CA certificate bundle for curl/openssl if on Windows
+    let cacertPath = '';
+    if (platform === 'win') {
+      cacertPath = await this.ensureCaCertBundle(phpPath);
+    }
+    
+    // Build extension list - only include extensions that exist
+    const extensions = ['curl', 'fileinfo', 'mbstring', 'openssl', 'pdo_mysql', 'pdo_sqlite', 'mysqli', 'sqlite3', 'zip', 'gd'];
+    const extensionLines = [];
+    
+    for (const ext of extensions) {
+      const extFile = `${extPrefix}${ext}${extSuffix}`;
+      const extPath = path.join(extDir.replace(/\//g, path.sep), extFile);
+      if (await fs.pathExists(extPath)) {
+        extensionLines.push(`extension=${extFile}`);
+      } else {
+        extensionLines.push(`; extension=${extFile} ; Not available in this PHP version`);
+      }
+    }
+    
     const iniContent = `[PHP]
 ; DevBox Pro PHP ${version} Configuration
 engine = On
@@ -1369,21 +1419,58 @@ opcache.max_accelerated_files=20000
 opcache.validate_timestamps=1
 opcache.revalidate_freq=0
 
+[curl]
+; CA certificate bundle for HTTPS connections (required for Composer)
+${cacertPath ? `curl.cainfo = "${cacertPath}"` : '; curl.cainfo = '}
+
+[openssl]
+${cacertPath ? `openssl.cafile = "${cacertPath}"` : '; openssl.cafile = '}
+
 ; Extensions - enabled by default for Laravel compatibility
-extension=${extPrefix}curl${extSuffix}
-extension=${extPrefix}fileinfo${extSuffix}
-extension=${extPrefix}mbstring${extSuffix}
-extension=${extPrefix}openssl${extSuffix}
-extension=${extPrefix}pdo_mysql${extSuffix}
-extension=${extPrefix}pdo_sqlite${extSuffix}
-extension=${extPrefix}mysqli${extSuffix}
-extension=${extPrefix}sqlite3${extSuffix}
-extension=${extPrefix}zip${extSuffix}
-extension=${extPrefix}gd${extSuffix}
+${extensionLines.join('\n')}
 `;
 
     const iniPath = path.join(phpPath, 'php.ini');
     await fs.writeFile(iniPath, iniContent);
+  }
+
+  /**
+   * Download and cache the CA certificate bundle for curl/openssl
+   */
+  async ensureCaCertBundle(phpPath) {
+    const cacertPath = path.join(phpPath, 'cacert.pem').replace(/\\/g, '/');
+    
+    // Check if already exists
+    if (await fs.pathExists(cacertPath)) {
+      return cacertPath;
+    }
+    
+    // Download from curl.se (official source)
+    const cacertUrl = 'https://curl.se/ca/cacert.pem';
+    
+    try {
+      console.log('Downloading CA certificate bundle...');
+      const response = await new Promise((resolve, reject) => {
+        const https = require('https');
+        https.get(cacertUrl, (res) => {
+          if (res.statusCode === 200) {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => resolve(data));
+          } else {
+            reject(new Error(`Failed to download CA bundle: ${res.statusCode}`));
+          }
+        }).on('error', reject);
+      });
+      
+      await fs.writeFile(cacertPath, response);
+      console.log('CA certificate bundle downloaded successfully');
+      return cacertPath;
+    } catch (error) {
+      console.warn('Could not download CA certificate bundle:', error.message);
+      // Return empty string - PHP will still work but HTTPS may have issues
+      return '';
+    }
   }
 
   async downloadMysql(version = '8.4') {
