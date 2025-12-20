@@ -3,16 +3,15 @@ const fs = require('fs-extra');
 const { spawn, execSync } = require('child_process');
 
 class PhpManager {
-  constructor(resourcePath, configStore) {
+  constructor(resourcePath, configStore, managers = {}) {
     this.resourcePath = resourcePath;
     this.configStore = configStore;
+    this.managers = managers;
     this.phpVersions = {};
     this.supportedVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
   }
 
   async initialize() {
-    console.log('Initializing PhpManager...');
-
     const platform = process.platform === 'win32' ? 'win' : 'mac';
     const phpBasePath = path.join(this.resourcePath, 'php');
 
@@ -21,11 +20,11 @@ class PhpManager {
       const versionPath = path.join(phpBasePath, version, platform);
       const phpBinary = this.getPhpBinaryName();
       const binaryPath = path.join(versionPath, phpBinary);
-      
+
       // Also check for php-cgi which is required for web serving
       const phpCgiBinary = process.platform === 'win32' ? 'php-cgi.exe' : 'php-cgi';
       const phpCgiPath = path.join(versionPath, phpCgiBinary);
-      
+
       const phpExists = await fs.pathExists(binaryPath);
       const phpCgiExists = await fs.pathExists(phpCgiPath);
 
@@ -36,7 +35,6 @@ class PhpManager {
           available: true,
           extensions: await this.discoverExtensions(versionPath, version),
         };
-        console.log(`Found PHP ${version} at ${versionPath}`);
       } else if (phpExists && !phpCgiExists) {
         // Incomplete installation - php.exe exists but php-cgi.exe is missing
         this.phpVersions[version] = {
@@ -46,7 +44,7 @@ class PhpManager {
           incomplete: true,
           extensions: [],
         };
-        console.log(`PHP ${version} found but incomplete (missing php-cgi) at ${versionPath}`);
+        this.managers.log?.systemWarn(`PHP ${version} installation incomplete (missing php-cgi)`, { path: versionPath });
       } else {
         this.phpVersions[version] = {
           path: versionPath,
@@ -59,8 +57,6 @@ class PhpManager {
 
     // Store discovered versions
     this.configStore.set('phpVersions', this.phpVersions);
-
-    console.log('PhpManager initialized');
   }
 
   getPhpBinaryName() {

@@ -3,9 +3,10 @@ const fs = require('fs-extra');
 const forge = require('node-forge');
 
 class SslManager {
-  constructor(resourcePath, configStore) {
+  constructor(resourcePath, configStore, managers = {}) {
     this.resourcePath = resourcePath;
     this.configStore = configStore;
+    this.managers = managers;
     this.certsPath = null;
     this.caPath = null;
     this.caKey = null;
@@ -13,7 +14,6 @@ class SslManager {
   }
 
   async initialize() {
-    console.log('Initializing SslManager...');
 
     // Use the same data path as ProjectManager (app.getPath('userData')/data)
     const { app } = require('electron');
@@ -28,17 +28,15 @@ class SslManager {
     const caCertPath = path.join(this.caPath, 'rootCA.pem');
     const caKeyPath = path.join(this.caPath, 'rootCA-key.pem');
     const isNewCA = !(await fs.pathExists(caCertPath));
-    
+
     if (isNewCA) {
-      console.log('Creating root CA certificate...');
       try {
         await this.createRootCA();
-        
+
         // Automatically prompt to trust the new Root CA
-        console.log('Prompting user to trust Root CA...');
         await this.promptTrustRootCA();
       } catch (error) {
-        console.error('Failed to create Root CA:', error.message);
+        this.managers.log?.systemError('Failed to create Root CA certificate', { error: error.message });
       }
     } else {
       // Load existing CA
@@ -48,46 +46,36 @@ class SslManager {
         this.caKey = forge.pki.privateKeyFromPem(caKeyPem);
         this.caCert = forge.pki.certificateFromPem(caCertPem);
       } catch (error) {
-        console.error('Failed to load existing CA:', error.message);
+        this.managers.log?.systemError('Failed to load existing Root CA', { error: error.message });
       }
     }
-
-    console.log('SslManager initialized');
   }
 
   // Prompt user to trust the Root CA certificate
   async promptTrustRootCA() {
     const caCertPath = path.join(this.caPath, 'rootCA.pem');
-    
+
     try {
       if (process.platform === 'win32') {
         // Windows: Use certutil with sudo-prompt for elevation
-        console.log('Adding Root CA to Windows trusted certificates...');
         const sudo = require('sudo-prompt');
         const options = {
           name: 'DevBox Pro',
         };
-        
+
         return new Promise((resolve) => {
           // Use certutil to add to local machine root store (requires admin)
           const command = `certutil -f -addstore "Root" "${caCertPath}"`;
-          
+
           sudo.exec(command, options, (error, stdout, stderr) => {
-            if (error) {
-              console.warn('Could not add Root CA to trusted store:', error.message);
-              console.log('You may need to manually trust the certificate at:', caCertPath);
-              resolve(); // Don't fail initialization
-            } else {
-              console.log('Root CA certificate trusted successfully');
-              resolve();
-            }
+            // Resolve regardless of error - don't fail initialization
+            resolve();
           });
         });
       } else if (process.platform === 'darwin') {
         // macOS: Add to login keychain (requires user password)
-        console.log('Adding Root CA to macOS keychain...');
         const { spawn } = require('child_process');
-        
+
         return new Promise((resolve) => {
           const proc = spawn('security', [
             'add-trusted-cert',
@@ -95,25 +83,18 @@ class SslManager {
             '-k', path.join(process.env.HOME, 'Library/Keychains/login.keychain-db'),
             caCertPath
           ]);
-          
+
           proc.on('close', (code) => {
-            if (code === 0) {
-              console.log('Root CA certificate trusted successfully');
-            } else {
-              console.warn('Could not add Root CA to keychain. You may need to trust it manually.');
-            }
             resolve();
           });
-          
+
           proc.on('error', () => {
-            console.warn('Could not add Root CA to keychain.');
             resolve();
           });
         });
       }
     } catch (error) {
-      console.warn('Could not automatically trust Root CA:', error.message);
-      console.log('You may need to manually trust the certificate at:', caCertPath);
+      // Could not automatically trust Root CA - user will need to do it manually
     }
   }
 
@@ -121,8 +102,6 @@ class SslManager {
     const keyPath = path.join(this.caPath, 'rootCA-key.pem');
     const certPath = path.join(this.caPath, 'rootCA.pem');
 
-    console.log('Generating Root CA key pair...');
-    
     // Generate a 2048-bit RSA key pair
     const keys = forge.pki.rsa.generateKeyPair(2048);
     this.caKey = keys.privateKey;
@@ -131,7 +110,7 @@ class SslManager {
     const cert = forge.pki.createCertificate();
     cert.publicKey = keys.publicKey;
     cert.serialNumber = '01';
-    
+
     // Valid for 10 years
     cert.validity.notBefore = new Date();
     cert.validity.notAfter = new Date();
@@ -179,7 +158,6 @@ class SslManager {
     await fs.writeFile(keyPath, keyPem);
     await fs.writeFile(certPath, certPem);
 
-    console.log('Root CA certificate created');
     return { keyPath, certPath };
   }
 
@@ -201,8 +179,6 @@ class SslManager {
     const keyPath = path.join(domainCertDir, 'key.pem');
     const certPath = path.join(domainCertDir, 'cert.pem');
 
-    console.log(`Creating certificate for: ${domains.join(', ')}`);
-
     // Generate key pair for the domain certificate
     const keys = forge.pki.rsa.generateKeyPair(2048);
 
@@ -210,7 +186,7 @@ class SslManager {
     const cert = forge.pki.createCertificate();
     cert.publicKey = keys.publicKey;
     cert.serialNumber = Date.now().toString(16);
-    
+
     // Valid for ~2 years (825 days for browser compatibility)
     cert.validity.notBefore = new Date();
     cert.validity.notAfter = new Date();
@@ -226,7 +202,7 @@ class SslManager {
       { shortName: 'OU', value: 'Development' }
     ];
     cert.setSubject(attrs);
-    
+
     // Set issuer from CA certificate
     cert.setIssuer(this.caCert.subject.attributes);
 
@@ -291,8 +267,6 @@ class SslManager {
     };
     this.configStore.set('certificates', certificates);
 
-    console.log(`Certificate created for ${primaryDomain}`);
-
     return {
       domain: primaryDomain,
       domains,
@@ -319,7 +293,6 @@ class SslManager {
     delete certificates[domain];
     this.configStore.set('certificates', certificates);
 
-    console.log(`Certificate for ${domain} deleted`);
     return { success: true };
   }
 
@@ -340,7 +313,7 @@ class SslManager {
         return new Promise((resolve) => {
           const sudo = require('sudo-prompt');
           const command = `security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${caCertPath}"`;
-          
+
           sudo.exec(command, { name: 'DevBox Pro' }, (error) => {
             if (error) {
               resolve({
@@ -356,7 +329,7 @@ class SslManager {
       } else if (process.platform === 'win32') {
         // Windows: Add to certificate store with elevation
         const sudo = require('sudo-prompt');
-        
+
         return new Promise((resolve) => {
           const command = `certutil -addstore -f "Root" "${caCertPath}"`;
           sudo.exec(command, { name: 'DevBox Pro' }, (error) => {

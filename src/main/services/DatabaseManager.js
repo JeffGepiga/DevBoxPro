@@ -21,7 +21,6 @@ class DatabaseManager {
   }
 
   async initialize() {
-    console.log('Initializing DatabaseManager...');
 
     // Note: Actual per-version data directories (e.g., data/mysql/8.4/data) 
     // are created by ServiceManager when starting each version.
@@ -29,8 +28,6 @@ class DatabaseManager {
     const dataPath = path.join(app.getPath('userData'), 'data');
     await fs.ensureDir(path.join(dataPath, 'mysql', 'backups'));
     await fs.ensureDir(path.join(dataPath, 'mariadb', 'backups'));
-
-    console.log('DatabaseManager initialized');
   }
 
   // Get the currently active database type (mysql or mariadb)
@@ -55,9 +52,6 @@ class DatabaseManager {
     // If version provided, also set it
     if (version) {
       this.configStore.setSetting('activeDatabaseVersion', version);
-      console.log(`Active database set to: ${dbType} ${version}`);
-    } else {
-      console.log(`Active database type set to: ${dbType}`);
     }
 
     return { success: true, type: dbType, version };
@@ -91,7 +85,6 @@ class DatabaseManager {
       if (runningVersions && runningVersions.has(version)) {
         const versionInfo = runningVersions.get(version);
         if (versionInfo?.port) {
-          console.log(`${dbType} ${version} using running port: ${versionInfo.port}`);
           return versionInfo.port;
         }
       }
@@ -101,13 +94,11 @@ class DatabaseManager {
       const basePort = serviceConfig?.defaultPort || 3306;
       const portOffset = this.managers.service.versionPortOffsets[dbType]?.[version] || 0;
       const expectedPort = basePort + portOffset;
-      console.log(`${dbType} ${version} not running, expected port: ${expectedPort}`);
       return expectedPort;
     }
 
     // Fallback to default port
     const defaultPort = dbType === 'mariadb' ? 3306 : (settings.mysqlPort || 3306);
-    console.log(`${dbType} using fallback port: ${defaultPort}`);
     return defaultPort;
   }
 

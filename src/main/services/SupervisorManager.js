@@ -10,7 +10,7 @@ function spawnHidden(command, args, options = {}) {
       ...options,
       windowsHide: true,
     });
-    
+
     return proc;
   } else {
     return spawn(command, args, {
@@ -21,22 +21,19 @@ function spawnHidden(command, args, options = {}) {
 }
 
 class SupervisorManager {
-  constructor(resourcePath, configStore) {
+  constructor(resourcePath, configStore, managers = {}) {
     this.resourcePath = resourcePath;
     this.configStore = configStore;
+    this.managers = managers;
     this.processes = new Map(); // projectId -> { processName -> processInfo }
   }
 
   async initialize() {
-    console.log('Initializing SupervisorManager...');
-
     const { app } = require('electron');
     const dataPath = path.join(app.getPath('userData'), 'data');
     const supervisorPath = path.join(dataPath, 'supervisor');
     await fs.ensureDir(supervisorPath);
     await fs.ensureDir(path.join(supervisorPath, 'logs'));
-
-    console.log('SupervisorManager initialized');
   }
 
   async addProcess(projectId, config) {
@@ -75,7 +72,6 @@ class SupervisorManager {
 
     this.configStore.set('projects', projects);
 
-    console.log(`Added supervisor process ${config.name} for project ${projectId}`);
     return processConfig;
   }
 
@@ -97,7 +93,6 @@ class SupervisorManager {
 
     this.configStore.set('projects', projects);
 
-    console.log(`Removed supervisor process ${processName} from project ${projectId}`);
     return { success: true };
   }
 
@@ -114,8 +109,6 @@ class SupervisorManager {
     if (!config) {
       throw new Error('Process configuration not found');
     }
-
-    console.log(`Starting supervisor process: ${config.name}`);
 
     // Get PHP path for the project
     const phpManager = require('./PhpManager');
@@ -146,7 +139,7 @@ class SupervisorManager {
     for (let i = 0; i < numProcs; i++) {
       let proc;
       const instanceName = numProcs > 1 ? `${config.name}_${i}` : config.name;
-      
+
       if (process.platform === 'win32') {
         // On Windows, use spawnHidden to run without a console window
         proc = spawnHidden(command, args, {
@@ -178,19 +171,16 @@ class SupervisorManager {
         });
 
         proc.on('error', (error) => {
-          console.error(`Process ${instanceName} error:`, error);
+          this.managers.log?.systemError(`Supervisor process ${instanceName} error`, { error: error.message });
           this.updateProcessStatus(projectId, config.name, 'error', null);
         });
 
         proc.on('exit', (code, signal) => {
-          console.log(`Process ${instanceName} exited with code ${code}, signal ${signal}`);
-          
           // Auto-restart if enabled
           if (config.autorestart && code !== 0) {
             setTimeout(() => {
-              console.log(`Auto-restarting process ${instanceName}`);
-              this.startProcess(projectId, config).catch((err) => {
-                console.error(`Failed to restart process ${instanceName}:`, err);
+              this.startProcess(projectId, config).catch(() => {
+                // Failed to restart - will be retried
               });
             }, 1000);
           } else {
@@ -219,7 +209,6 @@ class SupervisorManager {
     // Update status in config
     this.updateProcessStatus(projectId, config.name, 'running', instances[0]?.pid);
 
-    console.log(`Started ${instances.length} instance(s) of ${config.name}`);
     return { success: true, instances: instances.length };
   }
 
@@ -233,8 +222,6 @@ class SupervisorManager {
     if (!processInfo) {
       return { success: true, wasRunning: false };
     }
-
-    console.log(`Stopping supervisor process: ${processName}`);
 
     const kill = require('tree-kill');
 
@@ -253,17 +240,16 @@ class SupervisorManager {
     projectProcesses.delete(processName);
     this.updateProcessStatus(projectId, processName, 'stopped', null);
 
-    console.log(`Stopped process ${processName}`);
     return { success: true, wasRunning: true };
   }
 
   async restartProcess(projectId, processName) {
     await this.stopProcess(projectId, processName);
     await new Promise((resolve) => setTimeout(resolve, 500));
-    
+
     const project = this.getProject(projectId);
     const config = project?.supervisor.processes.find((p) => p.name === processName);
-    
+
     if (config) {
       return this.startProcess(projectId, config);
     }
@@ -352,9 +338,7 @@ class SupervisorManager {
 
   logOutput(projectId, processName, output, type) {
     // This would integrate with LogManager
-    const timestamp = new Date().toISOString();
-    const logEntry = `[${timestamp}] [${processName}] [${type}] ${output}`;
-    console.log(logEntry);
+    // Silently log output - can be enhanced later to write to log files
   }
 
   // Queue worker helpers for Laravel

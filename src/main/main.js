@@ -60,13 +60,13 @@ async function createWindow() {
     // In production, icon is in the app directory (extraFiles)
     iconPath = path.join(path.dirname(app.getPath('exe')), 'icon.png');
   }
-  
+
   // Create native image for better Windows support
   let icon;
   if (fs.existsSync(iconPath)) {
     icon = nativeImage.createFromPath(iconPath);
   }
-  
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -135,15 +135,15 @@ function createTray() {
   try {
     const fs = require('fs');
     let iconPath;
-    
+
     // Try multiple possible icon locations
     const possiblePaths = [];
     const isWindows = process.platform === 'win32';
-    
+
     // On Windows, prefer .ico format for tray
     const iconFile = isWindows ? 'icon.ico' : 'icon.png';
     const fallbackFile = 'icon.png';
-    
+
     if (isDev) {
       possiblePaths.push(path.join(__dirname, '../../build', iconFile));
       possiblePaths.push(path.join(__dirname, '../../build', fallbackFile));
@@ -158,65 +158,65 @@ function createTray() {
       possiblePaths.push(path.join(app.getAppPath(), '..', iconFile));
       possiblePaths.push(path.join(app.getAppPath(), '..', fallbackFile));
     }
-    
+
     // Find first existing icon
     iconPath = possiblePaths.find(p => fs.existsSync(p));
-    
+
     // Check if tray icon exists, skip tray if not
     if (!iconPath) {
       return;
     }
-    
+
     // Create native image for better Windows support - resize for tray
     let icon = nativeImage.createFromPath(iconPath);
-    
+
     // Check if icon loaded successfully
     if (icon.isEmpty()) {
       return;
     }
-    
+
     // Resize icon to appropriate tray size (16x16 on Windows, can be larger on macOS)
     const traySize = isWindows ? 16 : 22;
     icon = icon.resize({ width: traySize, height: traySize });
-    
+
     tray = new Tray(icon);
 
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Open DevBox Pro',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.show();
-        }
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'Open DevBox Pro',
+        click: () => {
+          if (mainWindow) {
+            mainWindow.show();
+          }
+        },
       },
-    },
-    { type: 'separator' },
-    {
-      label: 'Start All Services',
-      click: () => managers.service?.startAllServices(),
-    },
-    {
-      label: 'Stop All Services',
-      click: () => managers.service?.stopAllServices(),
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => {
-        app.isQuitting = true;
-        app.quit();
+      { type: 'separator' },
+      {
+        label: 'Start All Services',
+        click: () => managers.service?.startAllServices(),
       },
-    },
-  ]);
+      {
+        label: 'Stop All Services',
+        click: () => managers.service?.stopAllServices(),
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit',
+        click: () => {
+          app.isQuitting = true;
+          app.quit();
+        },
+      },
+    ]);
 
-  tray.setToolTip('DevBox Pro');
-  tray.setContextMenu(contextMenu);
+    tray.setToolTip('DevBox Pro');
+    tray.setContextMenu(contextMenu);
 
-  tray.on('double-click', () => {
-    if (mainWindow) {
-      mainWindow.show();
-    }
-  });
+    tray.on('double-click', () => {
+      if (mainWindow) {
+        mainWindow.show();
+      }
+    });
   } catch (error) {
     console.error('Failed to create tray:', error.message);
   }
@@ -224,17 +224,17 @@ function createTray() {
 
 async function initializeManagers() {
   const startTime = Date.now();
-  
+
   const resourcePath = getResourcePath();
   const configStore = new ConfigStore();
 
   // Initialize managers - create instances first (fast)
   managers.config = configStore;
   managers.log = new LogManager(configStore);
-  managers.php = new PhpManager(resourcePath, configStore);
-  managers.ssl = new SslManager(resourcePath, configStore);
+  managers.php = new PhpManager(resourcePath, configStore, managers);
+  managers.ssl = new SslManager(resourcePath, configStore, managers);
   managers.database = new DatabaseManager(resourcePath, configStore, managers);
-  managers.supervisor = new SupervisorManager(resourcePath, configStore);
+  managers.supervisor = new SupervisorManager(resourcePath, configStore, managers);
   managers.service = new ServiceManager(resourcePath, configStore, managers);
   managers.project = new ProjectManager(configStore, managers);
   managers.binaryDownload = new BinaryDownloadManager();
@@ -254,7 +254,7 @@ async function initializeManagers() {
 async function initializeManagersDeferred() {
   const startTime = Date.now();
   const resourcePath = getResourcePath();
-  
+
   try {
     // These can run in parallel
     await Promise.all([
@@ -265,7 +265,7 @@ async function initializeManagersDeferred() {
       managers.service.initialize(),
       managers.webServer.initialize(),
     ]);
-    
+
     // These depend on others or are slower
     await managers.binaryDownload.initialize();
     await managers.cli.initialize(resourcePath);
@@ -331,7 +331,7 @@ app.on('window-all-closed', async () => {
     // On macOS, apps typically stay active until explicitly quit
     return;
   }
-  
+
   // On Windows/Linux, only quit if user explicitly requested it
   if (app.isQuitting) {
     await gracefulShutdown();
@@ -355,9 +355,9 @@ let isShuttingDown = false;
  */
 async function forceKillAllProcesses() {
   if (process.platform !== 'win32') return;
-  
+
   const { execSync } = require('child_process');
-  
+
   // Processes that are safe to kill globally (DevBox-specific)
   const processesToKill = [
     'php-cgi.exe',
@@ -368,11 +368,11 @@ async function forceKillAllProcesses() {
     'redis-server.exe',
     'mailpit.exe',
   ];
-  
+
   for (const processName of processesToKill) {
     try {
-      execSync(`taskkill /F /IM ${processName} 2>nul`, { 
-        windowsHide: true, 
+      execSync(`taskkill /F /IM ${processName} 2>nul`, {
+        windowsHide: true,
         timeout: 10000,
         stdio: 'ignore'
       });
@@ -380,10 +380,10 @@ async function forceKillAllProcesses() {
       // Ignore - process might not be running
     }
   }
-  
+
   // Kill PHP and Node processes running from our resources path only
   const userDataPath = app.getPath('userData').replace(/\\/g, '\\\\');
-  
+
   try {
     // Kill PHP processes from our path (php.exe used for artisan, composer)
     const phpCmd = `wmic process where "name='php.exe' and (commandline like '%${userDataPath}%' or commandline like '%composer%' or commandline like '%artisan%')" call terminate 2>nul`;
@@ -391,7 +391,7 @@ async function forceKillAllProcesses() {
   } catch (e) {
     // Ignore
   }
-  
+
   try {
     // Kill Node processes from our resources path only
     const nodeCmd = `wmic process where "name='node.exe' and commandline like '%${userDataPath}%'" call terminate 2>nul`;
@@ -409,18 +409,18 @@ async function gracefulShutdown() {
     return;
   }
   isShuttingDown = true;
-  
+
   try {
     // Stop all running projects first
     if (managers.project) {
       await managers.project.stopAllProjects();
     }
-    
+
     // Then stop all services
     if (managers.service) {
       await managers.service.stopAllServices();
     }
-    
+
     // Final force kill to ensure no orphan processes remain
     await forceKillAllProcesses();
   } catch (error) {
@@ -434,9 +434,9 @@ app.on('before-quit', async (event) => {
   if (!isShuttingDown) {
     event.preventDefault();
     app.isQuitting = true;
-    
+
     await gracefulShutdown();
-    
+
     // Now quit the app
     app.quit();
   }
