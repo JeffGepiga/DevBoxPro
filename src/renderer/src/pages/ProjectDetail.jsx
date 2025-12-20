@@ -426,26 +426,28 @@ function OverviewTab({ project, processes, refreshProjects }) {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const versions = await window.devbox?.php.getVersions();
-        // Only show installed PHP versions
-        const installedVersions = (versions || []).filter(v => v.available);
-        setPhpVersions(installedVersions);
-        
         const status = await window.devbox?.binaries.getStatus();
         setBinariesStatus(status || {});
+        
+        // Get installed PHP versions from binaries status (real-time disk check)
+        const getInstalledVersions = (service) => {
+          if (!status[service]) return [];
+          return Object.entries(status[service])
+            .filter(([_, v]) => v?.installed)
+            .map(([version]) => version)
+            .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+        };
+        
+        // Set PHP versions from binaries status
+        const installedPhpVersions = getInstalledVersions('php').map(version => ({
+          version,
+          available: true,
+        }));
+        setPhpVersions(installedPhpVersions);
         
         // Load service config and filter to only installed versions
         const config = await window.devbox?.binaries.getServiceConfig();
         if (config?.versions && status) {
-          // Filter to only installed versions for each service
-          const getInstalledVersions = (service) => {
-            if (!status[service]) return [];
-            return Object.entries(status[service])
-              .filter(([_, v]) => v?.installed)
-              .map(([version]) => version)
-              .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-          };
-          
           setVersionOptions({
             mysql: getInstalledVersions('mysql'),
             mariadb: getInstalledVersions('mariadb'),
@@ -597,6 +599,8 @@ function OverviewTab({ project, processes, refreshProjects }) {
     { id: 'mariadb', name: 'MariaDB', icon: '🗃️', installed: isAnyVersionInstalled(binariesStatus?.mariadb), isDatabase: true, hasVersions: true },
     { id: 'redis', name: 'Redis', icon: '⚡', installed: isAnyVersionInstalled(binariesStatus?.redis), hasVersions: true },
     { id: 'nodejs', name: 'Node.js', icon: '🟢', installed: isAnyVersionInstalled(binariesStatus?.nodejs), hasVersions: true },
+    { id: 'mailpit', name: 'Mailpit', icon: '📧', installed: binariesStatus?.mailpit?.installed === true },
+    { id: 'phpmyadmin', name: 'phpMyAdmin', icon: '🔧', installed: binariesStatus?.phpmyadmin?.installed === true },
     { id: 'queue', name: 'Queue Worker', icon: '📋', installed: true }, // Always available for Laravel
   ];
 

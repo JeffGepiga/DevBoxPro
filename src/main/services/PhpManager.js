@@ -21,8 +21,15 @@ class PhpManager {
       const versionPath = path.join(phpBasePath, version, platform);
       const phpBinary = this.getPhpBinaryName();
       const binaryPath = path.join(versionPath, phpBinary);
+      
+      // Also check for php-cgi which is required for web serving
+      const phpCgiBinary = process.platform === 'win32' ? 'php-cgi.exe' : 'php-cgi';
+      const phpCgiPath = path.join(versionPath, phpCgiBinary);
+      
+      const phpExists = await fs.pathExists(binaryPath);
+      const phpCgiExists = await fs.pathExists(phpCgiPath);
 
-      if (await fs.pathExists(binaryPath)) {
+      if (phpExists && phpCgiExists) {
         this.phpVersions[version] = {
           path: versionPath,
           binary: binaryPath,
@@ -30,6 +37,16 @@ class PhpManager {
           extensions: await this.discoverExtensions(versionPath, version),
         };
         console.log(`Found PHP ${version} at ${versionPath}`);
+      } else if (phpExists && !phpCgiExists) {
+        // Incomplete installation - php.exe exists but php-cgi.exe is missing
+        this.phpVersions[version] = {
+          path: versionPath,
+          binary: binaryPath,
+          available: false,
+          incomplete: true,
+          extensions: [],
+        };
+        console.log(`PHP ${version} found but incomplete (missing php-cgi) at ${versionPath}`);
       } else {
         this.phpVersions[version] = {
           path: versionPath,

@@ -753,14 +753,17 @@ class BinaryDownloadManager {
       composer: false,
     };
 
-    // Check PHP versions
+    // Check PHP versions - requires both php.exe and php-cgi.exe for a complete installation
     for (const version of this.versionMeta.php) {
       const phpPath = path.join(this.resourcesPath, 'php', version, platform);
       const phpExe = platform === 'win' ? 'php.exe' : 'php';
-      installed.php[version] = await fs.pathExists(path.join(phpPath, phpExe));
+      const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
+      const phpExists = await fs.pathExists(path.join(phpPath, phpExe));
+      const phpCgiExists = await fs.pathExists(path.join(phpPath, phpCgiExe));
+      installed.php[version] = phpExists && phpCgiExists;
     }
-    // Also scan for custom PHP versions
-    await this.scanCustomVersions('php', installed.php, platform, platform === 'win' ? 'php.exe' : 'php');
+    // Also scan for custom PHP versions (requires both php and php-cgi)
+    await this.scanCustomPhpVersions(installed.php, platform);
 
     // Check MySQL versions
     for (const version of this.versionMeta.mysql) {
@@ -850,6 +853,36 @@ class BinaryDownloadManager {
       }
     } catch (error) {
       console.warn(`Error scanning custom ${serviceName} versions:`, error.message);
+    }
+  }
+
+  // Special method for PHP that checks for both php and php-cgi
+  async scanCustomPhpVersions(installedObj, platform) {
+    try {
+      const serviceDir = path.join(this.resourcesPath, 'php');
+      if (!await fs.pathExists(serviceDir)) return;
+
+      const phpExe = platform === 'win' ? 'php.exe' : 'php';
+      const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
+
+      const dirs = await fs.readdir(serviceDir);
+      for (const dir of dirs) {
+        // Skip if already checked (predefined version) or if it's the platform folder (old structure)
+        if (installedObj[dir] !== undefined || dir === 'win' || dir === 'mac') continue;
+
+        const phpPath = path.join(serviceDir, dir, platform, phpExe);
+        const phpCgiPath = path.join(serviceDir, dir, platform, phpCgiExe);
+        
+        const phpExists = await fs.pathExists(phpPath);
+        const phpCgiExists = await fs.pathExists(phpCgiPath);
+        
+        // Only mark as installed if both executables exist
+        if (phpExists && phpCgiExists) {
+          installedObj[dir] = true;
+        }
+      }
+    } catch (error) {
+      console.warn(`Error scanning custom PHP versions:`, error.message);
     }
   }
 

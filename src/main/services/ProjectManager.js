@@ -1186,11 +1186,13 @@ class ProjectManager {
       servicesToStart.push({ name: 'redis', version: redisVersion, critical: false });
     }
 
-    // Always start mailpit for email testing
-    servicesToStart.push({ name: 'mailpit', critical: false });
+    // Mailpit for email testing (optional)
+    if (project.services?.mailpit) {
+      servicesToStart.push({ name: 'mailpit', critical: false });
+    }
 
-    // phpMyAdmin if database is used
-    if (project.services?.mysql || project.services?.mariadb) {
+    // phpMyAdmin if enabled and database is used
+    if (project.services?.phpmyadmin && (project.services?.mysql || project.services?.mariadb)) {
       servicesToStart.push({ name: 'phpmyadmin', critical: false });
     }
 
@@ -1486,7 +1488,8 @@ class ProjectManager {
     const sitesDir = path.join(dataPath, 'nginx', 'sites');
     const sslDir = path.join(dataPath, 'ssl', project.domain);
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    const fastcgiParamsPath = path.join(resourcesPath, 'nginx', platform, 'conf', 'fastcgi_params').replace(/\\/g, '/');
+    const nginxVersion = project.webServerVersion || '1.28';
+    const fastcgiParamsPath = path.join(resourcesPath, 'nginx', nginxVersion, platform, 'conf', 'fastcgi_params').replace(/\\/g, '/');
 
     await fs.ensureDir(sitesDir);
 

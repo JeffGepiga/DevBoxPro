@@ -40,17 +40,29 @@ class WebServerManager {
   }
 
   // Get path to nginx executable
-  getNginxPath() {
+  getNginxPath(version = '1.28') {
     const platform = this.getPlatform();
     const exe = platform === 'win' ? 'nginx.exe' : 'nginx';
-    return path.join(this.resourcesPath, 'nginx', platform, exe);
+    return path.join(this.resourcesPath, 'nginx', version, platform, exe);
+  }
+
+  // Get base nginx directory (for config paths)
+  getNginxBasePath(version = '1.28') {
+    const platform = this.getPlatform();
+    return path.join(this.resourcesPath, 'nginx', version, platform);
   }
 
   // Get path to Apache executable
-  getApachePath() {
+  getApachePath(version = '2.4') {
     const platform = this.getPlatform();
     const exe = platform === 'win' ? 'bin/httpd.exe' : 'bin/httpd';
-    return path.join(this.resourcesPath, 'apache', platform, exe);
+    return path.join(this.resourcesPath, 'apache', version, platform, exe);
+  }
+
+  // Get base apache directory (for config paths)
+  getApacheBasePath(version = '2.4') {
+    const platform = this.getPlatform();
+    return path.join(this.resourcesPath, 'apache', version, platform);
   }
 
   // Get path to PHP-CGI/FPM
@@ -61,9 +73,10 @@ class WebServerManager {
   }
 
   // Check if web server is installed
-  async isServerInstalled(type = null) {
+  async isServerInstalled(type = null, version = null) {
     const serverType = type || this.serverType;
-    const serverPath = serverType === 'nginx' ? this.getNginxPath() : this.getApachePath();
+    const serverVersion = version || (serverType === 'nginx' ? '1.28' : '2.4');
+    const serverPath = serverType === 'nginx' ? this.getNginxPath(serverVersion) : this.getApachePath(serverVersion);
     return fs.pathExists(serverPath);
   }
 
@@ -74,9 +87,10 @@ class WebServerManager {
     const sslPort = project.sslPort || 443;
     const phpFpmPort = 9000 + parseInt(id.slice(-4), 16) % 1000; // Unique port per project
 
-    // Get absolute path to fastcgi_params
+    // Get absolute path to fastcgi_params (with version)
     const platform = this.getPlatform();
-    const fastcgiParamsPath = path.join(this.resourcesPath, 'nginx', platform, 'conf', 'fastcgi_params').replace(/\\/g, '/');
+    const nginxVersion = project.webServerVersion || '1.28';
+    const fastcgiParamsPath = path.join(this.resourcesPath, 'nginx', nginxVersion, platform, 'conf', 'fastcgi_params').replace(/\\/g, '/');
 
     let serverConfig = `
 # DevBox Pro - ${name}
@@ -327,11 +341,13 @@ catch_workers_output = yes
     // Start web server for this project
     const serverProcess = await this.startWebServer(project, serverType);
 
-    // Store process references
+    // Store process references with server version
+    const serverVersion = project.webServerVersion || (serverType === 'nginx' ? '1.28' : '2.4');
     this.processes.set(project.id, {
       server: serverProcess,
       phpFpm: phpProcess,
       serverType,
+      serverVersion,
       phpFpmPort: config.phpFpmPort,
     });
 
@@ -348,23 +364,28 @@ catch_workers_output = yes
     let serverProcess;
 
     if (serverType === 'nginx') {
-      const nginxPath = this.getNginxPath();
+      // Get the nginx version from project config, default to 1.28
+      const nginxVersion = project.webServerVersion || '1.28';
+      const nginxPath = this.getNginxPath(nginxVersion);
+      const nginxBasePath = this.getNginxBasePath(nginxVersion);
       const confPath = path.join(this.dataPath, 'nginx', 'nginx.conf');
       
       // Create main nginx.conf that includes all sites
-      await this.createMainNginxConfig();
+      await this.createMainNginxConfig(nginxVersion);
       
-      serverProcess = spawn(nginxPath, ['-c', confPath, '-p', path.join(this.dataPath, 'nginx')], {
+      serverProcess = spawn(nginxPath, ['-c', confPath, '-p', nginxBasePath], {
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       });
     } else {
-      const apachePath = this.getApachePath();
+      // Get the apache version from project config, default to 2.4
+      const apacheVersion = project.webServerVersion || '2.4';
+      const apachePath = this.getApachePath(apacheVersion);
       const confPath = path.join(this.dataPath, 'apache', 'httpd.conf');
       
       // Create main httpd.conf that includes all vhosts
-      await this.createMainApacheConfig();
+      await this.createMainApacheConfig(apacheVersion);
       
       serverProcess = spawn(apachePath, ['-f', confPath, '-k', 'start'], {
         detached: true,
@@ -378,7 +399,7 @@ catch_workers_output = yes
   }
 
   // Create main Nginx config
-  async createMainNginxConfig() {
+  async createMainNginxConfig(version = '1.28') {
     const confDir = path.join(this.dataPath, 'nginx');
     const sitesDir = path.join(confDir, 'sites');
     const logsDir = path.join(confDir, 'logs');
@@ -387,8 +408,9 @@ catch_workers_output = yes
     await fs.ensureDir(logsDir);
 
     const platform = this.getPlatform();
+    const nginxBasePath = this.getNginxBasePath(version);
     const mimeTypes = platform === 'win' 
-      ? path.join(this.resourcesPath, 'nginx', platform, 'conf', 'mime.types')
+      ? path.join(nginxBasePath, 'conf', 'mime.types')
       : '/etc/nginx/mime.types';
 
     const mainConfig = `
@@ -442,12 +464,12 @@ http {
   }
 
   // Create main Apache config
-  async createMainApacheConfig() {
+  async createMainApacheConfig(version = '2.4') {
     const confDir = path.join(this.dataPath, 'apache');
     const vhostsDir = path.join(confDir, 'vhosts');
     const logsDir = path.join(confDir, 'logs');
     const platform = this.getPlatform();
-    const apacheRoot = path.join(this.resourcesPath, 'apache', platform);
+    const apacheRoot = path.join(this.resourcesPath, 'apache', version, platform);
     
     await fs.ensureDir(vhostsDir);
     await fs.ensureDir(logsDir);
@@ -555,17 +577,20 @@ IncludeOptional "${vhostsDir.replace(/\\/g, '/')}/*.conf"
   // Reload web server config
   async reloadConfig() {
     // Reload nginx if running
-    const nginxRunning = Array.from(this.processes.values()).some(p => p.serverType === 'nginx');
-    if (nginxRunning) {
-      const nginxPath = this.getNginxPath();
+    const nginxProcess = Array.from(this.processes.values()).find(p => p.serverType === 'nginx');
+    if (nginxProcess) {
+      const nginxVersion = nginxProcess.serverVersion || '1.28';
+      const nginxPath = this.getNginxPath(nginxVersion);
+      const nginxBasePath = this.getNginxBasePath(nginxVersion);
       const confPath = path.join(this.dataPath, 'nginx', 'nginx.conf');
-      spawn(nginxPath, ['-c', confPath, '-s', 'reload'], { detached: true, windowsHide: true });
+      spawn(nginxPath, ['-c', confPath, '-p', nginxBasePath, '-s', 'reload'], { detached: true, windowsHide: true });
     }
 
     // Reload apache if running  
-    const apacheRunning = Array.from(this.processes.values()).some(p => p.serverType === 'apache');
-    if (apacheRunning) {
-      const apachePath = this.getApachePath();
+    const apacheProcess = Array.from(this.processes.values()).find(p => p.serverType === 'apache');
+    if (apacheProcess) {
+      const apacheVersion = apacheProcess.serverVersion || '2.4';
+      const apachePath = this.getApachePath(apacheVersion);
       const confPath = path.join(this.dataPath, 'apache', 'httpd.conf');
       spawn(apachePath, ['-f', confPath, '-k', 'graceful'], { detached: true, windowsHide: true });
     }

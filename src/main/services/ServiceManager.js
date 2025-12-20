@@ -890,7 +890,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     await fs.ensureDir(path.join(nginxPath, 'temp', 'scgi_temp'));
 
     // Always recreate config with current ports
-    await this.createNginxConfig(confPath, logsPath, httpPort, sslPort);
+    await this.createNginxConfig(confPath, logsPath, httpPort, sslPort, version);
 
     // Test Nginx configuration before starting
     // This may fail with port bind errors even if our port check passed (Windows HTTP service, Hyper-V, etc.)
@@ -957,7 +957,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         }
         
         // Update the config with new ports
-        await this.createNginxConfig(confPath, logsPath, httpPort, sslPort);
+        await this.createNginxConfig(confPath, logsPath, httpPort, sslPort, version);
         
         // Update port ownership - we couldn't get standard ports
         if (this.standardPortOwner === 'nginx') {
@@ -1159,10 +1159,11 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     }
   }
 
-  async createNginxConfig(confPath, logsPath, httpPort = 80, sslPort = 443) {
+  async createNginxConfig(confPath, logsPath, httpPort = 80, sslPort = 443, version = '1.28') {
     const dataPath = path.join(app.getPath('userData'), 'data');
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    const nginxPath = path.join(this.resourcePath, 'nginx', platform);
+    // Use getNginxPath to get the correct versioned path
+    const nginxPath = this.getNginxPath(version);
     const mimeTypesPath = path.join(nginxPath, 'conf', 'mime.types').replace(/\\/g, '/');
     
     // WebServerManager stores sites in userData/data/nginx/sites, so we need to match that path
