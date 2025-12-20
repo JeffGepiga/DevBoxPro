@@ -750,22 +750,50 @@ if ($found) { 'FOUND' } else { 'NOTFOUND' }
     }
 
     const cliPath = this.getCliPath();
+    // Normalize the path - remove trailing slashes for consistent comparison
+    const normalizedCliPath = cliPath.replace(/[\\/]+$/, '');
     
     return new Promise((resolve, reject) => {
-      // Add to user PATH using PowerShell
-      const psCommand = `
-        $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
-        if ($currentPath -notlike "*${cliPath.replace(/\\/g, '\\\\')}*") {
-          [Environment]::SetEnvironmentVariable("Path", "$currentPath;${cliPath.replace(/\\/g, '\\\\')}", "User")
-          Write-Output "Added to PATH"
-        } else {
-          Write-Output "Already in PATH"
-        }
-      `;
+      // Use spawn instead of exec to avoid escaping issues
+      const psScript = `
+$targetPath = '${normalizedCliPath.replace(/'/g, "''")}'
+$currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+if ([string]::IsNullOrEmpty($currentPath)) {
+  $currentPath = ''
+}
+$pathArray = $currentPath.Split(';') | Where-Object { $_.Trim() -ne '' }
+$found = $pathArray | Where-Object { $_.Trim().TrimEnd('\\', '/') -ieq $targetPath }
+if (-not $found) {
+  $newPath = if ($currentPath.Trim()) { "$currentPath;$targetPath" } else { $targetPath }
+  [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+  Write-Output 'Added to PATH'
+} else {
+  Write-Output 'Already in PATH'
+}
+`;
       
-      exec(`powershell -Command "${psCommand.replace(/"/g, '\\"')}"`, (error, stdout, stderr) => {
-        if (error) {
-          reject(new Error(`Failed to add to PATH: ${error.message}`));
+      const child = spawn('powershell', ['-NoProfile', '-Command', psScript], {
+        windowsHide: true,
+      });
+      
+      let stdout = '';
+      let stderr = '';
+      
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      child.on('error', (error) => {
+        reject(new Error(`Failed to add to PATH: ${error.message}`));
+      });
+      
+      child.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`Failed to add to PATH: ${stderr}`));
         } else {
           resolve({
             success: true,

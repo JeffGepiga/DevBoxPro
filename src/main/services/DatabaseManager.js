@@ -1077,17 +1077,26 @@ class DatabaseManager {
     const port = this.getActualPort();
     const settings = this.configStore.get('settings', {});
     const user = settings.dbUser || this.dbConfig.user;
+    const password = settings.dbPassword || this.dbConfig.password;
 
     return new Promise((resolve, reject) => {
       const args = [
         `-h${this.dbConfig.host}`,
         `-P${port}`,
         `-u${user}`,
+      ];
+
+      // Add password if set
+      if (password) {
+        args.push(`-p${password}`);
+      }
+
+      args.push(
         '-N', // Skip column names
         '-B', // Batch mode
         '-e',
         query,
-      ];
+      );
 
       if (database) {
         args.push(database);
