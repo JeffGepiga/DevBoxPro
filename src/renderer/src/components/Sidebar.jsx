@@ -14,7 +14,7 @@ import {
   Download,
 } from 'lucide-react';
 import clsx from 'clsx';
-import logoImg from '/logo.png';
+import logoImg from '/logo.svg';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
