@@ -338,7 +338,7 @@ class ProjectManager {
 
       // Run installation in background (don't await)
       this.runInstallation(project, mainWindow).catch(error => {
-        console.error('Background installation failed:', error);
+        this.managers.log?.systemError('Background installation failed', { project: project.name, error: error.message });
       });
     }
 
@@ -462,7 +462,7 @@ class ProjectManager {
       }
 
     } catch (error) {
-      console.error('Failed to install framework:', error);
+      this.managers.log?.systemError('Failed to install framework', { project: project.name, error: error.message });
       // Mark installation as failed but keep the project usable
       // User can fix it manually (e.g., run composer install in terminal)
       project.installError = error.message;
@@ -971,7 +971,7 @@ class ProjectManager {
       this.managers.log?.project(id, `PHP-CGI running on port ${actualPhpFpmPort}`);
       return { success: true, port: project.port, phpFpmPort: actualPhpFpmPort };
     } catch (error) {
-      console.error(`Failed to start project ${project.name}:`, error);
+      this.managers.log?.systemError(`Failed to start project ${project.name}`, { error: error.message });
       this.managers.log?.project(id, `Failed to start project: ${error.message}`, 'error');
       throw error;
     }

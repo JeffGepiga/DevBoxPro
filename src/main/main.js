@@ -296,7 +296,7 @@ async function startup() {
       const settings = managers.config.get('settings', {});
       if (settings.autoStartServices) {
         managers.service.startCoreServices().catch(err => {
-          console.error('Error auto-starting services:', err);
+          managers.log?.systemError('Error auto-starting services', { error: err.message });
         });
       }
     });
@@ -310,12 +310,12 @@ async function startup() {
           try {
             await managers.project.startProject(project.id);
           } catch (err) {
-            console.error(`Failed to auto-start project ${project.name}:`, err.message);
+            managers.log?.systemError(`Failed to auto-start project ${project.name}`, { error: err.message });
           }
         }
       }
     } catch (err) {
-      console.error('Error auto-starting projects:', err);
+      managers.log?.systemError('Error auto-starting projects', { error: err.message });
     }
   } catch (error) {
   }
@@ -424,7 +424,7 @@ async function gracefulShutdown() {
     // Final force kill to ensure no orphan processes remain
     await forceKillAllProcesses();
   } catch (error) {
-    console.error('Error during shutdown:', error);
+    managers.log?.systemError('Error during shutdown', { error: error.message });
     // Even if there's an error, still try to force kill
     await forceKillAllProcesses();
   }
@@ -444,13 +444,11 @@ app.on('before-quit', async (event) => {
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
-  managers.log?.error('Uncaught exception', error);
+  managers.log?.systemError('Uncaught exception', { error: error.message, stack: error.stack });
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled rejection at:', promise, 'reason:', reason);
-  managers.log?.error('Unhandled rejection', { reason, promise });
+  managers.log?.systemError('Unhandled rejection', { reason: String(reason) });
 });
 
 module.exports = { managers };
