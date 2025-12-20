@@ -51,7 +51,6 @@ function BinaryManager() {
   });
   const [downloadUrls, setDownloadUrls] = useState({});
   const [loading, setLoading] = useState(true);
-  const [webServerType, setWebServerType] = useState('nginx');
   const [phpIniEditor, setPhpIniEditor] = useState({ open: false, version: null });
   const [expandedSections, setExpandedSections] = useState({
     php: false,
@@ -212,14 +211,6 @@ function BinaryManager() {
         console.error('Error loading service config:', error);
       }
       
-      // Load web server preference
-      try {
-        const serverType = await window.devbox?.webServer.getServerType();
-        if (serverType) setWebServerType(serverType);
-      } catch (error) {
-        console.error('Error loading web server type:', error);
-      }
-      
       setLoading(false);
     };
     init();
@@ -233,15 +224,6 @@ function BinaryManager() {
 
     return () => unsubscribe?.();
   }, [forceRefreshInstalled, loadDownloadUrls, loadServiceConfig]);
-
-  const handleSetWebServer = async (type) => {
-    try {
-      await window.devbox?.webServer.setServerType(type);
-      setWebServerType(type);
-    } catch (error) {
-      console.error('Error setting web server type:', error);
-    }
-  };
 
   const handleDownloadPhp = async (version) => {
     const id = `php-${version}`;
@@ -1823,19 +1805,15 @@ function BinaryManager() {
               Download Full Stack Environment
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Download PHP 8.4, {webServerType === 'nginx' ? 'Nginx 1.28' : 'Apache 2.4'}, MySQL 8.4, Redis 7.4, Mailpit, phpMyAdmin, Node.js 20, and Composer
+              Download PHP 8.4, Nginx 1.28, MySQL 8.4, Redis 7.4, Mailpit, phpMyAdmin, Node.js 20, and Composer
             </p>
           </div>
           <button
             onClick={async () => {
               // Download essentials with latest versions
               if (!installed.php?.['8.4']) handleDownloadPhp('8.4');
-              // Download web server with latest version
-              if (webServerType === 'nginx') {
-                if (!installed.nginx?.['1.28']) handleDownloadService('nginx', '1.28');
-              } else {
-                if (!installed.apache?.['2.4']) handleDownloadService('apache', '2.4');
-              }
+              // Download Nginx (default web server)
+              if (!installed.nginx?.['1.28']) handleDownloadService('nginx', '1.28');
               // Download MySQL latest (8.4)
               if (!installed.mysql?.['8.4']) handleDownloadService('mysql', '8.4');
               // Download Redis latest (7.4)

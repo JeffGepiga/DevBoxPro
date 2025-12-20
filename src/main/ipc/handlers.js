@@ -494,25 +494,8 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       // Get all projects first if we need to delete their files
       const projects = config.get('projects', []);
       
-      // Stop all running projects first
-      if (project) {
-        try {
-          await project.stopAllProjects();
-        } catch (e) {
-          console.error('Error stopping projects:', e);
-        }
-      }
-      
-      // Stop all services
-      if (service) {
-        try {
-          await service.stopAllServices();
-        } catch (e) {
-          console.error('Error stopping services:', e);
-        }
-      }
-      
-      // Force kill any remaining processes on Windows
+      // Force kill all processes FIRST on Windows before trying graceful stop
+      // This prevents errors from trying to read config files during graceful shutdown
       if (process.platform === 'win32') {
         const { exec, execSync } = require('child_process');
         // Kill DevBox-specific processes globally
@@ -538,6 +521,34 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         
         // Wait a moment for processes to terminate
         await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      // Now clear the service manager's internal state (without trying to gracefully stop)
+      if (service) {
+        try {
+          // Just clear the internal tracking - processes are already force-killed
+          service.processes?.clear();
+          for (const [serviceName, versions] of service.runningVersions || []) {
+            versions.clear();
+          }
+          for (const [serviceName, status] of service.serviceStatus || []) {
+            status.status = 'stopped';
+            status.pid = null;
+            status.startedAt = null;
+            status.version = null;
+          }
+        } catch (e) {
+          console.error('Error clearing service state:', e);
+        }
+      }
+      
+      // Clear project manager state
+      if (project) {
+        try {
+          project.runningProjects?.clear();
+        } catch (e) {
+          console.error('Error clearing project state:', e);
+        }
       }
       
       // Delete project files if requested
