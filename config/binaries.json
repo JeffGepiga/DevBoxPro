@@ -151,36 +151,36 @@
     "downloads": {
       "7.4": {
         "win": {
-          "url": "https://github.com/redis-windows/redis-windows/releases/download/7.4.3/Redis-7.4.3-Windows-x64-msys2.zip",
-          "filename": "Redis-7.4.3-Windows-x64-msys2.zip"
+          "url": "https://github.com/redis-windows/redis-windows/releases/download/7.4.7/Redis-7.4.7-Windows-x64-msys2.zip",
+          "filename": "Redis-7.4.7-Windows-x64-msys2.zip"
         },
         "mac": {
-          "url": "https://github.com/redis/redis/archive/refs/tags/7.4.3.tar.gz",
-          "filename": "redis-7.4.3.tar.gz",
+          "url": "https://github.com/redis/redis/archive/refs/tags/7.4.7.tar.gz",
+          "filename": "redis-7.4.7.tar.gz",
           "requiresBuild": true
         },
         "label": "Latest"
       },
       "7.2": {
         "win": {
-          "url": "https://github.com/redis-windows/redis-windows/releases/download/7.2.8/Redis-7.2.8-Windows-x64-msys2.zip",
-          "filename": "Redis-7.2.8-Windows-x64-msys2.zip"
+          "url": "https://github.com/redis-windows/redis-windows/releases/download/7.2.12/Redis-7.2.12-Windows-x64-msys2.zip",
+          "filename": "Redis-7.2.12-Windows-x64-msys2.zip"
         },
         "mac": {
-          "url": "https://github.com/redis/redis/archive/refs/tags/7.2.8.tar.gz",
-          "filename": "redis-7.2.8.tar.gz",
+          "url": "https://github.com/redis/redis/archive/refs/tags/7.2.12.tar.gz",
+          "filename": "redis-7.2.12.tar.gz",
           "requiresBuild": true
         },
         "label": "LTS"
       },
       "6.2": {
         "win": {
-          "url": "https://github.com/redis-windows/redis-windows/releases/download/6.2.16/Redis-6.2.16-Windows-x64-msys2.zip",
-          "filename": "Redis-6.2.16-Windows-x64-msys2.zip"
+          "url": "https://github.com/redis-windows/redis-windows/releases/download/6.2.21/Redis-6.2.21-Windows-x64-msys2.zip",
+          "filename": "Redis-6.2.21-Windows-x64-msys2.zip"
         },
         "mac": {
-          "url": "https://github.com/redis/redis/archive/refs/tags/6.2.16.tar.gz",
-          "filename": "redis-6.2.16.tar.gz",
+          "url": "https://github.com/redis/redis/archive/refs/tags/6.2.21.tar.gz",
+          "filename": "redis-6.2.21.tar.gz",
           "requiresBuild": true
         },
         "label": "Legacy LTS"

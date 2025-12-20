@@ -56,8 +56,8 @@ async function extractZip() {
       }
       processed++;
       
-      // Report progress every 20 entries
-      if (processed % 20 === 0 || processed === totalEntries) {
+      // Report progress every 50 entries to reduce IPC overhead
+      if (processed % 50 === 0 || processed === totalEntries) {
         const progress = Math.round((processed / totalEntries) * 100);
         parentPort.postMessage({ type: 'progress', progress });
       }

@@ -860,6 +860,11 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return managers.binaryDownload.downloadComposer();
   });
 
+  ipcMain.handle('binaries:cancelDownload', async (event, id) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.cancelDownload(id);
+  });
+
   ipcMain.handle('binaries:runComposer', async (event, projectPath, command, phpVersion) => {
     if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
     return managers.binaryDownload.runComposer(projectPath, command, phpVersion);

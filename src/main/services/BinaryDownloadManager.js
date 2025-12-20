@@ -23,6 +23,16 @@ class BinaryDownloadManager {
     this.downloadProgress = new Map();
     this.listeners = new Set();
     
+    // Throttle tracking for progress updates to prevent UI freeze
+    this.lastProgressEmit = new Map(); // id -> { time, progress }
+    this.progressThrottleMs = 200; // Minimum ms between progress updates
+    this.progressMinDelta = 2; // Minimum progress change (%) to emit
+    
+    // Track active downloads for cancellation support
+    this.activeDownloads = new Map(); // id -> { request, file, reject }
+    this.activeWorkers = new Map(); // id -> { worker, reject, destPath }
+    this.cancelledDownloads = new Set(); // Track cancelled IDs to prevent extraction attempts
+    
     // Download URLs for each binary - ALL services now support multiple versions
     // PHP versions updated from https://windows.php.net/download/ on 2025-01
     this.downloads = {
@@ -174,12 +184,12 @@ class BinaryDownloadManager {
       redis: {
         '7.4': {
           win: {
-            url: 'https://github.com/redis-windows/redis-windows/releases/download/7.4.3/Redis-7.4.3-Windows-x64.zip',
-            filename: 'Redis-7.4.3-Windows-x64.zip',
+            url: 'https://github.com/redis-windows/redis-windows/releases/download/7.4.7/Redis-7.4.7-Windows-x64-msys2.zip',
+            filename: 'Redis-7.4.7-Windows-x64-msys2.zip',
           },
           mac: {
-            url: 'https://github.com/redis/redis/archive/refs/tags/7.4.1.tar.gz',
-            filename: 'redis-7.4.1.tar.gz',
+            url: 'https://github.com/redis/redis/archive/refs/tags/7.4.7.tar.gz',
+            filename: 'redis-7.4.7.tar.gz',
             note: 'Requires compilation on macOS',
           },
           label: 'Latest',
@@ -187,28 +197,28 @@ class BinaryDownloadManager {
         },
         '7.2': {
           win: {
-            url: 'https://github.com/redis-windows/redis-windows/releases/download/7.2.7/Redis-7.2.7-Windows-x64.zip',
-            filename: 'Redis-7.2.7-Windows-x64.zip',
+            url: 'https://github.com/redis-windows/redis-windows/releases/download/7.2.12/Redis-7.2.12-Windows-x64-msys2.zip',
+            filename: 'Redis-7.2.12-Windows-x64-msys2.zip',
           },
           mac: {
-            url: 'https://github.com/redis/redis/archive/refs/tags/7.2.7.tar.gz',
-            filename: 'redis-7.2.7.tar.gz',
+            url: 'https://github.com/redis/redis/archive/refs/tags/7.2.12.tar.gz',
+            filename: 'redis-7.2.12.tar.gz',
             note: 'Requires compilation on macOS',
           },
           label: 'LTS',
           defaultPort: 6380,
         },
-        '5.0': {
+        '6.2': {
           win: {
-            url: 'https://github.com/tporadowski/redis/releases/download/v5.0.14.1/Redis-x64-5.0.14.1.zip',
-            filename: 'Redis-x64-5.0.14.1.zip',
+            url: 'https://github.com/redis-windows/redis-windows/releases/download/6.2.21/Redis-6.2.21-Windows-x64-msys2.zip',
+            filename: 'Redis-6.2.21-Windows-x64-msys2.zip',
           },
           mac: {
-            url: 'https://github.com/redis/redis/archive/refs/tags/5.0.14.tar.gz',
-            filename: 'redis-5.0.14.tar.gz',
+            url: 'https://github.com/redis/redis/archive/refs/tags/6.2.21.tar.gz',
+            filename: 'redis-6.2.21.tar.gz',
             note: 'Requires compilation on macOS',
           },
-          label: 'Legacy',
+          label: 'Legacy LTS',
           defaultPort: 6381,
         },
       },
@@ -717,14 +727,40 @@ class BinaryDownloadManager {
   }
 
   emitProgress(id, progress) {
-    this.downloadProgress.set(id, progress);
-    this.listeners.forEach((cb) => cb(id, progress));
+    // Always emit status changes immediately (starting, completed, error)
+    // But throttle progress updates for downloading AND extracting
+    const isProgressUpdate = (progress.status === 'downloading' || progress.status === 'extracting') && 
+                             progress.progress !== 0 && progress.progress !== 100;
     
-    // Clean up completed/errored downloads after emitting
-    if (progress.status === 'completed' || progress.status === 'error') {
-      setTimeout(() => {
-        this.downloadProgress.delete(id);
-      }, 1000);
+    if (!isProgressUpdate) {
+      this.downloadProgress.set(id, progress);
+      this.lastProgressEmit.delete(id); // Clear throttle tracking
+      this.listeners.forEach((cb) => cb(id, progress));
+      
+      // Clean up completed/errored downloads after emitting
+      if (progress.status === 'completed' || progress.status === 'error') {
+        setTimeout(() => {
+          this.downloadProgress.delete(id);
+          this.lastProgressEmit.delete(id);
+        }, 1000);
+      }
+      return;
+    }
+    
+    // Throttle downloading/extracting progress updates
+    const now = Date.now();
+    const last = this.lastProgressEmit.get(id);
+    const currentProgress = progress.progress || 0;
+    
+    // Check if we should emit this update
+    const timeSinceLast = last ? (now - last.time) : Infinity;
+    const progressDelta = last ? Math.abs(currentProgress - last.progress) : Infinity;
+    
+    // Emit if: enough time passed OR significant progress change OR first update
+    if (timeSinceLast >= this.progressThrottleMs || progressDelta >= this.progressMinDelta || !last) {
+      this.downloadProgress.set(id, progress);
+      this.lastProgressEmit.set(id, { time: now, progress: currentProgress });
+      this.listeners.forEach((cb) => cb(id, progress));
     }
   }
 
@@ -896,6 +932,10 @@ class BinaryDownloadManager {
       const protocol = url.startsWith('https') ? https : http;
       const parsedUrl = new URL(url);
 
+      // Store reject function for cancellation
+      const downloadInfo = { request: null, file, reject, destPath };
+      this.activeDownloads.set(id, downloadInfo);
+
       const request = protocol.get(url, { 
         headers: { 
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -950,22 +990,144 @@ class BinaryDownloadManager {
 
         file.on('finish', () => {
           file.close();
+          this.activeDownloads.delete(id);
           resolve(destPath);
         });
       });
 
+      // Store the request reference for cancellation
+      downloadInfo.request = request;
+
       request.on('error', (err) => {
         file.close();
+        this.activeDownloads.delete(id);
         fs.unlink(destPath, () => {});
-        reject(err);
+        // Don't reject if this was a user-initiated cancellation
+        if (this.cancelledDownloads.has(id)) {
+          this.cancelledDownloads.delete(id);
+          const cancelError = new Error('Download cancelled');
+          cancelError.cancelled = true;
+          reject(cancelError);
+        } else {
+          reject(err);
+        }
       });
 
       file.on('error', (err) => {
         file.close();
+        this.activeDownloads.delete(id);
         fs.unlink(destPath, () => {});
-        reject(err);
+        // Don't reject if this was a user-initiated cancellation
+        if (this.cancelledDownloads.has(id)) {
+          this.cancelledDownloads.delete(id);
+          const cancelError = new Error('Download cancelled');
+          cancelError.cancelled = true;
+          reject(cancelError);
+        } else {
+          reject(err);
+        }
       });
     });
+  }
+
+  /**
+   * Cancel an active download or extraction
+   * @param {string} id - The download ID
+   * @returns {boolean} - True if a download/extraction was cancelled, false otherwise
+   */
+  cancelDownload(id) {
+    let cancelled = false;
+    
+    // Check for active download
+    const downloadInfo = this.activeDownloads.get(id);
+    if (downloadInfo) {
+      console.log(`Cancelling download for ${id}`);
+      
+      try {
+        // Destroy the HTTP request to abort the download
+        if (downloadInfo.request) {
+          downloadInfo.request.destroy();
+        }
+        
+        // Close the file stream
+        if (downloadInfo.file) {
+          downloadInfo.file.close();
+        }
+        
+        // Delete the partial file
+        if (downloadInfo.destPath) {
+          fs.unlink(downloadInfo.destPath, () => {});
+        }
+        
+        // Note: We don't reject the promise here - just clean up silently
+        // The UI is updated via emitProgress with 'cancelled' status
+      } catch (error) {
+        console.error(`Error cancelling download for ${id}:`, error);
+      }
+      
+      this.activeDownloads.delete(id);
+      cancelled = true;
+    }
+    
+    // Check for active extraction worker
+    const workerInfo = this.activeWorkers.get(id);
+    if (workerInfo) {
+      console.log(`Cancelling extraction for ${id}`);
+      
+      try {
+        // Terminate the worker thread
+        if (workerInfo.worker) {
+          workerInfo.worker.terminate();
+        }
+        
+        // Clean up partially extracted files
+        if (workerInfo.destPath) {
+          fs.remove(workerInfo.destPath, () => {});
+        }
+        
+        // Note: We don't reject the promise here - just clean up silently
+      } catch (error) {
+        console.error(`Error cancelling extraction for ${id}:`, error);
+      }
+      
+      this.activeWorkers.delete(id);
+      cancelled = true;
+    }
+    
+    if (!cancelled) {
+      console.log(`No active download or extraction found for ${id}`);
+      return false;
+    }
+    
+    // Mark as cancelled so extraction doesn't attempt to run
+    this.cancelledDownloads.add(id);
+    
+    // Clean up tracking
+    this.downloadProgress.delete(id);
+    this.lastProgressEmit.delete(id);
+    
+    // Emit cancelled status
+    this.emitProgress(id, { status: 'cancelled', progress: 0 }, true);
+    
+    return true;
+  }
+
+  /**
+   * Check if a download was cancelled and throw if so
+   * @param {string} id - The download ID
+   * @param {string} downloadPath - Path to clean up if cancelled
+   * @throws {Error} CancelledError if the download was cancelled
+   */
+  async checkCancelled(id, downloadPath = null) {
+    if (this.cancelledDownloads.has(id)) {
+      this.cancelledDownloads.delete(id);
+      if (downloadPath) {
+        await fs.remove(downloadPath).catch(() => {});
+      }
+      const error = new Error('Download cancelled');
+      error.cancelled = true;
+      throw error;
+    }
   }
 
   async extractArchive(archivePath, destPath, id) {
@@ -1034,21 +1196,28 @@ class BinaryDownloadManager {
           workerData: { archivePath, destPath }
         });
         
+        // Track the worker for cancellation support
+        this.activeWorkers.set(id, { worker, reject, destPath });
+        
         worker.on('message', (message) => {
           if (message.type === 'progress') {
             this.emitProgress(id, { status: 'extracting', progress: message.progress });
           } else if (message.type === 'done') {
+            this.activeWorkers.delete(id);
             resolve();
           } else if (message.type === 'error') {
+            this.activeWorkers.delete(id);
             reject(new Error(message.error));
           }
         });
         
         worker.on('error', (error) => {
+          this.activeWorkers.delete(id);
           reject(error);
         });
         
         worker.on('exit', (code) => {
+          this.activeWorkers.delete(id);
           if (code !== 0) {
             reject(new Error(`Worker stopped with exit code ${code}`));
           }
@@ -1081,6 +1250,9 @@ class BinaryDownloadManager {
       // Download
       await this.downloadFile(downloadInfo.url, downloadPath, id);
 
+      // Check if cancelled before extraction
+      await this.checkCancelled(id, downloadPath);
+
       // Extract
       await this.extractArchive(downloadPath, extractPath, id);
 
@@ -1093,6 +1265,9 @@ class BinaryDownloadManager {
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true };
     } catch (error) {
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1230,12 +1405,16 @@ extension=${extPrefix}gd${extSuffix}
       await fs.ensureDir(extractPath);
 
       await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
       await this.extractArchive(downloadPath, extractPath, id);
       await fs.remove(downloadPath);
 
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true, version };
     } catch (error) {
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1260,12 +1439,16 @@ extension=${extPrefix}gd${extSuffix}
       await fs.ensureDir(extractPath);
 
       await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
       await this.extractArchive(downloadPath, extractPath, id);
       await fs.remove(downloadPath);
 
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true, version };
     } catch (error) {
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1290,12 +1473,16 @@ extension=${extPrefix}gd${extSuffix}
       await fs.ensureDir(extractPath);
 
       await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
       await this.extractArchive(downloadPath, extractPath, id);
       await fs.remove(downloadPath);
 
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true, version };
     } catch (error) {
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1320,12 +1507,16 @@ extension=${extPrefix}gd${extSuffix}
       await fs.ensureDir(extractPath);
 
       await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
       await this.extractArchive(downloadPath, extractPath, id);
       await fs.remove(downloadPath);
 
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true };
     } catch (error) {
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1345,6 +1536,7 @@ extension=${extPrefix}gd${extSuffix}
       await fs.ensureDir(extractPath);
 
       await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
       await this.extractArchive(downloadPath, extractPath, id);
       
       // Create config file
@@ -1355,6 +1547,9 @@ extension=${extPrefix}gd${extSuffix}
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true };
     } catch (error) {
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1401,6 +1596,7 @@ $cfg['ServerDefault'] = 1;
       await fs.ensureDir(extractPath);
 
       await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
       await this.extractArchive(downloadPath, extractPath, id);
 
       // Create default nginx config for PHP
@@ -1411,6 +1607,9 @@ $cfg['ServerDefault'] = 1;
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true, version };
     } catch (error) {
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1528,6 +1727,7 @@ server {
         throw new Error(`Apache download failed. ${manualNote} Manual download: ${manualUrl}`);
       }
 
+      await this.checkCancelled(id, downloadPath);
       await this.extractArchive(downloadPath, extractPath, id);
 
       // Apache Lounge ZIPs have files inside an "Apache24" folder - move them up
@@ -1552,6 +1752,9 @@ server {
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true, version };
     } catch (error) {
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1963,6 +2166,7 @@ AddType application/x-httpd-php-source .phps
       const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
       await this.downloadFile(downloadInfo.url, downloadPath, id);
 
+      await this.checkCancelled(id, downloadPath);
       this.emitProgress(id, { status: 'extracting', progress: 50 });
 
       const nodejsPath = path.join(this.resourcesPath, 'nodejs', version, platform);
@@ -1996,6 +2200,9 @@ AddType application/x-httpd-php-source .phps
         path: nodejsPath,
       };
     } catch (error) {
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }

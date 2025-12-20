@@ -291,6 +291,16 @@ function BinaryManager() {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
+  // Cancel an active download
+  const handleCancelDownload = async (id) => {
+    try {
+      await window.devbox?.binaries.cancelDownload(id);
+      clearDownload(id);
+    } catch (error) {
+      console.error(`Error cancelling download ${id}:`, error);
+    }
+  };
+
   // Check for binary updates from GitHub
   const handleCheckForUpdates = async () => {
     setCheckingUpdates(true);
@@ -586,12 +596,23 @@ function BinaryManager() {
     const p = progress[id];
     if (!p) return null;
 
+    const cancelButton = (
+      <button
+        onClick={() => handleCancelDownload(id)}
+        className="ml-2 p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+        title="Cancel download"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    );
+
     switch (p.status) {
       case 'starting':
         return (
           <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
             <Loader2 className="w-4 h-4 animate-spin" />
             Starting...
+            {cancelButton}
           </span>
         );
       case 'downloading':
@@ -606,13 +627,15 @@ function BinaryManager() {
             <span className="text-sm text-gray-500">
               {p.progress}% {p.total > 0 && `(${formatBytes(p.downloaded)}/${formatBytes(p.total)})`}
             </span>
+            {cancelButton}
           </div>
         );
       case 'extracting':
         return (
           <span className="text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
             <Loader2 className="w-4 h-4 animate-spin" />
-            Extracting...
+            Extracting... {p.progress > 0 && `(${p.progress}%)`}
+            {cancelButton}
           </span>
         );
       case 'completed':
@@ -627,6 +650,13 @@ function BinaryManager() {
           <span className="text-red-600 dark:text-red-400 flex items-center gap-1" title={p.error}>
             <AlertCircle className="w-4 h-4" />
             Failed
+          </span>
+        );
+      case 'cancelled':
+        return (
+          <span className="text-orange-600 dark:text-orange-400 flex items-center gap-1">
+            <AlertCircle className="w-4 h-4" />
+            Cancelled
           </span>
         );
       default:

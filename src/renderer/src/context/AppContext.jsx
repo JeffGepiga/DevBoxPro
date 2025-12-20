@@ -137,7 +137,6 @@ export function AppProvider({ children }) {
 
     // Binary download progress listener - persistent across navigation
     const unsubBinaryProgress = window.devbox?.binaries.onProgress?.((id, progressData) => {
-      console.log('[AppContext] Download progress:', id, progressData);
       dispatch({ type: 'SET_DOWNLOAD_PROGRESS', payload: { id, progress: progressData } });
       
       if (progressData.status === 'completed' || progressData.status === 'error') {

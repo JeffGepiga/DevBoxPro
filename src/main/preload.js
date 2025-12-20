@@ -191,6 +191,7 @@ contextBridge.exposeInMainWorld('devbox', {
     openApacheDownloadPage: () => ipcRenderer.invoke('binaries:openApacheDownloadPage'),
     downloadNodejs: (version) => ipcRenderer.invoke('binaries:downloadNodejs', version),
     downloadComposer: () => ipcRenderer.invoke('binaries:downloadComposer'),
+    cancelDownload: (id) => ipcRenderer.invoke('binaries:cancelDownload', id),
     runComposer: (projectPath, command, phpVersion) => ipcRenderer.invoke('binaries:runComposer', projectPath, command, phpVersion),
     runNpm: (projectPath, command, nodeVersion) => ipcRenderer.invoke('binaries:runNpm', projectPath, command, nodeVersion),
     remove: (type, version) => ipcRenderer.invoke('binaries:remove', type, version),
