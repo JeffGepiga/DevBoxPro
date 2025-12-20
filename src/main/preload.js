@@ -71,7 +71,7 @@ contextBridge.exposeInMainWorld('devbox', {
     runQuery: (database, query) => ipcRenderer.invoke('database:runQuery', database, query),
     getPhpMyAdminUrl: () => ipcRenderer.invoke('database:getPhpMyAdminUrl'),
     getActiveDatabaseType: () => ipcRenderer.invoke('database:getActiveDatabaseType'),
-    setActiveDatabaseType: (dbType) => ipcRenderer.invoke('database:setActiveDatabaseType', dbType),
+    setActiveDatabaseType: (dbType, version) => ipcRenderer.invoke('database:setActiveDatabaseType', dbType, version),
     getDatabaseInfo: () => ipcRenderer.invoke('database:getDatabaseInfo'),
     resetCredentials: (user, password) => ipcRenderer.invoke('database:resetCredentials', user, password),
     syncCredentialsToAllVersions: (newUser, newPassword, oldPassword) => 

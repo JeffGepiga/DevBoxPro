@@ -10,7 +10,6 @@ import {
   Search,
   Table,
   HardDrive,
-  Key,
   Settings,
   ChevronDown,
   Play,
@@ -28,14 +27,11 @@ function Databases() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showResetModal, setShowResetModal] = useState(false);
   const [newDbName, setNewDbName] = useState('');
   const [selectedDatabase, setSelectedDatabase] = useState(null); // { type: 'mysql', version: '8.4' }
   const [dbInfo, setDbInfo] = useState(null);
   const [binariesStatus, setBinariesStatus] = useState(null);
   const [servicesStatus, setServicesStatus] = useState({});
-  const [resetForm, setResetForm] = useState({ user: 'root', password: '' });
-  const [resetting, setResetting] = useState(false);
   const [startingVersion, setStartingVersion] = useState(null); // 'mysql-8.4' or null
   const [stoppingVersion, setStoppingVersion] = useState(null);
   const [serviceError, setServiceError] = useState(null);
@@ -74,7 +70,6 @@ function Databases() {
       setBinariesStatus(status);
       setDbInfo(info);
       setServicesStatus(services || {});
-      setResetForm({ user: info?.user || 'root', password: '' });
       
       // Auto-select first running database, or first installed one
       // Get first running MySQL version from runningVersions
@@ -134,9 +129,9 @@ function Databases() {
 
   const handleSelectDatabase = async (type, version) => {
     setSelectedDatabase({ type, version });
-    // Update active database type for queries
+    // Update active database type AND version for queries
     try {
-      await window.devbox?.database.setActiveDatabaseType(type);
+      await window.devbox?.database.setActiveDatabaseType(type, version);
       setServiceError(null);
     } catch (error) {
       console.error('Error switching database:', error);
@@ -153,7 +148,7 @@ function Databases() {
       await loadServicesStatus();
       // Auto-select this database after starting
       setSelectedDatabase({ type, version });
-      await window.devbox?.database.setActiveDatabaseType(type);
+      await window.devbox?.database.setActiveDatabaseType(type, version);
     } catch (error) {
       console.error('Error starting service:', error);
       setServiceError(`Failed to start ${type} ${version}: ${error.message}`);
@@ -174,28 +169,6 @@ function Databases() {
       setServiceError(`Failed to stop ${type} ${version}: ${error.message}`);
     } finally {
       setStoppingVersion(null);
-    }
-  };
-
-  const handleResetCredentials = async () => {
-    if (!resetForm.user.trim()) {
-      alert('Username is required');
-      return;
-    }
-
-    setResetting(true);
-    try {
-      await window.devbox?.database.resetCredentials(resetForm.user, resetForm.password);
-      setShowResetModal(false);
-      alert('Database credentials reset successfully!');
-      // Reload database info
-      const info = await window.devbox?.database.getDatabaseInfo();
-      setDbInfo(info);
-    } catch (error) {
-      console.error('Error resetting credentials:', error);
-      alert('Failed to reset credentials: ' + error.message);
-    } finally {
-      setResetting(false);
     }
   };
 
@@ -421,14 +394,9 @@ function Databases() {
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
               Installed Database Engines
             </span>
-            <button
-              onClick={() => setShowResetModal(true)}
-              className="btn-ghost btn-sm"
-              disabled={!isSelectedRunning}
-            >
-              <Key className="w-4 h-4" />
-              Reset Credentials
-            </button>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              Manage credentials in Settings → Network
+            </span>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -668,61 +636,6 @@ function Databases() {
                 className="btn-primary"
               >
                 Create
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reset Credentials Modal */}
-      {showResetModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="card p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              Reset {selectedLabel} Credentials
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="label">Username</label>
-                <input
-                  type="text"
-                  value={resetForm.user}
-                  onChange={(e) => setResetForm({ ...resetForm, user: e.target.value })}
-                  className="input"
-                  placeholder="root"
-                />
-              </div>
-              <div>
-                <label className="label">New Password</label>
-                <input
-                  type="password"
-                  value={resetForm.password}
-                  onChange={(e) => setResetForm({ ...resetForm, password: e.target.value })}
-                  className="input"
-                  placeholder="Leave empty for no password"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Leave empty to set no password (default for local development)
-                </p>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => {
-                  setShowResetModal(false);
-                  setResetForm({ user: dbInfo?.user || 'root', password: '' });
-                }}
-                className="btn-secondary"
-                disabled={resetting}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleResetCredentials}
-                disabled={!resetForm.user.trim() || resetting}
-                className="btn-primary"
-              >
-                {resetting ? 'Resetting...' : 'Reset Credentials'}
               </button>
             </div>
           </div>

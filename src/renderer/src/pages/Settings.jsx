@@ -589,15 +589,48 @@ function CliSettings({ settings, updateSetting }) {
 }
 
 function NetworkSettings({ settings, updateSetting }) {
+  const [resetting, setResetting] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [resetError, setResetError] = useState(null);
+
+  const handleResetCredentials = async () => {
+    const user = settings.dbUser || 'root';
+    const password = settings.dbPassword || '';
+    
+    if (!user.trim()) {
+      setResetError('Username is required');
+      return;
+    }
+
+    setResetting(true);
+    setResetError(null);
+    setResetSuccess(false);
+    
+    try {
+      await window.devbox?.database.resetCredentials(user, password);
+      setResetSuccess(true);
+      setTimeout(() => setResetSuccess(false), 3000);
+    } catch (error) {
+      console.error('Error resetting credentials:', error);
+      setResetError(error.message);
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
           Database Credentials
         </h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          These credentials will be used for new projects and .env configuration
-        </p>
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+          <p className="text-sm text-blue-700 dark:text-blue-300">
+            <AlertCircle className="w-4 h-4 inline mr-1" />
+            <strong>Global credentials:</strong> This username and password is shared across all MySQL and MariaDB versions. 
+            When you click "Save Settings" at the top, credentials will be synced to all initialized database instances automatically.
+          </p>
+        </div>
         <div className="space-y-4">
           <div>
             <label className="label">Database Username</label>
@@ -620,8 +653,47 @@ function NetworkSettings({ settings, updateSetting }) {
               placeholder="Leave empty for no password"
             />
             <p className="text-sm text-gray-500 mt-1">
-              Note: This updates the setting for new projects. Use the Databases page to change the actual database password.
+              Leave empty for no password (recommended for local development)
             </p>
+          </div>
+
+          <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Locked out? Force reset credentials
+            </h4>
+            <button
+              onClick={handleResetCredentials}
+              disabled={resetting}
+              className="btn-secondary flex items-center gap-2"
+            >
+              {resetting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Resetting credentials...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-4 h-4" />
+                  Force Reset Database Credentials
+                </>
+              )}
+            </button>
+            <p className="text-xs text-gray-500 mt-2">
+              Use this if you're locked out and can't access the database. This will start the database in skip-grant-tables mode 
+              (bypasses authentication), reset the credentials, then restart normally. Works even if the database is not running.
+            </p>
+            {resetSuccess && (
+              <p className="text-sm text-green-600 dark:text-green-400 mt-2 flex items-center gap-1">
+                <CheckCircle className="w-4 h-4" />
+                Credentials reset successfully!
+              </p>
+            )}
+            {resetError && (
+              <p className="text-sm text-red-600 dark:text-red-400 mt-2 flex items-center gap-1">
+                <AlertCircle className="w-4 h-4" />
+                {resetError}
+              </p>
+            )}
           </div>
         </div>
       </div>

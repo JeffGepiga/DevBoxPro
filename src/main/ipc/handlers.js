@@ -365,8 +365,8 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return database.getActiveDatabaseType();
   });
 
-  ipcMain.handle('database:setActiveDatabaseType', async (event, dbType) => {
-    return database.setActiveDatabaseType(dbType);
+  ipcMain.handle('database:setActiveDatabaseType', async (event, dbType, version) => {
+    return database.setActiveDatabaseType(dbType, version);
   });
 
   ipcMain.handle('database:getDatabaseInfo', async () => {

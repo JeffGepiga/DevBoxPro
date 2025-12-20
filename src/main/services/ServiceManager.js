@@ -1554,12 +1554,10 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
     // Check if MySQL data directory needs initialization
     const isInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
-    let needsCredentialSync = false;
 
     if (!isInitialized) {
       try {
         await this.initializeMySQLData(mysqlPath, dataDir);
-        needsCredentialSync = true; // Mark for credential sync after startup
       } catch (error) {
         console.error('MySQL initialization failed:', error.message);
         const status = this.serviceStatus.get('mysql');
@@ -1571,9 +1569,13 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
     const configPath = path.join(dataPath, 'mysql', version, 'my.cnf');
 
-    // Create MySQL config
+    // Create init-file with credentials from ConfigStore (source of truth)
+    // This runs on every startup to ensure credentials match ConfigStore
+    const initFile = await this.createCredentialsInitFile('mysql', version);
+
+    // Create MySQL config with init-file
     await fs.ensureDir(path.dirname(configPath));
-    await this.createMySQLConfig(configPath, dataDir, port, version);
+    await this.createMySQLConfig(configPath, dataDir, port, version, initFile);
     
     let proc;
     if (process.platform === 'win32') {
@@ -1647,11 +1649,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       await this.waitForService('mysql', 30000);
       status.status = 'running';
       status.startedAt = Date.now();
-      
-      // If this was a fresh initialization, sync credentials from settings
-      if (needsCredentialSync) {
-        await this.syncMySQLCredentials(version, port);
-      }
+      // Credentials are applied via init-file before MySQL accepts connections
     } catch (error) {
       console.error(`MySQL ${version} failed to start:`, error.message);
       status.status = 'error';
@@ -1664,177 +1662,47 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
   /**
    * Sync credentials to all initialized database versions.
    * Called when user changes credentials in Settings.
-   * This updates credentials in all versions so they all use the same password.
+   * Credentials changed - restart running databases to apply new credentials from ConfigStore.
+   * Since credentials are now applied via init-file on startup, we just need to restart.
    */
   async syncCredentialsToAllVersions(newUser, newPassword, oldPassword = '') {
     const results = { mysql: [], mariadb: [] };
-    const dataPath = path.join(app.getPath('userData'), 'data');
     
-    // Get all initialized MySQL versions
-    const mysqlDataPath = path.join(dataPath, 'mysql');
-    if (await fs.pathExists(mysqlDataPath)) {
-      const mysqlVersions = await fs.readdir(mysqlDataPath);
-      for (const version of mysqlVersions) {
-        const dataDir = path.join(mysqlDataPath, version, 'data', 'mysql');
-        if (await fs.pathExists(dataDir)) {
-          try {
-            await this.syncCredentialsForMySQLVersion(version, newUser, newPassword, oldPassword);
-            results.mysql.push({ version, success: true });
-          } catch (error) {
-            results.mysql.push({ version, success: false, error: error.message });
-          }
+    // Restart any running MySQL versions to pick up new credentials
+    const runningMySql = this.runningVersions.get('mysql');
+    if (runningMySql) {
+      for (const [version, info] of runningMySql.entries()) {
+        try {
+          console.log(`Restarting MySQL ${version} to apply new credentials...`);
+          await this.stopService('mysql', version);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          await this.startService('mysql', version);
+          results.mysql.push({ version, success: true });
+        } catch (error) {
+          console.error(`Failed to restart MySQL ${version}:`, error.message);
+          results.mysql.push({ version, success: false, error: error.message });
         }
       }
     }
     
-    // Get all initialized MariaDB versions
-    const mariadbDataPath = path.join(dataPath, 'mariadb');
-    if (await fs.pathExists(mariadbDataPath)) {
-      const mariadbVersions = await fs.readdir(mariadbDataPath);
-      for (const version of mariadbVersions) {
-        const dataDir = path.join(mariadbDataPath, version, 'data', 'mysql');
-        if (await fs.pathExists(dataDir)) {
-          try {
-            await this.syncCredentialsForMariaDBVersion(version, newUser, newPassword, oldPassword);
-            results.mariadb.push({ version, success: true });
-          } catch (error) {
-            results.mariadb.push({ version, success: false, error: error.message });
-          }
+    // Restart any running MariaDB versions to pick up new credentials
+    const runningMariaDB = this.runningVersions.get('mariadb');
+    if (runningMariaDB) {
+      for (const [version, info] of runningMariaDB.entries()) {
+        try {
+          console.log(`Restarting MariaDB ${version} to apply new credentials...`);
+          await this.stopService('mariadb', version);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          await this.startService('mariadb', version);
+          results.mariadb.push({ version, success: true });
+        } catch (error) {
+          console.error(`Failed to restart MariaDB ${version}:`, error.message);
+          results.mariadb.push({ version, success: false, error: error.message });
         }
       }
     }
     
     return results;
-  }
-  
-  /**
-   * Sync credentials to a specific MySQL version.
-   * Tries to connect with old password first, then updates to new password.
-   * If old password fails, uses skip-grant-tables to reset.
-   */
-  async syncCredentialsForMySQLVersion(version, newUser, newPassword, oldPassword = '') {
-    console.log(`Syncing credentials for MySQL ${version}...`);
-    
-    const mysqlPath = this.getMySQLPath(version);
-    const clientPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysql.exe' : 'mysql');
-    
-    if (!await fs.pathExists(clientPath)) {
-      throw new Error(`MySQL ${version} client not found`);
-    }
-    
-    // Check if this version is currently running
-    const isRunning = this.runningVersions.get('mysql')?.has(version);
-    const versionInfo = this.runningVersions.get('mysql')?.get(version);
-    let port = versionInfo?.port;
-    let wasRunning = isRunning;
-    let startedForSync = false;
-    
-    // If not running, we need to start it temporarily
-    if (!isRunning) {
-      console.log(`MySQL ${version}: Starting temporarily for credential sync...`);
-      await this.startMySQLWithSkipGrant(version);
-      startedForSync = true;
-      // Get the port it started on
-      port = this.runningVersions.get('mysql')?.get(version)?.port || this.serviceConfigs.mysql.actualPort;
-      
-      // Wait for it to be ready
-      await new Promise(resolve => setTimeout(resolve, 3000));
-    }
-    
-    try {
-      if (startedForSync) {
-        // Started with skip-grant-tables, can update directly without auth
-        await this.updateMySQLCredentials(clientPath, port, newUser, newPassword, '');
-      } else {
-        // Try with old password first
-        try {
-          await this.updateMySQLCredentials(clientPath, port, newUser, newPassword, oldPassword);
-        } catch (error) {
-          // Old password didn't work, need to restart with skip-grant-tables
-          console.log(`MySQL ${version}: Old password failed, restarting with skip-grant-tables...`);
-          await this.stopService('mysql', version);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          await this.startMySQLWithSkipGrant(version);
-          port = this.runningVersions.get('mysql')?.get(version)?.port || this.serviceConfigs.mysql.actualPort;
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          await this.updateMySQLCredentials(clientPath, port, newUser, newPassword, '');
-          startedForSync = true; // Mark so we restart normally at the end
-        }
-      }
-      
-      console.log(`MySQL ${version}: Credentials updated successfully`);
-    } finally {
-      // If we started with skip-grant-tables, restart normally
-      if (startedForSync) {
-        console.log(`MySQL ${version}: Restarting normally...`);
-        await this.stopService('mysql', version);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        if (wasRunning) {
-          // Was running before, start it back up normally
-          await this.startMySQLDirect(version);
-        }
-      }
-    }
-  }
-  
-  /**
-   * Sync credentials to a specific MariaDB version.
-   */
-  async syncCredentialsForMariaDBVersion(version, newUser, newPassword, oldPassword = '') {
-    console.log(`Syncing credentials for MariaDB ${version}...`);
-    
-    const mariadbPath = this.getMariaDBPath(version);
-    const clientPath = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mysql.exe' : 'mysql');
-    
-    if (!await fs.pathExists(clientPath)) {
-      throw new Error(`MariaDB ${version} client not found`);
-    }
-    
-    // Check if this version is currently running
-    const isRunning = this.runningVersions.get('mariadb')?.has(version);
-    const versionInfo = this.runningVersions.get('mariadb')?.get(version);
-    let port = versionInfo?.port;
-    let wasRunning = isRunning;
-    let startedForSync = false;
-    
-    // If not running, we need to start it temporarily
-    if (!isRunning) {
-      console.log(`MariaDB ${version}: Starting temporarily for credential sync...`);
-      await this.startMariaDBWithSkipGrant(version);
-      startedForSync = true;
-      port = this.runningVersions.get('mariadb')?.get(version)?.port || this.serviceConfigs.mariadb.actualPort;
-      await new Promise(resolve => setTimeout(resolve, 3000));
-    }
-    
-    try {
-      if (startedForSync) {
-        await this.updateMySQLCredentials(clientPath, port, newUser, newPassword, '');
-      } else {
-        try {
-          await this.updateMySQLCredentials(clientPath, port, newUser, newPassword, oldPassword);
-        } catch (error) {
-          console.log(`MariaDB ${version}: Old password failed, restarting with skip-grant-tables...`);
-          await this.stopService('mariadb', version);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          await this.startMariaDBWithSkipGrant(version);
-          port = this.runningVersions.get('mariadb')?.get(version)?.port || this.serviceConfigs.mariadb.actualPort;
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          await this.updateMySQLCredentials(clientPath, port, newUser, newPassword, '');
-          startedForSync = true;
-        }
-      }
-      
-      console.log(`MariaDB ${version}: Credentials updated successfully`);
-    } finally {
-      if (startedForSync) {
-        console.log(`MariaDB ${version}: Restarting normally...`);
-        await this.stopService('mariadb', version);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        if (wasRunning) {
-          await this.startMariaDBDirect(version);
-        }
-      }
-    }
   }
   
   /**
@@ -1870,47 +1738,42 @@ FLUSH PRIVILEGES;
     return initFile;
   }
 
-  // Sync credentials from settings to a newly initialized MySQL instance
-  async syncMySQLCredentials(version, port) {
+  /**
+   * Create init-file with credentials from ConfigStore.
+   * This file is executed by MySQL/MariaDB on startup with server privileges,
+   * ensuring credentials always match what's in ConfigStore (the source of truth).
+   * 
+   * The init-file approach works because:
+   * 1. MySQL/MariaDB execute init-file SQL with root/server privileges
+   * 2. It runs BEFORE accepting client connections
+   * 3. No authentication is needed - it's internal server execution
+   */
+  async createCredentialsInitFile(serviceName, version) {
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const initFile = path.join(dataPath, serviceName, version, 'credentials_init.sql');
+    
+    // Get credentials from ConfigStore (the source of truth)
     const settings = this.configStore?.get('settings', {});
     const dbUser = settings.dbUser || 'root';
     const dbPassword = settings.dbPassword || '';
     
-    // If no password is set in settings, nothing to sync
-    if (!dbPassword) {
-      console.log(`MySQL ${version}: No password in settings, skipping credential sync`);
-      return;
-    }
+    await fs.ensureDir(path.dirname(initFile));
     
-    console.log(`MySQL ${version}: Syncing credentials from settings...`);
+    const escapedPassword = dbPassword.replace(/'/g, "''");
     
-    try {
-      const mysqlPath = this.getMySQLPath(version);
-      const clientPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysql.exe' : 'mysql');
-      
-      if (!await fs.pathExists(clientPath)) {
-        console.error(`MySQL client not found at ${clientPath}`);
-        return;
-      }
-      
-      // Connect without password (fresh install) and set the password
-      const queries = [
-        `ALTER USER '${dbUser}'@'localhost' IDENTIFIED BY '${dbPassword.replace(/'/g, "''")}'`,
-        `ALTER USER '${dbUser}'@'127.0.0.1' IDENTIFIED BY '${dbPassword.replace(/'/g, "''")}' `,
-        `FLUSH PRIVILEGES`,
-      ];
-      
-      for (const query of queries) {
-        await this.runMySQLQuery(clientPath, port, dbUser, '', query);
-      }
-      
-      console.log(`MySQL ${version}: Credentials synced successfully`);
-    } catch (error) {
-      console.error(`MySQL ${version}: Failed to sync credentials:`, error.message);
-      // Don't throw - the database is still usable, just with default credentials
-    }
+    // SQL to ensure user has correct password
+    // Only update localhost - that's the only one guaranteed to exist
+    // The 127.0.0.1 user may not exist on fresh installs
+    const sql = `-- Auto-generated credentials from DevBox Pro ConfigStore
+-- This file runs on every startup to ensure credentials match settings
+ALTER USER '${dbUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';
+FLUSH PRIVILEGES;
+`;
+    
+    await fs.writeFile(initFile, sql);
+    return initFile;
   }
-  
+
   // Helper to run a MySQL query
   async runMySQLQuery(clientPath, port, user, password, query) {
     return new Promise((resolve, reject) => {
@@ -1981,8 +1844,11 @@ FLUSH PRIVILEGES;
     
     this.serviceConfigs.mysql.actualPort = port;
     
-    // Update config with new port
-    await this.createMySQLConfig(configPath, dataDir, port, version);
+    // Create init-file with credentials from ConfigStore
+    const initFile = await this.createCredentialsInitFile('mysql', version);
+    
+    // Update config with new port and init-file
+    await this.createMySQLConfig(configPath, dataDir, port, version, initFile);
     
     let proc;
     if (process.platform === 'win32') {
@@ -2055,16 +1921,18 @@ FLUSH PRIVILEGES;
     });
   }
 
-  async createMySQLConfig(configPath, dataDir, port, version = '8.4') {
+  async createMySQLConfig(configPath, dataDir, port, version = '8.4', initFile = null) {
     const isWindows = process.platform === 'win32';
     const mysqlPath = this.getMySQLPath(version);
+    
+    // Build init-file line if provided (for applying credentials from ConfigStore)
+    const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
     
     let config;
     if (isWindows) {
       // Windows-specific config for MySQL
       // Note: skip-grant-tables causes skip_networking=ON in MySQL 8.4, so we don't use it
-      // Instead, MySQL is initialized with --initialize-insecure which creates root without password
-      // Disable problematic components that may fail to load on Windows
+      // Instead, we use init-file to apply credentials from ConfigStore on every startup
       config = `[mysqld]
 basedir=${mysqlPath.replace(/\\/g, '/')}
 datadir=${dataDir.replace(/\\/g, '/')}
@@ -2074,10 +1942,9 @@ enable-named-pipe=ON
 socket=MYSQL_${version.replace(/\./g, '')}
 pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
-innodb_buffer_pool_size=128M
+${initFileLine}innodb_buffer_pool_size=128M
 innodb_redo_log_capacity=100M
 max_connections=100
-# Disable components that may fail to load
 loose-mysqlx=0
 skip-log-bin
 
@@ -2093,7 +1960,7 @@ bind-address=127.0.0.1
 socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
-
+${initFileLine}
 [client]
 port=${port}
 socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
@@ -2144,17 +2011,19 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 
     // Check if MariaDB data directory needs initialization
     const isInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
-    let needsCredentialSync = false;
 
     if (!isInitialized) {
       await this.initializeMariaDBData(mariadbPath, dataDir);
-      needsCredentialSync = true; // Mark for credential sync after startup
     }
 
     const configPath = path.join(dataPath, 'mariadb', version, 'my.cnf');
 
-    // Create MariaDB config
-    await this.createMariaDBConfig(configPath, dataDir, port, version);
+    // Create init-file with credentials from ConfigStore (source of truth)
+    // This runs on every startup to ensure credentials match ConfigStore
+    const initFile = await this.createCredentialsInitFile('mariadb', version);
+
+    // Create MariaDB config with init-file
+    await this.createMariaDBConfig(configPath, dataDir, port, version, initFile);
 
     const proc = spawn(mariadbd, [`--defaults-file=${configPath}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -2198,56 +2067,12 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       await this.waitForService('mariadb', 30000);
       status.status = 'running';
       status.startedAt = Date.now();
-      
-      // If this was a fresh initialization, sync credentials from settings
-      if (needsCredentialSync) {
-        await this.syncMariaDBCredentials(version, port);
-      }
+      // Credentials are applied via init-file before MariaDB accepts connections
     } catch (error) {
       console.error(`MariaDB ${version} failed to start:`, error.message);
       status.status = 'error';
       status.error = 'Failed to start within timeout. Check logs for details.';
       this.runningVersions.get('mariadb').delete(version);
-    }
-  }
-
-  // Sync credentials from settings to a newly initialized MariaDB instance
-  async syncMariaDBCredentials(version, port) {
-    const settings = this.configStore?.get('settings', {});
-    const dbUser = settings.dbUser || 'root';
-    const dbPassword = settings.dbPassword || '';
-    
-    // If no password is set in settings, nothing to sync
-    if (!dbPassword) {
-      console.log(`MariaDB ${version}: No password in settings, skipping credential sync`);
-      return;
-    }
-    
-    console.log(`MariaDB ${version}: Syncing credentials from settings...`);
-    
-    try {
-      const mariadbPath = this.getMariaDBPath(version);
-      const clientPath = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mysql.exe' : 'mysql');
-      
-      if (!await fs.pathExists(clientPath)) {
-        console.error(`MariaDB client not found at ${clientPath}`);
-        return;
-      }
-      
-      // Connect without password (fresh install) and set the password
-      const queries = [
-        `ALTER USER '${dbUser}'@'localhost' IDENTIFIED BY '${dbPassword.replace(/'/g, "''")}'`,
-        `ALTER USER '${dbUser}'@'127.0.0.1' IDENTIFIED BY '${dbPassword.replace(/'/g, "''")}'`,
-        `FLUSH PRIVILEGES`,
-      ];
-      
-      for (const query of queries) {
-        await this.runMySQLQuery(clientPath, port, dbUser, '', query);
-      }
-      
-      console.log(`MariaDB ${version}: Credentials synced successfully`);
-    } catch (error) {
-      console.error(`MariaDB ${version}: Failed to sync credentials:`, error.message);
     }
   }
 
@@ -2277,8 +2102,11 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     
     this.serviceConfigs.mariadb.actualPort = port;
     
-    // Update config
-    await this.createMariaDBConfig(configPath, dataDir, port, version);
+    // Create init-file with credentials from ConfigStore
+    const initFile = await this.createCredentialsInitFile('mariadb', version);
+    
+    // Update config with init-file
+    await this.createMariaDBConfig(configPath, dataDir, port, version, initFile);
 
     const proc = spawn(mariadbd, [`--defaults-file=${configPath}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -2343,25 +2171,30 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     });
   }
 
-  async createMariaDBConfig(configPath, dataDir, port, version = '11.4') {
+  async createMariaDBConfig(configPath, dataDir, port, version = '11.4', initFile = null) {
     await fs.ensureDir(path.dirname(configPath));
     const isWindows = process.platform === 'win32';
     const mariadbPath = this.getMariaDBPath(version);
+    
+    // Build init-file line if provided (for applying credentials from ConfigStore)
+    const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
     
     let config;
     if (isWindows) {
       // Windows-specific config - no socket, use TCP/IP and named pipe
       // Use unique named pipe name to avoid conflict with MySQL
+      // Credentials are applied via init-file from ConfigStore
       config = `[mysqld]
 basedir=${mariadbPath.replace(/\\/g, '/')}
 datadir=${dataDir.replace(/\\/g, '/')}
 port=${port}
-skip-grant-tables
 bind-address=127.0.0.1
 enable_named_pipe=ON
 socket=MARIADB_${version.replace(/\./g, '')}
 pid-file=${path.join(dataDir, 'mariadb.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+${initFileLine}innodb_buffer_pool_size=128M
+max_connections=100
 
 [client]
 port=${port}
@@ -2369,16 +2202,15 @@ socket=MARIADB_${version.replace(/\./g, '')}
 `;
     } else {
       // Unix/macOS config with socket
+      // Credentials are applied via init-file from ConfigStore
       config = `[mysqld]
 datadir=${dataDir.replace(/\\/g, '/')}
 port=${port}
-skip-grant-tables
-skip-networking=0
 bind-address=127.0.0.1
 socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
 pid-file=${path.join(dataDir, 'mariadb.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
-
+${initFileLine}
 [client]
 port=${port}
 socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}

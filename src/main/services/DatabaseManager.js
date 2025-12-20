@@ -38,22 +38,39 @@ class DatabaseManager {
     return this.configStore.getSetting('activeDatabaseType', 'mysql');
   }
 
-  // Set the active database type
-  async setActiveDatabaseType(dbType) {
+  // Get the currently active database version
+  getActiveDatabaseVersion() {
+    const dbType = this.getActiveDatabaseType();
+    const defaultVersion = dbType === 'mariadb' ? '11.4' : '8.4';
+    return this.configStore.getSetting('activeDatabaseVersion', defaultVersion);
+  }
+
+  // Set the active database type and version
+  async setActiveDatabaseType(dbType, version = null) {
     if (!['mysql', 'mariadb'].includes(dbType)) {
       throw new Error('Invalid database type. Must be "mysql" or "mariadb"');
     }
     this.configStore.setSetting('activeDatabaseType', dbType);
-    console.log(`Active database type set to: ${dbType}`);
-    return { success: true, type: dbType };
+    
+    // If version provided, also set it
+    if (version) {
+      this.configStore.setSetting('activeDatabaseVersion', version);
+      console.log(`Active database set to: ${dbType} ${version}`);
+    } else {
+      console.log(`Active database type set to: ${dbType}`);
+    }
+    
+    return { success: true, type: dbType, version };
   }
 
   // Get database info including type and credentials
   getDatabaseInfo() {
     const dbType = this.getActiveDatabaseType();
+    const version = this.getActiveDatabaseVersion();
     const settings = this.configStore.get('settings', {});
     return {
       type: dbType,
+      version: version,
       host: this.dbConfig.host,
       port: this.getActualPort(),
       user: settings.dbUser || 'root',
@@ -61,47 +78,49 @@ class DatabaseManager {
     };
   }
 
-  // Get the actual running port for the active database type
+  // Get the actual running port for the active database type and version
   getActualPort() {
     const dbType = this.getActiveDatabaseType();
+    const version = this.getActiveDatabaseVersion();
     const settings = this.configStore.get('settings', {});
     
-    // Try to get the actual port from ServiceManager
+    // Try to get the actual port from ServiceManager for the specific version
     if (this.managers.service) {
+      // Check if the specific version is running
+      const runningVersions = this.managers.service.runningVersions.get(dbType);
+      if (runningVersions && runningVersions.has(version)) {
+        const versionInfo = runningVersions.get(version);
+        if (versionInfo?.port) {
+          console.log(`${dbType} ${version} using running port: ${versionInfo.port}`);
+          return versionInfo.port;
+        }
+      }
+      
+      // Version not running - calculate expected port based on version offset
       const serviceConfig = this.managers.service.serviceConfigs[dbType];
-      if (serviceConfig?.actualPort) {
-        console.log(`${dbType} using actual port: ${serviceConfig.actualPort}`);
-        return serviceConfig.actualPort;
-      }
-      
-      // Check service status - if not running, we can't connect anyway
-      const serviceStatus = this.managers.service.serviceStatus.get(dbType);
-      if (serviceStatus?.status !== 'running') {
-        console.log(`${dbType} service is not running`);
-        // Return a port that will likely fail - better than connecting to wrong service
-        return dbType === 'mariadb' ? 3307 : 3306;
-      }
-      
-      // Service is running but no actualPort stored - use status port
-      if (serviceStatus?.port) {
-        console.log(`${dbType} using status port: ${serviceStatus.port}`);
-        return serviceStatus.port;
-      }
+      const basePort = serviceConfig?.defaultPort || 3306;
+      const portOffset = this.managers.service.versionPortOffsets[dbType]?.[version] || 0;
+      const expectedPort = basePort + portOffset;
+      console.log(`${dbType} ${version} not running, expected port: ${expectedPort}`);
+      return expectedPort;
     }
     
-    // Fallback to default port for the specific database type
-    // MariaDB defaults to 3306 but if MySQL is also on 3306, MariaDB would be on 3307
+    // Fallback to default port
     const defaultPort = dbType === 'mariadb' ? 3306 : (settings.mysqlPort || 3306);
     console.log(`${dbType} using fallback port: ${defaultPort}`);
     return defaultPort;
   }
 
-  // Check if a specific database service is running
-  isServiceRunning(dbType = null) {
+  // Check if a specific database service version is running
+  isServiceRunning(dbType = null, version = null) {
     const type = dbType || this.getActiveDatabaseType();
+    const ver = version || this.getActiveDatabaseVersion();
+    
     if (this.managers.service) {
-      const serviceStatus = this.managers.service.serviceStatus.get(type);
-      return serviceStatus?.status === 'running';
+      const runningVersions = this.managers.service.runningVersions.get(type);
+      if (runningVersions && runningVersions.has(ver)) {
+        return true;
+      }
     }
     return false;
   }
