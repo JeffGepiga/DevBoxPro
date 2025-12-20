@@ -1681,6 +1681,10 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
           await this.stopService('mysql', version);
           await new Promise(resolve => setTimeout(resolve, 1000));
           await this.startService('mysql', version);
+          // Wait additional time for init-file to fully apply credentials
+          // This prevents race conditions where the database appears running
+          // but hasn't finished processing the credential init-file
+          await new Promise(resolve => setTimeout(resolve, 2000));
           results.mysql.push({ version, success: true });
         } catch (error) {
           this.managers.log?.systemError(`Failed to restart MySQL ${version}`, { error: error.message });
@@ -1702,6 +1706,8 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
           await this.stopService('mariadb', version);
           await new Promise(resolve => setTimeout(resolve, 1000));
           await this.startService('mariadb', version);
+          // Wait additional time for init-file to fully apply credentials
+          await new Promise(resolve => setTimeout(resolve, 2000));
           results.mariadb.push({ version, success: true });
         } catch (error) {
           this.managers.log?.systemError(`Failed to restart MariaDB ${version}`, { error: error.message });
@@ -1775,25 +1781,34 @@ FLUSH PRIVILEGES;
     // We need both because:
     // - 'localhost' is used for socket/pipe connections  
     // - '127.0.0.1' is used for TCP connections (which our queries use)
-    // Use DROP and CREATE to ensure clean slate (avoids issues with previous plugins/auth methods)
-    const sql = `-- Auto-generated credentials from DevBox Pro ConfigStore
--- This file runs on every startup to ensure credentials match settings
--- Drop users to ensure clean slate
-DROP USER IF EXISTS '${dbUser}'@'localhost';
-DROP USER IF EXISTS '${dbUser}'@'127.0.0.1';
-DROP USER IF EXISTS '${dbUser}'@'%';
--- Create users with specified password
-CREATE USER '${dbUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';
-CREATE USER '${dbUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';
-CREATE USER '${dbUser}'@'%' IDENTIFIED BY '${escapedPassword}';
--- Grant all privileges
-GRANT ALL PRIVILEGES ON *.* TO '${dbUser}'@'localhost' WITH GRANT OPTION;
-GRANT ALL PRIVILEGES ON *.* TO '${dbUser}'@'127.0.0.1' WITH GRANT OPTION;
-GRANT ALL PRIVILEGES ON *.* TO '${dbUser}'@'%' WITH GRANT OPTION;
-FLUSH PRIVILEGES;
-`;
+    // Use CREATE IF NOT EXISTS + ALTER USER (safer than DROP/CREATE which can fail
+    // because MySQL is running as the root user we're trying to drop)
+    // Build SQL as array of lines to avoid encoding issues with template literals
+    const sqlLines = [
+      '-- Auto-generated credentials from DevBox Pro ConfigStore',
+      '-- This file runs on every startup to ensure credentials match settings',
+      '',
+      '-- Create users if they don\'t exist (fresh install case)',
+      `CREATE USER IF NOT EXISTS '${dbUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';`,
+      `CREATE USER IF NOT EXISTS '${dbUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';`,
+      `CREATE USER IF NOT EXISTS '${dbUser}'@'%' IDENTIFIED BY '${escapedPassword}';`,
+      '',
+      '-- Update password for existing users (handles password change case)',
+      `ALTER USER '${dbUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';`,
+      `ALTER USER '${dbUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';`,
+      `ALTER USER '${dbUser}'@'%' IDENTIFIED BY '${escapedPassword}';`,
+      '',
+      '-- Grant all privileges',
+      `GRANT ALL PRIVILEGES ON *.* TO '${dbUser}'@'localhost' WITH GRANT OPTION;`,
+      `GRANT ALL PRIVILEGES ON *.* TO '${dbUser}'@'127.0.0.1' WITH GRANT OPTION;`,
+      `GRANT ALL PRIVILEGES ON *.* TO '${dbUser}'@'%' WITH GRANT OPTION;`,
+      '',
+      'FLUSH PRIVILEGES;',
+      ''
+    ];
+    const sql = sqlLines.join('\n');
 
-    await fs.writeFile(initFile, sql);
+    await fs.writeFile(initFile, sql, 'utf8');
     return initFile;
   }
 

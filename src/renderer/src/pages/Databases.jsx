@@ -55,7 +55,12 @@ function Databases() {
       const serviceStatus = servicesStatus[selectedDatabase.type];
       const isRunning = !!serviceStatus?.runningVersions?.[selectedDatabase.version];
       if (isRunning) {
-        loadDatabases();
+        // Add a small delay to ensure database has fully initialized
+        // (especially after credential changes when init-file needs to be processed)
+        const timeout = setTimeout(() => {
+          loadDatabases();
+        }, 1000);
+        return () => clearTimeout(timeout);
       }
     }
   }, [servicesStatus]);
