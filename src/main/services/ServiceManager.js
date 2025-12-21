@@ -644,41 +644,25 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
 
         if (await fs.pathExists(nginxExe)) {
-          const { execSync } = require('child_process');
+          const { isProcessRunning, killProcessByName, spawnSyncSafe } = require('../utils/SpawnUtils');
 
           // First check if nginx is actually running before trying to stop it
-          let nginxRunning = false;
-          try {
-            const result = execSync('tasklist /FI "IMAGENAME eq nginx.exe" /NH 2>nul', {
-              windowsHide: true,
-              timeout: 5000,
-              encoding: 'utf8'
-            });
-            nginxRunning = result.toLowerCase().includes('nginx.exe');
-          } catch (e) {
-            // If tasklist fails, assume not running
-            nginxRunning = false;
-          }
+          const nginxRunning = isProcessRunning('nginx.exe');
 
           // Only send stop signal if nginx is actually running
           if (nginxRunning) {
+            // Try graceful stop first
             try {
-              execSync(`"${nginxExe}" -s stop -c "${confPath}" 2>nul`, {
+              spawnSyncSafe(nginxExe, ['-s', 'stop', '-c', confPath], {
                 cwd: nginxPath,
-                windowsHide: true,
                 timeout: 5000,
-                stdio: 'ignore'
               });
             } catch (e) {
               // Ignore errors - process may already be dead
             }
 
             // Kill any remaining nginx processes
-            try {
-              execSync('taskkill /F /IM nginx.exe 2>nul', { windowsHide: true, timeout: 5000, stdio: 'ignore' });
-            } catch (e) {
-              // Ignore - no processes to kill
-            }
+            await killProcessByName('nginx.exe', true);
           }
         }
       } catch (error) {
@@ -689,12 +673,8 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     // For Apache on Windows, kill any remaining httpd processes
     if (serviceName === 'apache' && require('os').platform() === 'win32') {
       try {
-        const { execSync } = require('child_process');
-        try {
-          execSync('taskkill /F /IM httpd.exe 2>nul', { windowsHide: true, timeout: 5000 });
-        } catch (e) {
-          // Ignore - no processes to kill
-        }
+        const { killProcessByName } = require('../utils/SpawnUtils');
+        await killProcessByName('httpd.exe', true);
       } catch (error) {
         this.managers.log?.systemWarn('Error during Apache cleanup', { error: error.message });
       }
@@ -804,7 +784,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
    * Only kills processes running from our resources directory
    */
   async forceKillOrphanProcesses() {
-    const { execSync, exec } = require('child_process');
+    const { killProcessByName, killProcessesByPath } = require('../utils/SpawnUtils');
 
     // First try to kill known service processes by image name
     const processesToKill = [
@@ -819,29 +799,15 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
     for (const processName of processesToKill) {
       try {
-        execSync(`taskkill /F /IM ${processName} 2>nul`, {
-          windowsHide: true,
-          timeout: 5000,
-          stdio: 'ignore'
-        });
+        await killProcessByName(processName, true);
       } catch (e) {
         // Ignore - no processes to kill or already dead
       }
     }
 
     // Kill PHP processes running from our resources path (for phpMyAdmin)
-    const resourcesPath = this.resourcePath.replace(/\\/g, '\\\\');
     try {
-      // Use WMIC to find and kill PHP processes from our path
-      const wmicCmd = `wmic process where "name='php.exe' and commandline like '%${resourcesPath}%'" get processid 2>nul`;
-      const result = execSync(wmicCmd, { windowsHide: true, timeout: 5000 }).toString();
-      const pids = result.split('\\n').filter(line => /^\\d+$/.test(line.trim())).map(line => line.trim());
-
-      for (const pid of pids) {
-        try {
-          execSync(`taskkill /F /PID ${pid} 2>nul`, { windowsHide: true, timeout: 5000, stdio: 'ignore' });
-        } catch (e) { }
-      }
+      await killProcessesByPath('php.exe', this.resourcePath);
     } catch (e) {
       // Ignore errors
     }
@@ -2298,9 +2264,15 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
     const configPath = path.join(dataPath, 'redis', version, 'redis.conf');
     await this.createRedisConfig(configPath, dataDir, port, version);
 
+    // MSYS2/Cygwin Redis builds have path interpretation issues on Windows
+    // Solution: Set CWD to the config directory and pass config as relative path
+    const configDir = path.dirname(configPath);
+    const configFilename = path.basename(configPath);
+
     let proc;
     if (process.platform === 'win32') {
-      proc = spawnHidden(redisServerPath, [configPath], {
+      proc = spawnHidden(redisServerPath, [configFilename], {
+        cwd: configDir, // Run from config directory to avoid path issues
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
@@ -2349,11 +2321,17 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
 
   async createRedisConfig(configPath, dataDir, port, version = '7.4') {
     await fs.ensureDir(path.dirname(configPath));
+    await fs.ensureDir(dataDir);
+
+    // Use relative path 'data' since Redis runs from config directory
+    // The data dir is at: .../redis/<version>/data
+    // The config is at:   .../redis/<version>/redis.conf
+    // So relative path from config to data is just 'data'
     const config = `
 port ${port}
 bind 127.0.0.1
 daemonize no
-dir ${dataDir.replace(/\\/g, '/')}
+dir ./data
 appendonly yes
 appendfilename "appendonly.aof"
 dbfilename dump_${version.replace(/\./g, '')}.rdb

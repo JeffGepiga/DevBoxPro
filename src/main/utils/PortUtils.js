@@ -9,7 +9,7 @@ const net = require('net');
 async function isPortAvailable(port, host = '127.0.0.1') {
   return new Promise((resolve) => {
     const server = net.createServer();
-    
+
     server.once('error', (err) => {
       if (err.code === 'EADDRINUSE') {
         resolve(false);
@@ -18,13 +18,13 @@ async function isPortAvailable(port, host = '127.0.0.1') {
         resolve(true);
       }
     });
-    
+
     server.once('listening', () => {
       server.close(() => {
         resolve(true);
       });
     });
-    
+
     server.listen(port, host);
   });
 }
@@ -57,7 +57,7 @@ async function findAvailablePort(startPort, maxAttempts = 100, host = '127.0.0.1
 async function findAvailablePorts(startPort, count, maxAttempts = 100, host = '127.0.0.1') {
   const ports = [];
   let currentPort = startPort;
-  
+
   for (let i = 0; i < count && currentPort < startPort + maxAttempts * count; i++) {
     const port = await findAvailablePort(currentPort, maxAttempts, host);
     if (port === null) {
@@ -66,7 +66,7 @@ async function findAvailablePorts(startPort, count, maxAttempts = 100, host = '1
     ports.push(port);
     currentPort = port + 1;
   }
-  
+
   return ports;
 }
 
@@ -76,48 +76,48 @@ async function findAvailablePorts(startPort, count, maxAttempts = 100, host = '1
  * @returns {Promise<{pid: number, process: string}|null>} - Process info or null
  */
 async function getProcessOnPort(port) {
-  const { exec } = require('child_process');
-  
-  return new Promise((resolve) => {
-    if (process.platform === 'win32') {
-      exec(`netstat -ano | findstr :${port}`, (error, stdout) => {
-        if (error || !stdout) {
-          resolve(null);
-          return;
-        }
-        
-        const lines = stdout.trim().split('\n');
-        for (const line of lines) {
-          const parts = line.trim().split(/\s+/);
-          if (parts.length >= 5) {
-            const localAddress = parts[1];
-            if (localAddress.endsWith(`:${port}`)) {
-              const pid = parseInt(parts[4], 10);
-              if (!isNaN(pid)) {
-                resolve({ pid, address: localAddress });
-                return;
-              }
+  const { spawnAsync } = require('./SpawnUtils');
+
+  if (process.platform === 'win32') {
+    const result = await spawnAsync('netstat.exe', ['-ano'], {
+      timeout: 5000,
+    });
+
+    if (result.code !== 0 || !result.stdout) {
+      return null;
+    }
+
+    const lines = result.stdout.trim().split('\n');
+    for (const line of lines) {
+      if (line.includes(`:${port}`)) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 5) {
+          const localAddress = parts[1];
+          if (localAddress.endsWith(`:${port}`)) {
+            const pid = parseInt(parts[4], 10);
+            if (!isNaN(pid)) {
+              return { pid, address: localAddress };
             }
           }
         }
-        resolve(null);
-      });
-    } else {
-      exec(`lsof -i :${port} -t`, (error, stdout) => {
-        if (error || !stdout) {
-          resolve(null);
-          return;
-        }
-        
-        const pid = parseInt(stdout.trim(), 10);
-        if (!isNaN(pid)) {
-          resolve({ pid });
-        } else {
-          resolve(null);
-        }
-      });
+      }
     }
-  });
+    return null;
+  } else {
+    const result = await spawnAsync('lsof', ['-i', `:${port}`, '-t'], {
+      timeout: 5000,
+    });
+
+    if (result.code !== 0 || !result.stdout) {
+      return null;
+    }
+
+    const pid = parseInt(result.stdout.trim(), 10);
+    if (!isNaN(pid)) {
+      return { pid };
+    }
+    return null;
+  }
 }
 
 module.exports = {

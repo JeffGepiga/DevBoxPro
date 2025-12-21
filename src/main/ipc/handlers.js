@@ -95,46 +95,32 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     };
 
     const config = editorConfigs[editor] || editorConfigs.vscode;
-    const { spawn, execSync } = require('child_process');
+    const { spawn } = require('child_process');
+    const { commandExists } = require('../utils/SpawnUtils');
 
-    // Check if the editor command is available
-    const checkCommand = process.platform === 'win32'
-      ? `where ${config.command}`
-      : `which ${config.command}`;
-
-    try {
-      execSync(checkCommand, { stdio: 'ignore' });
-    } catch {
+    // Check if the editor command is available (uses spawn, no CMD window)
+    if (!commandExists(config.command)) {
       throw new Error(`${config.name} is not installed or not in your system PATH. Please install ${config.name} or choose a different editor in Settings.`);
     }
 
-    // Use cmd.exe /c start to launch the editor in a completely separate environment
-    // This avoids inheriting Electron's ICU environment issues
+    // Spawn the editor directly
     return new Promise((resolve, reject) => {
       try {
-        if (process.platform === 'win32') {
-          // On Windows, use 'start' command via cmd.exe to fully detach
-          // The empty string after 'start' is the window title (required when path has spaces)
-          // Clear Electron's ICU environment variables to prevent "Invalid file descriptor to ICU data" errors
-          const cleanEnv = { ...process.env };
-          delete cleanEnv.ICU_DATA;
-          delete cleanEnv.ELECTRON_RUN_AS_NODE;
+        // Clear Electron's ICU environment variables to prevent "Invalid file descriptor to ICU data" errors
+        const cleanEnv = { ...process.env };
+        delete cleanEnv.ICU_DATA;
+        delete cleanEnv.ELECTRON_RUN_AS_NODE;
 
-          const child = spawn('cmd.exe', ['/c', 'start', '""', config.command, projectData.path], {
-            detached: true,
-            stdio: 'ignore',
-            windowsHide: true,
-            env: cleanEnv,
-          });
-          child.unref();
-        } else {
-          // On macOS/Linux, use regular spawn with detached
-          const child = spawn(config.command, [projectData.path], {
-            detached: true,
-            stdio: 'ignore',
-          });
-          child.unref();
-        }
+        // On Windows, 'code' is actually 'code.cmd' batch script, so we need shell: true
+        // Combined with windowsHide: true, this prevents the CMD window flash
+        const child = spawn(config.command, [projectData.path], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+          env: cleanEnv,
+          shell: process.platform === 'win32', // Required on Windows for .cmd scripts like 'code'
+        });
+        child.unref();
 
         // Small delay to ensure process started
         setTimeout(() => resolve(true), 100);
@@ -535,26 +521,24 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       // Force kill all processes FIRST on Windows before trying graceful stop
       // This prevents errors from trying to read config files during graceful shutdown
       if (process.platform === 'win32') {
-        const { exec, execSync } = require('child_process');
+        const { killProcessByName, killProcessesByPath } = require('../utils/SpawnUtils');
         // Kill DevBox-specific processes globally
         const processNames = ['php-cgi.exe', 'nginx.exe', 'httpd.exe', 'mysqld.exe', 'mariadbd.exe', 'redis-server.exe', 'mailpit.exe'];
         for (const procName of processNames) {
           try {
-            await new Promise((resolve) => {
-              exec(`taskkill /F /IM ${procName} /T 2>nul`, { timeout: 5000 }, () => resolve());
-            });
+            await killProcessByName(procName, true);
           } catch (e) {
             // Ignore errors - process might not be running
           }
         }
 
         // Kill PHP and Node processes from our path only
-        const userDataPath = app.getPath('userData').replace(/\\/g, '\\\\');
+        const userDataPath = app.getPath('userData');
         try {
-          execSync(`wmic process where "name='php.exe' and (commandline like '%${userDataPath}%' or commandline like '%composer%' or commandline like '%artisan%')" call terminate 2>nul`, { windowsHide: true, timeout: 10000, stdio: 'ignore' });
+          await killProcessesByPath('php.exe', userDataPath);
         } catch (e) { }
         try {
-          execSync(`wmic process where "name='node.exe' and commandline like '%${userDataPath}%'" call terminate 2>nul`, { windowsHide: true, timeout: 10000, stdio: 'ignore' });
+          await killProcessesByPath('node.exe', userDataPath);
         } catch (e) { }
 
         // Wait a moment for processes to terminate

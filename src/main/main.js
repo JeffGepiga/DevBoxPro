@@ -356,7 +356,7 @@ let isShuttingDown = false;
 async function forceKillAllProcesses() {
   if (process.platform !== 'win32') return;
 
-  const { execSync } = require('child_process');
+  const { killProcessByName, killProcessesByPath } = require('./utils/SpawnUtils');
 
   // Processes that are safe to kill globally (DevBox-specific)
   const processesToKill = [
@@ -371,31 +371,23 @@ async function forceKillAllProcesses() {
 
   for (const processName of processesToKill) {
     try {
-      execSync(`taskkill /F /IM ${processName} 2>nul`, {
-        windowsHide: true,
-        timeout: 10000,
-        stdio: 'ignore'
-      });
+      await killProcessByName(processName, true);
     } catch (e) {
       // Ignore - process might not be running
     }
   }
 
   // Kill PHP and Node processes running from our resources path only
-  const userDataPath = app.getPath('userData').replace(/\\/g, '\\\\');
+  const userDataPath = app.getPath('userData');
 
   try {
-    // Kill PHP processes from our path (php.exe used for artisan, composer)
-    const phpCmd = `wmic process where "name='php.exe' and (commandline like '%${userDataPath}%' or commandline like '%composer%' or commandline like '%artisan%')" call terminate 2>nul`;
-    execSync(phpCmd, { windowsHide: true, timeout: 10000, stdio: 'ignore' });
+    await killProcessesByPath('php.exe', userDataPath);
   } catch (e) {
     // Ignore
   }
 
   try {
-    // Kill Node processes from our resources path only
-    const nodeCmd = `wmic process where "name='node.exe' and commandline like '%${userDataPath}%'" call terminate 2>nul`;
-    execSync(nodeCmd, { windowsHide: true, timeout: 10000, stdio: 'ignore' });
+    await killProcessesByPath('node.exe', userDataPath);
   } catch (e) {
     // Ignore
   }
