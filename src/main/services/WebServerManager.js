@@ -18,7 +18,7 @@ class WebServerManager {
     await fs.ensureDir(path.join(this.dataPath, 'nginx'));
     await fs.ensureDir(path.join(this.dataPath, 'apache'));
     await fs.ensureDir(path.join(this.dataPath, 'php-fpm'));
-    
+
     // Load preferred server type from config
     this.serverType = this.configStore.get('settings.webServer', 'nginx');
   }
@@ -94,7 +94,25 @@ class WebServerManager {
 
     // Get absolute path to fastcgi_params (with version)
     const platform = this.getPlatform();
-    const nginxVersion = project.webServerVersion || '1.28';
+    let nginxVersion = project.webServerVersion || '1.28';
+
+    // Validate that the nginx version exists, fall back to available version if not
+    const nginxVersionPath = path.join(this.resourcesPath, 'nginx', nginxVersion, platform);
+    if (!await fs.pathExists(nginxVersionPath)) {
+      // Try to find an available nginx version
+      const nginxDir = path.join(this.resourcesPath, 'nginx');
+      if (await fs.pathExists(nginxDir)) {
+        const availableVersions = await fs.readdir(nginxDir);
+        for (const v of availableVersions) {
+          const vPath = path.join(nginxDir, v, platform);
+          if (await fs.pathExists(vPath)) {
+            nginxVersion = v;
+            break;
+          }
+        }
+      }
+    }
+
     const fastcgiParamsPath = path.join(this.resourcesPath, 'nginx', nginxVersion, platform, 'conf', 'fastcgi_params').replace(/\\/g, '/');
 
     let serverConfig = `
@@ -258,7 +276,7 @@ server {
   // Start PHP-FPM/CGI for a project
   async startPhpFpm(project, port) {
     const phpCgiPath = this.getPhpCgiPath(project.phpVersion || '8.3');
-    
+
     if (!await fs.pathExists(phpCgiPath)) {
       throw new Error(`PHP ${project.phpVersion} is not installed`);
     }
@@ -291,7 +309,7 @@ server {
     }
 
     phpProcess.unref();
-    
+
     return phpProcess;
   }
 
@@ -326,7 +344,7 @@ catch_workers_output = yes
   // Start a project with web server
   async startProject(project) {
     const serverType = this.serverType;
-    
+
     // Check if server is installed
     if (!await this.isServerInstalled(serverType)) {
       throw new Error(`${serverType} is not installed. Please download it from the Binary Manager.`);
@@ -374,10 +392,10 @@ catch_workers_output = yes
       const nginxPath = this.getNginxPath(nginxVersion);
       const nginxBasePath = this.getNginxBasePath(nginxVersion);
       const confPath = path.join(this.dataPath, 'nginx', 'nginx.conf');
-      
+
       // Create main nginx.conf that includes all sites
       await this.createMainNginxConfig(nginxVersion);
-      
+
       serverProcess = spawn(nginxPath, ['-c', confPath, '-p', nginxBasePath], {
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -388,10 +406,10 @@ catch_workers_output = yes
       const apacheVersion = project.webServerVersion || '2.4';
       const apachePath = this.getApachePath(apacheVersion);
       const confPath = path.join(this.dataPath, 'apache', 'httpd.conf');
-      
+
       // Create main httpd.conf that includes all vhosts
       await this.createMainApacheConfig(apacheVersion);
-      
+
       serverProcess = spawn(apachePath, ['-f', confPath, '-k', 'start'], {
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -408,13 +426,13 @@ catch_workers_output = yes
     const confDir = path.join(this.dataPath, 'nginx');
     const sitesDir = path.join(confDir, 'sites');
     const logsDir = path.join(confDir, 'logs');
-    
+
     await fs.ensureDir(sitesDir);
     await fs.ensureDir(logsDir);
 
     const platform = this.getPlatform();
     const nginxBasePath = this.getNginxBasePath(version);
-    const mimeTypes = platform === 'win' 
+    const mimeTypes = platform === 'win'
       ? path.join(nginxBasePath, 'conf', 'mime.types')
       : '/etc/nginx/mime.types';
 
@@ -475,7 +493,7 @@ http {
     const logsDir = path.join(confDir, 'logs');
     const platform = this.getPlatform();
     const apacheRoot = path.join(this.resourcesPath, 'apache', version, platform);
-    
+
     await fs.ensureDir(vhostsDir);
     await fs.ensureDir(logsDir);
 
@@ -530,7 +548,7 @@ IncludeOptional "${vhostsDir.replace(/\\/g, '/')}/*.conf"
   // Stop a project
   async stopProject(projectId) {
     const processInfo = this.processes.get(projectId);
-    
+
     if (!processInfo) {
       return { success: true, message: 'Project not running' };
     }
@@ -555,7 +573,7 @@ IncludeOptional "${vhostsDir.replace(/\\/g, '/')}/*.conf"
     await fs.remove(configPath);
 
     this.processes.delete(projectId);
-    
+
     return { success: true };
   }
 

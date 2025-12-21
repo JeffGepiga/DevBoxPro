@@ -203,6 +203,19 @@ class ProjectManager {
     // Detect project type if not specified
     const projectType = config.type || (await this.detectProjectType(config.path));
 
+    // Determine default web server version from installed versions
+    let defaultWebServerVersion = '1.28';
+    const webServer = config.webServer || settings.webServer || 'nginx';
+    const webServerDir = path.join(resourcePath, webServer);
+    if (await fs.pathExists(webServerDir)) {
+      const installedVersions = (await fs.readdir(webServerDir))
+        .filter(v => !v.includes('.'))  // Filter out files
+        .sort((a, b) => parseFloat(b) - parseFloat(a));  // Sort descending (latest first)
+      if (installedVersions.length > 0) {
+        defaultWebServerVersion = installedVersions[0];
+      }
+    }
+
     // Generate domain name from project name
     const domainName = config.domain || `${config.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}.test`;
 
@@ -212,8 +225,8 @@ class ProjectManager {
       path: config.path,
       type: projectType,
       phpVersion: config.phpVersion || '8.3',
-      webServer: config.webServer || settings.webServer || 'nginx',
-      webServerVersion: config.webServerVersion || '1.28', // Default version
+      webServer: webServer,
+      webServerVersion: config.webServerVersion || defaultWebServerVersion,
       port,
       sslPort,
       domain: domainName,
@@ -1720,7 +1733,33 @@ class ProjectManager {
     const sitesDir = path.join(dataPath, 'nginx', 'sites');
     const sslDir = path.join(dataPath, 'ssl', project.domain);
     const platform = process.platform === 'win32' ? 'win' : 'mac';
-    const nginxVersion = project.webServerVersion || '1.28';
+    let nginxVersion = project.webServerVersion || '1.28';
+
+    // Validate that the nginx version exists, fall back to available version if not
+    const nginxVersionPath = path.join(resourcesPath, 'nginx', nginxVersion, platform);
+    if (!await fs.pathExists(nginxVersionPath)) {
+      // Try to find an available nginx version
+      const nginxDir = path.join(resourcesPath, 'nginx');
+      if (await fs.pathExists(nginxDir)) {
+        const availableVersions = await fs.readdir(nginxDir);
+        for (const v of availableVersions) {
+          const vPath = path.join(nginxDir, v, platform);
+          if (await fs.pathExists(vPath)) {
+            this.managers.log?.systemWarn(`Nginx ${nginxVersion} not found, using ${v} instead`, { project: project.name });
+            nginxVersion = v;
+            // Update project config with available version
+            const projects = this.configStore.get('projects', []);
+            const index = projects.findIndex(p => p.id === project.id);
+            if (index !== -1) {
+              projects[index].webServerVersion = v;
+              this.configStore.set('projects', projects);
+            }
+            break;
+          }
+        }
+      }
+    }
+
     const fastcgiParamsPath = path.join(resourcesPath, 'nginx', nginxVersion, platform, 'conf', 'fastcgi_params').replace(/\\/g, '/');
 
     await fs.ensureDir(sitesDir);

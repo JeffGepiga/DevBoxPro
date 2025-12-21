@@ -272,15 +272,17 @@ function CreateProject() {
             .filter(([_, info]) => info.installed)
             .map(([version]) => version);
 
-          // Nginx versions
+          // Nginx versions - sorted descending (latest first)
           const nginxVersions = Object.entries(status.nginx || {})
             .filter(([_, info]) => info.installed)
-            .map(([version]) => version);
+            .map(([version]) => version)
+            .sort((a, b) => parseFloat(b) - parseFloat(a));
 
-          // Apache versions
+          // Apache versions - sorted descending (latest first)
           const apacheVersions = Object.entries(status.apache || {})
             .filter(([_, info]) => info.installed)
-            .map(([version]) => version);
+            .map(([version]) => version)
+            .sort((a, b) => parseFloat(b) - parseFloat(a));
 
           setBinariesStatus({
             loading: false,
