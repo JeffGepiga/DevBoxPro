@@ -148,6 +148,7 @@ contextBridge.exposeInMainWorld('devbox', {
     openExternal: (url) => ipcRenderer.invoke('system:openExternal', url),
     getAppVersion: () => ipcRenderer.invoke('system:getAppVersion'),
     getPlatform: () => ipcRenderer.invoke('system:getPlatform'),
+    getLocalIpAddresses: () => ipcRenderer.invoke('system:getLocalIpAddresses'),
     checkForUpdates: () => ipcRenderer.invoke('system:checkForUpdates'),
     clearAllData: (deleteProjectFiles) => ipcRenderer.invoke('system:clearAllData', deleteProjectFiles),
   },

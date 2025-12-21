@@ -47,7 +47,7 @@ class ServiceManager extends EventEmitter {
     // Standard and alternate ports for web servers
     this.webServerPorts = {
       standard: { http: 80, https: 443 },
-      alternate: { http: 8081, https: 8444 },
+      alternate: { http: 8081, https: 8443 },
     };
 
     // Port assignments for versioned services
@@ -61,7 +61,7 @@ class ServiceManager extends EventEmitter {
         defaultPort: DEFAULT_PORTS.nginx || 80,
         sslPort: 443,
         alternatePort: 8081,
-        alternateSslPort: 8444,
+        alternateSslPort: 8443,
         healthCheck: this.checkNginxHealth.bind(this),
         versioned: true,
       },
@@ -1202,9 +1202,9 @@ http {
     # Include virtual host configs from sites directory
     include ${sitesPath}/*.conf;
 
-    # Default server for unmatched requests
+    # Fallback server for unmatched requests (no default_server to allow project vhosts with _ to match)
     server {
-        listen ${httpPort} default_server;
+        listen ${httpPort};
         server_name localhost;
         root ${dataPath.replace(/\\/g, '/')}/www;
         index index.html index.php;
@@ -1269,6 +1269,21 @@ http {
       // Another web server owns standard ports, use alternate
       httpPort = this.webServerPorts.alternate.http;
       httpsPort = this.webServerPorts.alternate.https;
+    }
+
+    // Verify chosen ports are available, find alternatives if not
+    // Pre-start cleanup for Windows: If ports are busy, it might be a zombie process
+    if (process.platform === 'win32') {
+      if (!(await isPortAvailable(httpPort)) || !(await isPortAvailable(httpsPort))) {
+        const { killProcessByName } = require('../utils/SpawnUtils');
+        try {
+          this.managers.log?.systemInfo('Port blocked, attempting to clear zombie Apache processes...');
+          await killProcessByName('httpd.exe', true);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (e) {
+          // Ignore errors if no process found
+        }
+      }
     }
 
     // Verify chosen ports are available, find alternatives if not
@@ -1380,12 +1395,15 @@ http {
       windowsHide: true,
     });
 
+    console.log(`[DEBUG] Apache process spawned with PID: ${proc.pid}`);
+
     proc.stdout.on('data', (data) => {
       this.managers.log?.service('apache', data.toString());
     });
 
     proc.stderr.on('data', (data) => {
       this.managers.log?.service('apache', data.toString(), 'error');
+      console.log(`[APACHE STDERR] ${data.toString()}`);
     });
 
     proc.on('error', (error) => {
@@ -1396,6 +1414,7 @@ http {
     });
 
     proc.on('exit', (code) => {
+      console.log(`[DEBUG] Apache process exited with code: ${code}`);
       const status = this.serviceStatus.get('apache');
       if (status.status === 'running') {
         status.status = 'stopped';
@@ -1414,7 +1433,7 @@ http {
 
     // Wait for Apache to be ready
     try {
-      await this.waitForService('apache', 10000);
+      await this.waitForService('apache', 20000);
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
@@ -1422,6 +1441,20 @@ http {
       status.status = 'error';
       status.error = `Apache ${version} failed to start properly: ${error.message}`;
       this.runningVersions.get('apache').delete(version);
+
+      // Attempt cleanup
+      try {
+        if (process.platform === 'win32') {
+          const { killProcessByName } = require('../utils/SpawnUtils');
+          await killProcessByName('httpd.exe', true);
+        }
+        if (proc && !proc.killed) {
+          proc.kill();
+        }
+      } catch (cleanupError) {
+        // Ignore
+      }
+
       throw error;
     }
   }
@@ -1430,9 +1463,35 @@ http {
     const dataPath = path.join(app.getPath('userData'), 'data');
     const mimeTypesPath = path.join(apachePath, 'conf', 'mime.types').replace(/\\/g, '/');
 
+    // Runtime check: Which project currently owns Port 80 for network access?
+    const networkPort80OwnerId = this.managers.project?.networkPort80Owner;
+
+    // Collect all unique ports from network-accessible Apache projects
+    // We explicitly bind to 0.0.0.0 to ensure consistent IPv4 handling and avoid ambiguous 'Listen 80' (dual-stack) issues
+    const listenSet = new Set([`Listen 0.0.0.0:${httpPort}`, `Listen 0.0.0.0:${httpsPort}`]);
+
+    const allProjects = this.configStore?.get('projects', []) || [];
+    const networkApacheProjects = allProjects.filter(p =>
+      p.networkAccess && p.webServer === 'apache'
+    );
+
+    networkApacheProjects.forEach(p => {
+      if (p.id === networkPort80OwnerId) {
+        // This Apache project owns Network Port 80.
+        // It is already covered by 'Listen 80' (if httpPort is 80) or handled elsewhere.
+        // We do NOT need to explicitly add Listen 0.0.0.0:80 here as it causes double-bind crash on Windows.
+      } else {
+        // Otherwise, use its assigned unique port (if defined and valid)
+        if (p.port && p.port !== 80) {
+          listenSet.add(`Listen 0.0.0.0:${p.port}`);
+        }
+      }
+    });
+
+    const listenDirectives = Array.from(listenSet).join('\n');
+
     const config = `ServerRoot "${apachePath.replace(/\\/g, '/')}"
-Listen ${httpPort}
-Listen ${httpsPort}
+${listenDirectives}
 
 # Core modules
 LoadModule authz_core_module modules/mod_authz_core.so
@@ -2651,6 +2710,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
   }
 
   async waitForService(serviceName, timeout) {
+    console.log(`[DEBUG] waitForService called for ${serviceName} with timeout ${timeout}`);
     const config = this.serviceConfigs[serviceName];
     const startTime = Date.now();
 
@@ -2660,8 +2720,10 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
         if (healthy) {
           return true;
         }
+        console.log(`[DEBUG] ${serviceName} health check returned false`);
       } catch (error) {
         // Service not ready yet
+        console.log(`[DEBUG] ${serviceName} not ready: ${error.message}`);
       }
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
@@ -2676,6 +2738,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
 
   async checkApacheHealth() {
     const port = this.serviceConfigs.apache.actualHttpPort || this.serviceConfigs.apache.defaultPort;
+    console.log(`[DEBUG] CheckApacheHealth: Port ${port}`);
     return this.checkPortOpen(port);
   }
 
@@ -2705,6 +2768,7 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
   }
 
   async checkPortOpen(port) {
+    console.log(`[DEBUG] checkPortOpen: Connecting to 127.0.0.1:${port}`);
     return new Promise((resolve) => {
       const net = require('net');
       const socket = new net.Socket();

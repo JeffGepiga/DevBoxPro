@@ -430,6 +430,8 @@ function OverviewTab({ project, processes, refreshProjects }) {
   const [binariesStatus, setBinariesStatus] = useState({});
   const [savingSettings, setSavingSettings] = useState(false);
   const [pendingChanges, setPendingChanges] = useState({});
+  const [localIpAddresses, setLocalIpAddresses] = useState([]);
+  const [otherNetworkProjectsCount, setOtherNetworkProjectsCount] = useState(0);
   const [versionOptions, setVersionOptions] = useState({
     mysql: [],
     mariadb: [],
@@ -480,6 +482,24 @@ function OverviewTab({ project, processes, refreshProjects }) {
     };
     loadData();
   }, []);
+
+  // Load local IP addresses for network access feature
+  useEffect(() => {
+    const loadLocalIps = async () => {
+      try {
+        const ips = await window.devbox?.system.getLocalIpAddresses();
+        setLocalIpAddresses(ips || []);
+
+        // Check other projects for network access to determine port 80 usage
+        const allProjects = await window.devbox?.projects.getAll();
+        const others = allProjects?.filter(p => p.id !== project.id && p.networkAccess) || [];
+        setOtherNetworkProjectsCount(others.length);
+      } catch (error) {
+        // Error loading local IPs or projects
+      }
+    };
+    loadLocalIps();
+  }, [project.id]);
 
   // Check if there are pending changes
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
@@ -754,10 +774,58 @@ function OverviewTab({ project, processes, refreshProjects }) {
                 </label>
               </dd>
             </div>
+            <div className="flex justify-between items-center">
+              <dt className="text-gray-500 dark:text-gray-400">Share on Local Network</dt>
+              <dd>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={getEffectiveValue('networkAccess') || false}
+                    onChange={(e) => {
+                      const newValue = e.target.checked;
+                      if (newValue === (project.networkAccess || false)) {
+                        const { networkAccess, ...rest } = pendingChanges;
+                        setPendingChanges(rest);
+                      } else {
+                        setPendingChanges({ ...pendingChanges, networkAccess: newValue });
+                      }
+                    }}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                </label>
+              </dd>
+            </div>
           </dl>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">
             When auto-start is enabled, this project will start automatically when DevBox Pro launches.
           </p>
+          {getEffectiveValue('networkAccess') && localIpAddresses.length > 0 && (
+            <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-sm text-blue-700 dark:text-blue-300 font-medium mb-2">
+                🌐 Network Access URLs
+              </p>
+              <div className="space-y-1">
+                {localIpAddresses.map((ip, index) => {
+                  const willBeSole = otherNetworkProjectsCount === 0;
+                  const displayPort = willBeSole ? '' : `:${project.port}`;
+                  return (
+                    <p key={index} className="text-xs text-blue-600 dark:text-blue-400 font-mono">
+                      http://{ip}{displayPort}
+                    </p>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
+                ⚠️ Make sure Windows Firewall allows incoming connections on port {otherNetworkProjectsCount === 0 ? '80' : project.port}.
+              </p>
+            </div>
+          )}
+          {!getEffectiveValue('networkAccess') && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              Allow devices on your Wi-Fi/LAN to access this project via IP address.
+            </p>
+          )}
         </div>
 
         {/* Domains */}

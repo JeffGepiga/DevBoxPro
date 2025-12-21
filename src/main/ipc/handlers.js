@@ -506,6 +506,11 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return process.platform;
   });
 
+  ipcMain.handle('system:getLocalIpAddresses', async () => {
+    if (!managers.webServer) return [];
+    return managers.webServer.getLocalIpAddresses();
+  });
+
   ipcMain.handle('system:checkForUpdates', async () => {
     // Auto-updater implementation would go here
     return { updateAvailable: false };

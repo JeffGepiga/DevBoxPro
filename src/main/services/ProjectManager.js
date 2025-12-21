@@ -35,6 +35,10 @@ class ProjectManager {
     this.projectServers = new Map();
     this.proxy = httpProxy.createProxyServer({});
     this.compatibilityManager = new CompatibilityManager();
+
+    // Track which project currently owns port 80 for network access
+    // First project to start with networkAccess gets port 80
+    this.networkPort80Owner = null;
   }
 
   async initialize() {
@@ -1213,6 +1217,11 @@ class ProjectManager {
 
       this.runningProjects.delete(id);
 
+      // Release port 80 ownership if this project owned it
+      if (this.networkPort80Owner === id) {
+        this.networkPort80Owner = null;
+      }
+
       // Stop project services that are no longer needed by other running projects
       if (project) {
         const serviceResult = await this.stopProjectServices(project);
@@ -1778,18 +1787,61 @@ class ProjectManager {
     const httpPort = nginxPorts?.httpPort || 80;
     const httpsPort = nginxPorts?.sslPort || 443;
 
+    // Network Access Logic - Enable binding to all interfaces for LAN access
+    const networkAccess = project.networkAccess || false;
+
+    // First-come-first-served port 80 allocation for network access
+    // Check if port 80 is available (no other project owns it)
+    let canUsePort80 = false;
+    if (networkAccess) {
+      if (this.networkPort80Owner === null) {
+        // Port 80 is available - this project can claim it
+        canUsePort80 = true;
+        this.networkPort80Owner = project.id;
+      } else if (this.networkPort80Owner === project.id) {
+        // This project already owns port 80
+        canUsePort80 = true;
+      }
+    }
+
+    // Determine final port
+    let finalHttpPort;
+    if (networkAccess) {
+      if (canUsePort80) {
+        finalHttpPort = 80; // Clean URL with Port 80
+      } else {
+        finalHttpPort = project.port || httpPort; // Use project's unique port
+      }
+    } else {
+      finalHttpPort = httpPort;
+    }
+
+    // Determine listen directive - bind to all interfaces if network access enabled
+    // Note: Don't add default_server as main nginx.conf already has one
+    const listenDirective = networkAccess
+      ? `0.0.0.0:${finalHttpPort}`
+      : `${httpPort}`;
+    const listenDirectiveSsl = networkAccess
+      ? `0.0.0.0:${httpsPort} ssl`
+      : `${httpsPort} ssl`;
+
+    // Build server_name - add wildcard if network access enabled to accept any hostname (including IP)
+    const serverName = networkAccess
+      ? `${project.domain} www.${project.domain} _`
+      : `${project.domain} www.${project.domain}`;
+
     // Generate nginx config with both HTTP and HTTPS
     // PHP-CGI runs on phpFpmPort for FastCGI
     let config = `
 # DevBox Pro - ${project.name}
 # Domain: ${project.domain}
 # Generated: ${new Date().toISOString()}
-# Ports: HTTP=${httpPort}, HTTPS=${httpsPort}
+# Ports: HTTP=${finalHttpPort}, HTTPS=${httpsPort}${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}${canUsePort80 ? '\n# Port 80 (first-come-first-served)' : ''}
 
 # HTTP Server
 server {
-    listen ${httpPort};
-    server_name ${project.domain} www.${project.domain};
+    listen ${listenDirective};
+    server_name ${serverName};
     root "${documentRoot.replace(/\\/g, '/')}";
     index index.php index.html index.htm;
 
@@ -1851,9 +1903,9 @@ server {
       config += `
 # HTTPS Server (SSL)
 server {
-    listen ${httpsPort} ssl;
+    listen ${listenDirectiveSsl};
     http2 on;
-    server_name ${project.domain} www.${project.domain};
+    server_name ${serverName};
     root "${documentRoot.replace(/\\/g, '/')}";
     index index.php index.html index.htm;
 
@@ -1946,6 +1998,42 @@ server {
     const httpPort = apachePorts?.httpPort || 80;
     const httpsPort = apachePorts?.sslPort || 443;
 
+    // Network Access Logic - Enable binding to all interfaces for LAN access
+    const networkAccess = project.networkAccess || false;
+
+    // First-come-first-served port 80 allocation for network access
+    // Check if port 80 is available (no other project owns it)
+    let canUsePort80 = false;
+    if (networkAccess) {
+      if (this.networkPort80Owner === null) {
+        // Port 80 is available - this project can claim it
+        canUsePort80 = true;
+        this.networkPort80Owner = project.id;
+      } else if (this.networkPort80Owner === project.id) {
+        // This project already owns port 80
+        canUsePort80 = true;
+      }
+    }
+
+    // Determine final port
+    let finalHttpPort;
+    if (networkAccess) {
+      if (canUsePort80) {
+        finalHttpPort = 80; // Clean URL with Port 80
+      } else {
+        finalHttpPort = project.port || httpPort; // Use project's unique port
+      }
+    } else {
+      finalHttpPort = httpPort;
+    }
+
+    const listenAddress = networkAccess ? '0.0.0.0' : '*';
+
+    // Build ServerAlias - add wildcard (*) if network access enabled to accept any hostname
+    const serverAlias = networkAccess
+      ? `www.${project.domain} *`
+      : `www.${project.domain}`;
+
     // Get PHP-CGI path for this PHP version
     const phpVersion = project.phpVersion || '8.4';
     const platform = process.platform === 'win32' ? 'win' : 'mac';
@@ -1957,13 +2045,13 @@ server {
 # DevBox Pro - ${project.name}
 # Domain: ${project.domain}
 # Generated: ${new Date().toISOString()}
-# Apache running on ports ${httpPort}/${httpsPort}
-# PHP Version: ${phpVersion}
+# Apache running on ports ${finalHttpPort}/${httpsPort}
+# PHP Version: ${phpVersion}${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}${canUsePort80 ? '\n# Port 80 (first-come-first-served)' : ''}
 
 # HTTP Virtual Host
-<VirtualHost *:${httpPort}>
+<VirtualHost ${listenAddress}:${finalHttpPort}>
     ServerName ${project.domain}
-    ServerAlias www.${project.domain}
+    ServerAlias ${serverAlias}
     DocumentRoot "${documentRoot}"
     
     <Directory "${documentRoot}">
@@ -2021,11 +2109,12 @@ server {
 
     // Add HTTPS virtual host if SSL is enabled and certs exist
     if (project.ssl && certsExist) {
+      const listenAddressSsl = networkAccess ? '0.0.0.0' : '*';
       config += `
 # HTTPS Virtual Host (SSL)
-<VirtualHost *:${httpsPort}>
+<VirtualHost ${listenAddressSsl}:${httpsPort}>
     ServerName ${project.domain}
-    ServerAlias www.${project.domain}
+    ServerAlias ${serverAlias}
     DocumentRoot "${documentRoot}"
     
     # SSL Configuration
