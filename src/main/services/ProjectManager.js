@@ -54,7 +54,7 @@ class ProjectManager {
   async ensureCliInstalled() {
     const cli = this.managers.cli;
     if (!cli) {
-      console.warn('CLI manager not available');
+      this.managers.log?.systemWarn('CLI manager not available');
       return;
     }
 
@@ -78,7 +78,7 @@ class ProjectManager {
       // Sync projects file for CLI
       await this.syncCliProjectsFile();
     } catch (error) {
-      console.warn('Could not ensure CLI installed:', error.message);
+      this.managers.log?.systemWarn('Could not ensure CLI installed', { error: error.message });
     }
   }
 
@@ -94,7 +94,7 @@ class ProjectManager {
     try {
       await cli.syncProjectsFile();
     } catch (error) {
-      console.warn('Could not sync CLI projects file:', error.message);
+      this.managers.log?.systemWarn('Could not sync CLI projects file', { error: error.message });
     }
   }
 
@@ -130,7 +130,7 @@ class ProjectManager {
         // Remove the failed project and allow re-creation
         const filteredProjects = existingProjects.filter(p => p.id !== existingProject.id);
         this.configStore.set('projects', filteredProjects);
-        console.log(`Removed failed project "${existingProject.name}" at ${existingProject.path} for retry`);
+        // Debug log removed - project retry is handled gracefully
 
         // Clean up any partial files from the failed installation if it's a fresh install retry
         if (config.installFresh) {
@@ -144,12 +144,12 @@ class ProjectManager {
               const hasComposerJson = files.includes('composer.json');
 
               if (hasVendor || hasArtisan || hasComposerJson) {
-                console.log(`Cleaning up partial installation at ${projectDir}`);
+                // Debug log removed - cleanup is internal operation
                 await fs.remove(projectDir);
               }
             }
           } catch (cleanupError) {
-            console.warn('Could not clean up partial installation:', cleanupError.message);
+            this.managers.log?.systemWarn('Could not clean up partial installation', { error: cleanupError.message });
           }
         }
       } else {
@@ -280,7 +280,7 @@ class ProjectManager {
 
         await this.managers.database?.createDatabase(dbName, dbVersion);
       } catch (error) {
-        console.warn('Could not create database:', error.message);
+        this.managers.log?.systemWarn('Could not create database during project creation', { project: config.name, error: error.message });
       }
     }
 
@@ -290,7 +290,7 @@ class ProjectManager {
         await this.managers.ssl?.createCertificate(project.domains);
         // Note: SSL certificates are signed by Root CA which is trusted during SslManager initialization
       } catch (error) {
-        console.warn('Could not create SSL certificate:', error.message);
+        this.managers.log?.systemWarn('Could not create SSL certificate', { project: config.name, error: error.message });
       }
     }
 
@@ -300,7 +300,7 @@ class ProjectManager {
       try {
         await this.createVirtualHost(project);
       } catch (error) {
-        console.warn('Could not create virtual host:', error.message);
+        this.managers.log?.systemWarn('Could not create virtual host', { project: config.name, error: error.message });
       }
     }
 
@@ -308,7 +308,7 @@ class ProjectManager {
     try {
       await this.addToHostsFile(project.domain);
     } catch (error) {
-      console.warn('Could not update hosts file:', error.message);
+      this.managers.log?.systemWarn('Could not update hosts file', { project: config.name, error: error.message });
     }
 
     // Set up queue worker if enabled
@@ -545,7 +545,7 @@ class ProjectManager {
 
       onOutput('✓ Laravel files installed successfully!', 'success');
     } catch (error) {
-      console.error('[installLaravel] Composer error:', error);
+      this.managers.log?.systemError('[installLaravel] Composer error', { error: error.message });
       onOutput(`✗ Composer error: ${error.message}`, 'error');
       throw error;
     }
@@ -715,7 +715,6 @@ class ProjectManager {
     const downloadPath = path.join(projectPath, 'wordpress.zip');
 
     // TODO: Implement WordPress download and extraction
-    console.log('WordPress installation not yet implemented');
   }
 
   async updateProject(id, updates) {
@@ -749,7 +748,7 @@ class ProjectManager {
       try {
         await this.syncEnvFile(projects[index]);
       } catch (error) {
-        console.warn('Could not sync .env file:', error.message);
+        this.managers.log?.systemWarn('Could not sync .env file', { project: projects[index].name, error: error.message });
       }
     }
 
@@ -855,14 +854,14 @@ class ProjectManager {
     try {
       await this.removeVirtualHost(project);
     } catch (error) {
-      console.warn('Error removing virtual host:', error.message);
+      this.managers.log?.systemWarn('Error removing virtual host', { project: project.name, error: error.message });
     }
 
     // Remove domain from hosts file
     try {
       await this.removeFromHostsFile(project.domain);
     } catch (error) {
-      console.warn('Error removing from hosts file:', error.message);
+      this.managers.log?.systemWarn('Error removing from hosts file', { project: project.name, error: error.message });
     }
 
     // Delete project files if requested
@@ -870,7 +869,7 @@ class ProjectManager {
       try {
         await fs.remove(project.path);
       } catch (error) {
-        console.error('Error deleting project files:', error.message);
+        this.managers.log?.systemError('Error deleting project files', { project: project.name, path: project.path, error: error.message });
         throw new Error(`Failed to delete project files: ${error.message}`);
       }
     }
@@ -1119,7 +1118,7 @@ class ProjectManager {
       });
 
       phpCgiProcess.on('error', (error) => {
-        console.error(`PHP-CGI error for ${project.name}:`, error);
+        this.managers.log?.systemError(`PHP-CGI error for ${project.name}`, { error: error.message });
       });
 
       phpCgiProcess.on('exit', (code) => {
@@ -1147,7 +1146,7 @@ class ProjectManager {
       });
 
       phpCgiProcess.on('error', (error) => {
-        console.error(`PHP-CGI error for ${project.name}:`, error);
+        this.managers.log?.systemError(`PHP-CGI error for ${project.name}`, { error: error.message });
       });
 
       phpCgiProcess.on('exit', (code) => {
@@ -1167,9 +1166,7 @@ class ProjectManager {
       }
     }
 
-    if (!isListening) {
-      console.warn(`PHP-CGI may not have started properly on port ${actualPort}`);
-    }
+    this.managers.log?.systemWarn(`PHP-CGI may not have started properly on port ${actualPort}`);
 
     return { process: phpCgiProcess, port: actualPort };
   }
@@ -1190,7 +1187,7 @@ class ProjectManager {
       if (running.phpCgiProcess && running.phpCgiProcess.pid) {
         await new Promise((resolve) => {
           kill(running.phpCgiProcess.pid, 'SIGTERM', (err) => {
-            if (err) console.error('Error killing PHP-CGI process:', err);
+            if (err) this.managers.log?.systemError('Error killing PHP-CGI process', { error: err.message });
             resolve();
           });
         });
@@ -1215,7 +1212,7 @@ class ProjectManager {
 
       return { success: true, wasRunning: true };
     } catch (error) {
-      console.error(`Error stopping project:`, error);
+      this.managers.log?.systemError('Error stopping project', { project: project?.name, id, error: error.message });
       throw error;
     }
   }
@@ -1331,7 +1328,7 @@ class ProjectManager {
         await this.stopProject(id);
         results.push({ id, success: true });
       } catch (error) {
-        console.error(`Error stopping project ${id}:`, error);
+        this.managers.log?.systemError(`Error stopping project ${id}`, { error: error.message });
         results.push({ id, success: false, error: error.message });
       }
     }
@@ -1376,7 +1373,7 @@ class ProjectManager {
         try {
           await this.managers.supervisor?.startProcess(project.id, processConfig);
         } catch (error) {
-          console.error(`Failed to start supervisor process ${processConfig.name}:`, error);
+          this.managers.log?.systemError(`Failed to start supervisor process ${processConfig.name}`, { project: project.name, error: error.message });
         }
       }
     }
@@ -1500,7 +1497,7 @@ class ProjectManager {
       } catch (error) {
         const versionStr = service.version ? ` ${service.version}` : '';
         const errorMsg = `Failed to start ${service.name}${versionStr}: ${error.message}`;
-        console.warn(errorMsg);
+        this.managers.log?.systemWarn(errorMsg);
         results.failed.push(service.name);
         results.errors.push(errorMsg);
 
@@ -1514,7 +1511,7 @@ class ProjectManager {
     if (results.success) {
       this.managers.log?.project(project.id, `Services ready: ${results.started.join(', ')}`);
     } else {
-      console.error(`Critical services failed for project ${project.name}:`, results.criticalFailures);
+      this.managers.log?.systemError(`Critical services failed for project ${project.name}`, { failures: results.criticalFailures });
       this.managers.log?.project(project.id, `Service failures: ${results.errors.join('; ')}`, 'error');
     }
 
@@ -1687,7 +1684,7 @@ class ProjectManager {
       try {
         await this.addToHostsFile(domain);
       } catch (error) {
-        console.warn(`Could not add ${domain} to hosts file:`, error.message);
+        this.managers.log?.systemWarn(`Could not add ${domain} to hosts file`, { error: error.message });
       }
     }
   }
@@ -1702,7 +1699,7 @@ class ProjectManager {
       try {
         await this.managers.service?.reloadNginx();
       } catch (error) {
-        console.warn('Could not reload nginx:', error.message);
+        this.managers.log?.systemWarn('Could not reload nginx', { error: error.message });
       }
     } else {
       await this.createApacheVhost(project);
@@ -1710,7 +1707,7 @@ class ProjectManager {
       try {
         await this.managers.service?.reloadApache();
       } catch (error) {
-        console.warn('Could not reload Apache:', error.message);
+        this.managers.log?.systemWarn('Could not reload Apache', { error: error.message });
       }
     }
   }
@@ -1803,12 +1800,12 @@ server {
         // Re-check if certificates were created successfully
         certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
       } catch (error) {
-        console.warn(`Failed to create SSL certificates for ${project.domain}:`, error.message);
+        this.managers.log?.systemWarn(`Failed to create SSL certificates for ${project.domain}`, { error: error.message });
       }
     }
 
     if (project.ssl && !certsExist) {
-      console.warn(`SSL enabled for ${project.domain} but certificates not found at ${sslDir}. Skipping SSL block.`);
+      this.managers.log?.systemWarn(`SSL enabled for ${project.domain} but certificates not found at ${sslDir}. Skipping SSL block.`);
     }
 
     if (project.ssl && certsExist) {
@@ -1897,7 +1894,7 @@ server {
 
     // Ensure port is a valid number and convert to string explicitly
     if (isNaN(phpFpmPort) || phpFpmPort < 9000 || phpFpmPort > 9999) {
-      console.error(`[Apache Vhost] Invalid PHP-CGI port calculated: ${phpFpmPort}. Using default 9000.`);
+      this.managers.log?.systemError(`[Apache Vhost] Invalid PHP-CGI port calculated: ${phpFpmPort}. Using default 9000.`);
       phpFpmPort = 9000;
     }
 
@@ -1975,12 +1972,12 @@ server {
         // Re-check if certificates were created successfully
         certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
       } catch (error) {
-        console.warn(`Failed to create SSL certificates for ${project.domain}:`, error.message);
+        this.managers.log?.systemWarn(`Failed to create SSL certificates for ${project.domain}`, { error: error.message });
       }
     }
 
     if (project.ssl && !certsExist) {
-      console.warn(`SSL enabled for ${project.domain} but certificates not found at ${sslDir}. Skipping SSL block.`);
+      this.managers.log?.systemWarn(`SSL enabled for ${project.domain} but certificates not found at ${sslDir}. Skipping SSL block.`);
     }
 
     // Add HTTPS virtual host if SSL is enabled and certs exist
@@ -2099,7 +2096,7 @@ server {
             try { await fs.remove(scriptPath); } catch (e) { }
 
             if (error) {
-              console.warn(`Could not update hosts file automatically: ${error.message}`);
+              this.managers.log?.systemWarn(`Could not update hosts file automatically`, { error: error.message });
               resolve({ success: false, error: error.message });
             } else {
               resolve({ success: true });
@@ -2114,7 +2111,7 @@ server {
         return new Promise((resolve) => {
           sudo.exec(command, options, (error, stdout, stderr) => {
             if (error) {
-              console.warn(`Could not update hosts file automatically: ${error.message}`);
+              this.managers.log?.systemWarn(`Could not update hosts file automatically`, { error: error.message });
               resolve({ success: false, error: error.message });
             } else {
               resolve({ success: true });
@@ -2123,7 +2120,7 @@ server {
         });
       }
     } catch (error) {
-      console.warn(`Could not read hosts file: ${error.message}`);
+      this.managers.log?.systemWarn(`Could not read hosts file`, { error: error.message });
       return { success: false, error: error.message };
     }
   }
@@ -2171,10 +2168,10 @@ server {
               try { await fs.remove(tempHostsPath); } catch (e) { }
 
               if (error) {
-                console.warn(`Could not remove ${domain} from hosts file: ${error.message}`);
+                this.managers.log?.systemWarn(`Could not remove ${domain} from hosts file`, { error: error.message });
                 resolve({ success: false, error: error.message });
               } else {
-                console.log(`Removed ${domain} from hosts file`);
+                // Domain removed from hosts file
                 resolve({ success: true });
               }
             });
@@ -2191,10 +2188,10 @@ server {
               try { await fs.remove(tempHostsPath); } catch (e) { }
 
               if (error) {
-                console.warn(`Could not remove ${domain} from hosts file: ${error.message}`);
+                this.managers.log?.systemWarn(`Could not remove ${domain} from hosts file`, { error: error.message });
                 resolve({ success: false, error: error.message });
               } else {
-                console.log(`Removed ${domain} from hosts file`);
+                // Domain removed from hosts file
                 resolve({ success: true });
               }
             });
@@ -2204,7 +2201,7 @@ server {
 
       return { success: true, nothingToRemove: true };
     } catch (error) {
-      console.warn(`Could not update hosts file: ${error.message}`);
+      this.managers.log?.systemWarn(`Could not update hosts file`, { error: error.message });
       return { success: false, error: error.message };
     }
   }
@@ -2229,7 +2226,7 @@ server {
     // Try to remove from hosts file
     await this.removeFromHostsFile(project.domain);
 
-    console.log(`Virtual host removed for ${project.domain}`);
+    // Virtual host removed
   }
 
   // Switch web server for a project
@@ -2266,16 +2263,16 @@ server {
 
     // If no other projects use the old web server, stop it to free up ports
     if (otherProjectsOnOldServer.length === 0) {
-      console.log(`No other projects using ${oldWebServer}, stopping it to free ports...`);
+      // Stopping old web server - no other projects using it
       try {
         await this.managers.service?.stopService(oldWebServer);
         // Wait for ports to be fully released
         await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (error) {
-        console.warn(`Could not stop ${oldWebServer}:`, error.message);
+        this.managers.log?.systemWarn(`Could not stop ${oldWebServer}`, { error: error.message });
       }
     } else {
-      console.log(`${otherProjectsOnOldServer.length} other project(s) still using ${oldWebServer}, keeping it running`);
+      // Other projects still using old web server - keeping it running
     }
 
     // Update project with new web server
@@ -2311,7 +2308,7 @@ server {
     const projectsDir = settings.defaultProjectsPath;
 
     if (!projectsDir || !(await fs.pathExists(projectsDir))) {
-      console.log('Projects directory not configured or does not exist');
+      // Projects directory not configured or does not exist
       return [];
     }
 
@@ -2351,10 +2348,10 @@ server {
         });
       }
     } catch (error) {
-      console.error('Error scanning for unregistered projects:', error);
+      this.managers.log?.systemError('Error scanning for unregistered projects', { error: error.message });
     }
 
-    console.log(`Found ${unregistered.length} unregistered project(s)`);
+    // Found unregistered projects in scanning
     return unregistered;
   }
 
@@ -2452,7 +2449,7 @@ server {
       try {
         await this.managers.database?.createDatabase(dbName);
       } catch (error) {
-        console.warn('Could not create database:', error.message);
+        this.managers.log?.systemWarn('Could not create database', { error: error.message });
       }
     }
 
@@ -2460,21 +2457,21 @@ server {
     try {
       await this.managers.ssl?.createCertificate(project.domains);
     } catch (error) {
-      console.warn('Could not create SSL certificate:', error.message);
+      this.managers.log?.systemWarn('Could not create SSL certificate', { error: error.message });
     }
 
     // Create virtual host configuration
     try {
       await this.createVirtualHost(project);
     } catch (error) {
-      console.warn('Could not create virtual host:', error.message);
+      this.managers.log?.systemWarn('Could not create virtual host', { error: error.message });
     }
 
     // Add domain to hosts file
     try {
       await this.addToHostsFile(project.domain);
     } catch (error) {
-      console.warn('Could not update hosts file:', error.message);
+      this.managers.log?.systemWarn('Could not update hosts file', { error: error.message });
     }
 
     // Save project
@@ -2484,7 +2481,7 @@ server {
     // Auto-install CLI if not already installed
     await this.ensureCliInstalled();
 
-    console.log(`Existing project registered: ${project.name} (${project.id})`);
+    // Existing project registered successfully
     return project;
   }
 

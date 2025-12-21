@@ -98,7 +98,7 @@ async function createWindow() {
 
   // Log renderer errors
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error(`Failed to load: ${errorDescription} (${errorCode})`);
+    managers.log?.systemError(`Failed to load: ${errorDescription} (${errorCode})`);
   });
 
   mainWindow.once('ready-to-show', () => {
@@ -218,7 +218,7 @@ function createTray() {
       }
     });
   } catch (error) {
-    console.error('Failed to create tray:', error.message);
+    managers.log?.systemError('Failed to create tray', { error: error.message });
   }
 }
 
@@ -270,7 +270,7 @@ async function initializeManagersDeferred() {
     await managers.binaryDownload.initialize();
     await managers.cli.initialize(resourcePath);
   } catch (error) {
-    console.error('Error in deferred initialization:', error);
+    managers.log?.systemError('Error in deferred initialization', { error: error.message });
   }
 }
 

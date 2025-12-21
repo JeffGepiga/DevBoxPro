@@ -72,7 +72,7 @@ function Settings() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (error) {
-      console.error('Error saving settings:', error);
+      // Error saving settings
       alert('Failed to save settings');
     } finally {
       setSaving(false);
@@ -93,7 +93,7 @@ function Settings() {
       // In a real app, this would use a save dialog
       alert('Config exported to devbox-config.json');
     } catch (error) {
-      console.error('Error exporting config:', error);
+      // Error exporting config
     }
   };
 
@@ -102,7 +102,7 @@ function Settings() {
       // In a real app, this would use a file picker
       alert('Import config feature coming soon');
     } catch (error) {
-      console.error('Error importing config:', error);
+      // Error importing config
     }
   };
 
@@ -210,7 +210,7 @@ function GeneralSettings({ settings, updateSetting }) {
         updateSetting('defaultProjectsPath', result);
       }
     } catch (error) {
-      console.error('Error selecting directory:', error);
+      // Error selecting directory
     }
   };
 
@@ -309,7 +309,7 @@ function CliSettings({ settings, updateSetting }) {
         const instr = await window.devbox?.cli?.getInstructions();
         setInstructions(instr);
       } catch (error) {
-        console.error('Error loading CLI info:', error);
+        // Error loading CLI info
       }
     };
     loadCliInfo();
@@ -783,7 +783,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
         const compatInfo = await window.devbox?.compatibility?.getConfigInfo();
         setConfigInfo(prev => ({ ...prev, compatibility: compatInfo }));
       } catch (error) {
-        console.error('Error loading config info:', error);
+        // Error loading config info
       }
     };
     loadConfigInfo();
@@ -808,7 +808,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
       await window.devbox?.binaries?.applyUpdates();
       setBinaryUpdateResult(prev => ({ ...prev, hasUpdates: false, applied: true }));
     } catch (error) {
-      console.error('Error applying binary updates:', error);
+      // Error applying binary updates
     } finally {
       setApplyingBinaryUpdates(false);
     }
@@ -838,7 +838,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
         setConfigInfo(prev => ({ ...prev, compatibility: compatInfo }));
       }
     } catch (error) {
-      console.error('Error applying compatibility updates:', error);
+      // Error applying compatibility updates
     } finally {
       setApplyingCompatibilityUpdates(false);
     }
@@ -868,7 +868,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
         }
       }, 2000);
     } catch (error) {
-      console.error('Error clearing data:', error);
+      // Error clearing data
       setClearResult({ success: false, message: error.message || 'Failed to clear data' });
     } finally {
       setIsClearing(false);

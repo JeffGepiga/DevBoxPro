@@ -560,7 +560,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
             status.version = null;
           }
         } catch (e) {
-          console.error('Error clearing service state:', e);
+          managers.log?.systemError('Error clearing service state', { error: e.message });
         }
       }
 
@@ -569,7 +569,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         try {
           project.runningProjects?.clear();
         } catch (e) {
-          console.error('Error clearing project state:', e);
+          managers.log?.systemError('Error clearing project state', { error: e.message });
         }
       }
 
@@ -579,9 +579,9 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
           if (proj.path && await fs.pathExists(proj.path)) {
             try {
               await fs.remove(proj.path);
-              console.log(`Deleted project files: ${proj.path}`);
+              // Deleted project files
             } catch (error) {
-              console.error(`Failed to delete project files ${proj.path}:`, error);
+              managers.log?.systemError('Failed to delete project files', { path: proj.path, error: error.message });
             }
           }
         }
@@ -593,9 +593,9 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         try {
           // Remove the entire resources directory
           await fs.remove(resourcesPath);
-          console.log('Cleared all resources (binaries, configs, etc.)');
+          // Cleared all resources
         } catch (e) {
-          console.error('Error clearing resources directory:', e);
+          managers.log?.systemError('Error clearing resources directory', { error: e.message });
           // If we can't delete the whole thing, try to delete subdirectories
           const subdirs = ['php', 'mysql', 'mariadb', 'redis', 'nginx', 'apache', 'nodejs', 'mailpit', 'phpmyadmin', 'composer', 'ssl', 'cli'];
           for (const subdir of subdirs) {
@@ -603,10 +603,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
               const subdirPath = path.join(resourcesPath, subdir);
               if (await fs.pathExists(subdirPath)) {
                 await fs.remove(subdirPath);
-                console.log(`Cleared ${subdir}`);
+                // Cleared subdirectory
               }
             } catch (err) {
-              console.error(`Error clearing ${subdir}:`, err);
+              managers.log?.systemError(`Error clearing ${subdir}`, { error: err.message });
             }
           }
         }
@@ -617,9 +617,9 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       if (await fs.pathExists(cliPath)) {
         try {
           await fs.remove(cliPath);
-          console.log('Cleared CLI directory');
+          // Cleared CLI directory
         } catch (e) {
-          console.error('Error clearing CLI directory:', e);
+          managers.log?.systemError('Error clearing CLI directory', { error: e.message });
         }
       }
 
@@ -628,9 +628,9 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       if (await fs.pathExists(cachedConfigPath)) {
         try {
           await fs.remove(cachedConfigPath);
-          console.log('Cleared cached binary config');
+          // Cleared cached binary config
         } catch (e) {
-          console.error('Error clearing cached binary config:', e);
+          managers.log?.systemError('Error clearing cached binary config', { error: e.message });
         }
       }
 
@@ -655,7 +655,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         requiresRestart: true
       };
     } catch (error) {
-      console.error('Error clearing all data:', error);
+      managers.log?.systemError('Error clearing all data', { error: error.message });
       throw new Error(`Failed to clear data: ${error.message}`);
     }
   });
@@ -1047,7 +1047,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         }
       }
 
-      console.log(`Running command: ${cmd} ${args.join(' ')} in ${cwd}`);
+      // Running command in terminal
 
       // Add PHP to PATH so scripts that call 'php' use the correct version
       const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
@@ -1190,12 +1190,12 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     } catch (error) {
       // Silently ignore errors during shutdown
       if (!error.message?.includes('destroyed')) {
-        console.error('Error getting resource usage:', error);
+        managers.log?.systemError('Error getting resource usage', { error: error.message });
       }
     }
   }, 5000);
 
-  console.log('IPC handlers registered');
+  // IPC handlers registered
 }
 
 module.exports = { setupIpcHandlers };

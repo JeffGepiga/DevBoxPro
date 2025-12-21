@@ -50,13 +50,13 @@ function appReducer(state, action) {
     case 'SET_DATABASE_OPERATION':
       return { ...state, databaseOperation: action.payload };
     case 'SET_DOWNLOAD_PROGRESS':
-      return { 
-        ...state, 
+      return {
+        ...state,
         downloadProgress: { ...state.downloadProgress, [action.payload.id]: action.payload.progress }
       };
     case 'SET_DOWNLOADING':
-      return { 
-        ...state, 
+      return {
+        ...state,
         downloading: { ...state.downloading, [action.payload.id]: action.payload.value }
       };
     case 'CLEAR_DOWNLOAD':
@@ -89,7 +89,7 @@ export function AppProvider({ children }) {
         dispatch({ type: 'SET_SERVICES', payload: services });
         dispatch({ type: 'SET_SETTINGS', payload: settings });
       } catch (error) {
-        console.error('Error loading initial data:', error);
+        // Error loading initial data
         dispatch({ type: 'SET_ERROR', payload: error.message });
       } finally {
         dispatch({ type: 'SET_LOADING', payload: false });
@@ -138,7 +138,7 @@ export function AppProvider({ children }) {
     // Binary download progress listener - persistent across navigation
     const unsubBinaryProgress = window.devbox?.binaries.onProgress?.((id, progressData) => {
       dispatch({ type: 'SET_DOWNLOAD_PROGRESS', payload: { id, progress: progressData } });
-      
+
       if (progressData.status === 'completed' || progressData.status === 'error') {
         dispatch({ type: 'SET_DOWNLOADING', payload: { id, value: false } });
         // Clear from state after a short delay
@@ -154,13 +154,13 @@ export function AppProvider({ children }) {
       try {
         const activeDownloads = await window.devbox?.binaries.getActiveDownloads();
         const installedBinaries = await window.devbox?.binaries.getInstalled();
-        
+
         if (activeDownloads && Object.keys(activeDownloads).length > 0) {
           for (const [id, progress] of Object.entries(activeDownloads)) {
             // Parse id to check if binary is already installed
             const [type, version] = id.split('-');
             let isInstalled = false;
-            
+
             if (version) {
               // Versioned binary (e.g., php-8.4, nodejs-20)
               isInstalled = installedBinaries?.[type]?.[version] === true;
@@ -168,7 +168,7 @@ export function AppProvider({ children }) {
               // Non-versioned binary (e.g., composer, mailpit)
               isInstalled = installedBinaries?.[type] === true;
             }
-            
+
             // Only mark as downloading if not already installed
             if (!isInstalled) {
               dispatch({ type: 'SET_DOWNLOADING', payload: { id, value: true } });
@@ -177,7 +177,7 @@ export function AppProvider({ children }) {
           }
         }
       } catch (error) {
-        console.error('Error syncing active downloads:', error);
+        // Error syncing active downloads
       }
     };
     syncActiveDownloads();
@@ -195,7 +195,7 @@ export function AppProvider({ children }) {
       const projects = await window.devbox?.projects.getAll();
       dispatch({ type: 'SET_PROJECTS', payload: projects || [] });
     } catch (error) {
-      console.error('Error refreshing projects:', error);
+      // Error refreshing projects
     }
   }, []);
 
@@ -204,7 +204,7 @@ export function AppProvider({ children }) {
       const services = await window.devbox?.services.getStatus();
       dispatch({ type: 'SET_SERVICES', payload: services || {} });
     } catch (error) {
-      console.error('Error refreshing services:', error);
+      // Error refreshing services
     }
   }, []);
 
@@ -213,7 +213,7 @@ export function AppProvider({ children }) {
       const settings = await window.devbox?.settings.getAll();
       dispatch({ type: 'SET_SETTINGS', payload: settings || {} });
     } catch (error) {
-      console.error('Error refreshing settings:', error);
+      // Error refreshing settings
     }
   }, []);
 
@@ -236,7 +236,7 @@ export function AppProvider({ children }) {
       await refreshProjects();
       return { success: true, ...result };
     } catch (error) {
-      console.error('Failed to start project:', error);
+      // Failed to start project
       await refreshProjects();
       return { success: false, error: error.message || 'Failed to start project' };
     }
@@ -248,7 +248,7 @@ export function AppProvider({ children }) {
       await refreshProjects();
       return { success: true };
     } catch (error) {
-      console.error('Failed to stop project:', error);
+      // Failed to stop project
       await refreshProjects();
       return { success: false, error: error.message || 'Failed to stop project' };
     }

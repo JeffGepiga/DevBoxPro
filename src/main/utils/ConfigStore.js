@@ -16,10 +16,10 @@ class ConfigStore {
       try {
         fs.ensureDirSync(dataPath);
       } catch (err) {
-        console.error('[ConfigStore] Failed to create data directory:', dataPath, err.message);
+        // Failed to create data directory - initialization may fail
       }
     } catch (err) {
-      console.error('[ConfigStore] Failed to initialize store:', err);
+      // Failed to initialize store - this is a critical error but we can't log to system yet
       // Create a fallback in-memory store
       this._fallbackData = this.getDefaults();
       this.store = null;

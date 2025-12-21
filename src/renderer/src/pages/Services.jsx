@@ -43,7 +43,7 @@ function Services() {
           setServiceConfig(config);
         }
       } catch (err) {
-        console.error('Error loading service config:', err);
+        // Error loading service config
       }
     };
     loadConfig();
@@ -85,10 +85,10 @@ function Services() {
         const status = await window.devbox?.binaries.getStatus();
         setBinariesStatus(status || {});
       } catch (err) {
-        console.error('Error loading binaries status:', err);
+        // Error loading binaries status
       }
     };
-    
+
     loadBinariesStatus();
     const intervalId = setInterval(loadBinariesStatus, 5000);
     return () => clearInterval(intervalId);
@@ -101,10 +101,10 @@ function Services() {
         const running = await window.devbox?.services.getRunningVersions();
         setRunningVersions(running || {});
       } catch (err) {
-        console.error('Failed to get running versions:', err);
+        // Failed to get running versions
       }
     };
-    
+
     loadRunningVersions();
     const intervalId = setInterval(loadRunningVersions, 3000);
     return () => clearInterval(intervalId);
@@ -132,21 +132,21 @@ function Services() {
   // Determine required services based on running projects
   const requiredServices = useMemo(() => {
     const required = new Set();
-    
+
     for (const project of runningProjects) {
       const webServer = project.webServer || 'nginx';
       required.add(webServer);
-      
+
       if (project.services?.mysql) required.add('mysql');
       if (project.services?.mariadb) required.add('mariadb');
       if (project.services?.redis) required.add('redis');
-      
+
       required.add('mailpit');
       if (project.services?.mysql || project.services?.mariadb) {
         required.add('phpmyadmin');
       }
     }
-    
+
     return required;
   }, [runningProjects]);
 
@@ -219,7 +219,7 @@ function Services() {
   const getServicePort = useCallback((serviceName, version) => {
     const info = serviceInfo[serviceName];
     if (!info) return null;
-    
+
     const basePort = info.defaultPort;
     const offset = serviceConfig.portOffsets[serviceName]?.[version] || 0;
     return basePort + offset;
@@ -228,7 +228,7 @@ function Services() {
   // Build list of service cards to display (including individual version cards)
   const serviceCards = useMemo(() => {
     const cards = [];
-    const servicesToShow = runningProjects.length === 0 
+    const servicesToShow = runningProjects.length === 0
       ? Object.keys(serviceInfo).filter(n => n !== 'nginx' && n !== 'apache')
       : Array.from(requiredServices);
 
@@ -238,7 +238,7 @@ function Services() {
 
       if (info.versioned) {
         const installedVersions = getInstalledVersions(name);
-        
+
         if (installedVersions.length === 0) {
           // No versions installed - show placeholder card
           cards.push({
@@ -265,7 +265,7 @@ function Services() {
         // Non-versioned service (mailpit, phpmyadmin)
         // Check if installed first
         const isInstalled = binariesStatus?.[name]?.installed === true;
-        
+
         if (!isInstalled) {
           // Not installed - show placeholder card
           cards.push({
@@ -439,7 +439,7 @@ function Services() {
             No services active
           </h3>
           <p className="text-gray-500 dark:text-gray-400 mb-4">
-            {runningProjects.length === 0 
+            {runningProjects.length === 0
               ? 'Start a project to see its required services here'
               : 'No services configured for running projects'}
           </p>
@@ -492,15 +492,15 @@ function ResourceCard({ icon: Icon, label, value, color }) {
 }
 
 // Card for versioned service with specific version
-function VersionServiceCard({ 
-  serviceName, 
-  version, 
-  info, 
-  isRunning, 
+function VersionServiceCard({
+  serviceName,
+  version,
+  info,
+  isRunning,
   port,
-  loading, 
+  loading,
   onToggle,
-  resourceUsage 
+  resourceUsage
 }) {
   const Icon = info.icon;
 
@@ -600,14 +600,14 @@ function VersionServiceCard({
 }
 
 // Card for non-versioned services (mailpit, phpmyadmin)
-function SimpleServiceCard({ 
-  serviceName, 
-  info, 
-  service, 
-  isRunning, 
-  loading, 
+function SimpleServiceCard({
+  serviceName,
+  info,
+  service,
+  isRunning,
+  loading,
   onToggle,
-  resourceUsage 
+  resourceUsage
 }) {
   const Icon = info.icon;
 

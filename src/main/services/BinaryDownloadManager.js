@@ -22,17 +22,17 @@ class BinaryDownloadManager {
     this.resourcesPath = path.join(app.getPath('userData'), 'resources');
     this.downloadProgress = new Map();
     this.listeners = new Set();
-    
+
     // Throttle tracking for progress updates to prevent UI freeze
     this.lastProgressEmit = new Map(); // id -> { time, progress }
     this.progressThrottleMs = 200; // Minimum ms between progress updates
     this.progressMinDelta = 2; // Minimum progress change (%) to emit
-    
+
     // Track active downloads for cancellation support
     this.activeDownloads = new Map(); // id -> { request, file, reject }
     this.activeWorkers = new Map(); // id -> { worker, reject, destPath }
     this.cancelledDownloads = new Set(); // Track cancelled IDs to prevent extraction attempts
-    
+
     // Download URLs for each binary - ALL services now support multiple versions
     // PHP versions updated from https://windows.php.net/download/ on 2025-01
     this.downloads = {
@@ -359,12 +359,12 @@ class BinaryDownloadManager {
     // Version metadata for UI display and compatibility checks
     // Uses centralized configuration from shared/serviceConfig.js
     this.versionMeta = { ...SERVICE_VERSIONS };
-    
+
     // Track remote config state
     this.remoteConfig = null;
     this.lastRemoteCheck = null;
     this.configVersion = 'built-in'; // Track current config version
-    
+
     // Local config cache path - persists updates between app restarts
     this.localConfigPath = path.join(app.getPath('userData'), 'binaries-config.json');
   }
@@ -376,8 +376,8 @@ class BinaryDownloadManager {
   // Fetch remote config from GitHub to check for binary updates
   async checkForUpdates() {
     try {
-      console.log('Checking for binary updates from GitHub...');
-      
+      // Checking for binary updates
+
       const remoteConfig = await this.fetchRemoteConfig();
       if (!remoteConfig) {
         return { success: false, error: 'Failed to fetch remote config' };
@@ -388,10 +388,10 @@ class BinaryDownloadManager {
 
       // Check if remote version is newer
       const isNewerVersion = this.isVersionNewer(remoteConfig.version, this.configVersion);
-      
+
       // Compare versions and find updates (for display purposes)
       const updates = this.compareConfigs(remoteConfig);
-      
+
       return {
         success: true,
         configVersion: remoteConfig.version,
@@ -402,7 +402,7 @@ class BinaryDownloadManager {
         hasUpdates: isNewerVersion
       };
     } catch (error) {
-      console.error('Error checking for updates:', error);
+      this.managers?.log?.systemError('Error checking for updates', { error: error.message });
       return { success: false, error: error.message };
     }
   }
@@ -411,10 +411,10 @@ class BinaryDownloadManager {
   isVersionNewer(version1, version2) {
     if (!version1 || !version2 || version2 === 'built-in') return true;
     if (version1 === version2) return false;
-    
+
     const v1Parts = version1.split('.').map(p => parseInt(p, 10) || 0);
     const v2Parts = version2.split('.').map(p => parseInt(p, 10) || 0);
-    
+
     for (let i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {
       const p1 = v1Parts[i] || 0;
       const p2 = v2Parts[i] || 0;
@@ -456,16 +456,16 @@ class BinaryDownloadManager {
 
     for (const [serviceName, serviceData] of Object.entries(remoteConfig)) {
       if (serviceName === 'version' || serviceName === 'lastUpdated') continue;
-      
+
       const currentService = this.downloads[serviceName];
       if (!currentService) continue;
 
       const remoteDownloads = serviceData.downloads || {};
-      
+
       for (const [version, versionData] of Object.entries(remoteDownloads)) {
         const currentVersion = currentService[version];
         const remotePlatformData = versionData[platform] || versionData.all;
-        
+
         if (!remotePlatformData || remotePlatformData.url === 'manual' || remotePlatformData.url === 'builtin') {
           continue;
         }
@@ -510,17 +510,17 @@ class BinaryDownloadManager {
     try {
       // Apply config to in-memory downloads
       const appliedCount = await this.applyConfigToDownloads(this.remoteConfig);
-      
+
       // Update the current config version
       this.configVersion = this.remoteConfig.version;
-      
+
       // Save to local cache for persistence
       await this.saveCachedConfig(this.remoteConfig);
 
-      console.log(`Applied ${appliedCount} binary config updates (version: ${this.configVersion})`);
+      // Binary config updates applied
       return { success: true, appliedCount, version: this.configVersion };
     } catch (error) {
-      console.error('Error applying updates:', error);
+      this.managers?.log?.systemError('Error applying updates', { error: error.message });
       return { success: false, error: error.message };
     }
   }
@@ -538,14 +538,14 @@ class BinaryDownloadManager {
     await fs.ensureDir(path.join(this.resourcesPath, 'nodejs'));
     await fs.ensureDir(path.join(this.resourcesPath, 'composer'));
     await fs.ensureDir(path.join(this.resourcesPath, 'downloads'));
-    
+
     // Load cached config from previous updates
     await this.loadCachedConfig();
-    
+
     // Enable extensions in existing PHP installations (run in background, don't block startup)
     setImmediate(() => {
       this.enablePhpExtensions().catch(err => {
-        console.warn('Error enabling PHP extensions:', err.message);
+        this.managers?.log?.systemWarn('Error enabling PHP extensions', { error: err.message });
       });
     });
   }
@@ -555,20 +555,20 @@ class BinaryDownloadManager {
     try {
       if (await fs.pathExists(this.localConfigPath)) {
         const cachedData = await fs.readJson(this.localConfigPath);
-        
+
         if (cachedData && cachedData.config) {
-          console.log(`Loading cached binary config (version: ${cachedData.config.version}, saved: ${cachedData.savedAt})`);
-          
+          // Loading cached binary config
+
           // Apply cached config
           this.remoteConfig = cachedData.config;
           this.configVersion = cachedData.config.version; // Restore the version
           await this.applyConfigToDownloads(cachedData.config);
-          
+
           return true;
         }
       }
     } catch (error) {
-      console.warn('Failed to load cached binary config:', error.message);
+      this.managers?.log?.systemWarn('Failed to load cached binary config', { error: error.message });
     }
     return false;
   }
@@ -581,10 +581,10 @@ class BinaryDownloadManager {
         config: config
       };
       await fs.writeJson(this.localConfigPath, cacheData, { spaces: 2 });
-      console.log('Saved binary config to local cache');
+      // Saved binary config to cache
       return true;
     } catch (error) {
-      console.error('Failed to save binary config cache:', error.message);
+      this.managers?.log?.systemError('Failed to save binary config cache', { error: error.message });
       return false;
     }
   }
@@ -596,16 +596,16 @@ class BinaryDownloadManager {
 
     for (const [serviceName, serviceData] of Object.entries(config)) {
       if (serviceName === 'version' || serviceName === 'lastUpdated') continue;
-      
+
       if (!this.downloads[serviceName]) {
         this.downloads[serviceName] = {};
       }
 
       const remoteDownloads = serviceData.downloads || {};
-      
+
       for (const [version, versionData] of Object.entries(remoteDownloads)) {
         const remotePlatformData = versionData[platform] || versionData.all;
-        
+
         if (!remotePlatformData || remotePlatformData.url === 'manual' || remotePlatformData.url === 'builtin') {
           continue;
         }
@@ -620,7 +620,7 @@ class BinaryDownloadManager {
           url: remotePlatformData.url,
           filename: remotePlatformData.filename
         };
-        
+
         if (versionData.label) {
           this.downloads[serviceName][version].label = versionData.label;
         }
@@ -640,27 +640,27 @@ class BinaryDownloadManager {
   // Enable common extensions in all installed PHP versions and fix configuration issues
   async enablePhpExtensions() {
     const platform = this.getPlatform();
-    
+
     // Dynamically scan for all installed PHP versions (including custom imports)
     const phpBaseDir = path.join(this.resourcesPath, 'php');
     if (!await fs.pathExists(phpBaseDir)) {
       return;
     }
-    
+
     const versionDirs = await fs.readdir(phpBaseDir);
-    
+
     for (const version of versionDirs) {
       // Skip non-directory entries and platform folders from old structure
       if (version === 'win' || version === 'mac' || version === 'downloads') continue;
-      
+
       const phpPath = path.join(this.resourcesPath, 'php', version, platform);
       const iniPath = path.join(phpPath, 'php.ini');
-      
+
       if (await fs.pathExists(iniPath)) {
         try {
           let iniContent = await fs.readFile(iniPath, 'utf8');
           let modified = false;
-          
+
           // Check if extension_dir is properly set
           const extDir = path.join(phpPath, 'ext').replace(/\\/g, '/');
           if (!iniContent.includes('extension_dir')) {
@@ -672,7 +672,7 @@ class BinaryDownloadManager {
             iniContent = iniContent.replace(/extension_dir\s*=\s*"[^"]*"/g, `extension_dir = "${extDir}"`);
             modified = true;
           }
-          
+
           // Ensure CA certificate bundle exists and is configured (Windows)
           if (platform === 'win') {
             const cacertPath = await this.ensureCaCertBundle(phpPath);
@@ -698,23 +698,23 @@ class BinaryDownloadManager {
               }
             }
           }
-          
+
           // Fix extension format for Windows (add php_ prefix and .dll suffix if missing)
           // Also comment out extensions that don't exist to prevent warnings
           if (platform === 'win') {
             const extensions = ['curl', 'fileinfo', 'gd', 'mbstring', 'mysqli', 'openssl', 'pdo_mysql', 'pdo_sqlite', 'sqlite3', 'zip'];
-            
+
             for (const ext of extensions) {
               const extensionDll = `php_${ext}.dll`;
               const extPath = path.join(extDir.replace(/\//g, path.sep), extensionDll);
               const extensionExists = await fs.pathExists(extPath);
               const extensionLine = `extension=${extensionDll}`;
               const commentedLine = `; extension=${extensionDll} ; Not available`;
-              
+
               // Check if extension line exists (enabled or not)
               const enabledPattern = new RegExp(`^extension=(?:php_)?${ext}(?:\\.dll)?\\s*$`, 'gm');
               const commentedPattern = new RegExp(`^;\\s*extension=(?:php_)?${ext}(?:\\.dll)?.*$`, 'gm');
-              
+
               if (extensionExists) {
                 // Extension exists - ensure it's enabled
                 if (!iniContent.match(enabledPattern)) {
@@ -734,18 +734,18 @@ class BinaryDownloadManager {
                 if (iniContent.match(enabledPattern)) {
                   iniContent = iniContent.replace(enabledPattern, commentedLine);
                   modified = true;
-                  console.log(`Disabled missing extension ${extensionDll} for PHP ${version}`);
+                  // Disabled missing extension
                 }
               }
             }
           }
-          
+
           if (modified) {
             await fs.writeFile(iniPath, iniContent);
-            console.log(`Fixed php.ini for PHP ${version}`);
+            // Fixed php.ini for PHP version
           }
         } catch (error) {
-          console.warn(`Could not update php.ini for PHP ${version}:`, error.message);
+          this.managers?.log?.systemWarn(`Could not update php.ini for PHP ${version}`, { error: error.message });
         }
       }
     }
@@ -759,14 +759,14 @@ class BinaryDownloadManager {
   emitProgress(id, progress) {
     // Always emit status changes immediately (starting, completed, error)
     // But throttle progress updates for downloading AND extracting
-    const isProgressUpdate = (progress.status === 'downloading' || progress.status === 'extracting') && 
-                             progress.progress !== 0 && progress.progress !== 100;
-    
+    const isProgressUpdate = (progress.status === 'downloading' || progress.status === 'extracting') &&
+      progress.progress !== 0 && progress.progress !== 100;
+
     if (!isProgressUpdate) {
       this.downloadProgress.set(id, progress);
       this.lastProgressEmit.delete(id); // Clear throttle tracking
       this.listeners.forEach((cb) => cb(id, progress));
-      
+
       // Clean up completed/errored downloads after emitting
       if (progress.status === 'completed' || progress.status === 'error') {
         setTimeout(() => {
@@ -776,16 +776,16 @@ class BinaryDownloadManager {
       }
       return;
     }
-    
+
     // Throttle downloading/extracting progress updates
     const now = Date.now();
     const last = this.lastProgressEmit.get(id);
     const currentProgress = progress.progress || 0;
-    
+
     // Check if we should emit this update
     const timeSinceLast = last ? (now - last.time) : Infinity;
     const progressDelta = last ? Math.abs(currentProgress - last.progress) : Infinity;
-    
+
     // Emit if: enough time passed OR significant progress change OR first update
     if (timeSinceLast >= this.progressThrottleMs || progressDelta >= this.progressMinDelta || !last) {
       this.downloadProgress.set(id, progress);
@@ -919,7 +919,7 @@ class BinaryDownloadManager {
         }
       }
     } catch (error) {
-      console.warn(`Error scanning custom ${serviceName} versions:`, error.message);
+      this.managers?.log?.systemWarn(`Error scanning custom ${serviceName} versions`, { error: error.message });
     }
   }
 
@@ -939,24 +939,24 @@ class BinaryDownloadManager {
 
         const phpPath = path.join(serviceDir, dir, platform, phpExe);
         const phpCgiPath = path.join(serviceDir, dir, platform, phpCgiExe);
-        
+
         const phpExists = await fs.pathExists(phpPath);
         const phpCgiExists = await fs.pathExists(phpCgiPath);
-        
+
         // Only mark as installed if both executables exist
         if (phpExists && phpCgiExists) {
           installedObj[dir] = true;
         }
       }
     } catch (error) {
-      console.warn(`Error scanning custom PHP versions:`, error.message);
+      this.managers?.log?.systemWarn('Error scanning custom PHP versions', { error: error.message });
     }
   }
 
   async downloadFile(url, destPath, id) {
     // Ensure the directory exists before downloading
     await fs.ensureDir(path.dirname(destPath));
-    
+
     return new Promise((resolve, reject) => {
       const file = createWriteStream(destPath);
       const protocol = url.startsWith('https') ? https : http;
@@ -966,8 +966,8 @@ class BinaryDownloadManager {
       const downloadInfo = { request: null, file, reject, destPath };
       this.activeDownloads.set(id, downloadInfo);
 
-      const request = protocol.get(url, { 
-        headers: { 
+      const request = protocol.get(url, {
+        headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'application/octet-stream, application/zip, */*',
           'Accept-Language': 'en-US,en;q=0.9',
@@ -978,8 +978,8 @@ class BinaryDownloadManager {
         if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307) {
           file.close();
           try { fs.unlinkSync(destPath); } catch (e) { /* ignore */ }
-          const redirectUrl = response.headers.location.startsWith('http') 
-            ? response.headers.location 
+          const redirectUrl = response.headers.location.startsWith('http')
+            ? response.headers.location
             : new URL(response.headers.location, url).toString();
           return this.downloadFile(redirectUrl, destPath, id)
             .then(resolve)
@@ -992,7 +992,7 @@ class BinaryDownloadManager {
           reject(new Error(`Download failed with status ${response.statusCode}`));
           return;
         }
-        
+
         // Check if we're getting HTML instead of binary (common with blocked downloads)
         const contentType = response.headers['content-type'] || '';
         if (contentType.includes('text/html') && !destPath.endsWith('.html')) {
@@ -1031,7 +1031,7 @@ class BinaryDownloadManager {
       request.on('error', (err) => {
         file.close();
         this.activeDownloads.delete(id);
-        fs.unlink(destPath, () => {});
+        fs.unlink(destPath, () => { });
         // Don't reject if this was a user-initiated cancellation
         if (this.cancelledDownloads.has(id)) {
           this.cancelledDownloads.delete(id);
@@ -1046,7 +1046,7 @@ class BinaryDownloadManager {
       file.on('error', (err) => {
         file.close();
         this.activeDownloads.delete(id);
-        fs.unlink(destPath, () => {});
+        fs.unlink(destPath, () => { });
         // Don't reject if this was a user-initiated cancellation
         if (this.cancelledDownloads.has(id)) {
           this.cancelledDownloads.delete(id);
@@ -1067,78 +1067,78 @@ class BinaryDownloadManager {
    */
   cancelDownload(id) {
     let cancelled = false;
-    
+
     // Check for active download
     const downloadInfo = this.activeDownloads.get(id);
     if (downloadInfo) {
-      console.log(`Cancelling download for ${id}`);
-      
+      // Cancelling download
+
       try {
         // Destroy the HTTP request to abort the download
         if (downloadInfo.request) {
           downloadInfo.request.destroy();
         }
-        
+
         // Close the file stream
         if (downloadInfo.file) {
           downloadInfo.file.close();
         }
-        
+
         // Delete the partial file
         if (downloadInfo.destPath) {
-          fs.unlink(downloadInfo.destPath, () => {});
+          fs.unlink(downloadInfo.destPath, () => { });
         }
-        
+
         // Note: We don't reject the promise here - just clean up silently
         // The UI is updated via emitProgress with 'cancelled' status
       } catch (error) {
-        console.error(`Error cancelling download for ${id}:`, error);
+        this.managers?.log?.systemError(`Error cancelling download for ${id}`, { error: error.message });
       }
-      
+
       this.activeDownloads.delete(id);
       cancelled = true;
     }
-    
+
     // Check for active extraction worker
     const workerInfo = this.activeWorkers.get(id);
     if (workerInfo) {
-      console.log(`Cancelling extraction for ${id}`);
-      
+      // Cancelling extraction
+
       try {
         // Terminate the worker thread
         if (workerInfo.worker) {
           workerInfo.worker.terminate();
         }
-        
+
         // Clean up partially extracted files
         if (workerInfo.destPath) {
-          fs.remove(workerInfo.destPath, () => {});
+          fs.remove(workerInfo.destPath, () => { });
         }
-        
+
         // Note: We don't reject the promise here - just clean up silently
       } catch (error) {
-        console.error(`Error cancelling extraction for ${id}:`, error);
+        this.managers?.log?.systemError(`Error cancelling extraction for ${id}`, { error: error.message });
       }
-      
+
       this.activeWorkers.delete(id);
       cancelled = true;
     }
-    
+
     if (!cancelled) {
-      console.log(`No active download or extraction found for ${id}`);
+      // No active download or extraction to cancel
       return false;
     }
-    
+
     // Mark as cancelled so extraction doesn't attempt to run
     this.cancelledDownloads.add(id);
-    
+
     // Clean up tracking
     this.downloadProgress.delete(id);
     this.lastProgressEmit.delete(id);
-    
+
     // Emit cancelled status
     this.emitProgress(id, { status: 'cancelled', progress: 0 }, true);
-    
+
     return true;
   }
 
@@ -1152,7 +1152,7 @@ class BinaryDownloadManager {
     if (this.cancelledDownloads.has(id)) {
       this.cancelledDownloads.delete(id);
       if (downloadPath) {
-        await fs.remove(downloadPath).catch(() => {});
+        await fs.remove(downloadPath).catch(() => { });
       }
       const error = new Error('Download cancelled');
       error.cancelled = true;
@@ -1208,10 +1208,10 @@ class BinaryDownloadManager {
       await fs.close(fd);
       // Check for ZIP magic number: PK\x03\x04 or PK\x05\x06 (empty) or PK\x07\x08 (spanned)
       const isValid = buffer[0] === 0x50 && buffer[1] === 0x4B;
-      console.log(`[ZIP Validation] ${filePath}: bytes=${buffer[0].toString(16)} ${buffer[1].toString(16)}, valid=${isValid}`);
+      // ZIP validation completed
       return isValid;
     } catch (err) {
-      console.error('Error validating ZIP file:', err);
+      this.managers?.log?.systemError('Error validating ZIP file', { error: err.message });
       return false;
     }
   }
@@ -1221,14 +1221,14 @@ class BinaryDownloadManager {
       try {
         // Use worker thread to prevent UI freeze
         const workerPath = path.join(__dirname, 'extractWorker.js');
-        
+
         const worker = new Worker(workerPath, {
           workerData: { archivePath, destPath }
         });
-        
+
         // Track the worker for cancellation support
         this.activeWorkers.set(id, { worker, reject, destPath });
-        
+
         worker.on('message', (message) => {
           if (message.type === 'progress') {
             this.emitProgress(id, { status: 'extracting', progress: message.progress });
@@ -1240,12 +1240,12 @@ class BinaryDownloadManager {
             reject(new Error(message.error));
           }
         });
-        
+
         worker.on('error', (error) => {
           this.activeWorkers.delete(id);
           reject(error);
         });
-        
+
         worker.on('exit', (code) => {
           this.activeWorkers.delete(id);
           if (code !== 0) {
@@ -1306,21 +1306,21 @@ class BinaryDownloadManager {
   async createPhpIni(phpPath, version) {
     const platform = this.getPlatform();
     const extDir = platform === 'win' ? path.join(phpPath, 'ext').replace(/\\/g, '/') : path.join(phpPath, 'lib', 'php', 'extensions');
-    
+
     // Windows uses php_ prefix for extensions
     const extPrefix = platform === 'win' ? 'php_' : '';
     const extSuffix = platform === 'win' ? '.dll' : '.so';
-    
+
     // Download CA certificate bundle for curl/openssl if on Windows
     let cacertPath = '';
     if (platform === 'win') {
       cacertPath = await this.ensureCaCertBundle(phpPath);
     }
-    
+
     // Build extension list - only include extensions that exist
     const extensions = ['curl', 'fileinfo', 'mbstring', 'openssl', 'pdo_mysql', 'pdo_sqlite', 'mysqli', 'sqlite3', 'zip', 'gd'];
     const extensionLines = [];
-    
+
     for (const ext of extensions) {
       const extFile = `${extPrefix}${ext}${extSuffix}`;
       const extPath = path.join(extDir.replace(/\//g, path.sep), extFile);
@@ -1330,7 +1330,7 @@ class BinaryDownloadManager {
         extensionLines.push(`; extension=${extFile} ; Not available in this PHP version`);
       }
     }
-    
+
     const iniContent = `[PHP]
 ; DevBox Pro PHP ${version} Configuration
 engine = On
@@ -1439,17 +1439,17 @@ ${extensionLines.join('\n')}
    */
   async ensureCaCertBundle(phpPath) {
     const cacertPath = path.join(phpPath, 'cacert.pem').replace(/\\/g, '/');
-    
+
     // Check if already exists
     if (await fs.pathExists(cacertPath)) {
       return cacertPath;
     }
-    
+
     // Download from curl.se (official source)
     const cacertUrl = 'https://curl.se/ca/cacert.pem';
-    
+
     try {
-      console.log('Downloading CA certificate bundle...');
+      // Downloading CA certificate bundle
       const response = await new Promise((resolve, reject) => {
         const https = require('https');
         https.get(cacertUrl, (res) => {
@@ -1462,12 +1462,12 @@ ${extensionLines.join('\n')}
           }
         }).on('error', reject);
       });
-      
+
       await fs.writeFile(cacertPath, response);
-      console.log('CA certificate bundle downloaded successfully');
+      // CA certificate bundle downloaded
       return cacertPath;
     } catch (error) {
-      console.warn('Could not download CA certificate bundle:', error.message);
+      this.managers?.log?.systemWarn('Could not download CA certificate bundle', { error: error.message });
       // Return empty string - PHP will still work but HTTPS may have issues
       return '';
     }
@@ -1625,10 +1625,10 @@ ${extensionLines.join('\n')}
       await this.downloadFile(downloadInfo.url, downloadPath, id);
       await this.checkCancelled(id, downloadPath);
       await this.extractArchive(downloadPath, extractPath, id);
-      
+
       // Create config file
       await this.createPhpMyAdminConfig(extractPath);
-      
+
       await fs.remove(downloadPath);
 
       this.emitProgress(id, { status: 'completed', progress: 100 });
@@ -1792,21 +1792,21 @@ server {
       const urls = [downloadInfo.url, ...(downloadInfo.fallbackUrls || [])];
       let lastError = null;
       let downloaded = false;
-      
+
       for (const url of urls) {
         try {
-          console.log(`[Apache] Trying download from: ${url}`);
+          // Trying Apache download URL
           await this.downloadFile(url, downloadPath, id);
           downloaded = true;
           break;
         } catch (err) {
-          console.log(`[Apache] Download failed from ${url}: ${err.message}`);
+          // Apache download failed from URL, trying next
           lastError = err;
           // Clean up partial download
-          await fs.remove(downloadPath).catch(() => {});
+          await fs.remove(downloadPath).catch(() => { });
         }
       }
-      
+
       if (!downloaded) {
         // Provide helpful error message for manual download
         const manualNote = downloadInfo.manualDownloadNote || '';
@@ -1820,7 +1820,7 @@ server {
       // Apache Lounge ZIPs have files inside an "Apache24" folder - move them up
       const apache24Path = path.join(extractPath, 'Apache24');
       if (await fs.pathExists(apache24Path)) {
-        console.log('[Apache] Moving files from Apache24 subfolder...');
+        // Moving Apache files from subfolder
         const contents = await fs.readdir(apache24Path);
         for (const item of contents) {
           const srcPath = path.join(apache24Path, item);
@@ -1828,7 +1828,7 @@ server {
           await fs.move(srcPath, destPath, { overwrite: true });
         }
         await fs.remove(apache24Path);
-        console.log('[Apache] Files moved successfully');
+        // Apache files moved successfully
       }
 
       // Create default Apache config for PHP
@@ -1850,34 +1850,34 @@ server {
   async importApache(filePath, version = '2.4') {
     const id = `apache-${version}`;
     const platform = this.getPlatform();
-    
+
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
-      
+
       // Validate file exists
       if (!await fs.pathExists(filePath)) {
         throw new Error('File not found: ' + filePath);
       }
-      
+
       // Validate it's a zip file
       const isValid = await this.validateZipFile(filePath);
       if (!isValid) {
         throw new Error('Invalid ZIP file. Please download the correct Apache ZIP from Apache Lounge.');
       }
-      
+
       const extractPath = path.join(this.resourcesPath, 'apache', version, platform);
-      
+
       await fs.remove(extractPath);
       await fs.ensureDir(extractPath);
-      
+
       this.emitProgress(id, { status: 'extracting', progress: 50 });
-      
+
       await this.extractArchive(filePath, extractPath, id);
-      
+
       // Apache Lounge ZIPs have files inside an "Apache24" folder - move them up
       const apache24Path = path.join(extractPath, 'Apache24');
       if (await fs.pathExists(apache24Path)) {
-        console.log('[Apache Import] Moving files from Apache24 subfolder...');
+        // Moving imported Apache files from subfolder
         const contents = await fs.readdir(apache24Path);
         for (const item of contents) {
           const srcPath = path.join(apache24Path, item);
@@ -1885,12 +1885,12 @@ server {
           await fs.move(srcPath, destPath, { overwrite: true });
         }
         await fs.remove(apache24Path);
-        console.log('[Apache Import] Files moved successfully');
+        // Apache import files moved successfully
       }
-      
+
       // Create default Apache config for PHP
       await this.createApacheConfig(extractPath);
-      
+
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true, version };
     } catch (error) {
@@ -2111,17 +2111,17 @@ AddType application/x-httpd-php-source .phps
   async importBinary(serviceName, version, filePath) {
     const id = version && version !== 'default' ? `${serviceName}-${version}` : serviceName;
     const platform = this.getPlatform();
-    
+
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
-      
+
       // Validate file exists
       if (!await fs.pathExists(filePath)) {
         throw new Error('File not found: ' + filePath);
       }
-      
+
       const ext = path.extname(filePath).toLowerCase();
-      
+
       // Handle Composer .phar file specially (not an archive)
       if (serviceName === 'composer' && ext === '.phar') {
         const composerPath = path.join(this.resourcesPath, 'composer');
@@ -2131,36 +2131,36 @@ AddType application/x-httpd-php-source .phps
         this.emitProgress(id, { status: 'completed', progress: 100 });
         return { success: true, version: 'latest', path: composerPath };
       }
-      
+
       // Handle phpMyAdmin specially (no version subfolder)
       if (serviceName === 'phpmyadmin') {
         const extractPath = path.join(this.resourcesPath, 'phpmyadmin');
         await fs.remove(extractPath);
         await fs.ensureDir(extractPath);
-        
+
         this.emitProgress(id, { status: 'extracting', progress: 50 });
         await this.extractArchive(filePath, extractPath, id);
         await this.normalizeExtractedStructure(serviceName, extractPath);
         await this.createPhpMyAdminConfig(extractPath);
-        
+
         this.emitProgress(id, { status: 'completed', progress: 100 });
         return { success: true, version: 'latest', path: extractPath };
       }
-      
+
       // Handle Mailpit specially (no version subfolder)
       if (serviceName === 'mailpit') {
         const extractPath = path.join(this.resourcesPath, 'mailpit', platform);
         await fs.remove(extractPath);
         await fs.ensureDir(extractPath);
-        
+
         this.emitProgress(id, { status: 'extracting', progress: 50 });
         await this.extractArchive(filePath, extractPath, id);
         await this.normalizeExtractedStructure(serviceName, extractPath);
-        
+
         this.emitProgress(id, { status: 'completed', progress: 100 });
         return { success: true, version: 'latest', path: extractPath };
       }
-      
+
       // Validate it's a valid archive for other services
       if (ext === '.zip') {
         const isValid = await this.validateZipFile(filePath);
@@ -2170,29 +2170,29 @@ AddType application/x-httpd-php-source .phps
       } else if (!filePath.endsWith('.tar.gz') && ext !== '.tgz') {
         throw new Error('Unsupported archive format. Please use .zip or .tar.gz');
       }
-      
+
       const extractPath = path.join(this.resourcesPath, serviceName, version, platform);
-      
+
       await fs.remove(extractPath);
       await fs.ensureDir(extractPath);
-      
+
       this.emitProgress(id, { status: 'extracting', progress: 50 });
-      
+
       await this.extractArchive(filePath, extractPath, id);
-      
+
       // Handle special folder structures
       await this.normalizeExtractedStructure(serviceName, extractPath);
-      
+
       // Create php.ini for PHP imports
       if (serviceName === 'php') {
         await this.createPhpIni(extractPath, version);
       }
-      
+
       // Create Apache config for Apache imports
       if (serviceName === 'apache') {
         await this.createApacheConfig(extractPath);
       }
-      
+
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true, version, path: extractPath };
     } catch (error) {
@@ -2205,12 +2205,12 @@ AddType application/x-httpd-php-source .phps
   async normalizeExtractedStructure(serviceName, extractPath) {
     // Check for common nested folder patterns
     const contents = await fs.readdir(extractPath);
-    
+
     if (contents.length === 1) {
       const singleItem = contents[0];
       const singlePath = path.join(extractPath, singleItem);
       const stat = await fs.stat(singlePath);
-      
+
       if (stat.isDirectory()) {
         // Move contents up if there's only a single directory
         const innerContents = await fs.readdir(singlePath);
@@ -2220,10 +2220,10 @@ AddType application/x-httpd-php-source .phps
           await fs.move(srcPath, destPath, { overwrite: true });
         }
         await fs.remove(singlePath);
-        console.log(`[Import] Normalized folder structure for ${serviceName}`);
+        // Normalized folder structure for import
       }
     }
-    
+
     // Handle Apache-specific "Apache24" folder
     const apache24Path = path.join(extractPath, 'Apache24');
     if (await fs.pathExists(apache24Path)) {
@@ -2298,7 +2298,7 @@ AddType application/x-httpd-php-source .phps
   // Set up Node.js environment with proper PATH
   async setupNodejsEnvironment(version, nodejsPath) {
     const platform = this.getPlatform();
-    
+
     // Create a wrapper script for easy access
     const binDir = path.join(this.resourcesPath, 'bin');
     await fs.ensureDir(binDir);
@@ -2328,11 +2328,11 @@ AddType application/x-httpd-php-source .phps
         await fs.symlink(npxBin, path.join(binDir, `npx${version}`));
       } catch (err) {
         // Symlinks may already exist
-        console.log('Symlinks already exist or could not be created');
+        // Symlinks already exist or couldn't be created - continuing
       }
     }
 
-    console.log(`Node.js ${version} environment set up at ${nodejsPath}`);
+    // Node.js environment set up
   }
 
   // Get Node.js executable path
@@ -2354,7 +2354,7 @@ AddType application/x-httpd-php-source .phps
   // Download and install Composer
   async downloadComposer() {
     const id = 'composer';
-    
+
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
 
@@ -2430,7 +2430,7 @@ exit 1
       await fs.chmod(path.join(composerDir, 'composer'), '755');
     }
 
-    console.log('Composer environment set up');
+    // Composer environment ready
   }
 
   // Get Composer path
@@ -2444,8 +2444,8 @@ exit 1
     const phpPath = path.join(this.resourcesPath, 'php', phpVersion, platform, platform === 'win' ? 'php.exe' : 'php');
     const composerPhar = this.getComposerPath();
 
-    console.log('[runComposer] Checking PHP at:', phpPath);
-    console.log('[runComposer] Checking Composer at:', composerPhar);
+    // Checking PHP path
+    // Checking Composer path
 
     if (!await fs.pathExists(phpPath)) {
       const error = `PHP ${phpVersion} is not installed. Please download it from the Binary Manager.`;
@@ -2461,14 +2461,14 @@ exit 1
 
     return new Promise((resolve, reject) => {
       const args = [composerPhar, ...command.split(' ')];
-      
+
       // Log the command being run
-      console.log(`[runComposer] Running: ${phpPath} ${args.join(' ')} in ${projectPath}`);
+      // Running Composer command
 
       const proc = spawn(phpPath, args, {
         cwd: projectPath,
-        env: { 
-          ...process.env, 
+        env: {
+          ...process.env,
           COMPOSER_HOME: path.join(this.resourcesPath, 'composer'),
           COMPOSER_NO_INTERACTION: '1',
         },
@@ -2481,7 +2481,7 @@ exit 1
       proc.stdout.on('data', (data) => {
         const text = data.toString();
         stdout += text;
-        console.log('[runComposer stdout]', text.trim());
+        onOutput?.(text.trim(), 'stdout');
         if (onOutput) {
           onOutput(text, 'stdout');
         }
@@ -2490,14 +2490,14 @@ exit 1
       proc.stderr.on('data', (data) => {
         const text = data.toString();
         stderr += text;
-        console.log('[runComposer stderr]', text.trim());
+        onOutput?.(text.trim(), 'stderr');
         if (onOutput) {
           onOutput(text, 'stderr');
         }
       });
 
       proc.on('close', (code) => {
-        console.log(`[runComposer] Process exited with code ${code}`);
+        // Composer process completed
         if (code === 0) {
           resolve({ stdout, stderr });
         } else {
@@ -2508,7 +2508,7 @@ exit 1
       });
 
       proc.on('error', (err) => {
-        console.error('[runComposer] Process error:', err);
+        this.managers?.log?.systemError('[runComposer] Process error', { error: err.message });
         if (onOutput) onOutput(`Process error: ${err.message}`, 'error');
         reject(err);
       });
@@ -2520,7 +2520,7 @@ exit 1
     const platform = this.getPlatform();
     const nodejsPath = path.join(this.resourcesPath, 'nodejs', nodeVersion, platform);
     const nodePath = platform === 'win' ? path.join(nodejsPath, 'node.exe') : path.join(nodejsPath, 'bin', 'node');
-    const npmScript = platform === 'win' 
+    const npmScript = platform === 'win'
       ? path.join(nodejsPath, 'node_modules', 'npm', 'bin', 'npm-cli.js')
       : path.join(nodejsPath, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
 
@@ -2532,8 +2532,8 @@ exit 1
       const args = [npmScript, ...command.split(' ')];
       const proc = spawn(nodePath, args, {
         cwd: projectPath,
-        env: { 
-          ...process.env, 
+        env: {
+          ...process.env,
           PATH: `${nodejsPath}${platform === 'win' ? '' : '/bin'}${path.delimiter}${process.env.PATH}`,
         },
         windowsHide: true,

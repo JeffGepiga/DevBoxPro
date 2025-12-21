@@ -18,11 +18,11 @@ class CompatibilityManager {
   constructor() {
     // Local config cache path
     this.localConfigPath = path.join(app.getPath('userData'), 'compatibility-config.json');
-    
+
     // Remote config state
     this.remoteConfig = null;
     this.lastRemoteCheck = null;
-    
+
     // Define built-in compatibility rules as fallback
     // These are used when remote config is unavailable
     this.builtInRules = [
@@ -261,7 +261,7 @@ class CompatibilityManager {
 
     // Active rules (either from remote config or built-in)
     this.rules = [...this.builtInRules];
-    
+
     // Remote config data
     this.deprecatedServices = {};
     this.frameworkRequirements = {};
@@ -282,8 +282,8 @@ class CompatibilityManager {
    */
   async checkForUpdates() {
     try {
-      console.log('Checking for compatibility rule updates from GitHub...');
-      
+      // Checking for compatibility rule updates
+
       const remoteConfig = await this.fetchRemoteConfig();
       if (!remoteConfig) {
         return { success: false, error: 'Failed to fetch remote config' };
@@ -294,10 +294,10 @@ class CompatibilityManager {
 
       // Compare versions - if same version, no updates needed
       const isNewerVersion = this.isVersionNewer(remoteConfig.version, this.configVersion);
-      
+
       // Compare with current config for details
       const updates = this.compareConfigs(remoteConfig);
-      
+
       return {
         success: true,
         configVersion: remoteConfig.version,
@@ -308,7 +308,7 @@ class CompatibilityManager {
         hasUpdates: isNewerVersion
       };
     } catch (error) {
-      console.error('Error checking for compatibility updates:', error);
+      this.managers?.log?.systemError('Error checking for compatibility updates', { error: error.message });
       return { success: false, error: error.message };
     }
   }
@@ -319,10 +319,10 @@ class CompatibilityManager {
   isVersionNewer(version1, version2) {
     if (!version1 || !version2 || version2 === 'built-in') return true;
     if (version1 === version2) return false;
-    
+
     const v1Parts = version1.split('.').map(p => parseInt(p, 10) || 0);
     const v2Parts = version2.split('.').map(p => parseInt(p, 10) || 0);
-    
+
     for (let i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {
       const p1 = v1Parts[i] || 0;
       const p2 = v2Parts[i] || 0;
@@ -365,7 +365,7 @@ class CompatibilityManager {
   compareConfigs(remoteConfig) {
     const currentRuleIds = new Set(this.rules.map(r => r.id));
     const remoteRuleIds = new Set(remoteConfig.rules?.map(r => r.id) || []);
-    
+
     const newRules = [];
     const updatedRules = [];
     const removedRules = [];
@@ -410,23 +410,23 @@ class CompatibilityManager {
     try {
       // Convert remote rules to executable functions
       this.applyRemoteRules(this.remoteConfig);
-      
+
       // Update metadata
       this.deprecatedServices = this.remoteConfig.deprecatedServices || {};
       this.frameworkRequirements = this.remoteConfig.frameworkRequirements || {};
       this.webServerRecommendations = this.remoteConfig.webServerRecommendations || {};
       this.databaseRecommendations = this.remoteConfig.databaseRecommendations || {};
       this.configVersion = this.remoteConfig.version;
-      
+
       // Save to local cache
       await this.saveCachedConfig(this.remoteConfig);
 
       const ruleCount = this.rules.length;
-      console.log(`Applied ${ruleCount} compatibility rules (version: ${this.configVersion})`);
-      
+      // Compatibility rules applied
+
       return { success: true, ruleCount, version: this.configVersion };
     } catch (error) {
-      console.error('Error applying compatibility updates:', error);
+      this.managers?.log?.systemError('Error applying compatibility updates', { error: error.message });
       return { success: false, error: error.message };
     }
   }
@@ -450,7 +450,7 @@ class CompatibilityManager {
     // Merge with built-in rules (built-in takes precedence for same ID)
     const builtInIds = new Set(this.builtInRules.map(r => r.id));
     const mergedRules = [...this.builtInRules];
-    
+
     for (const rule of newRules) {
       if (!builtInIds.has(rule.id)) {
         mergedRules.push(rule);
@@ -471,7 +471,7 @@ class CompatibilityManager {
       // Check each condition
       for (const [key, condition] of Object.entries(conditions)) {
         const value = this.getConfigValue(config, key);
-        
+
         if (!this.evaluateCondition(value, condition)) {
           allConditionsMet = false;
           break;
@@ -538,19 +538,19 @@ class CompatibilityManager {
     // Handle version comparisons
     if (condition.min !== undefined || condition.max !== undefined) {
       if (!value) return false;
-      
+
       const numValue = parseFloat(value);
-      
+
       if (condition.min !== undefined) {
         const minValue = parseFloat(condition.min);
         if (numValue < minValue) return false;
       }
-      
+
       if (condition.max !== undefined) {
         const maxValue = parseFloat(condition.max);
         if (numValue > maxValue) return false;
       }
-      
+
       return true;
     }
 
@@ -563,7 +563,7 @@ class CompatibilityManager {
   interpolateMessage(message, config) {
     const nginxVersion = config.webServer === 'nginx' ? config.webServerVersion : config.services?.nginx;
     const apacheVersion = config.webServer === 'apache' ? config.webServerVersion : config.services?.apache;
-    
+
     return message
       .replace('{phpVersion}', config.phpVersion || '')
       .replace('{nodeVersion}', config.nodeVersion || '')
@@ -584,10 +584,10 @@ class CompatibilityManager {
     try {
       if (await fs.pathExists(this.localConfigPath)) {
         const cachedData = await fs.readJson(this.localConfigPath);
-        
+
         if (cachedData && cachedData.config) {
-          console.log(`Loading cached compatibility config (version: ${cachedData.config.version}, saved: ${cachedData.savedAt})`);
-          
+          // Loading cached compatibility config
+
           this.remoteConfig = cachedData.config;
           this.applyRemoteRules(cachedData.config);
           this.deprecatedServices = cachedData.config.deprecatedServices || {};
@@ -595,12 +595,12 @@ class CompatibilityManager {
           this.webServerRecommendations = cachedData.config.webServerRecommendations || {};
           this.databaseRecommendations = cachedData.config.databaseRecommendations || {};
           this.configVersion = cachedData.config.version;
-          
+
           return true;
         }
       }
     } catch (error) {
-      console.warn('Failed to load cached compatibility config:', error.message);
+      this.managers?.log?.systemWarn('Failed to load cached compatibility config', { error: error.message });
     }
     return false;
   }
@@ -615,10 +615,10 @@ class CompatibilityManager {
         config: config
       };
       await fs.writeJson(this.localConfigPath, cacheData, { spaces: 2 });
-      console.log('Saved compatibility config to local cache');
+      // Saved compatibility config to cache
       return true;
     } catch (error) {
-      console.error('Failed to save compatibility config cache:', error.message);
+      this.managers?.log?.systemError('Failed to save compatibility config cache', { error: error.message });
       return false;
     }
   }
@@ -705,7 +705,7 @@ class CompatibilityManager {
           }
         }
       } catch (error) {
-        console.warn(`Error checking rule ${rule.id}:`, error.message);
+        this.managers?.log?.systemWarn(`Error checking rule ${rule.id}`, { error: error.message });
       }
     }
 
@@ -736,20 +736,20 @@ class CompatibilityManager {
    */
   compareVersions(v1, v2) {
     if (!v1 || !v2) return 0;
-    
+
     const parts1 = v1.toString().split('.').map(p => parseInt(p, 10) || 0);
     const parts2 = v2.toString().split('.').map(p => parseInt(p, 10) || 0);
-    
+
     const maxLen = Math.max(parts1.length, parts2.length);
-    
+
     for (let i = 0; i < maxLen; i++) {
       const p1 = parts1[i] || 0;
       const p2 = parts2[i] || 0;
-      
+
       if (p1 < p2) return -1;
       if (p1 > p2) return 1;
     }
-    
+
     return 0;
   }
 
@@ -778,7 +778,7 @@ class CompatibilityManager {
         [dbType]: dbVersion,
       },
     };
-    
+
     const result = this.checkCompatibility(config);
     return result.warnings.some(w => w.level === 'warning') || result.errors.length > 0;
   }

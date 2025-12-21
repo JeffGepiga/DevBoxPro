@@ -70,7 +70,7 @@ function Databases() {
       const status = await window.devbox?.services.getStatus();
       setServicesStatus(status || {});
     } catch (error) {
-      console.error('Error loading services status:', error);
+      // Error loading services status
     }
   };
 
@@ -122,7 +122,7 @@ function Databases() {
         // This avoids credential mismatch errors on startup
       }
     } catch (error) {
-      console.error('Error loading initial data:', error);
+      // Error loading initial data
     }
     setLoading(false);
   };
@@ -150,7 +150,7 @@ function Databases() {
       const dbs = await window.devbox?.database.getDatabases();
       setDatabases(dbs || []);
     } catch (error) {
-      console.error('Error loading databases:', error);
+      // Error loading databases
       setServiceError(error.message);
       setDatabases([]);
     } finally {
@@ -172,7 +172,7 @@ function Databases() {
         await loadDatabases();
       }
     } catch (error) {
-      console.error('Error switching database:', error);
+      // Error switching database
     }
   };
 
@@ -190,7 +190,7 @@ function Databases() {
       // Load databases for the newly started version
       await loadDatabases();
     } catch (error) {
-      console.error('Error starting service:', error);
+      // Error starting service
       setServiceError(`Failed to start ${type} ${version}: ${error.message}`);
     } finally {
       setStartingVersion(null);
@@ -205,7 +205,7 @@ function Databases() {
       await new Promise(resolve => setTimeout(resolve, 500));
       await loadServicesStatus();
     } catch (error) {
-      console.error('Error stopping service:', error);
+      // Error stopping service
       setServiceError(`Failed to stop ${type} ${version}: ${error.message}`);
     } finally {
       setStoppingVersion(null);
@@ -221,7 +221,7 @@ function Databases() {
       setNewDbName('');
       loadDatabases();
     } catch (error) {
-      console.error('Error creating database:', error);
+      // Error creating database
       alert('Failed to create database: ' + error.message);
     }
   };
@@ -235,7 +235,7 @@ function Databases() {
       await window.devbox?.database.deleteDatabase(name);
       loadDatabases();
     } catch (error) {
-      console.error('Error deleting database:', error);
+      // Error deleting database
       alert('Failed to delete database: ' + error.message);
     }
   };
@@ -259,7 +259,7 @@ function Databases() {
         // Progress will be updated via the global context listener
       }
     } catch (error) {
-      console.error('Error exporting database:', error);
+      // Error exporting database
       setDatabaseOperation({ type: 'export', status: 'error', message: error.message, dbName: name });
     }
   };
@@ -275,7 +275,7 @@ function Databases() {
         setShowImportModal({ dbName: name, filePath });
       }
     } catch (error) {
-      console.error('Error selecting import file:', error);
+      // Error selecting import file
     }
   };
 
@@ -291,7 +291,7 @@ function Databases() {
       // Progress will be updated via the global context listener
       loadDatabases();
     } catch (error) {
-      console.error('Error importing database:', error);
+      // Error importing database
       setDatabaseOperation({ type: 'import', status: 'error', message: error.message, dbName });
     }
   };

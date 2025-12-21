@@ -25,7 +25,7 @@ class CliManager {
 
   async initialize(resourcesPath) {
     this.resourcesPath = resourcesPath;
-    console.log('CliManager initialized');
+    // CliManager initialized
   }
 
   /**
@@ -85,7 +85,7 @@ class CliManager {
 
     const projectsFilePath = this.getProjectsFilePath();
     await fs.writeJson(projectsFilePath, projectMappings, { spaces: 2 });
-    console.log(`Projects file synced: ${projectsFilePath}`);
+    // Projects file synced
 
     return projectsFilePath;
   }
@@ -96,7 +96,7 @@ class CliManager {
   getProjectForPath(projectPath) {
     const projects = this.configStore.get('projects', []);
     const normalizedPath = path.normalize(projectPath).toLowerCase();
-    
+
     // Find project that contains this path
     for (const project of projects) {
       const projectDir = path.normalize(project.path).toLowerCase();
@@ -104,7 +104,7 @@ class CliManager {
         return project;
       }
     }
-    
+
     return null;
   }
 
@@ -113,7 +113,7 @@ class CliManager {
    */
   buildProjectEnv(project) {
     const env = { ...process.env };
-    
+
     // PHP path
     const phpVersion = project.phpVersion || '8.3';
     const phpPath = this.getPhpPath(phpVersion);
@@ -177,7 +177,7 @@ class CliManager {
    */
   async executeCommand(workingDir, command, args = []) {
     const project = this.getProjectForPath(workingDir);
-    
+
     if (!project) {
       throw new Error(`No DevBox Pro project found for path: ${workingDir}`);
     }
@@ -248,7 +248,7 @@ class CliManager {
   async installCli() {
     const alias = this.getAlias();
     const cliPath = this.getCliPath();
-    
+
     await fs.ensureDir(cliPath);
 
     // Sync projects to the central projects.json file
@@ -273,7 +273,7 @@ class CliManager {
   async installWindowsCli(alias, cliPath) {
     const resourcesPath = this.resourcesPath;
     const projectsFilePath = this.getProjectsFilePath();
-    
+
     // Create a helper PowerShell script for JSON parsing
     const psHelperContent = `param($ProjectsFile, $CurrentDir)
 try {
@@ -293,10 +293,10 @@ try {
     Write-Output "8.3|"
 }
 `;
-    
+
     const psHelperPath = path.join(cliPath, 'find-project.ps1');
     await fs.writeFile(psHelperPath, psHelperContent, 'utf8');
-    
+
     // Create the batch script
     const batchContent = `@echo off
 setlocal enabledelayedexpansion
@@ -444,8 +444,8 @@ exit /b %ERRORLEVEL%
 
     const batchPath = path.join(cliPath, `${alias}.cmd`);
     await fs.writeFile(batchPath, batchContent, 'utf8');
-    
-    console.log(`CLI script installed at: ${batchPath}`);
+
+    // CLI script installed (Windows)
     return batchPath;
   }
 
@@ -456,7 +456,7 @@ exit /b %ERRORLEVEL%
     const resourcesPath = this.resourcesPath;
     const projectsFilePath = this.getProjectsFilePath();
     const platform = process.platform === 'darwin' ? 'mac' : 'linux';
-    
+
     const shellContent = `#!/bin/bash
 
 # DevBox Pro CLI Wrapper
@@ -602,8 +602,8 @@ esac
     const scriptPath = path.join(cliPath, alias);
     await fs.writeFile(scriptPath, shellContent, 'utf8');
     await fs.chmod(scriptPath, '755');
-    
-    console.log(`CLI script installed at: ${scriptPath}`);
+
+    // CLI script installed (macOS/Linux)
     return scriptPath;
   }
 
@@ -629,7 +629,7 @@ esac
     } else {
       const shell = process.env.SHELL || '/bin/bash';
       const rcFile = shell.includes('zsh') ? '~/.zshrc' : '~/.bashrc';
-      
+
       return {
         automatic: `Add to ${rcFile}:\nexport PATH="${cliPath}:$PATH"`,
         manual: [
@@ -653,7 +653,7 @@ esac
     const scriptPath = path.join(cliPath, scriptName);
 
     const scriptExists = await fs.pathExists(scriptPath);
-    
+
     // Check if in PATH
     let inPath = false;
     try {
@@ -667,7 +667,7 @@ esac
         inPath = pathDirs.some(dir => path.normalize(dir).toLowerCase() === path.normalize(cliPath).toLowerCase());
       }
     } catch (e) {
-      console.error('Error checking PATH:', e);
+      this.managers?.log?.systemError('Error checking PATH', { error: e.message });
       // Fallback to checking process.env.PATH
       try {
         const pathDirs = (process.env.PATH || '').split(path.delimiter);
@@ -693,7 +693,7 @@ esac
     return new Promise((resolve) => {
       // Normalize the target path - remove trailing slashes
       const normalizedTarget = targetPath.replace(/[\\/]+$/, '');
-      
+
       // Create a simple inline script that checks the PATH
       const psScript = `
 $targetPath = '${normalizedTarget.replace(/'/g, "''")}'
@@ -705,39 +705,39 @@ $found = $fullPath.Split(';') | Where-Object {
 }
 if ($found) { 'FOUND' } else { 'NOTFOUND' }
 `;
-      
+
       const child = spawn('powershell', ['-NoProfile', '-Command', psScript], {
         windowsHide: true,
       });
-      
+
       // Set a timeout manually
       const timeout = setTimeout(() => {
         child.kill();
-        console.error('PowerShell PATH check timed out');
+        this.managers?.log?.systemError('PowerShell PATH check timed out');
         resolve(false);
       }, 5000);
-      
+
       let stdout = '';
       let stderr = '';
-      
+
       child.stdout.on('data', (data) => {
         stdout += data.toString();
       });
-      
+
       child.stderr.on('data', (data) => {
         stderr += data.toString();
       });
-      
+
       child.on('error', (error) => {
         clearTimeout(timeout);
-        console.error('Error checking Windows PATH:', error);
+        this.managers?.log?.systemError('Error checking Windows PATH', { error: error.message });
         resolve(false);
       });
-      
+
       child.on('close', (code) => {
         clearTimeout(timeout);
         if (code !== 0) {
-          console.error('PowerShell PATH check failed:', stderr);
+          this.managers?.log?.systemError('PowerShell PATH check failed', { stderr });
           resolve(false);
         } else {
           resolve(stdout.trim() === 'FOUND');
@@ -757,7 +757,7 @@ if ($found) { 'FOUND' } else { 'NOTFOUND' }
     const cliPath = this.getCliPath();
     // Normalize the path - remove trailing slashes for consistent comparison
     const normalizedCliPath = cliPath.replace(/[\\/]+$/, '');
-    
+
     return new Promise((resolve, reject) => {
       // Use spawn instead of exec to avoid escaping issues
       const psScript = `
@@ -776,26 +776,26 @@ if (-not $found) {
   Write-Output 'Already in PATH'
 }
 `;
-      
+
       const child = spawn('powershell', ['-NoProfile', '-Command', psScript], {
         windowsHide: true,
       });
-      
+
       let stdout = '';
       let stderr = '';
-      
+
       child.stdout.on('data', (data) => {
         stdout += data.toString();
       });
-      
+
       child.stderr.on('data', (data) => {
         stderr += data.toString();
       });
-      
+
       child.on('error', (error) => {
         reject(new Error(`Failed to add to PATH: ${error.message}`));
       });
-      
+
       child.on('close', (code) => {
         if (code !== 0) {
           reject(new Error(`Failed to add to PATH: ${stderr}`));

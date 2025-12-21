@@ -4,8 +4,8 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import 'xterm/css/xterm.css';
 
-const XTerminal = forwardRef(({ 
-  projectPath = null, 
+const XTerminal = forwardRef(({
+  projectPath = null,
   projectId = null,
   onReady = null,
   initialCommand = null,
@@ -93,13 +93,13 @@ const XTerminal = forwardRef(({
     // Load addons
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon();
-    
+
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(webLinksAddon);
 
     // Open terminal in container
     terminal.open(terminalRef.current);
-    
+
     // Fit to container
     setTimeout(() => {
       fitAddon.fit();
@@ -128,29 +128,29 @@ const XTerminal = forwardRef(({
     // Handle input if not read-only
     if (!readOnly) {
       writePrompt(terminal, projectPath);
-      
+
       let escapeSequence = '';
-      
+
       terminal.onData(async (data) => {
         // Handle escape sequences for arrow keys
         if (escapeSequence.length > 0 || data === '\x1b') {
           escapeSequence += data;
-          
+
           // Check for complete escape sequences
           if (escapeSequence === '\x1b[A') { // Arrow Up
             escapeSequence = '';
             if (isRunningCommand.current) return;
-            
+
             if (commandHistory.current.length > 0) {
               // Save current command when starting to navigate
               if (historyIndex.current === -1) {
                 savedCommand.current = commandBuffer.current;
               }
-              
+
               if (historyIndex.current < commandHistory.current.length - 1) {
                 historyIndex.current++;
                 const historyCommand = commandHistory.current[commandHistory.current.length - 1 - historyIndex.current];
-                
+
                 // Clear current line and write history command
                 clearCurrentLine(terminal, projectPath);
                 commandBuffer.current = historyCommand;
@@ -161,11 +161,11 @@ const XTerminal = forwardRef(({
           } else if (escapeSequence === '\x1b[B') { // Arrow Down
             escapeSequence = '';
             if (isRunningCommand.current) return;
-            
+
             if (historyIndex.current > 0) {
               historyIndex.current--;
               const historyCommand = commandHistory.current[commandHistory.current.length - 1 - historyIndex.current];
-              
+
               clearCurrentLine(terminal, projectPath);
               commandBuffer.current = historyCommand;
               terminal.write(historyCommand);
@@ -189,18 +189,16 @@ const XTerminal = forwardRef(({
           }
           return;
         }
-        
+
         const code = data.charCodeAt(0);
-        
+
         if (code === 13) { // Enter
           terminal.write('\r\n');
-          
+
           if (isRunningCommand.current && runningProcessId.current) {
             // Send input to running process (include the typed text + newline)
             const inputText = commandBuffer.current + '\n';
-            console.log('Sending input to process:', runningProcessId.current, 'Input:', JSON.stringify(inputText));
             const result = await window.devbox?.terminal?.sendInput?.(runningProcessId.current, inputText);
-            console.log('sendInput result:', result);
             commandBuffer.current = '';
           } else {
             const command = commandBuffer.current.trim();
@@ -229,12 +227,12 @@ const XTerminal = forwardRef(({
           terminal.write('^C\r\n');
           commandBuffer.current = '';
           historyIndex.current = -1;
-          
+
           // Cancel running command
           if (isRunningCommand.current && runningProcessId.current) {
             window.devbox?.terminal?.cancelCommand?.(runningProcessId.current);
           }
-          
+
           isRunningCommand.current = false;
           runningProcessId.current = null;
           writePrompt(terminal, projectPath);
@@ -282,7 +280,7 @@ const XTerminal = forwardRef(({
       // Parse command
       const parts = command.split(' ');
       const cmd = parts[0].toLowerCase();
-      
+
       // Handle built-in commands
       if (cmd === 'clear' || cmd === 'cls') {
         terminal.clear();
@@ -350,7 +348,7 @@ const XTerminal = forwardRef(({
         isRunningCommand.current = false;
         runningProcessId.current = null;
       }
-      
+
       terminal.writeln('');
       writePrompt(terminal, cwd);
     } catch (error) {
@@ -360,11 +358,11 @@ const XTerminal = forwardRef(({
   };
 
   return (
-    <div 
-      ref={terminalRef} 
+    <div
+      ref={terminalRef}
       className={`xterm-container ${className}`}
-      style={{ 
-        width: '100%', 
+      style={{
+        width: '100%',
         height: '100%',
         backgroundColor: '#1a1b26',
         padding: '8px',

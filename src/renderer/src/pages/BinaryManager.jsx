@@ -29,14 +29,14 @@ import { useApp } from '../context/AppContext';
 
 function BinaryManager() {
   // Use global state for download progress (persists across navigation)
-  const { 
-    downloadProgress: progress, 
-    downloading, 
+  const {
+    downloadProgress: progress,
+    downloading,
     setDownloading: setDownloadingGlobal,
     setDownloadProgress: setProgressGlobal,
     clearDownload,
   } = useApp();
-  
+
   const [installed, setInstalled] = useState({
     php: {},
     mysql: {},
@@ -61,7 +61,7 @@ function BinaryManager() {
     apache: false,
     nodejs: false,
   });
-  
+
   // Service versions from backend config (with defaults)
   const [serviceVersions, setServiceVersions] = useState({
     php: ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'],
@@ -77,24 +77,24 @@ function BinaryManager() {
   const getMergedVersions = useCallback((service) => {
     const predefined = serviceVersions[service] || [];
     const installedVersions = installed[service];
-    
+
     if (!installedVersions || typeof installedVersions !== 'object') {
       return predefined;
     }
-    
+
     // Get all installed version keys
     const installedKeys = Object.keys(installedVersions).filter(v => installedVersions[v]);
-    
+
     // Merge: predefined first, then any custom versions not in predefined
     const customVersions = installedKeys.filter(v => !predefined.includes(v));
-    
+
     // Sort custom versions in descending order
     customVersions.sort((a, b) => {
       const aNum = parseFloat(a) || 0;
       const bNum = parseFloat(b) || 0;
       return bNum - aNum;
     });
-    
+
     // Insert custom versions at the beginning (they're likely newer)
     return [...customVersions, ...predefined];
   }, [serviceVersions, installed]);
@@ -122,7 +122,7 @@ function BinaryManager() {
         setInstalled(result);
       }
     } catch (error) {
-      console.error('Error loading installed binaries:', error);
+      // Error loading installed binaries
     }
   }, []);
 
@@ -133,7 +133,7 @@ function BinaryManager() {
         setDownloadUrls(urls);
       }
     } catch (error) {
-      console.error('Error loading download URLs:', error);
+      // Error loading download URLs
     }
   }, []);
 
@@ -144,7 +144,7 @@ function BinaryManager() {
         setServiceVersions(config.versions);
       }
     } catch (error) {
-      console.error('Error loading service config:', error);
+      // Error loading service config
     }
   }, []);
 
@@ -158,7 +158,7 @@ function BinaryManager() {
       }
       return result;
     } catch (error) {
-      console.error('Error refreshing installed binaries:', error);
+      // Error refreshing installed binaries
       return null;
     }
   }, []);
@@ -167,14 +167,14 @@ function BinaryManager() {
   // This handles cases where the 'completed' event was missed
   useEffect(() => {
     if (Object.keys(downloading).length === 0) return;
-    
+
     // Check each downloading item against installed binaries
     Object.entries(downloading).forEach(([id, isDownloading]) => {
       if (!isDownloading) return;
-      
+
       const [type, version] = id.split('-');
       let isInstalled = false;
-      
+
       if (version) {
         // Versioned binary (e.g., php-8.4, nodejs-20)
         isInstalled = installed[type]?.[version] === true;
@@ -182,10 +182,10 @@ function BinaryManager() {
         // Non-versioned binary (e.g., composer, mailpit)
         isInstalled = installed[type] === true;
       }
-      
+
       // If binary is installed but still showing as downloading, clear it
       if (isInstalled) {
-        console.log(`[BinaryManager] Clearing stale download for ${id} - already installed`);
+        // Clearing stale download - already installed
         clearDownload(id);
       }
     });
@@ -194,23 +194,23 @@ function BinaryManager() {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      
+
       // Always force refresh installed binaries when Binary tab is visited
       // This ensures we detect if user manually deleted binaries
       await forceRefreshInstalled();
-      
+
       try {
         await loadDownloadUrls();
       } catch (error) {
-        console.error('Error loading download URLs:', error);
+        // Error loading download URLs
       }
-      
+
       try {
         await loadServiceConfig();
       } catch (error) {
-        console.error('Error loading service config:', error);
+        // Error loading service config
       }
-      
+
       setLoading(false);
     };
     init();
@@ -227,16 +227,16 @@ function BinaryManager() {
 
   const handleDownloadPhp = async (version) => {
     const id = `php-${version}`;
-    
+
     // Don't start if already downloading
     if (downloading[id]) return;
-    
+
     setDownloadingGlobal(id, true);
     setProgressGlobal(id, { status: 'starting', progress: 0 });
 
     // Fire and forget - don't await, let progress events handle updates
     window.devbox?.binaries.downloadPhp(version).catch((error) => {
-      console.error(`Error downloading PHP ${version}:`, error);
+      // Error downloading PHP
       setProgressGlobal(id, { status: 'error', error: error.message });
       setDownloadingGlobal(id, false);
     });
@@ -244,10 +244,10 @@ function BinaryManager() {
 
   const handleDownloadService = async (service, version = null) => {
     const id = version ? `${service}-${version}` : service;
-    
+
     // Don't start if already downloading
     if (downloading[id]) return;
-    
+
     setDownloadingGlobal(id, true);
     setProgressGlobal(id, { status: 'starting', progress: 0 });
 
@@ -279,9 +279,9 @@ function BinaryManager() {
         downloadPromise = window.devbox?.binaries.downloadComposer();
         break;
     }
-    
+
     downloadPromise?.catch((error) => {
-      console.error(`Error downloading ${service}${version ? ' ' + version : ''}:`, error);
+      // Error downloading service
       setProgressGlobal(id, { status: 'error', error: error.message });
       setDownloadingGlobal(id, false);
     });
@@ -297,7 +297,7 @@ function BinaryManager() {
       await window.devbox?.binaries.cancelDownload(id);
       clearDownload(id);
     } catch (error) {
-      console.error(`Error cancelling download ${id}:`, error);
+      // Error cancelling download
     }
   };
 
@@ -305,16 +305,16 @@ function BinaryManager() {
   const handleCheckForUpdates = async () => {
     setCheckingUpdates(true);
     setUpdateResult(null);
-    
+
     try {
       const result = await window.devbox?.binaries.checkForUpdates();
       setUpdateResult(result);
-      
+
       if (result?.success) {
         setShowUpdateModal(true);
       }
     } catch (error) {
-      console.error('Error checking for updates:', error);
+      // Error checking for updates
       setUpdateResult({ success: false, error: error.message });
     } finally {
       setCheckingUpdates(false);
@@ -332,7 +332,7 @@ function BinaryManager() {
         setUpdateResult(null);
       }
     } catch (error) {
-      console.error('Error applying updates:', error);
+      // Error applying updates
     }
   };
 
@@ -340,7 +340,7 @@ function BinaryManager() {
     try {
       await window.devbox?.binaries.openApacheDownloadPage();
     } catch (error) {
-      console.error('Error opening Apache download page:', error);
+      // Error opening Apache download page
     }
   };
 
@@ -413,7 +413,7 @@ function BinaryManager() {
   const detectVersionFromFilename = (service, filename) => {
     const pattern = versionPatterns[service];
     if (!pattern) return null;
-    
+
     const match = filename.match(pattern);
     if (match) {
       // For Node.js, we only want major version (22, 20, 18, etc.)
@@ -443,7 +443,7 @@ function BinaryManager() {
 
       const fileName = file.name;
       const detectedVersion = detectVersionFromFilename(service, fileName);
-      
+
       // Get available versions for this service
       const availableVersions = serviceVersions[service] || [];
 
@@ -486,7 +486,7 @@ function BinaryManager() {
     try {
       await window.devbox?.binaries.importBinary(service, version || 'default', filePath);
     } catch (error) {
-      console.error(`Error importing ${service}:`, error);
+      // Error importing service
       setProgressGlobal(id, { status: 'error', error: error.message });
       setDownloadingGlobal(id, false);
     }
@@ -517,7 +517,7 @@ function BinaryManager() {
         alert('Could not get file path. Please try again.');
         return;
       }
-      
+
       await executeImport(service, null, filePath);
     };
     input.click();
@@ -544,7 +544,7 @@ function BinaryManager() {
         }
         await window.devbox?.binaries.importApache(filePath, version);
       } catch (error) {
-        console.error('Error importing Apache:', error);
+        // Error importing Apache
         setProgressGlobal(id, { status: 'error', error: error.message });
         setDownloadingGlobal(id, false);
       }
@@ -554,16 +554,16 @@ function BinaryManager() {
 
   const handleDownloadNodejs = async (version) => {
     const id = `nodejs-${version}`;
-    
+
     // Don't start if already downloading
     if (downloading[id]) return;
-    
+
     setDownloadingGlobal(id, true);
     setProgressGlobal(id, { status: 'starting', progress: 0 });
 
     // Fire and forget - don't await, let progress events handle updates
     window.devbox?.binaries.downloadNodejs(version).catch((error) => {
-      console.error(`Error downloading Node.js ${version}:`, error);
+      // Error downloading Node.js
       setProgressGlobal(id, { status: 'error', error: error.message });
       setDownloadingGlobal(id, false);
     });
@@ -580,7 +580,7 @@ function BinaryManager() {
       await window.devbox?.binaries.remove(type, version);
       await loadInstalled();
     } catch (error) {
-      console.error(`Error removing ${type}:`, error);
+      // Error removing binary
     }
   };
 
@@ -795,7 +795,7 @@ function BinaryManager() {
                 Config version: {updateResult.configVersion} • Last updated: {updateResult.lastUpdated}
               </p>
             </div>
-            
+
             <div className="p-6 max-h-80 overflow-y-auto">
               {updateResult.hasUpdates ? (
                 <div className="space-y-3">
@@ -819,7 +819,7 @@ function BinaryManager() {
                       </div>
                       <span className={clsx(
                         "text-xs px-2 py-1 rounded",
-                        update.type === 'new_version' 
+                        update.type === 'new_version'
                           ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
                           : "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
                       )}>
@@ -835,7 +835,7 @@ function BinaryManager() {
                 </div>
               )}
             </div>
-            
+
             <div className="p-4 bg-gray-50 dark:bg-gray-700/50 flex justify-end gap-3">
               <button
                 onClick={() => setShowUpdateModal(false)}
@@ -870,7 +870,7 @@ function BinaryManager() {
                 File: {importModal.fileName}
               </p>
             </div>
-            
+
             <div className="p-6">
               {importModal.detectedVersion ? (
                 <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
@@ -887,11 +887,11 @@ function BinaryManager() {
                   </p>
                 </div>
               )}
-              
+
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Version to install as:
               </label>
-              
+
               {/* Quick select from available versions */}
               {importModal.availableVersions.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-3">
@@ -911,7 +911,7 @@ function BinaryManager() {
                   ))}
                 </div>
               )}
-              
+
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-500">or custom:</span>
                 <input
@@ -922,12 +922,12 @@ function BinaryManager() {
                   className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
-              
+
               <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
                 Enter the major.minor version (e.g., 8.4 for PHP 8.4.x, 22 for Node.js 22.x)
               </p>
             </div>
-            
+
             <div className="p-4 bg-gray-50 dark:bg-gray-700/50 flex justify-end gap-3">
               <button
                 onClick={() => setImportModal({ ...importModal, open: false })}

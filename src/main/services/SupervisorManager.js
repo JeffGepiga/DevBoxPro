@@ -230,7 +230,7 @@ class SupervisorManager {
       if (instance.process && instance.pid) {
         await new Promise((resolve) => {
           kill(instance.pid, 'SIGTERM', (err) => {
-            if (err) console.error(`Error killing process ${instance.name}:`, err);
+            if (err) this.managers.log?.systemError(`Error killing process ${instance.name}`, { error: err.message });
             resolve();
           });
         });

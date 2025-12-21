@@ -76,7 +76,7 @@ function ProjectDetail() {
       const projectLogs = await window.devbox?.logs.getProjectLogs(id, 100);
       setLogs(projectLogs || []);
     } catch (error) {
-      console.error('Error loading logs:', error);
+      // Error loading logs
     }
   };
 
@@ -85,7 +85,7 @@ function ProjectDetail() {
       const supervisorProcesses = await window.devbox?.supervisor.getProcesses(id);
       setProcesses(supervisorProcesses || []);
     } catch (error) {
-      console.error('Error loading processes:', error);
+      // Error loading processes
     }
   };
 
@@ -475,7 +475,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
           });
         }
       } catch (error) {
-        console.error('Error loading data:', error);
+        // Error loading data
       }
     };
     loadData();
@@ -604,7 +604,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
         }
       }
     } catch (error) {
-      console.error('Error saving settings:', error);
+      // Error saving settings
       alert('Failed to save settings: ' + error.message);
     } finally {
       setSavingSettings(false);
@@ -1061,7 +1061,7 @@ function WorkersTab({ processes, projectId, onRefresh }) {
       setNewProcess({ name: '', command: '', numprocs: 1, autostart: true, autorestart: true });
       onRefresh();
     } catch (error) {
-      console.error('Error adding process:', error);
+      // Error adding process
     }
   };
 
@@ -1220,7 +1220,7 @@ function EnvironmentTab({ project, onRefresh }) {
           setOriginalEnv(project.environment || {});
         }
       } catch (error) {
-        console.error('Failed to load .env file:', error);
+        // Failed to load .env file
         // Fallback to project.environment
         setEnvironment(project.environment || {});
         setOriginalEnv(project.environment || {});
@@ -1275,7 +1275,7 @@ function EnvironmentTab({ project, onRefresh }) {
           await window.devbox?.php.runArtisan(project.id, 'config:cache');
           setSaveMessage({ type: 'success', text: 'Environment saved and Laravel caches refreshed!' });
         } catch (optimizeError) {
-          console.warn('Cache optimization failed:', optimizeError);
+          // Cache optimization failed - non-critical
           setSaveMessage({ type: 'warning', text: 'Environment saved, but cache optimization failed. You may need to run "php artisan config:cache" manually.' });
         }
         setIsOptimizing(false);
@@ -1288,7 +1288,7 @@ function EnvironmentTab({ project, onRefresh }) {
       setOriginalEnv(environment);
       setHasChanges(false);
     } catch (error) {
-      console.error('Failed to save environment:', error);
+      // Failed to save environment
       setSaveMessage({ type: 'error', text: `Failed to save: ${error.message}` });
     } finally {
       setIsSaving(false);

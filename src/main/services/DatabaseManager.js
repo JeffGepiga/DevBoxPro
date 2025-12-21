@@ -119,7 +119,7 @@ class DatabaseManager {
   // Reset database credentials by saving them to ConfigStore
   // Credentials are applied when databases start via the init-file mechanism
   async resetCredentials(newUser = 'root', newPassword = '') {
-    console.log(`Saving database credentials to ConfigStore: user=${newUser}`);
+    // Credentials being saved to ConfigStore
 
     try {
       // Save the new credentials in settings (ConfigStore is the source of truth)
@@ -130,10 +130,10 @@ class DatabaseManager {
       this.dbConfig.user = newUser;
       this.dbConfig.password = newPassword;
 
-      console.log('Database credentials saved. They will be applied when databases are started/restarted.');
+      // Credentials saved - will be applied on next database start
       return { success: true };
     } catch (error) {
-      console.error('Error saving credentials:', error);
+      this.managers.log?.systemError('Error saving database credentials', { error: error.message });
       throw new Error(`Failed to save credentials: ${error.message}`);
     }
   }
@@ -205,7 +205,7 @@ class DatabaseManager {
         args.push(database);
       }
 
-      console.log(`[runDbQueryNoAuth] Running query on port ${port}: ${query.substring(0, 50)}...`);
+      // Running no-auth query
 
       const proc = spawn(clientPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -225,7 +225,7 @@ class DatabaseManager {
 
       proc.on('close', (code) => {
         if (code !== 0) {
-          console.warn(`[runDbQueryNoAuth] Query warning: ${stderr}`);
+          this.managers.log?.systemWarn(`[runDbQueryNoAuth] Query warning`, { stderr });
           // Don't reject for warnings, only for errors
           if (stderr.includes('ERROR')) {
             reject(new Error(`Query failed: ${stderr}`));
@@ -269,7 +269,7 @@ class DatabaseManager {
 
     // Check if service is running first - just return empty array if not
     if (!this.isServiceRunning()) {
-      console.log(`${dbType} service is not running, returning empty database list`);
+      // Service not running - return empty list
       return [];
     }
 
@@ -295,11 +295,11 @@ class DatabaseManager {
 
     // Check if the SPECIFIC version is running, if not try to start it
     if (!this.isServiceRunning(dbType, dbVersion)) {
-      console.log(`${dbType} ${dbVersion} is not running, attempting to start it...`);
+      // Database not running, attempting auto-start
 
       if (this.managers.service) {
         try {
-          console.log(`Starting ${dbType} version ${dbVersion}...`);
+          // Starting database service
           await this.managers.service.startService(dbType, dbVersion);
 
           // Wait a bit for the service to be ready
@@ -310,9 +310,9 @@ class DatabaseManager {
             throw new Error(`${dbType} ${dbVersion} failed to start`);
           }
 
-          console.log(`${dbType} ${dbVersion} started successfully`);
+          // Database started successfully
         } catch (startError) {
-          console.error(`Failed to start ${dbType} ${dbVersion}:`, startError.message);
+          this.managers.log?.systemError(`Failed to start ${dbType} ${dbVersion}`, { error: startError.message });
           throw new Error(`Cannot create database: ${dbType} ${dbVersion} is not running and failed to start. Please start it manually first.`);
         }
       } else {
@@ -321,7 +321,7 @@ class DatabaseManager {
     }
 
     await this.runDbQuery(`CREATE DATABASE IF NOT EXISTS \`${safeName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-    console.log(`Database created: ${safeName}`);
+    // Database created successfully
     return { success: true, name: safeName };
   }
 
@@ -334,7 +334,7 @@ class DatabaseManager {
     }
 
     await this.runDbQuery(`DROP DATABASE IF EXISTS \`${safeName}\``);
-    console.log(`Database deleted: ${safeName}`);
+    // Database deleted successfully
     return { success: true, name: safeName };
   }
 
@@ -352,7 +352,7 @@ class DatabaseManager {
       throw new Error('Import file not found');
     }
 
-    console.log(`Importing database: original="${databaseName}", sanitized="${safeName}", mode=${mode}`);
+    // Importing database
 
     // Verify database exists before importing
     const databases = await this.listDatabases();
@@ -463,7 +463,7 @@ class DatabaseManager {
 
         proc.on('close', (code) => {
           if (code === 0) {
-            console.log(`Database ${databaseName} imported successfully`);
+            // Import completed successfully
             progressCallback?.({ status: 'complete', message: 'Import completed successfully!' });
             resolve({ success: true });
           } else {
@@ -495,7 +495,7 @@ class DatabaseManager {
     let buffer = '';
     const generatedColumns = new Map(); // tableName (lowercase) -> array of column indices
 
-    console.log('[SQL Processor] Stream initialized');
+    // SQL Processor stream initialized
 
     return new Transform({
       transform(chunk, encoding, callback) {
@@ -516,7 +516,7 @@ class DatabaseManager {
 
         if (processUpTo === -1) {
           if (buffer.length > 10 * 1024 * 1024) {
-            console.log('[SQL Processor] Buffer too large, flushing');
+            // Buffer too large, flushing
             this.push(buffer);
             buffer = '';
           }
@@ -562,7 +562,7 @@ class DatabaseManager {
                 // Check if it's a virtual/generated column
                 if (/GENERATED\s+ALWAYS\s+AS|AS\s*\(.*\)\s*(VIRTUAL|STORED)/i.test(trimmed)) {
                   virtualIndices.push(columnIndex);
-                  console.log(`[SQL Processor] Removing generated column: ${tableName}.${columnName} at position ${columnIndex}`);
+                  // Removing generated column from CREATE TABLE
                   columnIndex++;
                   // Don't add this line
                   continue;
@@ -576,7 +576,7 @@ class DatabaseManager {
 
             if (virtualIndices.length > 0) {
               generatedColumns.set(tableNameLower, virtualIndices);
-              console.log(`[SQL Processor] Table '${tableName}' has ${virtualIndices.length} generated columns removed`);
+              // Table has generated columns removed
 
               // Rebuild with proper commas
               // Remove trailing commas from all lines first
@@ -616,7 +616,7 @@ class DatabaseManager {
             continue;
           }
 
-          console.log(`[SQL Processor] Processing INSERT for ${insertMatch[1]}, removing positions: ${virtualIndices.join(', ')}`);
+          // Processing INSERT - removing generated column values
 
           const valuesStart = insertRegex.lastIndex;
           let valuesEnd = toProcess.indexOf(';', valuesStart);
@@ -637,7 +637,7 @@ class DatabaseManager {
 
       flush(callback) {
         if (buffer.trim()) {
-          console.log('[SQL Processor] Flushing remaining buffer');
+          // Flushing remaining buffer
           this.push(buffer);
         }
         callback();
@@ -655,15 +655,14 @@ class DatabaseManager {
     // Parse value sets using proper state machine
     const valueSets = this.parseValueSets(valuesSection);
 
-    console.log(`[SQL Processor] Parsed ${valueSets.length} value sets, removing indices: ${indicesToRemove.join(', ')}`);
+    // Parsed value sets for column removal
 
     // Process each value set
     const processedSets = valueSets.map((valueSet, setIdx) => {
       const values = this.splitValues(valueSet);
 
       if (setIdx === 0) {
-        console.log(`[SQL Processor] First value set has ${values.length} values, removing ${indicesToRemove.length} at indices: ${indicesToRemove.join(',')}`);
-        console.log(`[SQL Processor] Values preview: ${values.slice(0, 3).map(v => v.substring(0, 20)).join(' | ')} ...`);
+        // Processing value set for generated column removal
       }
 
       // Filter out the generated column indices
@@ -675,7 +674,7 @@ class DatabaseManager {
       }
 
       if (setIdx === 0) {
-        console.log(`[SQL Processor] After removal: ${filteredValues.length} values`);
+        // Values filtered for generated columns
       }
 
       return '(' + filteredValues.join(',') + ')';
@@ -883,7 +882,7 @@ class DatabaseManager {
   async exportDatabase(databaseName, outputPath, progressCallback = null) {
     const safeName = this.sanitizeName(databaseName);
 
-    console.log(`Exporting database ${safeName} to ${outputPath}`);
+    // Exporting database
     progressCallback?.({ status: 'starting', message: 'Starting export...' });
 
     const dumpPath = this.getDbDumpPath();
@@ -951,7 +950,7 @@ class DatabaseManager {
       });
 
       outputStream.on('finish', () => {
-        console.log(`Database ${safeName} exported to ${finalPath}`);
+        // Export completed successfully
         progressCallback?.({ status: 'complete', message: 'Export completed successfully!', path: finalPath });
         resolve({ success: true, path: finalPath });
       });
@@ -989,7 +988,7 @@ class DatabaseManager {
       throw new Error(`MySQL client not found at ${clientPath}. Please install the database binary from the Binaries page.`);
     }
 
-    console.log(`[DatabaseManager] Running query on port ${port} as user '${user}' (password: ${password ? 'YES' : 'NO'})`);
+    // Running database query
 
     return new Promise((resolve, reject) => {
       const args = [
@@ -1083,11 +1082,11 @@ class DatabaseManager {
       const tables = await this.getTables(databaseName);
 
       if (tables.length === 0) {
-        console.log(`No tables to drop in ${databaseName}`);
+        // No tables to drop
         return;
       }
 
-      console.log(`Dropping ${tables.length} tables in ${databaseName}...`);
+      // Dropping tables for clean import
 
       // Build a single SQL statement with foreign key checks disabled
       // This ensures everything runs in the same session
@@ -1096,9 +1095,9 @@ class DatabaseManager {
 
       await this.runDbQuery(combinedSql, databaseName);
 
-      console.log(`All ${tables.length} tables dropped from ${databaseName}`);
+      // All tables dropped successfully
     } catch (error) {
-      console.error(`Error dropping tables in ${databaseName}:`, error);
+      this.managers.log?.systemError(`Error dropping tables in ${databaseName}`, { error: error.message });
       throw error;
     }
   }
@@ -1156,7 +1155,7 @@ class DatabaseManager {
       if (fs.existsSync(versionPath)) {
         return versionPath;
       }
-      console.log(`[DatabaseManager] MySQL client not found at version path: ${versionPath}`);
+      // MySQL client not found at version path - trying fallback
     }
 
     // Fallback: Try to find any available mysql client
@@ -1172,11 +1171,11 @@ class DatabaseManager {
           // Prefer newer versions (sort descending)
           versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
           const foundPath = path.join(dbTypePath, versions[0], platform, 'bin', binName);
-          console.log(`[DatabaseManager] Using fallback MySQL client: ${foundPath}`);
+          // Using fallback MySQL client
           return foundPath;
         }
       } catch (e) {
-        console.error(`[DatabaseManager] Error scanning for MySQL client:`, e.message);
+        this.managers.log?.systemError('Error scanning for MySQL client', { error: e.message });
       }
     }
 
@@ -1205,7 +1204,7 @@ class DatabaseManager {
       if (fs.existsSync(versionPath)) {
         return versionPath;
       }
-      console.log(`[DatabaseManager] mysqldump not found at version path: ${versionPath}`);
+      // mysqldump not found at version path - trying fallback
     }
 
     // Fallback: Try to find any available mysqldump
@@ -1221,11 +1220,11 @@ class DatabaseManager {
           // Prefer newer versions (sort descending)
           versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
           const foundPath = path.join(dbTypePath, versions[0], platform, 'bin', binName);
-          console.log(`[DatabaseManager] Using fallback mysqldump: ${foundPath}`);
+          // Using fallback mysqldump
           return foundPath;
         }
       } catch (e) {
-        console.error(`[DatabaseManager] Error scanning for mysqldump:`, e.message);
+        this.managers.log?.systemError('Error scanning for mysqldump', { error: e.message });
       }
     }
 

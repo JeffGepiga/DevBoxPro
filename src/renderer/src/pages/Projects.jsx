@@ -54,7 +54,7 @@ function Projects() {
 
   const handleDeleteConfirm = async () => {
     if (deleteConfirmText !== 'delete' || !deleteModal.project) return;
-    
+
     setIsDeleting(true);
     try {
       await deleteProject(deleteModal.project.id, deleteFiles);
@@ -62,7 +62,7 @@ function Projects() {
       setDeleteConfirmText('');
       setDeleteFiles(false);
     } catch (error) {
-      console.error('Failed to delete project:', error);
+      // Failed to delete project
       alert('Failed to delete project: ' + error.message);
     } finally {
       setIsDeleting(false);
@@ -84,7 +84,7 @@ function Projects() {
         setShowDiscovered(true);
       }
     } catch (error) {
-      console.error('Failed to scan for projects:', error);
+      // Failed to scan for projects
     } finally {
       setIsScanning(false);
     }
@@ -99,7 +99,7 @@ function Projects() {
       // Refresh projects list
       refreshProjects?.();
     } catch (error) {
-      console.error('Failed to import project:', error);
+      // Failed to import project
     }
   };
 
@@ -166,7 +166,7 @@ function Projects() {
                 <ChevronDown className="w-5 h-5 text-amber-600 dark:text-amber-400" />
               )}
             </button>
-            
+
             {showDiscovered && (
               <div className="px-4 pb-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -425,7 +425,7 @@ function ImportProjectModal({ project, onClose, onImport }) {
             <X className="w-5 h-5" />
           </button>
         </div>
-        
+
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Project Name (read-only, using folder name) */}
           <div>
@@ -705,8 +705,8 @@ function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
       <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {project.isRunning ? (
-            <button 
-              onClick={handleStop} 
+            <button
+              onClick={handleStop}
               disabled={isStopping}
               className="btn-secondary btn-sm"
             >
@@ -718,8 +718,8 @@ function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
               {isStopping ? 'Stopping...' : 'Stop'}
             </button>
           ) : (
-            <button 
-              onClick={handleStart} 
+            <button
+              onClick={handleStart}
               disabled={isStarting}
               className="btn-success btn-sm"
             >

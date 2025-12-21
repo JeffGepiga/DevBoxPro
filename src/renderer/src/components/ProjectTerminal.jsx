@@ -7,13 +7,13 @@ let XTerminal = null;
 try {
   XTerminal = require('./XTerminal').default;
 } catch (e) {
-  console.log('XTerminal not available, using simple terminal');
+  // XTerminal not available, using simple terminal
 }
 
 // ANSI escape code to HTML converter
 const ansiToHtml = (text) => {
   if (!text) return '';
-  
+
   const ansiColors = {
     '30': '#4a4a4a', '31': '#f7768e', '32': '#9ece6a', '33': '#e0af68',
     '34': '#7aa2f7', '35': '#bb9af7', '36': '#7dcfff', '37': '#c0caf5',
@@ -30,7 +30,7 @@ const ansiToHtml = (text) => {
     .replace(/\x1b\[(\d+(?:;\d+)*)m/g, (match, codes) => {
       const codeList = codes.split(';');
       let style = '';
-      
+
       for (const code of codeList) {
         if (code === '0' || code === '39') {
           return '</span>';
@@ -48,7 +48,7 @@ const ansiToHtml = (text) => {
           }
         }
       }
-      
+
       return style ? `<span style="${style}">` : '';
     })
     // Remove any remaining escape sequences
@@ -56,7 +56,7 @@ const ansiToHtml = (text) => {
     // Handle carriage returns
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n');
-  
+
   return result;
 };
 
@@ -98,7 +98,7 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
       if (!data || !data.projectId) return;
       if (data.projectId === projectId) {
         addOutput(data.text, data.type || 'stdout');
-        
+
         // Detect if command is waiting for input (prompts typically end with ? or :)
         const text = data.text || '';
         if (text.includes('?') || text.includes('(yes/no)') || text.includes('(y/n)') || text.includes('[yes]') || text.includes('[no]')) {
@@ -121,27 +121,27 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
 
   const sendInputToProcess = async (input) => {
     if (!input.trim()) return;
-    
+
     // Show input in output
     addOutput(`> ${input}`, 'command');
     setCommand('');
-    
+
     try {
       const result = await window.devbox?.terminal?.sendInput(projectId, input + '\n');
       if (!result?.success) {
-        console.warn('Failed to send input to process');
+        // Failed to send input to process
       }
     } catch (error) {
       addOutput(`Error sending input: ${error.message}`, 'error');
     }
-    
+
     setWaitingForInput(false);
     inputRef.current?.focus();
   };
 
   const runCommand = async (cmd) => {
     if (!cmd.trim()) return;
-    
+
     // If a command is running and waiting for input, send input instead
     if (isRunning) {
       await sendInputToProcess(cmd);

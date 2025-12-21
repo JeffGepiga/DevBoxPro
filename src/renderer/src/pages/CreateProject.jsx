@@ -154,7 +154,7 @@ function CreateProject() {
           setDefaultProjectsPath(defaultPath);
         }
       } catch (error) {
-        console.error('Error loading settings:', error);
+        // Error loading settings
       }
     };
     loadDefaultPath();
@@ -169,7 +169,7 @@ function CreateProject() {
           setServiceConfig(config);
         }
       } catch (error) {
-        console.error('Error loading service config:', error);
+        // Error loading service config
       }
     };
     loadServiceConfig();
@@ -311,7 +311,7 @@ function CreateProject() {
           setBinariesStatus(prev => ({ ...prev, loading: false }));
         }
       } catch (error) {
-        console.error('Error checking binaries:', error);
+        // Error checking binaries
         setBinariesStatus(prev => ({ ...prev, loading: false }));
       }
     };
@@ -339,7 +339,7 @@ function CreateProject() {
           setCompatibilityWarnings([]);
         }
       } catch (error) {
-        console.error('Error checking compatibility:', error);
+        // Error checking compatibility
       }
     };
     checkCompat();
@@ -433,7 +433,7 @@ function CreateProject() {
         // The installation is running in the background
       }
     } catch (error) {
-      console.error('Error creating project:', error);
+      // Error creating project
       if (shouldShowProgress) {
         setInstallOutput((prev) => [...prev, { text: `Error: ${error.message}`, type: 'error' }]);
         setInstallComplete(true);

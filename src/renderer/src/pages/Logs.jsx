@@ -119,7 +119,7 @@ function Logs() {
 
       setLogs(logEntries);
     } catch (error) {
-      console.error('Error loading logs:', error);
+      // Error loading logs
     } finally {
       setLoading(false);
     }

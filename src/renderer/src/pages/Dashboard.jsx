@@ -51,7 +51,7 @@ function Dashboard() {
           setServiceConfig(config);
         }
       } catch (err) {
-        console.error('Error loading service config:', err);
+        // Error loading service config
       }
     };
     loadConfig();
@@ -77,10 +77,10 @@ function Dashboard() {
         const status = await window.devbox?.binaries.getStatus();
         setBinariesStatus(status || {});
       } catch (err) {
-        console.error('Error loading binaries status:', err);
+        // Error loading binaries status
       }
     };
-    
+
     loadBinariesStatus();
     const intervalId = setInterval(loadBinariesStatus, 5000);
     return () => clearInterval(intervalId);
@@ -93,10 +93,10 @@ function Dashboard() {
         const running = await window.devbox?.services.getRunningVersions();
         setRunningVersions(running || {});
       } catch (err) {
-        console.error('Failed to get running versions:', err);
+        // Failed to get running versions
       }
     };
-    
+
     loadRunningVersions();
     const intervalId = setInterval(loadRunningVersions, 5000);
     return () => clearInterval(intervalId);
@@ -126,7 +126,7 @@ function Dashboard() {
   const getServicePort = (serviceName, version) => {
     const info = SERVICE_INFO[serviceName];
     if (!info) return null;
-    
+
     const basePort = info.defaultPort;
     const offset = serviceConfig.portOffsets[serviceName]?.[version] || 0;
     return basePort + offset;
@@ -142,12 +142,12 @@ function Dashboard() {
     const cards = [];
     const versionedServices = ['mysql', 'mariadb', 'redis'];
     const simpleServices = ['mailpit', 'phpmyadmin'];
-    
+
     // Add versioned service cards
     for (const name of versionedServices) {
       const installedVersions = getInstalledVersions(name);
       const serviceRunningVersions = runningVersions[name] || [];
-      
+
       for (const version of installedVersions) {
         const isRunning = serviceRunningVersions.includes(version);
         cards.push({
@@ -159,7 +159,7 @@ function Dashboard() {
         });
       }
     }
-    
+
     // Add simple service cards
     for (const name of simpleServices) {
       const isRunning = services[name]?.status === 'running';
@@ -170,7 +170,7 @@ function Dashboard() {
         port: services[name]?.port || SERVICE_INFO[name]?.defaultPort,
       });
     }
-    
+
     return cards;
   }, [binariesStatus, runningVersions, services]);
 
@@ -265,7 +265,7 @@ function Dashboard() {
           </div>
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
             {serviceCards.slice(0, 6).map((card) => (
-              <ServiceRow 
+              <ServiceRow
                 key={card.type === 'version' ? `${card.serviceName}-${card.version}` : card.serviceName}
                 serviceName={card.serviceName}
                 version={card.type === 'version' ? card.version : null}
@@ -313,7 +313,7 @@ function Dashboard() {
                   // Wait a moment for service to be ready
                   await new Promise(resolve => setTimeout(resolve, 1500));
                 } catch (err) {
-                  console.error('Failed to start phpMyAdmin:', err);
+                  // Failed to start phpMyAdmin
                 }
               }
               const url = await window.devbox?.database.getPhpMyAdminUrl();
@@ -331,7 +331,7 @@ function Dashboard() {
                   // Wait a moment for service to be ready
                   await new Promise(resolve => setTimeout(resolve, 1500));
                 } catch (err) {
-                  console.error('Failed to start Mailpit:', err);
+                  // Failed to start Mailpit
                 }
               }
               window.devbox?.system.openExternal('http://localhost:8025');
