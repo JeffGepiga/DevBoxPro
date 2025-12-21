@@ -7,9 +7,11 @@
 
 # 🚀 DevBox Pro
 
-**A powerful, cross-platform local development server for PHP developers**
+**Run legacy and modern PHP apps side by side — no conflicts, no headaches**
 
-DevBox Pro is a standalone desktop application that provides everything you need for PHP development - multiple PHP versions, MySQL/MariaDB, Redis, Mailpit, and more - all bundled in a single, easy-to-use application. No Docker required!
+Maintaining an old PHP 7.4 project while building a new Laravel 11 app on PHP 8.3? DevBox Pro makes it effortless. Unlike traditional setups, you can **run multiple PHP versions simultaneously** — giving you the freedom to work on legacy applications alongside cutting-edge projects without switching environments or breaking dependencies.
+
+DevBox Pro bundles everything you need: PHP 7.4 through 8.4, MySQL, MariaDB, Redis, Nginx, Apache, and more — all in one standalone desktop app. No Docker, no complex configurations, just instant multi-version development.
 
 ---
 
