@@ -2066,11 +2066,9 @@ server {
 
     const listenAddress = networkAccess ? '0.0.0.0' : '*';
 
-    // Build ServerAlias - ONLY add wildcard (*) for port 80 owner to accept IP access
-    // Other projects should NOT have wildcard to allow proper SNI certificate selection
-    const serverAlias = (networkAccess && canUsePort80)
-      ? `www.${project.domain} *`   // Port 80 owner can match any hostname (for IP access)
-      : `www.${project.domain}`;    // Others: specific domain only (for proper SNI)
+    // Build ServerAlias - NO wildcard to ensure proper SNI certificate selection
+    // Apache uses first loaded vhost as default for unmatched requests (load order)
+    const serverAlias = `www.${project.domain}`;
 
     // Get PHP-CGI path for this PHP version
     const phpVersion = project.phpVersion || '8.4';
