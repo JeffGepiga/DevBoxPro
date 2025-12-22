@@ -842,19 +842,19 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     // FIRST check ownership state to prevent race conditions
     // If another server already owns standard ports, don't even check availability
     let canUseStandard = false;
-    console.log(`[DEBUG startNginx] ENTRY: standardPortOwner=${this.standardPortOwner}`);
+
     if (this.standardPortOwner === null) {
       // No one owns yet - check actual availability
       canUseStandard = await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps);
-      console.log(`[DEBUG startNginx] Owner is null, isPortAvailable(80)=${canUseStandard}`);
+
       if (canUseStandard) {
         this.standardPortOwner = 'nginx'; // Claim ownership immediately
-        console.log(`[DEBUG startNginx] Claimed ownership, now standardPortOwner=${this.standardPortOwner}`);
+
       }
     } else if (this.standardPortOwner === 'nginx') {
       // We already own standard ports
       canUseStandard = true;
-      console.log(`[DEBUG startNginx] Already own standard ports`);
+
     }
     // If standardPortOwner is 'apache', canUseStandard stays false
 
@@ -862,12 +862,12 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       // Standard ports are free and we own them
       httpPort = standardHttp;
       sslPort = standardHttps;
-      console.log(`[DEBUG startNginx] Using STANDARD ports: ${httpPort}/${sslPort}`);
+
     } else {
       // Standard ports blocked or owned by Apache, use Nginx-specific alternates
       httpPort = this.serviceConfigs.nginx.alternatePort;
       sslPort = this.serviceConfigs.nginx.alternateSslPort;
-      console.log(`[DEBUG startNginx] Using ALTERNATE ports: ${httpPort}/${sslPort}`);
+
     }
 
     // Verify chosen ports are available, find alternatives if not
@@ -1263,21 +1263,21 @@ http {
     // FIRST check ownership state to prevent race conditions
     // If another server already owns standard ports, don't even check availability
     let canUseStandard = false;
-    console.log(`[DEBUG startApache] ENTRY: standardPortOwner=${this.standardPortOwner}`);
+
     if (this.standardPortOwner === null) {
       // No one owns yet - check actual availability
       canUseStandard = await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps);
-      console.log(`[DEBUG startApache] Owner is null, isPortAvailable(80)=${canUseStandard}`);
+
       if (canUseStandard) {
         this.standardPortOwner = 'apache'; // Claim ownership immediately
-        console.log(`[DEBUG startApache] Claimed ownership, now standardPortOwner=${this.standardPortOwner}`);
+
       }
     } else if (this.standardPortOwner === 'apache') {
       // We already own standard ports
       canUseStandard = true;
-      console.log(`[DEBUG startApache] Already own standard ports`);
+
     } else {
-      console.log(`[DEBUG startApache] Owner is ${this.standardPortOwner}, using alternates`);
+
     }
     // If standardPortOwner is 'nginx', canUseStandard stays false
 
@@ -1285,12 +1285,12 @@ http {
       // Standard ports are free and we own them
       httpPort = standardHttp;
       httpsPort = standardHttps;
-      console.log(`[DEBUG startApache] Using STANDARD ports: ${httpPort}/${httpsPort}`);
+
     } else {
       // Standard ports blocked or owned by Nginx, use Apache-specific alternates
       httpPort = this.serviceConfigs.apache.alternatePort;
       httpsPort = this.serviceConfigs.apache.alternateSslPort;
-      console.log(`[DEBUG startApache] Using ALTERNATE ports: ${httpPort}/${httpsPort}`);
+
     }
 
     // Verify chosen ports are available, find alternatives if not
@@ -2880,13 +2880,13 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
         const isOnAlternate = config.actualHttpPort !== this.webServerPorts.standard.http;
         sslPort = isOnAlternate ? (config.alternateSslPort || config.sslPort) : config.sslPort;
       }
-      console.log(`[DEBUG getServicePorts] ${serviceName}: Using actualHttpPort=${config.actualHttpPort}, sslPort=${sslPort}`);
+
       return {
         httpPort: config.actualHttpPort,
         sslPort: sslPort,
       };
     }
-    console.log(`[DEBUG getServicePorts] ${serviceName}: actualHttpPort NOT set, using prediction. standardPortOwner=${this.standardPortOwner}`);
+
 
     // For web servers, predict ports based on port ownership
     if (serviceName === 'nginx' || serviceName === 'apache') {

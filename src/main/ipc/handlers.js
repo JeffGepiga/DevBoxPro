@@ -139,10 +139,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     // Get dynamic ports from service manager for the project's web server
     // With first-come-first-served, either server could have 80/443 or 8081/8444
     const ports = service?.getServicePorts(webServer);
-    console.log(`[DEBUG openInBrowser] webServer: ${webServer}, ports:`, ports, `standardPortOwner: ${service?.standardPortOwner}`);
+
     const httpPort = ports?.httpPort || 80;
     const sslPort = ports?.sslPort || 443;
-    console.log(`[DEBUG openInBrowser] Using httpPort: ${httpPort}, sslPort: ${sslPort}, project.ssl: ${projectData.ssl}`);
+
 
     // Build URL with appropriate port
     let url;

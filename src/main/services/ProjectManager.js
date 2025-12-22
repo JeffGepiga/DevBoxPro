@@ -2001,7 +2001,6 @@ server {
     const dataPath = path.join(app.getPath('userData'), 'data');
     const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
     const sslDir = path.join(dataPath, 'ssl', project.domain).replace(/\\/g, '/');
-    console.log(`[DEBUG createApacheVhost] project.domain: ${project.domain}, sslDir: ${sslDir}`);
 
     await fs.ensureDir(vhostsDir);
 
