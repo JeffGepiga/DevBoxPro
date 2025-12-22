@@ -35,6 +35,10 @@ class ProjectManager {
     this.projectServers = new Map();
     this.proxy = httpProxy.createProxyServer({});
     this.compatibilityManager = new CompatibilityManager();
+
+    // Track which project currently owns port 80 for network access
+    // First project to start with networkAccess gets port 80
+    this.networkPort80Owner = null;
   }
 
   async initialize() {
@@ -1213,6 +1217,11 @@ class ProjectManager {
 
       this.runningProjects.delete(id);
 
+      // Release port 80 ownership if this project owned it
+      if (this.networkPort80Owner === id) {
+        this.networkPort80Owner = null;
+      }
+
       // Stop project services that are no longer needed by other running projects
       if (project) {
         const serviceResult = await this.stopProjectServices(project);
@@ -1549,8 +1558,32 @@ class ProjectManager {
 
   getProjectUrl(project) {
     const protocol = project.ssl ? 'https' : 'http';
-    const domain = project.domains?.[0] || `localhost:${project.port}`;
-    return `${protocol}://${domain}`;
+    const domain = project.domains?.[0] || project.domain;
+
+    // Get actual port from ServiceManager based on web server type
+    const webServer = project.webServer || 'nginx';
+    const serviceManager = this.managers.service;
+    const ports = serviceManager?.getServicePorts(webServer);
+
+    // Determine which port to use based on SSL setting
+    // All projects on same web server share the SSL port (SNI handles certificate selection)
+    let port;
+    if (project.ssl) {
+      port = ports?.sslPort || 443;
+    } else {
+      // For HTTP, use project's unique port if network access and not owning port 80
+      if (project.networkAccess && this.networkPort80Owner !== project.id && project.port) {
+        port = project.port;
+      } else {
+        port = ports?.httpPort || 80;
+      }
+    }
+
+    // Only include port in URL if it's not the default (80 for http, 443 for https)
+    const isDefaultPort = (protocol === 'http' && port === 80) || (protocol === 'https' && port === 443);
+    const portSuffix = isDefaultPort ? '' : `:${port}`;
+
+    return `${protocol}://${domain}${portSuffix}`;
   }
 
   getDocumentRoot(project) {
@@ -1778,18 +1811,68 @@ class ProjectManager {
     const httpPort = nginxPorts?.httpPort || 80;
     const httpsPort = nginxPorts?.sslPort || 443;
 
+    // Network Access Logic - Enable binding to all interfaces for LAN access
+    const networkAccess = project.networkAccess || false;
+
+    // First-come-first-served port 80 allocation for network access
+    // Use networkPort80Owner to track which PROJECT owns port 80 (not just which web server)
+    let canUsePort80 = false;
+    if (networkAccess) {
+      // Check if this project can use port 80
+      if (this.networkPort80Owner === null) {
+        // No project owns port 80 yet - check if actually available
+        canUsePort80 = await isPortAvailable(80) && httpPort === 80;
+        if (canUsePort80) {
+          this.networkPort80Owner = project.id; // Claim port 80 for this project
+        }
+      } else if (this.networkPort80Owner === project.id) {
+        // This project already owns port 80
+        canUsePort80 = true;
+      }
+      // If another project owns port 80, canUsePort80 stays false
+    }
+
+    // Determine final port - shared SSL port for all projects on same web server
+    let finalHttpPort;
+    if (networkAccess) {
+      if (canUsePort80) {
+        finalHttpPort = 80; // Clean URL with Port 80
+      } else {
+        // Another project owns port 80 - use project's unique HTTP port
+        finalHttpPort = project.port || httpPort;
+      }
+    } else {
+      finalHttpPort = httpPort;
+    }
+    // All projects on same web server share SSL port (SNI handles certificate selection)
+
+    // Determine listen directive - bind to all interfaces if network access enabled
+    // Note: Don't add default_server as main nginx.conf already has one
+    const listenDirective = networkAccess
+      ? `0.0.0.0:${finalHttpPort}`
+      : `${httpPort}`;
+    const listenDirectiveSsl = networkAccess
+      ? `0.0.0.0:${httpsPort} ssl`
+      : `${httpsPort} ssl`;
+
+    // Build server_name - ONLY add wildcard (_) for port 80 owner to accept IP access
+    // Other projects should NOT have wildcard to allow proper SNI certificate selection
+    const serverName = (networkAccess && canUsePort80)
+      ? `${project.domain} www.${project.domain} _`  // Port 80 owner can match any hostname (for IP access)
+      : `${project.domain} www.${project.domain}`;   // Others: specific domain only (for proper SNI)
+
     // Generate nginx config with both HTTP and HTTPS
     // PHP-CGI runs on phpFpmPort for FastCGI
     let config = `
 # DevBox Pro - ${project.name}
 # Domain: ${project.domain}
 # Generated: ${new Date().toISOString()}
-# Ports: HTTP=${httpPort}, HTTPS=${httpsPort}
+# Ports: HTTP=${finalHttpPort}, HTTPS=${httpsPort}${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}${canUsePort80 ? '\n# Port 80 (first-come-first-served)' : ''}
 
 # HTTP Server
 server {
-    listen ${httpPort};
-    server_name ${project.domain} www.${project.domain};
+    listen ${listenDirective};
+    server_name ${serverName};
     root "${documentRoot.replace(/\\/g, '/')}";
     index index.php index.html index.htm;
 
@@ -1851,9 +1934,9 @@ server {
       config += `
 # HTTPS Server (SSL)
 server {
-    listen ${httpsPort} ssl;
+    listen ${listenDirectiveSsl};
     http2 on;
-    server_name ${project.domain} www.${project.domain};
+    server_name ${serverName};
     root "${documentRoot.replace(/\\/g, '/')}";
     index index.php index.html index.htm;
 
@@ -1917,7 +2000,7 @@ server {
     const { app } = require('electron');
     const dataPath = path.join(app.getPath('userData'), 'data');
     const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
-    const sslDir = path.join(dataPath, 'ssl', project.domain);
+    const sslDir = path.join(dataPath, 'ssl', project.domain).replace(/\\/g, '/');
 
     await fs.ensureDir(vhostsDir);
 
@@ -1946,6 +2029,49 @@ server {
     const httpPort = apachePorts?.httpPort || 80;
     const httpsPort = apachePorts?.sslPort || 443;
 
+    // Network Access Logic - Enable binding to all interfaces for LAN access
+    const networkAccess = project.networkAccess || false;
+
+    // First-come-first-served port 80 allocation for network access
+    // Use networkPort80Owner to track which PROJECT owns port 80 (not just which web server)
+    let canUsePort80 = false;
+    if (networkAccess) {
+      // Check if this project can use port 80
+      if (this.networkPort80Owner === null) {
+        // No project owns port 80 yet - check if actually available
+        canUsePort80 = await isPortAvailable(80) && httpPort === 80;
+        if (canUsePort80) {
+          this.networkPort80Owner = project.id; // Claim port 80 for this project
+        }
+      } else if (this.networkPort80Owner === project.id) {
+        // This project already owns port 80
+        canUsePort80 = true;
+      }
+      // If another project owns port 80, canUsePort80 stays false
+    }
+
+    // Determine final port - shared SSL port for all projects on same web server
+    let finalHttpPort;
+    if (networkAccess) {
+      if (canUsePort80) {
+        finalHttpPort = 80; // Clean URL with Port 80
+      } else {
+        // Another project owns port 80 - use project's unique HTTP port
+        finalHttpPort = project.port || httpPort;
+      }
+    } else {
+      finalHttpPort = httpPort;
+    }
+    // All projects on same web server share SSL port (SNI handles certificate selection)
+
+    const listenAddress = networkAccess ? '0.0.0.0' : '*';
+
+    // Build ServerAlias - ONLY add wildcard (*) for port 80 owner to accept IP access
+    // Other projects should NOT have wildcard to allow proper SNI certificate selection
+    const serverAlias = (networkAccess && canUsePort80)
+      ? `www.${project.domain} *`   // Port 80 owner can match any hostname (for IP access)
+      : `www.${project.domain}`;    // Others: specific domain only (for proper SNI)
+
     // Get PHP-CGI path for this PHP version
     const phpVersion = project.phpVersion || '8.4';
     const platform = process.platform === 'win32' ? 'win' : 'mac';
@@ -1953,17 +2079,19 @@ server {
     const phpCgiPath = path.join(resourcesPath, 'php', phpVersion, platform, 'php-cgi.exe').replace(/\\/g, '/');
 
     // Generate Apache config with both HTTP and HTTPS
+    // NOTE: Listen directives are handled in createApacheConfig (httpd.conf) - not in vhosts
+
     let config = `
 # DevBox Pro - ${project.name}
 # Domain: ${project.domain}
 # Generated: ${new Date().toISOString()}
-# Apache running on ports ${httpPort}/${httpsPort}
-# PHP Version: ${phpVersion}
+# Apache running on ports HTTP=${finalHttpPort}, SSL=${httpsPort}
+# PHP Version: ${phpVersion}${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}${canUsePort80 ? '\n# Port 80 (first-come-first-served)' : ''}
 
 # HTTP Virtual Host
-<VirtualHost *:${httpPort}>
+<VirtualHost ${listenAddress}:${finalHttpPort}>
     ServerName ${project.domain}
-    ServerAlias www.${project.domain}
+    ServerAlias ${serverAlias}
     DocumentRoot "${documentRoot}"
     
     <Directory "${documentRoot}">
@@ -2021,11 +2149,12 @@ server {
 
     // Add HTTPS virtual host if SSL is enabled and certs exist
     if (project.ssl && certsExist) {
+      const listenAddressSsl = networkAccess ? '0.0.0.0' : '*';
       config += `
-# HTTPS Virtual Host (SSL)
-<VirtualHost *:${httpsPort}>
+# HTTPS Virtual Host (SSL) - Port ${httpsPort}
+<VirtualHost ${listenAddressSsl}:${httpsPort}>
     ServerName ${project.domain}
-    ServerAlias www.${project.domain}
+    ServerAlias ${serverAlias}
     DocumentRoot "${documentRoot}"
     
     # SSL Configuration

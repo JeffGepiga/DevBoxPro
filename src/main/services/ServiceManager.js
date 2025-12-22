@@ -47,7 +47,7 @@ class ServiceManager extends EventEmitter {
     // Standard and alternate ports for web servers
     this.webServerPorts = {
       standard: { http: 80, https: 443 },
-      alternate: { http: 8081, https: 8444 },
+      alternate: { http: 8081, https: 8443 },
     };
 
     // Port assignments for versioned services
@@ -61,7 +61,7 @@ class ServiceManager extends EventEmitter {
         defaultPort: DEFAULT_PORTS.nginx || 80,
         sslPort: 443,
         alternatePort: 8081,
-        alternateSslPort: 8444,
+        alternateSslPort: 8443,
         healthCheck: this.checkNginxHealth.bind(this),
         versioned: true,
       },
@@ -835,29 +835,39 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     // Determine which ports to use based on first-come-first-served
     let httpPort, sslPort;
 
-    if (this.standardPortOwner === null) {
-      // No web server owns standard ports yet - try to claim them
-      const standardHttp = this.webServerPorts.standard.http;
-      const standardHttps = this.webServerPorts.standard.https;
+    // Check availability of standard/default ports (80/443) at runtime using PortUtils
+    const standardHttp = this.webServerPorts.standard.http;
+    const standardHttps = this.webServerPorts.standard.https;
 
-      if (await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps)) {
-        // Claim standard ports
-        httpPort = standardHttp;
-        sslPort = standardHttps;
-        this.standardPortOwner = 'nginx';
-      } else {
-        // Standard ports not available, use alternate
-        httpPort = this.webServerPorts.alternate.http;
-        sslPort = this.webServerPorts.alternate.https;
+    // FIRST check ownership state to prevent race conditions
+    // If another server already owns standard ports, don't even check availability
+    let canUseStandard = false;
+
+    if (this.standardPortOwner === null) {
+      // No one owns yet - check actual availability
+      canUseStandard = await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps);
+
+      if (canUseStandard) {
+        this.standardPortOwner = 'nginx'; // Claim ownership immediately
+
       }
     } else if (this.standardPortOwner === 'nginx') {
-      // Nginx already owns standard ports (shouldn't happen, but handle it)
-      httpPort = this.webServerPorts.standard.http;
-      sslPort = this.webServerPorts.standard.https;
+      // We already own standard ports
+      canUseStandard = true;
+
+    }
+    // If standardPortOwner is 'apache', canUseStandard stays false
+
+    if (canUseStandard) {
+      // Standard ports are free and we own them
+      httpPort = standardHttp;
+      sslPort = standardHttps;
+
     } else {
-      // Another web server owns standard ports, use alternate
-      httpPort = this.webServerPorts.alternate.http;
-      sslPort = this.webServerPorts.alternate.https;
+      // Standard ports blocked or owned by Apache, use Nginx-specific alternates
+      httpPort = this.serviceConfigs.nginx.alternatePort;
+      sslPort = this.serviceConfigs.nginx.alternateSslPort;
+
     }
 
     // Verify chosen ports are available, find alternatives if not
@@ -1202,9 +1212,9 @@ http {
     # Include virtual host configs from sites directory
     include ${sitesPath}/*.conf;
 
-    # Default server for unmatched requests
+    # Fallback server for unmatched requests (no default_server to allow project vhosts with _ to match)
     server {
-        listen ${httpPort} default_server;
+        listen ${httpPort};
         server_name localhost;
         root ${dataPath.replace(/\\/g, '/')}/www;
         index index.html index.php;
@@ -1246,29 +1256,56 @@ http {
     // Determine which ports to use based on first-come-first-served
     let httpPort, httpsPort;
 
-    if (this.standardPortOwner === null) {
-      // No web server owns standard ports yet - try to claim them
-      const standardHttp = this.webServerPorts.standard.http;
-      const standardHttps = this.webServerPorts.standard.https;
+    // Check availability of standard/default ports (80/443) at runtime using PortUtils
+    const standardHttp = this.webServerPorts.standard.http;
+    const standardHttps = this.webServerPorts.standard.https;
 
-      if (await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps)) {
-        // Claim standard ports
-        httpPort = standardHttp;
-        httpsPort = standardHttps;
-        this.standardPortOwner = 'apache';
-      } else {
-        // Standard ports not available, use alternate
-        httpPort = this.webServerPorts.alternate.http;
-        httpsPort = this.webServerPorts.alternate.https;
+    // FIRST check ownership state to prevent race conditions
+    // If another server already owns standard ports, don't even check availability
+    let canUseStandard = false;
+
+    if (this.standardPortOwner === null) {
+      // No one owns yet - check actual availability
+      canUseStandard = await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps);
+
+      if (canUseStandard) {
+        this.standardPortOwner = 'apache'; // Claim ownership immediately
+
       }
     } else if (this.standardPortOwner === 'apache') {
-      // Apache already owns standard ports (shouldn't happen, but handle it)
-      httpPort = this.webServerPorts.standard.http;
-      httpsPort = this.webServerPorts.standard.https;
+      // We already own standard ports
+      canUseStandard = true;
+
     } else {
-      // Another web server owns standard ports, use alternate
-      httpPort = this.webServerPorts.alternate.http;
-      httpsPort = this.webServerPorts.alternate.https;
+
+    }
+    // If standardPortOwner is 'nginx', canUseStandard stays false
+
+    if (canUseStandard) {
+      // Standard ports are free and we own them
+      httpPort = standardHttp;
+      httpsPort = standardHttps;
+
+    } else {
+      // Standard ports blocked or owned by Nginx, use Apache-specific alternates
+      httpPort = this.serviceConfigs.apache.alternatePort;
+      httpsPort = this.serviceConfigs.apache.alternateSslPort;
+
+    }
+
+    // Verify chosen ports are available, find alternatives if not
+    // Pre-start cleanup for Windows: If ports are busy, it might be a zombie process
+    if (process.platform === 'win32') {
+      if (!(await isPortAvailable(httpPort)) || !(await isPortAvailable(httpsPort))) {
+        const { killProcessByName } = require('../utils/SpawnUtils');
+        try {
+          this.managers.log?.systemInfo('Port blocked, attempting to clear zombie Apache processes...');
+          await killProcessByName('httpd.exe', true);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (e) {
+          // Ignore errors if no process found
+        }
+      }
     }
 
     // Verify chosen ports are available, find alternatives if not
@@ -1414,7 +1451,7 @@ http {
 
     // Wait for Apache to be ready
     try {
-      await this.waitForService('apache', 10000);
+      await this.waitForService('apache', 20000);
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
@@ -1422,6 +1459,20 @@ http {
       status.status = 'error';
       status.error = `Apache ${version} failed to start properly: ${error.message}`;
       this.runningVersions.get('apache').delete(version);
+
+      // Attempt cleanup
+      try {
+        if (process.platform === 'win32') {
+          const { killProcessByName } = require('../utils/SpawnUtils');
+          await killProcessByName('httpd.exe', true);
+        }
+        if (proc && !proc.killed) {
+          proc.kill();
+        }
+      } catch (cleanupError) {
+        // Ignore
+      }
+
       throw error;
     }
   }
@@ -1430,9 +1481,37 @@ http {
     const dataPath = path.join(app.getPath('userData'), 'data');
     const mimeTypesPath = path.join(apachePath, 'conf', 'mime.types').replace(/\\/g, '/');
 
+    // Runtime check: Which project currently owns Port 80 for network access?
+    const networkPort80OwnerId = this.managers.project?.networkPort80Owner;
+
+    // Collect all unique ports from network-accessible Apache projects
+    // We explicitly bind to 0.0.0.0 to ensure consistent IPv4 handling and avoid ambiguous 'Listen 80' (dual-stack) issues
+    const listenSet = new Set([`Listen 0.0.0.0:${httpPort}`, `Listen 0.0.0.0:${httpsPort}`]);
+
+    const allProjects = this.configStore?.get('projects', []) || [];
+    const networkApacheProjects = allProjects.filter(p =>
+      p.networkAccess && p.webServer === 'apache'
+    );
+
+    networkApacheProjects.forEach(p => {
+      if (p.id === networkPort80OwnerId) {
+        // This Apache project owns Network Port 80.
+        // It is already covered by 'Listen 80' (if httpPort is 80) or handled elsewhere.
+        // We do NOT need to explicitly add Listen 0.0.0.0:80 here as it causes double-bind crash on Windows.
+      } else {
+        // Otherwise, use its assigned unique port (if defined and valid)
+        if (p.port && p.port !== 80) {
+          listenSet.add(`Listen 0.0.0.0:${p.port}`);
+          // Note: SSL port is project.port + 1, added to vhost config directly
+          // We DON'T add it to httpd.conf Listen to avoid conflict with Nginx using same ports
+        }
+      }
+    });
+
+    const listenDirectives = Array.from(listenSet).join('\n');
+
     const config = `ServerRoot "${apachePath.replace(/\\/g, '/')}"
-Listen ${httpPort}
-Listen ${httpsPort}
+${listenDirectives}
 
 # Core modules
 LoadModule authz_core_module modules/mod_authz_core.so
@@ -2794,11 +2873,20 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
 
     // If actual ports are set, use those
     if (config.actualHttpPort) {
+      // If actualSslPort is set, use it. Otherwise check if we're on alternate ports
+      let sslPort = config.actualSslPort;
+      if (!sslPort) {
+        // Determine if we should use alternate or standard based on HTTP port
+        const isOnAlternate = config.actualHttpPort !== this.webServerPorts.standard.http;
+        sslPort = isOnAlternate ? (config.alternateSslPort || config.sslPort) : config.sslPort;
+      }
+
       return {
         httpPort: config.actualHttpPort,
-        sslPort: config.actualSslPort || config.sslPort,
+        sslPort: sslPort,
       };
     }
+
 
     // For web servers, predict ports based on port ownership
     if (serviceName === 'nginx' || serviceName === 'apache') {
@@ -2810,8 +2898,8 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
         if (otherStatus?.status === 'running') {
           // Other server is running, use alternate ports
           return {
-            httpPort: this.webServerPorts.alternate.http,
-            sslPort: this.webServerPorts.alternate.https,
+            httpPort: config.alternatePort || this.webServerPorts.alternate.http,
+            sslPort: config.alternateSslPort || this.webServerPorts.alternate.https,
           };
         }
         // No other server running, assume we'll get standard ports
@@ -2828,8 +2916,8 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       } else {
         // Other server owns standard ports, we get alternate
         return {
-          httpPort: this.webServerPorts.alternate.http,
-          sslPort: this.webServerPorts.alternate.https,
+          httpPort: config.alternatePort || this.webServerPorts.alternate.http,
+          sslPort: config.alternateSslPort || this.webServerPorts.alternate.https,
         };
       }
     }

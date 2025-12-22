@@ -139,8 +139,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     // Get dynamic ports from service manager for the project's web server
     // With first-come-first-served, either server could have 80/443 or 8081/8444
     const ports = service?.getServicePorts(webServer);
+
     const httpPort = ports?.httpPort || 80;
     const sslPort = ports?.sslPort || 443;
+
 
     // Build URL with appropriate port
     let url;
@@ -273,6 +275,38 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('services:getResourceUsage', async () => {
     return service.getResourceUsage();
+  });
+
+  // Get actual web server ports for a specific web server type
+  ipcMain.handle('services:getWebServerPorts', async (event, webServerType) => {
+    const ports = service?.getServicePorts(webServerType);
+    return ports || { httpPort: 80, sslPort: 443 };
+  });
+
+  // Get actual network access port for a specific project
+  // This considers per-project port 80 ownership for network access
+  ipcMain.handle('services:getProjectNetworkPort', async (event, projectId) => {
+    const projectData = project.getProject(projectId);
+    if (!projectData) {
+      return { httpPort: 80, sslPort: 443 };
+    }
+
+    const webServer = projectData.webServer || 'nginx';
+    const webServerPorts = service?.getServicePorts(webServer) || { httpPort: 80, sslPort: 443 };
+
+    // Check if this project owns port 80 for network access
+    if (projectData.networkAccess) {
+      if (project.networkPort80Owner === projectId) {
+        // This project owns port 80
+        return { httpPort: 80, sslPort: webServerPorts.sslPort };
+      } else if (project.networkPort80Owner !== null) {
+        // Another project owns port 80, use this project's unique port
+        return { httpPort: projectData.port || webServerPorts.httpPort, sslPort: webServerPorts.sslPort };
+      }
+    }
+
+    // No network access or first project, return web server ports
+    return webServerPorts;
   });
 
   // Get running versions for a service (or all services if no name provided)
@@ -504,6 +538,11 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('system:getPlatform', async () => {
     return process.platform;
+  });
+
+  ipcMain.handle('system:getLocalIpAddresses', async () => {
+    if (!managers.webServer) return [];
+    return managers.webServer.getLocalIpAddresses();
   });
 
   ipcMain.handle('system:checkForUpdates', async () => {

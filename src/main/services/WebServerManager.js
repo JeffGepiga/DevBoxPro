@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const treeKill = require('tree-kill');
+const os = require('os');
 
 class WebServerManager {
   constructor(configStore, managers) {
@@ -37,6 +38,23 @@ class WebServerManager {
 
   getServerType() {
     return this.serverType;
+  }
+
+  // Get local network IP addresses for network access feature
+  getLocalIpAddresses() {
+    const interfaces = os.networkInterfaces();
+    const addresses = [];
+
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        // Skip internal (loopback) and non-IPv4 addresses
+        if (iface.family === 'IPv4' && !iface.internal) {
+          addresses.push(iface.address);
+        }
+      }
+    }
+
+    return addresses;
   }
 
   // Get path to nginx executable
@@ -87,7 +105,7 @@ class WebServerManager {
 
   // Generate Nginx config for a project
   async generateNginxConfig(project) {
-    const { id, name, domain, path: projectPath, phpVersion, ssl } = project;
+    const { id, name, domain, path: projectPath, phpVersion, ssl, networkAccess } = project;
     const port = project.port || 80;
     const sslPort = project.sslPort || 443;
     const phpFpmPort = 9000 + parseInt(id.slice(-4), 16) % 1000; // Unique port per project
@@ -115,14 +133,40 @@ class WebServerManager {
 
     const fastcgiParamsPath = path.join(this.resourcesPath, 'nginx', nginxVersion, platform, 'conf', 'fastcgi_params').replace(/\\/g, '/');
 
+    // Determine document root
+    // Default to /public for Laravel/modern frameworks, but fallback to root if it doesn't exist
+    // or if project type is explicitly wordpress/simple-php
+    let docRoot = path.join(projectPath, 'public');
+    if (project.type === 'wordpress' || !await fs.pathExists(docRoot)) {
+      docRoot = projectPath;
+    }
+    const docRootNginx = docRoot.replace(/\\/g, '/');
+
+    // Network Access Logic
+    const allProjects = this.configStore.get('projects', []);
+    const networkProjects = allProjects.filter(p => p.networkAccess);
+    // Use port 80 if this is the only project with network access
+    const usePort80 = networkAccess && networkProjects.length === 1 && networkProjects[0].id === id;
+
+    // Determine final port and listen directive
+    const finalPort = usePort80 ? 80 : port;
+    const listenDirective = networkAccess ? `0.0.0.0:${finalPort}` : `${finalPort}`;
+    const listenDirectiveSsl = networkAccess ? `0.0.0.0:${sslPort} ssl http2` : `${sslPort} ssl http2`;
+
+    // Build server_name - add wildcard if network access is enabled to accept any hostname
+    const serverName = networkAccess
+      ? `${domain || 'localhost'} _`  // _ is a catch-all server name
+      : (domain || 'localhost');
+
     let serverConfig = `
 # DevBox Pro - ${name}
-# Auto-generated configuration
+# Auto-generated configuration${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}
+${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
 
 server {
-    listen ${port};
-    server_name ${domain || 'localhost'};
-    root "${projectPath.replace(/\\/g, '/')}/public";
+    listen ${listenDirective}${usePort80 ? ' default_server' : ''};
+    server_name ${serverName};
+    root "${docRootNginx}";
     index index.php index.html index.htm;
 
     charset utf-8;
@@ -158,9 +202,9 @@ server {
       serverConfig += `
 
 server {
-    listen ${sslPort} ssl http2;
-    server_name ${domain || 'localhost'};
-    root "${projectPath.replace(/\\/g, '/')}/public";
+    listen ${listenDirectiveSsl};
+    server_name ${serverName};
+    root "${docRootNginx}";
     index index.php index.html index.htm;
 
     ssl_certificate "${certPath.replace(/\\/g, '/')}/cert.pem";
@@ -203,20 +247,39 @@ server {
 
   // Generate Apache config for a project
   async generateApacheConfig(project) {
-    const { id, name, domain, path: projectPath, phpVersion, ssl } = project;
+    const { id, name, domain, path: projectPath, phpVersion, ssl, networkAccess } = project;
     const port = project.port || 80;
     const sslPort = project.sslPort || 443;
     const phpFpmPort = 9000 + parseInt(id.slice(-4), 16) % 1000;
 
+    // Network Access Logic
+    const allProjects = this.configStore.get('projects', []);
+    const networkProjects = allProjects.filter(p => p.networkAccess);
+    // Use port 80 if this is the only project with network access
+    const usePort80 = networkAccess && networkProjects.length === 1 && networkProjects[0].id === id;
+
+    const finalPort = usePort80 ? 80 : port;
+
+    // Determine document root
+    let docRoot = path.join(projectPath, 'public');
+    if (project.type === 'wordpress' || !await fs.pathExists(docRoot)) {
+      docRoot = projectPath;
+    }
+    const docRootApache = docRoot.replace(/\\/g, '/');
+
+    // Add ServerAlias * when network access is enabled to accept any hostname
+    const serverAliasDirective = networkAccess ? '\n    ServerAlias *' : '';
+
     let vhostConfig = `
 # DevBox Pro - ${name}
-# Auto-generated configuration
+# Auto-generated configuration${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}
+${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
 
-<VirtualHost *:${port}>
-    ServerName ${domain || 'localhost'}
-    DocumentRoot "${projectPath}/public"
+<VirtualHost *:${finalPort}>
+    ServerName ${domain || 'localhost'}${serverAliasDirective}
+    DocumentRoot "${docRootApache}"
     
-    <Directory "${projectPath}/public">
+    <Directory "${docRootApache}">
         Options Indexes FollowSymLinks MultiViews
         AllowOverride All
         Require all granted
@@ -240,14 +303,14 @@ server {
       vhostConfig += `
 
 <VirtualHost *:${sslPort}>
-    ServerName ${domain || 'localhost'}
-    DocumentRoot "${projectPath}/public"
+    ServerName ${domain || 'localhost'}${serverAliasDirective}
+    DocumentRoot "${docRootApache}"
     
     SSLEngine on
     SSLCertificateFile "${certPath}/cert.pem"
     SSLCertificateKeyFile "${certPath}/key.pem"
     
-    <Directory "${projectPath}/public">
+    <Directory "${docRootApache}">
         Options Indexes FollowSymLinks MultiViews
         AllowOverride All
         Require all granted
