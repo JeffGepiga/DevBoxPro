@@ -58,6 +58,8 @@ contextBridge.exposeInMainWorld('devbox', {
     getResourceUsage: () => ipcRenderer.invoke('services:getResourceUsage'),
     getRunningVersions: (service) => ipcRenderer.invoke('services:getRunningVersions', service),
     isVersionRunning: (service, version) => ipcRenderer.invoke('services:isVersionRunning', service, version),
+    getWebServerPorts: (webServerType) => ipcRenderer.invoke('services:getWebServerPorts', webServerType),
+    getProjectNetworkPort: (projectId) => ipcRenderer.invoke('services:getProjectNetworkPort', projectId),
   },
 
   // Database operations

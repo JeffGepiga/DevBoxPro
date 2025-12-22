@@ -51,6 +51,7 @@ function ProjectDetail() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [webServerPorts, setWebServerPorts] = useState({ httpPort: 80, sslPort: 443 });
 
   // Update tab from URL params
   useEffect(() => {
@@ -68,6 +69,19 @@ function ProjectDetail() {
     if (foundProject) {
       loadLogs();
       loadProcesses();
+      // Fetch actual web server ports for network access URLs
+      const fetchWebServerPorts = async () => {
+        try {
+          const webServer = foundProject.webServer || 'nginx';
+          const ports = await window.devbox?.services?.getWebServerPorts(webServer);
+          if (ports) {
+            setWebServerPorts(ports);
+          }
+        } catch (e) {
+          // Ignore errors, keep default values
+        }
+      };
+      fetchWebServerPorts();
     }
   }, [id, projects]);
 
@@ -432,6 +446,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
   const [pendingChanges, setPendingChanges] = useState({});
   const [localIpAddresses, setLocalIpAddresses] = useState([]);
   const [otherNetworkProjectsCount, setOtherNetworkProjectsCount] = useState(0);
+  const [webServerPorts, setWebServerPorts] = useState({ httpPort: 80, sslPort: 443 });
   const [versionOptions, setVersionOptions] = useState({
     mysql: [],
     mariadb: [],
@@ -492,14 +507,22 @@ function OverviewTab({ project, processes, refreshProjects }) {
 
         // Check other projects for network access to determine port 80 usage
         const allProjects = await window.devbox?.projects.getAll();
-        const others = allProjects?.filter(p => p.id !== project.id && p.networkAccess) || [];
+        const others = allProjects?.filter(p => p.id !== project?.id && p.networkAccess) || [];
         setOtherNetworkProjectsCount(others.length);
+
+        // Fetch actual network port for THIS project (considers per-project port 80 ownership)
+        if (project?.id) {
+          const ports = await window.devbox?.services?.getProjectNetworkPort(project.id);
+          if (ports) {
+            setWebServerPorts(ports);
+          }
+        }
       } catch (error) {
         // Error loading local IPs or projects
       }
     };
     loadLocalIps();
-  }, [project.id]);
+  }, [project?.id, project?.webServer, project?.networkAccess]);
 
   // Check if there are pending changes
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
@@ -807,8 +830,9 @@ function OverviewTab({ project, processes, refreshProjects }) {
               </p>
               <div className="space-y-1">
                 {localIpAddresses.map((ip, index) => {
-                  const willBeSole = otherNetworkProjectsCount === 0;
-                  const displayPort = willBeSole ? '' : `:${project.port}`;
+                  // Use actual web server port for network access (with safe defaults)
+                  const httpPort = webServerPorts?.httpPort || 80;
+                  const displayPort = httpPort === 80 ? '' : `:${httpPort}`;
                   return (
                     <p key={index} className="text-xs text-blue-600 dark:text-blue-400 font-mono">
                       http://{ip}{displayPort}
@@ -817,7 +841,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
                 })}
               </div>
               <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
-                ⚠️ Make sure Windows Firewall allows incoming connections on port {otherNetworkProjectsCount === 0 ? '80' : project.port}.
+                ⚠️ Make sure Windows Firewall allows incoming connections on port {webServerPorts?.httpPort || 80}.
               </p>
             </div>
           )}
