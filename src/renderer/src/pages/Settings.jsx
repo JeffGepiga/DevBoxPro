@@ -1122,9 +1122,9 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
 
       {/* Clear Data Modal */}
       {showClearDataModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
-            <div className="p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="p-6 overflow-y-auto flex-1">
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-3 rounded-full bg-red-100 dark:bg-red-900/30">
                   <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
@@ -1145,13 +1145,14 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
                 </p>
                 <ul className="text-sm text-gray-600 dark:text-gray-400 mt-2 list-disc list-inside space-y-1">
                   <li>All downloaded binaries (PHP, MySQL, Redis, Node.js, Nginx, Apache, Composer, etc.)</li>
+                  <li>All database data (MySQL and MariaDB databases)</li>
                   <li>All project configurations</li>
                   <li>All SSL certificates</li>
-                  <li>All service configurations</li>
+                  <li>All service configurations and logs</li>
                   <li>CLI tool installation</li>
                 </ul>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">
-                  You will need to re-download all binaries after clearing.
+                  You will need to re-download all binaries and recreate databases after clearing.
                 </p>
               </div>
 
@@ -1246,7 +1247,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
             </div>
 
             {/* Modal footer */}
-            <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+            <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3 flex-shrink-0">
               <button
                 onClick={handleCancelClearData}
                 className="btn-secondary"

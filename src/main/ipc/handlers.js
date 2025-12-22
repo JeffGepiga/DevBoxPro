@@ -57,6 +57,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return project.registerExistingProject(config);
   });
 
+  ipcMain.handle('projects:detectType', async (event, folderPath) => {
+    return project.detectProjectTypeFromPath(folderPath);
+  });
+
   ipcMain.handle('projects:start', async (event, id) => {
     const result = await project.startProject(id);
     mainWindow?.webContents.send('project:statusChanged', {
@@ -659,6 +663,29 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
           // Cleared CLI directory
         } catch (e) {
           managers.log?.systemError('Error clearing CLI directory', { error: e.message });
+        }
+      }
+
+      // Clear data directory (database files, web server configs, SSL certs, logs)
+      const dataPath = path.join(app.getPath('userData'), 'data');
+      if (await fs.pathExists(dataPath)) {
+        try {
+          await fs.remove(dataPath);
+          // Cleared data directory including database files
+        } catch (e) {
+          managers.log?.systemError('Error clearing data directory', { error: e.message });
+          // If we can't delete the whole thing, try to delete subdirectories
+          const subdirs = ['mysql', 'mariadb', 'nginx', 'apache', 'ssl', 'logs'];
+          for (const subdir of subdirs) {
+            try {
+              const subdirPath = path.join(dataPath, subdir);
+              if (await fs.pathExists(subdirPath)) {
+                await fs.remove(subdirPath);
+              }
+            } catch (err) {
+              managers.log?.systemError(`Error clearing data/${subdir}`, { error: err.message });
+            }
+          }
         }
       }
 

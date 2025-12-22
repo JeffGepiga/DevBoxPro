@@ -670,8 +670,6 @@ function OverviewTab({ project, processes, refreshProjects }) {
     { id: 'mariadb', name: 'MariaDB', icon: '🗃️', installed: isAnyVersionInstalled(binariesStatus?.mariadb), isDatabase: true, hasVersions: true },
     { id: 'redis', name: 'Redis', icon: '⚡', installed: isAnyVersionInstalled(binariesStatus?.redis), hasVersions: true },
     { id: 'nodejs', name: 'Node.js', icon: <NodeJsIcon className="w-5 h-5 text-green-600" />, installed: isAnyVersionInstalled(binariesStatus?.nodejs), hasVersions: true },
-    { id: 'mailpit', name: 'Mailpit', icon: '📧', installed: binariesStatus?.mailpit?.installed === true },
-    { id: 'phpmyadmin', name: 'phpMyAdmin', icon: '🔧', installed: binariesStatus?.phpmyadmin?.installed === true },
     { id: 'queue', name: 'Queue Worker', icon: '📋', installed: true }, // Always available for Laravel
   ];
 

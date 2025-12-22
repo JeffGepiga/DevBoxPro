@@ -1636,6 +1636,22 @@ class ProjectManager {
     }
   }
 
+  /**
+   * Detect project info from a folder path (for Import Project feature)
+   * @param {string} folderPath - Path to the folder to analyze
+   * @returns {Object} Project info with name, path, and detected type
+   */
+  async detectProjectTypeFromPath(folderPath) {
+    const type = await this.detectProjectType(folderPath);
+    const name = path.basename(folderPath);
+
+    return {
+      name,
+      path: folderPath,
+      type
+    };
+  }
+
   getDefaultEnvironment(projectType, projectName, port) {
     const baseEnv = {
       APP_ENV: 'local',
