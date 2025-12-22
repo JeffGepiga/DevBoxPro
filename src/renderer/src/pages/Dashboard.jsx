@@ -286,59 +286,7 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Quick Actions
-        </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <QuickAction
-            icon={Play}
-            label="Start All"
-            onClick={() => window.devbox?.services.startAll()}
-          />
-          <QuickAction
-            icon={Square}
-            label="Stop All"
-            onClick={() => window.devbox?.services.stopAll()}
-          />
-          <QuickAction
-            icon={Globe}
-            label="Open phpMyAdmin"
-            onClick={async () => {
-              // Check if phpMyAdmin is running, start if not
-              if (services.phpmyadmin?.status !== 'running') {
-                try {
-                  await window.devbox?.services.start('phpmyadmin');
-                  // Wait a moment for service to be ready
-                  await new Promise(resolve => setTimeout(resolve, 1500));
-                } catch (err) {
-                  // Failed to start phpMyAdmin
-                }
-              }
-              const url = await window.devbox?.database.getPhpMyAdminUrl();
-              if (url) window.devbox?.system.openExternal(url);
-            }}
-          />
-          <QuickAction
-            icon={ExternalLink}
-            label="Open Mailpit"
-            onClick={async () => {
-              // Check if Mailpit is running, start if not
-              if (services.mailpit?.status !== 'running') {
-                try {
-                  await window.devbox?.services.start('mailpit');
-                  // Wait a moment for service to be ready
-                  await new Promise(resolve => setTimeout(resolve, 1500));
-                } catch (err) {
-                  // Failed to start Mailpit
-                }
-              }
-              window.devbox?.system.openExternal('http://localhost:8025');
-            }}
-          />
-        </div>
-      </div>
+
     </div>
   );
 }
@@ -476,16 +424,6 @@ function ServiceRow({ serviceName, version, isRunning, port, serviceInfo }) {
   );
 }
 
-function QuickAction({ icon: Icon, label, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className="card p-4 flex flex-col items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
-    >
-      <Icon className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</span>
-    </button>
-  );
-}
+
 
 export default Dashboard;

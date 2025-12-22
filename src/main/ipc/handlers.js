@@ -377,8 +377,8 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return database.runQuery(databaseName, query);
   });
 
-  ipcMain.handle('database:getPhpMyAdminUrl', async () => {
-    return database.getPhpMyAdminUrl();
+  ipcMain.handle('database:getPhpMyAdminUrl', async (event, dbType, version) => {
+    return database.getPhpMyAdminUrl(dbType, version);
   });
 
   ipcMain.handle('database:getActiveDatabaseType', async () => {

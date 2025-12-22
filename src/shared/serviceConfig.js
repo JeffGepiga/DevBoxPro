@@ -21,7 +21,7 @@ const SERVICE_VERSIONS = {
 // This allows running multiple versions simultaneously on different ports
 const VERSION_PORT_OFFSETS = {
   mysql: { '8.4': 0, '8.0': 1, '5.7': 2 },
-  mariadb: { '11.4': 10, '10.11': 11, '10.6': 12 },
+  mariadb: { '11.4': 0, '10.11': 1, '10.6': 2 },
   redis: { '7.4': 0, '7.2': 1, '6.2': 2 },
   nginx: { '1.28': 0, '1.26': 1, '1.24': 2 },
   apache: { '2.4': 0 },
@@ -30,7 +30,7 @@ const VERSION_PORT_OFFSETS = {
 // Default service ports
 const DEFAULT_PORTS = {
   mysql: 3306,
-  mariadb: 3306,  // Uses offset to avoid conflict with MySQL
+  mariadb: 3310,  // Base port 3310 to avoid conflict with MySQL (3306-3309)
   redis: 6379,
   nginx: 80,
   apache: 8081,
@@ -110,7 +110,7 @@ const SERVICE_INFO = {
 function getServicePort(serviceName, version) {
   const basePort = DEFAULT_PORTS[serviceName];
   if (!basePort) return null;
-  
+
   const offset = VERSION_PORT_OFFSETS[serviceName]?.[version] || 0;
   return basePort + offset;
 }

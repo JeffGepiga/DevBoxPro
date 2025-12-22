@@ -6,6 +6,7 @@ const { app } = require('electron');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
 const { Transform } = require('stream');
+const { SERVICE_VERSIONS } = require('../../shared/serviceConfig');
 
 class DatabaseManager {
   constructor(resourcePath, configStore, managers = {}) {
@@ -136,6 +137,71 @@ class DatabaseManager {
       this.managers.log?.systemError('Error saving database credentials', { error: error.message });
       throw new Error(`Failed to save credentials: ${error.message}`);
     }
+  }
+
+
+
+  // Get the URL for phpMyAdmin with the correct server selected
+  async getPhpMyAdminUrl(dbType = null, version = null) {
+    if (this.managers.service) {
+      // Check if phpMyAdmin is running, start if not
+      const pmaStatus = this.managers.service.serviceStatus.get('phpmyadmin');
+      if (pmaStatus?.status !== 'running') {
+        try {
+          await this.managers.service.startService('phpmyadmin');
+          // Wait a moment for service to be ready
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        } catch (err) {
+          // Failed to start phpMyAdmin
+          this.managers.log?.systemError('Failed to start phpMyAdmin', { error: err.message });
+          return null;
+        }
+      }
+
+      const pmaPort = this.managers.service.serviceConfigs.phpmyadmin.actualPort || 8080;
+      let serverId = 1; // Default to first server
+
+      // If specific type/version requested, find its server ID
+      // This matches the logic in ServiceManager.updatePhpMyAdminConfig
+      if (dbType && version) {
+        let currentId = 1;
+        let found = false;
+
+        // MySQL versions
+        const mysqlVersions = (SERVICE_VERSIONS.mysql || []).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+        for (const v of mysqlVersions) {
+          if (dbType === 'mysql' && version === v) {
+            serverId = currentId;
+            found = true;
+            break;
+          }
+          currentId++;
+        }
+
+        if (!found) {
+          // MariaDB versions
+          const mariadbVersions = (SERVICE_VERSIONS.mariadb || []).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+          for (const v of mariadbVersions) {
+            if (dbType === 'mariadb' && version === v) {
+              serverId = currentId;
+              found = true;
+              break;
+            }
+            currentId++;
+          }
+        }
+      } else {
+        // If no specific version requested, try to use the active one
+        const activeType = this.getActiveDatabaseType();
+        const activeVersion = this.getActiveDatabaseVersion();
+
+        // Recursively call with active details
+        return this.getPhpMyAdminUrl(activeType, activeVersion);
+      }
+
+      return `http://localhost:${pmaPort}/index.php?server=${serverId}`;
+    }
+    return null;
   }
 
   // Create an init file with SQL commands to reset credentials
