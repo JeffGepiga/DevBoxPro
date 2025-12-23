@@ -2,7 +2,14 @@
   "version": "1.0.0",
   "lastUpdated": "2024-12-19",
   "php": {
-    "versions": ["8.4", "8.3", "8.2", "8.1", "8.0", "7.4"],
+    "versions": [
+      "8.4",
+      "8.3",
+      "8.2",
+      "8.1",
+      "8.0",
+      "7.4"
+    ],
     "downloads": {
       "8.4": {
         "win": {
@@ -71,7 +78,11 @@
     }
   },
   "mysql": {
-    "versions": ["8.4", "8.0", "5.7"],
+    "versions": [
+      "8.4",
+      "8.0",
+      "5.7"
+    ],
     "downloads": {
       "8.4": {
         "win": {
@@ -109,7 +120,11 @@
     }
   },
   "mariadb": {
-    "versions": ["11.4", "10.11", "10.6"],
+    "versions": [
+      "11.4",
+      "10.11",
+      "10.6"
+    ],
     "downloads": {
       "11.4": {
         "win": {
@@ -147,7 +162,11 @@
     }
   },
   "redis": {
-    "versions": ["7.4", "7.2", "6.2"],
+    "versions": [
+      "7.4",
+      "7.2",
+      "6.2"
+    ],
     "downloads": {
       "7.4": {
         "win": {
@@ -188,7 +207,11 @@
     }
   },
   "nginx": {
-    "versions": ["1.28", "1.26", "1.24"],
+    "versions": [
+      "1.28",
+      "1.26",
+      "1.24"
+    ],
     "downloads": {
       "1.28": {
         "win": {
@@ -229,7 +252,9 @@
     }
   },
   "apache": {
-    "versions": ["2.4"],
+    "versions": [
+      "2.4"
+    ],
     "downloads": {
       "2.4": {
         "win": {
@@ -245,7 +270,12 @@
     }
   },
   "nodejs": {
-    "versions": ["22", "20", "18", "16"],
+    "versions": [
+      "22",
+      "20",
+      "18",
+      "16"
+    ],
     "downloads": {
       "22": {
         "win": {
@@ -294,7 +324,9 @@
     }
   },
   "mailpit": {
-    "versions": ["latest"],
+    "versions": [
+      "latest"
+    ],
     "downloads": {
       "latest": {
         "win": {
@@ -309,7 +341,9 @@
     }
   },
   "phpmyadmin": {
-    "versions": ["latest"],
+    "versions": [
+      "latest"
+    ],
     "downloads": {
       "latest": {
         "all": {
@@ -320,13 +354,33 @@
     }
   },
   "composer": {
-    "versions": ["latest"],
+    "versions": [
+      "latest"
+    ],
     "downloads": {
       "latest": {
         "all": {
           "url": "https://getcomposer.org/download/latest-stable/composer.phar",
           "filename": "composer.phar"
         }
+      }
+    }
+  },
+  "git": {
+    "versions": [
+      "portable"
+    ],
+    "downloads": {
+      "portable": {
+        "win": {
+          "url": "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.2/PortableGit-2.47.1.2-64-bit.7z.exe",
+          "filename": "PortableGit-2.47.1.2-64-bit.7z.exe"
+        },
+        "mac": {
+          "url": "builtin",
+          "note": "Install via: xcode-select --install or brew install git"
+        },
+        "label": "Portable"
       }
     }
   }

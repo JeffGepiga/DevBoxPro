@@ -946,6 +946,11 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return managers.binaryDownload.downloadComposer();
   });
 
+  ipcMain.handle('binaries:downloadGit', async () => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadGit();
+  });
+
   ipcMain.handle('binaries:cancelDownload', async (event, id) => {
     if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
     return managers.binaryDownload.cancelDownload(id);
@@ -1260,6 +1265,48 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       }
     }
   }, 5000);
+
+  // ============ GIT HANDLERS ============
+  ipcMain.handle('git:isAvailable', async () => {
+    if (!managers.git) return { available: false, path: null, source: null };
+    return managers.git.isGitAvailable();
+  });
+
+  ipcMain.handle('git:clone', async (event, url, destPath, options = {}) => {
+    if (!managers.git) throw new Error('Git manager not initialized');
+
+    // Set up progress callback to send to renderer
+    const onProgress = (progress) => {
+      mainWindow?.webContents.send('git:cloneProgress', progress);
+    };
+
+    return managers.git.cloneRepository(url, destPath, { ...options, onProgress });
+  });
+
+  ipcMain.handle('git:testAuth', async (event, url, credentials) => {
+    if (!managers.git) throw new Error('Git manager not initialized');
+    return managers.git.testAuthentication(url, credentials);
+  });
+
+  ipcMain.handle('git:generateSshKey', async () => {
+    if (!managers.git) throw new Error('Git manager not initialized');
+    return managers.git.generateSshKey();
+  });
+
+  ipcMain.handle('git:getSshPublicKey', async () => {
+    if (!managers.git) throw new Error('Git manager not initialized');
+    return managers.git.getSshPublicKey();
+  });
+
+  ipcMain.handle('git:regenerateSshKey', async () => {
+    if (!managers.git) throw new Error('Git manager not initialized');
+    return managers.git.regenerateSshKey();
+  });
+
+  ipcMain.handle('git:validateUrl', async (event, url) => {
+    if (!managers.git) throw new Error('Git manager not initialized');
+    return managers.git.validateRepositoryUrl(url);
+  });
 
   // IPC handlers registered
 }

@@ -10,6 +10,7 @@ const { LogManager } = require('./services/LogManager');
 const BinaryDownloadManager = require('./services/BinaryDownloadManager');
 const { WebServerManager } = require('./services/WebServerManager');
 const CliManager = require('./services/CliManager');
+const { GitManager } = require('./services/GitManager');
 const { ConfigStore } = require('./utils/ConfigStore');
 const { setupIpcHandlers } = require('./ipc/handlers');
 
@@ -240,6 +241,7 @@ async function initializeManagers() {
   managers.binaryDownload = new BinaryDownloadManager();
   managers.webServer = new WebServerManager(configStore, managers);
   managers.cli = new CliManager(configStore, managers);
+  managers.git = new GitManager(configStore, managers);
 
   // Critical initializations (must complete before UI)
   await Promise.all([
@@ -269,6 +271,7 @@ async function initializeManagersDeferred() {
     // These depend on others or are slower
     await managers.binaryDownload.initialize();
     await managers.cli.initialize(resourcePath);
+    await managers.git.initialize();
   } catch (error) {
     managers.log?.systemError('Error in deferred initialization', { error: error.message });
   }

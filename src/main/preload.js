@@ -199,6 +199,7 @@ contextBridge.exposeInMainWorld('devbox', {
     openApacheDownloadPage: () => ipcRenderer.invoke('binaries:openApacheDownloadPage'),
     downloadNodejs: (version) => ipcRenderer.invoke('binaries:downloadNodejs', version),
     downloadComposer: () => ipcRenderer.invoke('binaries:downloadComposer'),
+    downloadGit: () => ipcRenderer.invoke('binaries:downloadGit'),
     cancelDownload: (id) => ipcRenderer.invoke('binaries:cancelDownload', id),
     runComposer: (projectPath, command, phpVersion) => ipcRenderer.invoke('binaries:runComposer', projectPath, command, phpVersion),
     runNpm: (projectPath, command, nodeVersion) => ipcRenderer.invoke('binaries:runNpm', projectPath, command, nodeVersion),
@@ -211,6 +212,22 @@ contextBridge.exposeInMainWorld('devbox', {
       const handler = (event, data) => callback(data.id, data.progress);
       ipcRenderer.on('binaries:progress', handler);
       return () => ipcRenderer.removeListener('binaries:progress', handler);
+    },
+  },
+
+  // Git operations
+  git: {
+    isAvailable: () => ipcRenderer.invoke('git:isAvailable'),
+    clone: (url, destPath, options) => ipcRenderer.invoke('git:clone', url, destPath, options),
+    testAuth: (url, credentials) => ipcRenderer.invoke('git:testAuth', url, credentials),
+    generateSshKey: () => ipcRenderer.invoke('git:generateSshKey'),
+    regenerateSshKey: () => ipcRenderer.invoke('git:regenerateSshKey'),
+    getSshPublicKey: () => ipcRenderer.invoke('git:getSshPublicKey'),
+    validateUrl: (url) => ipcRenderer.invoke('git:validateUrl', url),
+    onCloneProgress: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('git:cloneProgress', handler);
+      return () => ipcRenderer.removeListener('git:cloneProgress', handler);
     },
   },
 

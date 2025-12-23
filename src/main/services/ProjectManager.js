@@ -312,8 +312,8 @@ class ProjectManager {
     }
 
     // Create virtual host configuration (HTTP + HTTPS)
-    // Skip if installing fresh - the document root doesn't exist yet
-    if (!config.installFresh) {
+    // Skip if installing fresh OR cloning - the document root doesn't exist yet
+    if (!config.installFresh && config.projectSource !== 'clone') {
       try {
         await this.createVirtualHost(project);
       } catch (error) {
@@ -348,10 +348,17 @@ class ProjectManager {
     // Auto-install CLI if not already installed
     await this.ensureCliInstalled();
 
-    // Install fresh framework if requested - run async without blocking
-    if (config.installFresh) {
+    // Install fresh framework OR clone from repository - run async without blocking
+    if (config.installFresh || config.projectSource === 'clone') {
       // Mark project as installing
       project.installing = true;
+
+      // Store clone config for runInstallation
+      project.cloneConfig = config.projectSource === 'clone' ? {
+        repositoryUrl: config.repositoryUrl,
+        authType: config.authType || 'public',
+        accessToken: config.accessToken,
+      } : null;
 
       // Run installation in background (don't await)
       this.runInstallation(project, mainWindow).catch(error => {
@@ -374,10 +381,50 @@ class ProjectManager {
       }
     };
 
-    sendOutput(`Starting ${project.type} installation at ${project.path}...`, 'info');
+    sendOutput(`Starting ${project.cloneConfig ? 'repository clone' : project.type} installation at ${project.path}...`, 'info');
 
     try {
-      if (project.type === 'laravel') {
+      // Handle Git clone first if specified
+      if (project.cloneConfig && project.cloneConfig.repositoryUrl) {
+        sendOutput('═══════════════════════════════════════════════════════════════', 'info');
+        sendOutput('📥 Cloning Repository...', 'info');
+        sendOutput(`$ git clone ${project.cloneConfig.repositoryUrl}`, 'command');
+        sendOutput('═══════════════════════════════════════════════════════════════', 'info');
+
+        const gitManager = this.managers.git;
+        if (!gitManager) {
+          throw new Error('Git manager not available. Please install Git first.');
+        }
+
+        // Clone the repository
+        const cloneResult = await gitManager.cloneRepository(
+          project.cloneConfig.repositoryUrl,
+          project.path,
+          {
+            authType: project.cloneConfig.authType,
+            accessToken: project.cloneConfig.accessToken,
+            onProgress: (progress) => {
+              if (progress.phase) {
+                sendOutput(`   ${progress.phase}: ${progress.percent || 0}%`, 'info');
+              }
+            },
+          }
+        );
+
+        if (!cloneResult.success) {
+          throw new Error(cloneResult.error || 'Git clone failed');
+        }
+
+        sendOutput('✓ Repository cloned successfully!', 'success');
+        sendOutput('', 'info');
+
+        // For cloned Laravel projects, run composer install
+        if (project.type === 'laravel') {
+          await this.runPostCloneLaravelSetup(project, mainWindow);
+        }
+
+      } else if (project.type === 'laravel') {
+        // Fresh Laravel installation
         // Check if project directory already has files
         if (await fs.pathExists(project.path)) {
           const files = await fs.readdir(project.path);
@@ -497,6 +544,176 @@ class ProjectManager {
       sendOutput('   4. Run: php artisan key:generate (for Laravel)', 'info');
       sendOutput('─────────────────────────────────────────────────────────────', 'info');
       sendOutput('', 'complete');
+    }
+  }
+
+  // Post-clone setup for Laravel projects (composer install, .env, key:generate)
+  async runPostCloneLaravelSetup(project, mainWindow) {
+    const sendOutput = (text, type) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:output', {
+          projectId: 'installation',
+          text,
+          type,
+        });
+      }
+    };
+
+    const projectPath = project.path;
+    const phpVersion = project.phpVersion || '8.4';
+    const useNodejs = project.services?.nodejs !== false;
+    const nodejsVersion = project.services?.nodejsVersion || '20';
+
+    const binary = this.managers.binaryDownload;
+    if (!binary) {
+      throw new Error('BinaryDownloadManager not available');
+    }
+
+    // Check if composer.json exists
+    const composerJsonPath = path.join(projectPath, 'composer.json');
+    if (await fs.pathExists(composerJsonPath)) {
+      sendOutput('Running composer install...', 'info');
+      sendOutput('$ composer install --no-interaction', 'command');
+
+      try {
+        await binary.runComposer(
+          projectPath,
+          'install --no-interaction',
+          phpVersion,
+          (text, type) => sendOutput(text, type)
+        );
+        sendOutput('✓ Dependencies installed successfully!', 'success');
+      } catch (error) {
+        sendOutput(`Warning: composer install failed: ${error.message}`, 'warning');
+        sendOutput('You may need to run composer install manually.', 'info');
+      }
+    }
+
+    // Copy .env.example to .env if it exists
+    try {
+      const envExamplePath = path.join(projectPath, '.env.example');
+      const envPath = path.join(projectPath, '.env');
+
+      if (await fs.pathExists(envExamplePath) && !await fs.pathExists(envPath)) {
+        sendOutput('Creating .env file...', 'info');
+        await fs.copy(envExamplePath, envPath);
+        sendOutput('✓ .env file created from .env.example', 'success');
+      }
+    } catch (e) {
+      sendOutput(`Warning: Could not create .env file: ${e.message}`, 'warning');
+    }
+
+    // Update .env with database settings
+    try {
+      const envPath = path.join(projectPath, '.env');
+      if (await fs.pathExists(envPath)) {
+        let envContent = await fs.readFile(envPath, 'utf-8');
+
+        // Update database settings
+        const dbName = this.sanitizeDatabaseName(project.name);
+        const dbInfo = this.managers.database?.getDatabaseInfo() || {};
+        const dbUser = dbInfo.user || 'root';
+        const dbPassword = dbInfo.password || '';
+        const dbPort = dbInfo.port || 3306;
+
+        envContent = envContent.replace(/^DB_DATABASE=.*/m, `DB_DATABASE=${dbName}`);
+        envContent = envContent.replace(/^DB_USERNAME=.*/m, `DB_USERNAME=${dbUser}`);
+        envContent = envContent.replace(/^DB_PASSWORD=.*/m, `DB_PASSWORD=${dbPassword}`);
+        envContent = envContent.replace(/^DB_PORT=.*/m, `DB_PORT=${dbPort}`);
+
+        // Update APP_URL
+        envContent = envContent.replace(/^APP_URL=.*/m, `APP_URL=http://${project.domain}`);
+
+        await fs.writeFile(envPath, envContent);
+        sendOutput('✓ .env file configured', 'success');
+      }
+    } catch (e) {
+      sendOutput(`Warning: Could not update .env file: ${e.message}`, 'warning');
+    }
+
+    // Generate application key
+    try {
+      sendOutput('Generating application key...', 'info');
+      sendOutput('$ php artisan key:generate', 'command');
+
+      const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
+      const platform = process.platform === 'win32' ? 'win' : 'mac';
+      const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+      const phpPath = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
+
+      if (await fs.pathExists(phpPath)) {
+        await new Promise((resolve) => {
+          const proc = spawn(phpPath, ['artisan', 'key:generate'], {
+            cwd: projectPath,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true
+          });
+          proc.stdout.on('data', (data) => sendOutput(data.toString(), 'stdout'));
+          proc.stderr.on('data', (data) => sendOutput(data.toString(), 'stderr'));
+          proc.on('close', (code) => {
+            if (code === 0) {
+              sendOutput('✓ Application key generated!', 'success');
+            }
+            resolve();
+          });
+          proc.on('error', () => resolve());
+        });
+      }
+    } catch (e) {
+      sendOutput(`Warning: Could not generate app key: ${e.message}`, 'warning');
+    }
+
+    // Run npm install if package.json exists AND Node.js service is enabled
+    if (useNodejs) {
+      try {
+        const packageJsonPath = path.join(projectPath, 'package.json');
+        if (await fs.pathExists(packageJsonPath)) {
+          sendOutput('Installing npm packages...', 'info');
+          sendOutput('$ npm install', 'command');
+
+          const platform = process.platform === 'win32' ? 'win' : 'mac';
+          const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+          const nodeDir = path.join(resourcePath, 'nodejs', nodejsVersion, platform);
+
+          let npmCmd = 'npm';
+
+          if (await fs.pathExists(nodeDir)) {
+            npmCmd = process.platform === 'win32' ? path.join(nodeDir, 'npm.cmd') : path.join(nodeDir, 'bin', 'npm');
+          }
+
+          await new Promise((resolve) => {
+            const npmProc = spawn(npmCmd, ['install'], {
+              cwd: projectPath,
+              shell: true,
+              stdio: ['ignore', 'pipe', 'pipe'],
+              windowsHide: true,
+              env: {
+                ...process.env,
+                PATH: process.platform === 'win32'
+                  ? `${nodeDir};${process.env.PATH}`
+                  : `${path.join(nodeDir, 'bin')}:${process.env.PATH}`,
+              },
+            });
+
+            npmProc.stdout.on('data', (data) => sendOutput(data.toString(), 'stdout'));
+            npmProc.stderr.on('data', (data) => sendOutput(data.toString(), 'stderr'));
+            npmProc.on('close', (code) => {
+              if (code === 0) {
+                sendOutput('✓ npm packages installed successfully!', 'success');
+              } else {
+                sendOutput(`npm install finished with code ${code} (non-critical)`, 'warning');
+              }
+              resolve();
+            });
+            npmProc.on('error', (err) => {
+              sendOutput(`npm not available: ${err.message} (non-critical)`, 'warning');
+              resolve();
+            });
+          });
+        }
+      } catch (e) {
+        sendOutput(`npm install skipped: ${e.message}`, 'warning');
+      }
     }
   }
 
