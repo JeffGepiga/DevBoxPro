@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import logoImg from '/logo.svg';
+import { APP_VERSION } from '../../../shared/appConfig';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -113,7 +114,7 @@ function Sidebar({ darkMode, setDarkMode }) {
       {/* Version */}
       <div className="px-6 py-3 border-t border-gray-200 dark:border-gray-700">
         <p className="text-xs text-gray-400 dark:text-gray-500">
-          Version 1.0.0
+          Version {APP_VERSION}
         </p>
       </div>
     </aside>

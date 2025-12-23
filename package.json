@@ -1,6 +1,6 @@
 {
   "name": "devbox-pro",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Cross-platform local development server with multi-PHP support",
   "main": "src/main/main.js",
   "author": "DevBox Pro Team",

@@ -1,14 +1,35 @@
-# 🚀 DevBox Pro v1.0.0-BETA
+# 🚀 DevBox Pro v1.0.1-BETA
 
 **Pre-Release | Your all-in-one local development environment for PHP**
-
-This is an early **pre-release** of DevBox Pro – a standalone desktop application designed to simplify PHP development. We're releasing this beta to gather feedback and improve the application before the stable release.
 
 > ⚠️ **This is a pre-release version. Some features may be incomplete or unstable.**
 
 ---
 
-## ✨ Features in This Pre-Release
+## 🆕 What's New in v1.0.1
+
+### ✨ New Features
+
+#### 🌐 Local Network Project Sharing
+- **Share projects across your local network** – Access your development projects from other devices on the same network
+- **IP Address Retrieval** – Automatically detects and displays your machine's local IP address
+- **Project Sharing Options** – Enable or disable network access per project with a simple toggle
+
+### 🐛 Bug Fixes
+
+#### 🔧 Multiple Running Services Fix
+- **Resolved service conflicts** – Fixed issues when running multiple services simultaneously
+- **Improved service management** – Better handling of concurrent service operations
+- **Enhanced stability** – More reliable service startup and shutdown sequences
+
+### 🧹 Improvements
+
+- **Code cleanup** – Removed unnecessary console logs for cleaner production output
+- **Project tab revamp** – Improved project management interface
+
+---
+
+## ✨ Features in This Release
 
 ### 🐘 Multi-PHP Version Support
 - PHP 7.4, 8.0, 8.1, 8.2, 8.3, 8.4 – run any version side by side
@@ -67,21 +88,14 @@ dvp npm install              # Uses project's Node.js version
 dvp npm run dev              # Run npm scripts
 ```
 
-**Why is this important?**
-- Prevents "wrong PHP version" errors when running artisan commands from VS Code
-- Ensures consistent behavior across different terminals and editors
-- No need to manually switch PHP/Node.js versions
-
-**Setup:** Go to Settings > CLI Tool > Install CLI > Add to PATH
-
 ---
 
 ## 📥 Downloads
 
 | File | Description |
 |------|-------------|
-| **DevBox.Pro.Setup.1.0.0-BETA.exe** | Installer version (recommended) |
-| **DevBox.Pro.1.0.0-Portable-BETA.exe** | Portable version – no installation required |
+| **DevBox.Pro.Setup.1.0.1-BETA.exe** | Installer version (recommended) |
+| **DevBox.Pro.1.0.1-Portable-BETA.exe** | Portable version – no installation required |
 
 ### 🍎 macOS Support
 
