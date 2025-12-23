@@ -286,95 +286,109 @@ function GeneralSettings({ settings, updateSetting }) {
   );
 }
 
-function CliSettings({ settings, updateSetting }) {
+function CliSettings() {
   const [cliStatus, setCliStatus] = useState(null);
-  const [alias, setAlias] = useState('dvp');
-  const [instructions, setInstructions] = useState(null);
-  const [installing, setInstalling] = useState(false);
-  const [addingToPath, setAddingToPath] = useState(false);
-  const [syncingConfigs, setSyncingConfigs] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [directShimsEnabled, setDirectShimsEnabled] = useState(false);
+  const [defaultPhpVersion, setDefaultPhpVersion] = useState(null);
+  const [defaultNodeVersion, setDefaultNodeVersion] = useState(null);
+  const [installedBinaries, setInstalledBinaries] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [removingFromPath, setRemovingFromPath] = useState(false);
 
-  // Load CLI status and alias
+  // Load settings on mount
   useEffect(() => {
-    const loadCliInfo = async () => {
+    const loadSettings = async () => {
       try {
         const status = await window.devbox?.cli?.getStatus();
         setCliStatus(status);
 
-        const currentAlias = await window.devbox?.cli?.getAlias();
-        setAlias(currentAlias || 'dvp');
+        const shimsEnabled = await window.devbox?.cli?.getDirectShimsEnabled();
+        setDirectShimsEnabled(shimsEnabled || false);
 
-        const instr = await window.devbox?.cli?.getInstructions();
-        setInstructions(instr);
+        const defPhp = await window.devbox?.cli?.getDefaultPhpVersion();
+        setDefaultPhpVersion(defPhp);
+
+        const defNode = await window.devbox?.cli?.getDefaultNodeVersion();
+        setDefaultNodeVersion(defNode);
+
+        const binaries = await window.devbox?.binaries?.getInstalled();
+        setInstalledBinaries(binaries);
       } catch (error) {
-        // Error loading CLI info
+        console.error('Failed to load CLI settings:', error);
+      } finally {
+        setLoading(false);
       }
     };
-    loadCliInfo();
+    loadSettings();
   }, []);
 
-  const handleInstallCli = async () => {
-    setInstalling(true);
+  const handleToggleDirectCommands = async (enabled) => {
     setMessage(null);
     try {
-      const result = await window.devbox?.cli?.install();
-      setMessage({ type: 'success', text: `CLI tool installed successfully! Alias: ${result.alias}` });
+      // First install CLI if not installed
+      if (!cliStatus?.installed) {
+        await window.devbox?.cli?.install();
+      }
+
+      await window.devbox?.cli?.setDirectShimsEnabled(enabled);
+      setDirectShimsEnabled(enabled);
+
+      if (enabled) {
+        // Add to PATH automatically
+        if (!cliStatus?.inPath) {
+          await window.devbox?.cli?.addToPath();
+        }
+        setMessage({
+          type: 'success',
+          text: 'Terminal commands enabled! Restart your terminal or VS Code to use php, npm, node, and composer directly.'
+        });
+      } else {
+        setMessage({ type: 'success', text: 'Terminal commands disabled.' });
+      }
 
       // Refresh status
       const status = await window.devbox?.cli?.getStatus();
       setCliStatus(status);
-      const instr = await window.devbox?.cli?.getInstructions();
-      setInstructions(instr);
-    } catch (error) {
-      setMessage({ type: 'error', text: `Failed to install CLI: ${error.message}` });
-    } finally {
-      setInstalling(false);
-    }
-  };
-
-  const handleAddToPath = async () => {
-    setAddingToPath(true);
-    setMessage(null);
-    try {
-      const result = await window.devbox?.cli?.addToPath();
-      setMessage({ type: 'success', text: result.message + ' ' + result.note });
-
-      // Refresh status
-      const status = await window.devbox?.cli?.getStatus();
-      setCliStatus(status);
-    } catch (error) {
-      setMessage({ type: 'error', text: `Failed to add to PATH: ${error.message}` });
-    } finally {
-      setAddingToPath(false);
-    }
-  };
-
-  const handleSaveAlias = async () => {
-    try {
-      await window.devbox?.cli?.setAlias(alias);
-      setMessage({ type: 'success', text: `Alias changed to "${alias}". Please reinstall the CLI tool.` });
     } catch (error) {
       setMessage({ type: 'error', text: error.message });
     }
   };
 
-  const handleSyncConfigs = async () => {
-    setSyncingConfigs(true);
+  const handleRemoveFromPath = async () => {
+    setRemovingFromPath(true);
     setMessage(null);
     try {
-      const results = await window.devbox?.cli?.syncProjectConfigs();
-      const success = results.filter(r => r.success).length;
-      const failed = results.filter(r => !r.success).length;
-      setMessage({
-        type: failed > 0 ? 'warning' : 'success',
-        text: `Synced ${success} project(s)${failed > 0 ? `, ${failed} failed` : ''}`
-      });
+      await window.devbox?.cli?.removeFromPath();
+      // Also disable terminal commands when removing from PATH
+      await window.devbox?.cli?.setDirectShimsEnabled(false);
+      setDirectShimsEnabled(false);
+      setMessage({ type: 'success', text: 'Terminal commands disabled and removed from PATH. Restart your terminal for changes to take effect.' });
+      const status = await window.devbox?.cli?.getStatus();
+      setCliStatus(status);
     } catch (error) {
-      setMessage({ type: 'error', text: `Failed to sync configs: ${error.message}` });
+      setMessage({ type: 'error', text: error.message });
     } finally {
-      setSyncingConfigs(false);
+      setRemovingFromPath(false);
+    }
+  };
+
+  const handleSetDefaultPhp = async (version) => {
+    try {
+      await window.devbox?.cli?.setDefaultPhpVersion(version || null);
+      setDefaultPhpVersion(version || null);
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message });
+    }
+  };
+
+  const handleSetDefaultNode = async (version) => {
+    try {
+      await window.devbox?.cli?.setDefaultNodeVersion(version || null);
+      setDefaultNodeVersion(version || null);
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message });
     }
   };
 
@@ -384,195 +398,186 @@ function CliSettings({ settings, updateSetting }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Get installed versions for dropdowns
+  const phpVersions = installedBinaries?.php
+    ? Object.entries(installedBinaries.php).filter(([, installed]) => installed).map(([v]) => v).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+    : [];
+  const nodeVersions = installedBinaries?.nodejs
+    ? Object.entries(installedBinaries.nodejs).filter(([, installed]) => installed).map(([v]) => v).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+    : [];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* CLI Info Card */}
+      {/* Main Card */}
       <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
           <Terminal className="w-5 h-5" />
-          CLI Tool
+          Terminal Commands
         </h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          Use the CLI tool to run PHP, Node.js, Composer, and npm commands with project-specific versions from any terminal or editor.
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+          Use <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">php</code>, <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">npm</code>, <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">node</code>, and <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">composer</code> commands
+          directly from any terminal. DevBox Pro automatically uses the correct version based on your project.
         </p>
 
-        {/* Status */}
-        <div className="flex items-center gap-3 mb-4">
-          <span className="text-sm text-gray-600 dark:text-gray-400">Status:</span>
-          {cliStatus?.installed ? (
-            <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
-              <CheckCircle className="w-4 h-4" />
-              Installed
-            </span>
-          ) : (
-            <span className="flex items-center gap-1 text-gray-500 dark:text-gray-400">
-              <AlertCircle className="w-4 h-4" />
-              Not installed
-            </span>
-          )}
-          {cliStatus?.installed && (
-            <>
-              <span className="text-gray-300 dark:text-gray-600">|</span>
-              <span className="text-sm text-gray-600 dark:text-gray-400">In PATH:</span>
-              {cliStatus?.inPath ? (
-                <span className="text-green-600 dark:text-green-400">Yes</span>
-              ) : (
-                <span className="text-amber-600 dark:text-amber-400">No</span>
-              )}
-            </>
-          )}
-        </div>
 
         {/* Message */}
         {message && (
           <div className={clsx(
-            'p-3 rounded-lg mb-4 text-sm',
+            'p-3 rounded-lg mb-6 text-sm',
             message.type === 'success' && 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400',
-            message.type === 'error' && 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400',
-            message.type === 'warning' && 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400'
+            message.type === 'error' && 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400'
           )}>
             {message.text}
           </div>
         )}
 
-        {/* Buttons */}
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={handleInstallCli}
-            disabled={installing}
-            className="btn-primary"
-          >
-            {installing ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <Download className="w-4 h-4" />
-            )}
-            {cliStatus?.installed ? 'Reinstall CLI' : 'Install CLI'}
-          </button>
-
-          {cliStatus?.installed && !cliStatus?.inPath && (
-            <button
-              onClick={handleAddToPath}
-              disabled={addingToPath}
-              className="btn-secondary"
-            >
-              {addingToPath ? (
-                <RefreshCw className="w-4 h-4 animate-spin" />
-              ) : (
-                <ExternalLink className="w-4 h-4" />
-              )}
-              Add to PATH
-            </button>
-          )}
-
-          <button
-            onClick={handleSyncConfigs}
-            disabled={syncingConfigs}
-            className="btn-secondary"
-          >
-            {syncingConfigs ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <RefreshCw className="w-4 h-4" />
-            )}
-            Sync Project Configs
-          </button>
-        </div>
-      </div>
-
-      {/* Alias Configuration */}
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Command Alias
-        </h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          Customize the command alias used in your terminal. Default is <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">dvp</code>.
-        </p>
-        <div className="flex gap-2">
+        {/* Enable Toggle */}
+        <label className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg cursor-pointer">
+          <div>
+            <p className="font-medium text-gray-900 dark:text-white">
+              Enable terminal commands
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Allows using php, npm, node, composer from any terminal
+            </p>
+          </div>
           <input
-            type="text"
-            value={alias}
-            onChange={(e) => setAlias(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
-            className="input w-40"
-            placeholder="dvp"
+            type="checkbox"
+            checked={directShimsEnabled}
+            onChange={(e) => handleToggleDirectCommands(e.target.checked)}
+            className="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
-          <button
-            onClick={handleSaveAlias}
-            disabled={!alias || alias === cliStatus?.alias}
-            className="btn-secondary"
-          >
-            <Save className="w-4 h-4" />
-            Save
-          </button>
-        </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-          After changing the alias, reinstall the CLI tool.
-        </p>
+        </label>
+
+        {/* Status */}
+        {directShimsEnabled && (
+          <div className="mt-4 flex items-center gap-3 text-sm">
+            <span className="text-gray-500 dark:text-gray-400">Status:</span>
+            {cliStatus?.inPath ? (
+              <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                <CheckCircle className="w-4 h-4" />
+                Active
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                <AlertCircle className="w-4 h-4" />
+                Restart terminal required
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Usage Examples */}
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Usage Examples
-        </h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          Navigate to your project folder and use these commands:
-        </p>
-        <div className="space-y-2">
-          {[
-            { cmd: `${alias} php artisan migrate`, desc: 'Run Laravel Artisan with project PHP version' },
-            { cmd: `${alias} php artisan optimize`, desc: 'Optimize Laravel with correct PHP' },
-            { cmd: `${alias} composer install`, desc: 'Install Composer dependencies' },
-            { cmd: `${alias} npm install`, desc: 'Install npm packages with project Node.js' },
-            { cmd: `${alias} npm run dev`, desc: 'Run npm scripts' },
-          ].map(({ cmd, desc }) => (
-            <div key={cmd} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-              <div>
-                <code className="text-sm font-mono text-gray-800 dark:text-gray-200">{cmd}</code>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{desc}</p>
-              </div>
-              <button
-                onClick={() => copyToClipboard(cmd)}
-                className="btn-ghost btn-sm"
-                title="Copy to clipboard"
-              >
-                {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Manual PATH Instructions */}
-      {instructions && !cliStatus?.inPath && (
+      {/* Default Versions - only show when enabled */}
+      {directShimsEnabled && (
         <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Manual PATH Setup
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+            Default Versions
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            If automatic PATH setup doesn't work, follow these steps:
+            Used when you're not in a registered project directory.
           </p>
-          <ol className="list-decimal list-inside space-y-2 text-sm text-gray-700 dark:text-gray-300">
-            {instructions.manual?.map((step, i) => (
-              <li key={i}>{step}</li>
-            ))}
-          </ol>
-          {instructions.powershell && (
-            <div className="mt-4">
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Or run this PowerShell command:</p>
-              <div className="flex items-center gap-2 p-3 bg-gray-900 rounded-lg">
-                <code className="text-sm font-mono text-green-400 flex-1 overflow-x-auto">
-                  {instructions.powershell}
-                </code>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">PHP Version</label>
+              <select
+                value={defaultPhpVersion || ''}
+                onChange={(e) => handleSetDefaultPhp(e.target.value)}
+                className="select w-full"
+              >
+                <option value="">Auto-detect</option>
+                {phpVersions.map(v => (
+                  <option key={v} value={v}>PHP {v}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="label">Node.js Version</label>
+              <select
+                value={defaultNodeVersion || ''}
+                onChange={(e) => handleSetDefaultNode(e.target.value)}
+                className="select w-full"
+              >
+                <option value="">Auto-detect</option>
+                {nodeVersions.map(v => (
+                  <option key={v} value={v}>Node.js {v}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <p className="text-sm text-blue-700 dark:text-blue-300">
+              <strong>How it works:</strong> Inside a project folder, DevBox Pro uses that project's configured PHP/Node version.
+              Outside a project, it uses the default versions above.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Usage Examples - only show when enabled */}
+      {directShimsEnabled && (
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Example Commands
+          </h3>
+          <div className="space-y-2">
+            {[
+              { cmd: 'php artisan migrate', desc: 'Run Laravel migrations' },
+              { cmd: 'composer install', desc: 'Install PHP dependencies' },
+              { cmd: 'npm install', desc: 'Install Node.js packages' },
+              { cmd: 'npm run dev', desc: 'Start development server' },
+            ].map(({ cmd, desc }) => (
+              <div key={cmd} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <div>
+                  <code className="text-sm font-mono text-gray-800 dark:text-gray-200">{cmd}</code>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{desc}</p>
+                </div>
                 <button
-                  onClick={() => copyToClipboard(instructions.powershell)}
-                  className="btn-ghost btn-sm text-gray-400 hover:text-white"
+                  onClick={() => copyToClipboard(cmd)}
+                  className="btn-ghost btn-sm"
+                  title="Copy to clipboard"
                 >
-                  <Copy className="w-4 h-4" />
+                  {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                 </button>
               </div>
-            </div>
-          )}
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Advanced - Remove from PATH */}
+      {directShimsEnabled && cliStatus?.inPath && (
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+            Advanced
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Remove DevBox Pro from your system PATH if needed.
+          </p>
+          <button
+            onClick={handleRemoveFromPath}
+            disabled={removingFromPath}
+            className="btn-secondary text-red-600 dark:text-red-400"
+          >
+            {removingFromPath ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Trash2 className="w-4 h-4" />
+            )}
+            Remove from PATH
+          </button>
         </div>
       )}
     </div>

@@ -74,12 +74,12 @@ DevBox Pro bundles everything you need: PHP 7.4 through 8.4, MySQL, MariaDB, Red
 - **Offline fallback** - Built-in defaults when offline
 - **Version tracking** - Only download when updates are available
 
-### 💻 CLI Tool (dvp)
-- **External terminal support** - Use project-specific PHP/Node.js from VS Code, Windows Terminal, or any editor
-- **Automatic version detection** - Detects your project and uses the correct versions
-- **Customizable alias** - Change from `dvp` to any alias you prefer
-- **Commands supported**: `php`, `composer`, `node`, `npm`, `npx`
-- **Prevents version conflicts** - No more "wrong PHP version" issues when running artisan commands
+### 💻 Terminal Commands
+- **Direct command access** - Use `php`, `npm`, `node`, `composer` directly from any terminal
+- **Automatic version detection** - Detects your project and uses the correct PHP/Node.js version
+- **Works everywhere** - VS Code, Windows Terminal, PowerShell, or any terminal emulator
+- **No prefix needed** - Just run `php artisan migrate` instead of complex paths
+- **Prevents version conflicts** - No more "wrong PHP version" issues
 
 ### 📊 Logging & Monitoring
 - **Real-time log streaming** per project and service
@@ -158,35 +158,34 @@ DevBox Pro bundles everything you need: PHP 7.4 through 8.4, MySQL, MariaDB, Red
 5. Set your **domain** (e.g., `myproject.test`)
 6. Click **Create** and you're ready!
 
-### Using the CLI Tool
+### Using Terminal Commands
 
-The CLI tool allows you to run commands with project-specific versions from any terminal:
+DevBox Pro lets you use `php`, `npm`, `node`, and `composer` directly from any terminal with automatic project version detection:
 
 1. Go to **Settings > CLI Tool** in DevBox Pro
-2. Click **"Install CLI"**
-3. Click **"Add to PATH"** (or follow manual instructions)
-4. Restart your terminal
+2. Enable **"Terminal commands"**
+3. Restart your terminal or VS Code
 
 **Usage examples:**
 ```bash
 # Navigate to your project folder
 cd C:\Projects\my-laravel-app
 
-# Run PHP with project-specific version
-dvp php artisan migrate
-dvp php artisan optimize
+# Run PHP with project-specific version (auto-detected)
+php artisan migrate
+php artisan optimize
 
 # Run Composer with correct PHP version
-dvp composer install
-dvp composer update
+composer install
+composer update
 
 # Run Node.js/npm with project version (if enabled)
-dvp npm install
-dvp npm run dev
-dvp npx vite build
+npm install
+npm run dev
+npx vite build
 ```
 
-> **Why use this?** When you open a terminal in VS Code or run commands from external tools, they use your system's default PHP/Node.js version. The `dvp` CLI ensures the correct project-specific version is always used.
+> **How it works:** When you run `php` or `npm` from a project directory, DevBox Pro automatically uses that project's configured version. Outside a project, it uses your default version set in Settings.
 
 ---
 

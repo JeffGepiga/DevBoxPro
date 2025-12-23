@@ -1211,16 +1211,6 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return managers.cli.checkCliInstalled();
   });
 
-  ipcMain.handle('cli:getAlias', async () => {
-    if (!managers.cli) return 'dvp';
-    return managers.cli.getAlias();
-  });
-
-  ipcMain.handle('cli:setAlias', async (event, alias) => {
-    if (!managers.cli) throw new Error('CLI manager not initialized');
-    return managers.cli.setAlias(alias);
-  });
-
   ipcMain.handle('cli:install', async () => {
     if (!managers.cli) throw new Error('CLI manager not initialized');
     return managers.cli.installCli();
@@ -1229,6 +1219,11 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   ipcMain.handle('cli:addToPath', async () => {
     if (!managers.cli) throw new Error('CLI manager not initialized');
     return managers.cli.addToPath();
+  });
+
+  ipcMain.handle('cli:removeFromPath', async () => {
+    if (!managers.cli) throw new Error('CLI manager not initialized');
+    return managers.cli.removeFromPath();
   });
 
   ipcMain.handle('cli:getInstructions', async () => {
@@ -1246,6 +1241,46 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
     // Return array format for UI compatibility
     return projects.map(p => ({ id: p.id, success: true }));
+  });
+
+  ipcMain.handle('cli:getDirectShimsEnabled', async () => {
+    if (!managers.cli) return false;
+    return managers.cli.getDirectShimsEnabled();
+  });
+
+  ipcMain.handle('cli:setDirectShimsEnabled', async (event, enabled) => {
+    if (!managers.cli) throw new Error('CLI manager not initialized');
+    return managers.cli.setDirectShimsEnabled(enabled);
+  });
+
+  ipcMain.handle('cli:getDefaultPhpVersion', async () => {
+    if (!managers.cli) return null;
+    return managers.cli.getDefaultPhpVersion();
+  });
+
+  ipcMain.handle('cli:setDefaultPhpVersion', async (event, version) => {
+    if (!managers.cli) throw new Error('CLI manager not initialized');
+    managers.cli.setDefaultPhpVersion(version);
+    // Reinstall shims if enabled
+    if (managers.cli.getDirectShimsEnabled()) {
+      await managers.cli.installDirectShims();
+    }
+    return version;
+  });
+
+  ipcMain.handle('cli:getDefaultNodeVersion', async () => {
+    if (!managers.cli) return null;
+    return managers.cli.getDefaultNodeVersion();
+  });
+
+  ipcMain.handle('cli:setDefaultNodeVersion', async (event, version) => {
+    if (!managers.cli) throw new Error('CLI manager not initialized');
+    managers.cli.setDefaultNodeVersion(version);
+    // Reinstall shims if enabled
+    if (managers.cli.getDirectShimsEnabled()) {
+      await managers.cli.installDirectShims();
+    }
+    return version;
   });
 
   // Resource monitoring interval

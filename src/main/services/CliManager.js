@@ -1,14 +1,14 @@
 /**
- * CliManager - Manages CLI alias functionality
+ * CliManager - Manages CLI functionality for terminal commands
  * 
  * Provides a way for users to run PHP/Node commands using project-specific versions
- * from their external terminal/editor using a configurable alias (default: dvp)
+ * directly from their external terminal/editor.
  * 
- * Example usage:
- *   dvp php artisan optimize
- *   dvp npm install
- *   dvp composer install
- *   dvp node script.js
+ * Example usage (after enabling in Settings):
+ *   php artisan optimize
+ *   npm install
+ *   composer install
+ *   node script.js
  */
 
 const path = require('path');
@@ -800,14 +800,12 @@ if ([string]::IsNullOrEmpty($currentPath)) {
   $currentPath = ''
 }
 $pathArray = $currentPath.Split(';') | Where-Object { $_.Trim() -ne '' }
-$found = $pathArray | Where-Object { $_.Trim().TrimEnd('\\', '/') -ieq $targetPath }
-if (-not $found) {
-  $newPath = if ($currentPath.Trim()) { "$currentPath;$targetPath" } else { $targetPath }
-  [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-  Write-Output 'Added to PATH'
-} else {
-  Write-Output 'Already in PATH'
-}
+# Remove existing entry if present (we'll re-add at the beginning)
+$pathArray = $pathArray | Where-Object { $_.Trim().TrimEnd('\\', '/') -ine $targetPath }
+# PREPEND the DevBox Pro CLI path (at the beginning) so it takes precedence
+$newPath = if ($pathArray.Count -gt 0) { "$targetPath;" + ($pathArray -join ';') } else { $targetPath }
+[Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+Write-Output 'Added to PATH (at the beginning for priority)'
 `;
 
       const child = spawn('powershell', ['-NoProfile', '-Command', psScript], {
@@ -841,6 +839,581 @@ if (-not $found) {
         }
       });
     });
+  }
+
+  /**
+   * Remove CLI path from user's PATH
+   */
+  async removeFromPath() {
+    if (process.platform !== 'win32') {
+      throw new Error('Automatic PATH modification only supported on Windows.');
+    }
+
+    const cliPath = this.getCliPath();
+    const normalizedCliPath = cliPath.replace(/[\\/]+$/, '');
+
+    return new Promise((resolve, reject) => {
+      const psScript = `
+$targetPath = '${normalizedCliPath.replace(/'/g, "''")}'
+$currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+if ([string]::IsNullOrEmpty($currentPath)) {
+  Write-Output 'Not in PATH'
+  exit
+}
+$pathArray = $currentPath.Split(';') | Where-Object { $_.Trim() -ne '' }
+$newArray = $pathArray | Where-Object { $_.Trim().TrimEnd('\\', '/') -ine $targetPath }
+if ($newArray.Count -lt $pathArray.Count) {
+  $newPath = $newArray -join ';'
+  [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+  Write-Output 'Removed from PATH'
+} else {
+  Write-Output 'Not in PATH'
+}
+`;
+
+      const child = spawn('powershell', ['-NoProfile', '-Command', psScript], {
+        windowsHide: true,
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      child.on('error', (error) => {
+        reject(new Error(`Failed to remove from PATH: ${error.message}`));
+      });
+
+      child.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`Failed to remove from PATH: ${stderr}`));
+        } else {
+          resolve({
+            success: true,
+            message: stdout.trim(),
+            note: 'Please restart your terminal/editor for changes to take effect.',
+          });
+        }
+      });
+    });
+  }
+
+  /**
+   * Get direct shims setting (whether to install php, npm, node, composer commands directly)
+   */
+  getDirectShimsEnabled() {
+    return this.configStore.get('settings.directShimsEnabled', true);
+  }
+
+  /**
+   * Set direct shims setting
+   */
+  async setDirectShimsEnabled(enabled) {
+    this.configStore.set('settings.directShimsEnabled', enabled);
+
+    if (enabled) {
+      await this.installDirectShims();
+    } else {
+      await this.removeDirectShims();
+    }
+
+    return enabled;
+  }
+
+  /**
+   * Get default PHP version for non-project directories
+   */
+  getDefaultPhpVersion() {
+    return this.configStore.get('settings.defaultPhpVersion', null);
+  }
+
+  /**
+   * Set default PHP version
+   */
+  setDefaultPhpVersion(version) {
+    this.configStore.set('settings.defaultPhpVersion', version);
+  }
+
+  /**
+   * Get default Node.js version for non-project directories
+   */
+  getDefaultNodeVersion() {
+    return this.configStore.get('settings.defaultNodeVersion', null);
+  }
+
+  /**
+   * Set default Node.js version
+   */
+  setDefaultNodeVersion(version) {
+    this.configStore.set('settings.defaultNodeVersion', version);
+  }
+
+  /**
+   * Install direct command shims (php, npm, node, composer)
+   */
+  async installDirectShims() {
+    const cliPath = this.getCliPath();
+    await fs.ensureDir(cliPath);
+
+    // Sync projects file first
+    await this.syncProjectsFile();
+
+    if (process.platform === 'win32') {
+      await this.installWindowsDirectShims(cliPath);
+    } else {
+      await this.installUnixDirectShims(cliPath);
+    }
+
+    return { success: true, path: cliPath };
+  }
+
+  /**
+   * Remove direct command shims
+   */
+  async removeDirectShims() {
+    const cliPath = this.getCliPath();
+    const commands = ['php', 'node', 'npm', 'npx', 'composer'];
+    const ext = process.platform === 'win32' ? '.cmd' : '';
+
+    for (const cmd of commands) {
+      const shimPath = path.join(cliPath, `${cmd}${ext}`);
+      try {
+        if (await fs.pathExists(shimPath)) {
+          await fs.remove(shimPath);
+        }
+      } catch (e) {
+        // Ignore removal errors
+      }
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Install Windows direct command shims
+   */
+  async installWindowsDirectShims(cliPath) {
+    const resourcesPath = this.resourcesPath;
+    const projectsFilePath = this.getProjectsFilePath();
+    const defaultPhpVersion = this.getDefaultPhpVersion() || this.getFirstInstalledPhpVersion();
+    const defaultNodeVersion = this.getDefaultNodeVersion() || this.getFirstInstalledNodeVersion();
+
+    // PHP shim - Use ^| to escape pipe in batch
+    const phpShim = `@echo off
+setlocal enabledelayedexpansion
+
+REM DevBox Pro PHP Shim - Auto-detects project PHP version
+set "DEVBOX_RESOURCES=${resourcesPath}"
+set "DEVBOX_PROJECTS=${projectsFilePath}"
+set "DEFAULT_PHP=${defaultPhpVersion}"
+set "CURRENT_DIR=%CD%"
+
+REM Find project for current directory using PowerShell helper
+set "PHP_VERSION="
+for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';if(Test-Path '%DEVBOX_PROJECTS%'){$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower();foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower();if($d.StartsWith($pp)){Write-Output $prop.Value.phpVersion;exit}}}Write-Output ''"') do (
+    if not "%%a"=="" set "PHP_VERSION=%%a"
+)
+
+REM Use project version or default
+if "%PHP_VERSION%"=="" set "PHP_VERSION=%DEFAULT_PHP%"
+
+set "PHP_PATH=%DEVBOX_RESOURCES%\\php\\%PHP_VERSION%\\win"
+
+if exist "%PHP_PATH%\\php.exe" (
+    "%PHP_PATH%\\php.exe" %*
+    exit /b %ERRORLEVEL%
+) else (
+    echo [DevBox Pro] PHP %PHP_VERSION% not found.
+    exit /b 1
+)
+`;
+
+    // Node shim
+    const nodeShim = `@echo off
+setlocal enabledelayedexpansion
+
+REM DevBox Pro Node Shim - Auto-detects project Node version
+set "DEVBOX_RESOURCES=${resourcesPath}"
+set "DEVBOX_PROJECTS=${projectsFilePath}"
+set "DEFAULT_NODE=${defaultNodeVersion}"
+set "CURRENT_DIR=%CD%"
+
+REM Find project for current directory
+set "NODE_VERSION="
+if exist "%DEVBOX_PROJECTS%" (
+    for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){if($prop.Value.nodejsVersion){Write-Output \\"FOUND|$($prop.Value.nodejsVersion)|$($prop.Value.name)\\"}else{Write-Output 'NOTFOUND||'};exit}}Write-Output 'NOTFOUND||'"') do (
+        if "%%a"=="FOUND" (
+            set "NODE_VERSION=%%b"
+            set "PROJECT_NAME=%%c"
+        )
+    )
+)
+
+REM Use project version or default
+if "%NODE_VERSION%"=="" set "NODE_VERSION=%DEFAULT_NODE%"
+
+set "NODE_PATH=%DEVBOX_RESOURCES%\\nodejs\\%NODE_VERSION%\\win"
+
+if exist "%NODE_PATH%\\node.exe" (
+    "%NODE_PATH%\\node.exe" %*
+    exit /b %ERRORLEVEL%
+) else (
+    REM Try system node as fallback
+    where node >nul 2>&1
+    if %ERRORLEVEL%==0 (
+        node %*
+        exit /b %ERRORLEVEL%
+    ) else (
+        echo [DevBox Pro] Node.js %NODE_VERSION% not found. Install from Binaries page or set a default version.
+        exit /b 1
+    )
+)
+`;
+
+    // NPM shim
+    const npmShim = `@echo off
+setlocal enabledelayedexpansion
+
+REM DevBox Pro npm Shim - Auto-detects project Node version
+set "DEVBOX_RESOURCES=${resourcesPath}"
+set "DEVBOX_PROJECTS=${projectsFilePath}"
+set "DEFAULT_NODE=${defaultNodeVersion}"
+set "CURRENT_DIR=%CD%"
+
+REM Find project for current directory
+set "NODE_VERSION="
+if exist "%DEVBOX_PROJECTS%" (
+    for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){if($prop.Value.nodejsVersion){Write-Output \\"FOUND|$($prop.Value.nodejsVersion)|$($prop.Value.name)\\"}else{Write-Output 'NOTFOUND||'};exit}}Write-Output 'NOTFOUND||'"') do (
+        if "%%a"=="FOUND" (
+            set "NODE_VERSION=%%b"
+        )
+    )
+)
+
+REM Use project version or default
+if "%NODE_VERSION%"=="" set "NODE_VERSION=%DEFAULT_NODE%"
+
+set "NODE_PATH=%DEVBOX_RESOURCES%\\nodejs\\%NODE_VERSION%\\win"
+
+if exist "%NODE_PATH%\\npm.cmd" (
+    call "%NODE_PATH%\\npm.cmd" %*
+    exit /b %ERRORLEVEL%
+) else (
+    REM Try system npm as fallback
+    where npm >nul 2>&1
+    if %ERRORLEVEL%==0 (
+        call npm %*
+        exit /b %ERRORLEVEL%
+    ) else (
+        echo [DevBox Pro] npm not found. Install Node.js from Binaries page or set a default version.
+        exit /b 1
+    )
+)
+`;
+
+    // NPX shim
+    const npxShim = `@echo off
+setlocal enabledelayedexpansion
+
+REM DevBox Pro npx Shim - Auto-detects project Node version
+set "DEVBOX_RESOURCES=${resourcesPath}"
+set "DEVBOX_PROJECTS=${projectsFilePath}"
+set "DEFAULT_NODE=${defaultNodeVersion}"
+set "CURRENT_DIR=%CD%"
+
+REM Find project for current directory
+set "NODE_VERSION="
+if exist "%DEVBOX_PROJECTS%" (
+    for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){if($prop.Value.nodejsVersion){Write-Output \\"FOUND|$($prop.Value.nodejsVersion)|$($prop.Value.name)\\"}else{Write-Output 'NOTFOUND||'};exit}}Write-Output 'NOTFOUND||'"') do (
+        if "%%a"=="FOUND" (
+            set "NODE_VERSION=%%b"
+        )
+    )
+)
+
+REM Use project version or default
+if "%NODE_VERSION%"=="" set "NODE_VERSION=%DEFAULT_NODE%"
+
+set "NODE_PATH=%DEVBOX_RESOURCES%\\nodejs\\%NODE_VERSION%\\win"
+
+if exist "%NODE_PATH%\\npx.cmd" (
+    call "%NODE_PATH%\\npx.cmd" %*
+    exit /b %ERRORLEVEL%
+) else (
+    REM Try system npx as fallback
+    where npx >nul 2>&1
+    if %ERRORLEVEL%==0 (
+        call npx %*
+        exit /b %ERRORLEVEL%
+    ) else (
+        echo [DevBox Pro] npx not found. Install Node.js from Binaries page or set a default version.
+        exit /b 1
+    )
+)
+`;
+
+    // Composer shim
+    const composerShim = `@echo off
+setlocal enabledelayedexpansion
+
+REM DevBox Pro Composer Shim - Uses project PHP version
+set "DEVBOX_RESOURCES=${resourcesPath}"
+set "DEVBOX_PROJECTS=${projectsFilePath}"
+set "DEFAULT_PHP=${defaultPhpVersion}"
+set "CURRENT_DIR=%CD%"
+
+REM Find project for current directory
+set "PHP_VERSION="
+if exist "%DEVBOX_PROJECTS%" (
+    for /f "tokens=1-2 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){Write-Output \\"FOUND|$($prop.Value.phpVersion)\\";exit}}Write-Output 'NOTFOUND|'"') do (
+        if "%%a"=="FOUND" set "PHP_VERSION=%%b"
+    )
+)
+
+REM Use project version or default
+if "%PHP_VERSION%"=="" set "PHP_VERSION=%DEFAULT_PHP%"
+
+set "PHP_PATH=%DEVBOX_RESOURCES%\\php\\%PHP_VERSION%\\win"
+set "COMPOSER_PATH=%DEVBOX_RESOURCES%\\composer\\composer.phar"
+
+if exist "%COMPOSER_PATH%" (
+    if exist "%PHP_PATH%\\php.exe" (
+        "%PHP_PATH%\\php.exe" "%COMPOSER_PATH%" %*
+        exit /b %ERRORLEVEL%
+    ) else (
+        REM Try system PHP with DevBox composer
+        where php >nul 2>&1
+        if %ERRORLEVEL%==0 (
+            php "%COMPOSER_PATH%" %*
+            exit /b %ERRORLEVEL%
+        )
+    )
+) else (
+    REM Try system composer as fallback
+    where composer >nul 2>&1
+    if %ERRORLEVEL%==0 (
+        call composer %*
+        exit /b %ERRORLEVEL%
+    ) else (
+        echo [DevBox Pro] Composer not found. Install from Binaries page.
+        exit /b 1
+    )
+)
+`;
+
+    // Write all shims
+    await fs.writeFile(path.join(cliPath, 'php.cmd'), phpShim, 'utf8');
+    await fs.writeFile(path.join(cliPath, 'node.cmd'), nodeShim, 'utf8');
+    await fs.writeFile(path.join(cliPath, 'npm.cmd'), npmShim, 'utf8');
+    await fs.writeFile(path.join(cliPath, 'npx.cmd'), npxShim, 'utf8');
+    await fs.writeFile(path.join(cliPath, 'composer.cmd'), composerShim, 'utf8');
+
+    return true;
+  }
+
+  /**
+   * Install Unix direct command shims
+   */
+  async installUnixDirectShims(cliPath) {
+    const resourcesPath = this.resourcesPath;
+    const projectsFilePath = this.getProjectsFilePath();
+    const platform = process.platform === 'darwin' ? 'mac' : 'linux';
+    const defaultPhpVersion = this.getDefaultPhpVersion() || this.getFirstInstalledPhpVersion();
+    const defaultNodeVersion = this.getDefaultNodeVersion() || this.getFirstInstalledNodeVersion();
+
+    // PHP shim
+    const phpShim = `#!/bin/bash
+# DevBox Pro PHP Shim - Auto-detects project PHP version
+
+DEVBOX_RESOURCES="${resourcesPath}"
+DEVBOX_PROJECTS="${projectsFilePath}"
+DEFAULT_PHP="${defaultPhpVersion}"
+CURRENT_DIR="$(pwd)"
+
+# Find project for current directory
+PHP_VERSION=""
+if [ -f "$DEVBOX_PROJECTS" ]; then
+    RESULT=$(python3 -c "
+import json, sys
+try:
+    with open('$DEVBOX_PROJECTS') as f:
+        projects = json.load(f)
+    current = '$CURRENT_DIR'.lower()
+    for path, config in projects.items():
+        if current.startswith(path.lower()) or current == path.lower():
+            print('FOUND|' + (config.get('phpVersion') or '8.3'))
+            sys.exit(0)
+except:
+    pass
+print('NOTFOUND|')
+" 2>/dev/null)
+    
+    if [[ "$RESULT" == FOUND* ]]; then
+        PHP_VERSION="\${RESULT#FOUND|}"
+    fi
+fi
+
+# Use project version or default
+[ -z "$PHP_VERSION" ] && PHP_VERSION="$DEFAULT_PHP"
+
+PHP_PATH="$DEVBOX_RESOURCES/php/$PHP_VERSION/${platform}"
+
+if [ -x "$PHP_PATH/php" ]; then
+    exec "$PHP_PATH/php" "$@"
+elif command -v php &> /dev/null; then
+    exec php "$@"
+else
+    echo "[DevBox Pro] PHP $PHP_VERSION not found. Install from Binaries page or set a default version."
+    exit 1
+fi
+`;
+
+    // Node shim
+    const nodeShim = `#!/bin/bash
+# DevBox Pro Node Shim - Auto-detects project Node version
+
+DEVBOX_RESOURCES="${resourcesPath}"
+DEVBOX_PROJECTS="${projectsFilePath}"
+DEFAULT_NODE="${defaultNodeVersion}"
+CURRENT_DIR="$(pwd)"
+
+# Find project for current directory
+NODE_VERSION=""
+if [ -f "$DEVBOX_PROJECTS" ]; then
+    RESULT=$(python3 -c "
+import json, sys
+try:
+    with open('$DEVBOX_PROJECTS') as f:
+        projects = json.load(f)
+    current = '$CURRENT_DIR'.lower()
+    for path, config in projects.items():
+        if current.startswith(path.lower()) or current == path.lower():
+            nv = config.get('nodejsVersion')
+            if nv:
+                print('FOUND|' + nv)
+            sys.exit(0)
+except:
+    pass
+print('NOTFOUND|')
+" 2>/dev/null)
+    
+    if [[ "$RESULT" == FOUND* ]]; then
+        NODE_VERSION="\${RESULT#FOUND|}"
+    fi
+fi
+
+# Use project version or default
+[ -z "$NODE_VERSION" ] && NODE_VERSION="$DEFAULT_NODE"
+
+NODE_PATH="$DEVBOX_RESOURCES/nodejs/$NODE_VERSION/${platform}"
+
+if [ -x "$NODE_PATH/bin/node" ]; then
+    exec "$NODE_PATH/bin/node" "$@"
+elif [ -x "$NODE_PATH/node" ]; then
+    exec "$NODE_PATH/node" "$@"
+elif command -v node &> /dev/null; then
+    exec node "$@"
+else
+    echo "[DevBox Pro] Node.js $NODE_VERSION not found. Install from Binaries page or set a default version."
+    exit 1
+fi
+`;
+
+    // Write shims and make executable
+    const shims = [
+      { name: 'php', content: phpShim },
+      { name: 'node', content: nodeShim },
+    ];
+
+    for (const shim of shims) {
+      const shimPath = path.join(cliPath, shim.name);
+      await fs.writeFile(shimPath, shim.content, 'utf8');
+      await fs.chmod(shimPath, 0o755);
+    }
+
+    // For npm, npx, and composer, create symlink-style shims that use node
+    const npmShim = `#!/bin/bash
+# DevBox Pro npm Shim
+SCRIPT_DIR="$(dirname "$0")"
+NODE_CMD="$SCRIPT_DIR/node"
+DEVBOX_RESOURCES="${resourcesPath}"
+
+# Get node version from the node shim logic, then find npm
+NODE_VERSION=$($NODE_CMD -e "console.log(process.version)" 2>/dev/null | sed 's/v//')
+if [ -n "$NODE_VERSION" ]; then
+    MAJOR_VERSION=\${NODE_VERSION%%.*}
+    NPM_PATH="$DEVBOX_RESOURCES/nodejs/$MAJOR_VERSION/${platform}/bin/npm"
+    [ -x "$NPM_PATH" ] && exec "$NODE_CMD" "$NPM_PATH" "$@"
+    NPM_PATH="$DEVBOX_RESOURCES/nodejs/$MAJOR_VERSION/${platform}/npm"
+    [ -x "$NPM_PATH" ] && exec "$NODE_CMD" "$NPM_PATH" "$@"
+fi
+
+# Fallback to system npm
+command -v npm &> /dev/null && exec npm "$@"
+echo "[DevBox Pro] npm not found."
+exit 1
+`;
+
+    await fs.writeFile(path.join(cliPath, 'npm'), npmShim, 'utf8');
+    await fs.chmod(path.join(cliPath, 'npm'), 0o755);
+
+    await fs.writeFile(path.join(cliPath, 'npx'), npmShim.replace(/npm/g, 'npx'), 'utf8');
+    await fs.chmod(path.join(cliPath, 'npx'), 0o755);
+
+    // Composer shim
+    const composerShim = `#!/bin/bash
+# DevBox Pro Composer Shim
+SCRIPT_DIR="$(dirname "$0")"
+PHP_CMD="$SCRIPT_DIR/php"
+DEVBOX_RESOURCES="${resourcesPath}"
+COMPOSER_PATH="$DEVBOX_RESOURCES/composer/composer.phar"
+
+if [ -f "$COMPOSER_PATH" ]; then
+    exec "$PHP_CMD" "$COMPOSER_PATH" "$@"
+elif command -v composer &> /dev/null; then
+    exec composer "$@"
+else
+    echo "[DevBox Pro] Composer not found. Install from Binaries page."
+    exit 1
+fi
+`;
+
+    await fs.writeFile(path.join(cliPath, 'composer'), composerShim, 'utf8');
+    await fs.chmod(path.join(cliPath, 'composer'), 0o755);
+
+    return true;
+  }
+
+  /**
+   * Get the first available installed PHP version
+   */
+  getFirstInstalledPhpVersion() {
+    if (!this.resourcesPath) return '8.3';
+
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const phpDir = path.join(this.resourcesPath, 'php');
+
+    try {
+      if (!fs.existsSync(phpDir)) return '8.3';
+
+      const versions = fs.readdirSync(phpDir)
+        .filter(v => v !== 'downloads' && v !== 'win' && v !== 'mac')
+        .filter(v => {
+          const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
+          return fs.existsSync(path.join(phpDir, v, platform, phpExe));
+        })
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+
+      return versions[0] || '8.3';
+    } catch (e) {
+      return '8.3';
+    }
   }
 }
 

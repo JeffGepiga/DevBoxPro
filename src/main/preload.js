@@ -131,8 +131,15 @@ contextBridge.exposeInMainWorld('devbox', {
     setAlias: (alias) => ipcRenderer.invoke('cli:setAlias', alias),
     install: () => ipcRenderer.invoke('cli:install'),
     addToPath: () => ipcRenderer.invoke('cli:addToPath'),
+    removeFromPath: () => ipcRenderer.invoke('cli:removeFromPath'),
     getInstructions: () => ipcRenderer.invoke('cli:getInstructions'),
     syncProjectConfigs: () => ipcRenderer.invoke('cli:syncProjectConfigs'),
+    getDirectShimsEnabled: () => ipcRenderer.invoke('cli:getDirectShimsEnabled'),
+    setDirectShimsEnabled: (enabled) => ipcRenderer.invoke('cli:setDirectShimsEnabled', enabled),
+    getDefaultPhpVersion: () => ipcRenderer.invoke('cli:getDefaultPhpVersion'),
+    setDefaultPhpVersion: (version) => ipcRenderer.invoke('cli:setDefaultPhpVersion', version),
+    getDefaultNodeVersion: () => ipcRenderer.invoke('cli:getDefaultNodeVersion'),
+    setDefaultNodeVersion: (version) => ipcRenderer.invoke('cli:setDefaultNodeVersion', version),
   },
 
   // Settings operations

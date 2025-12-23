@@ -97,6 +97,18 @@ class ProjectManager {
 
     try {
       await cli.syncProjectsFile();
+
+      // Auto-initialize terminal commands if enabled and not yet set up
+      if (cli.getDirectShimsEnabled()) {
+        const status = await cli.checkCliInstalled();
+        if (!status.installed || !status.inPath) {
+          // Install shims and add to PATH automatically
+          await cli.installCli();
+          await cli.installDirectShims();
+          await cli.addToPath();
+          this.managers.log?.systemInfo('Terminal commands auto-initialized');
+        }
+      }
     } catch (error) {
       this.managers.log?.systemWarn('Could not sync CLI projects file', { error: error.message });
     }

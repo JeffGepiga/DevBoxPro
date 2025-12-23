@@ -21,6 +21,12 @@
 - **Built-in SSH Key Management** – Generate, copy, and regenerate SSH keys directly from the app
 - **Auto Laravel Setup** – Automatically runs `composer install`, `.env` setup, and `artisan key:generate` after cloning Laravel projects
 
+#### 💻 Direct Terminal Commands
+- **Removed `dvp` prefix requirement** – Use standard `php`, `npm`, `node`, `composer` commands
+- **Automatic version detection** – DevBox Pro uses the correct version for each project
+- **Simplified setup** – Just enable in Settings and restart your terminal
+- **Works with any editor** – VS Code, Windows Terminal, PowerShell, and more
+
 ### 🐛 Bug Fixes
 
 #### 🔧 Multiple Running Services Fix
@@ -81,18 +87,20 @@
 - Compatibility rules sync – updated version warnings
 - One-click update check from Settings
 
-### 💻 CLI Tool (dvp)
-Run PHP, Node.js, Composer, and npm commands with **project-specific versions** from any terminal or editor:
+### 💻 Terminal Commands (Simplified!)
+Use `php`, `npm`, `node`, and `composer` directly from any terminal - DevBox Pro automatically uses the correct version for your project:
 
 ```bash
-# Navigate to your project and run commands
+# Navigate to your project and run commands directly
 cd C:\Projects\my-laravel-app
 
-dvp php artisan migrate      # Uses project's PHP version
-dvp composer install         # Uses correct PHP for Composer
-dvp npm install              # Uses project's Node.js version
-dvp npm run dev              # Run npm scripts
+php artisan migrate      # Uses project's PHP version automatically
+composer install         # Uses correct PHP for Composer
+npm install              # Uses project's Node.js version
+npm run dev              # Run npm scripts
 ```
+
+> **New in v1.0.2:** No more `dvp` prefix needed! Just enable Terminal Commands in Settings and use commands directly.
 
 ---
 
