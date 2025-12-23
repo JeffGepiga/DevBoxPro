@@ -1047,7 +1047,7 @@ set "CURRENT_DIR=%CD%"
 REM Find project for current directory
 set "NODE_VERSION="
 if exist "%DEVBOX_PROJECTS%" (
-    for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){if($prop.Value.nodejsVersion){Write-Output \\"FOUND|$($prop.Value.nodejsVersion)|$($prop.Value.name)\\"}else{Write-Output 'NOTFOUND||'};exit}}Write-Output 'NOTFOUND||'"') do (
+    for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){if($prop.Value.nodejsVersion){Write-Output \\"FOUND|$($prop.Value.nodejsVersion)|$($prop.Value.name)\\"}else{Write-Output 'NOTFOUND||'};exit}}Write-Output 'NOTFOUND||'"') do (
         if "%%a"=="FOUND" (
             set "NODE_VERSION=%%b"
             set "PROJECT_NAME=%%c"
@@ -1089,7 +1089,7 @@ set "CURRENT_DIR=%CD%"
 REM Find project for current directory
 set "NODE_VERSION="
 if exist "%DEVBOX_PROJECTS%" (
-    for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){if($prop.Value.nodejsVersion){Write-Output \\"FOUND|$($prop.Value.nodejsVersion)|$($prop.Value.name)\\"}else{Write-Output 'NOTFOUND||'};exit}}Write-Output 'NOTFOUND||'"') do (
+    for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){if($prop.Value.nodejsVersion){Write-Output \\"FOUND|$($prop.Value.nodejsVersion)|$($prop.Value.name)\\"}else{Write-Output 'NOTFOUND||'};exit}}Write-Output 'NOTFOUND||'"') do (
         if "%%a"=="FOUND" (
             set "NODE_VERSION=%%b"
         )
@@ -1130,7 +1130,7 @@ set "CURRENT_DIR=%CD%"
 REM Find project for current directory
 set "NODE_VERSION="
 if exist "%DEVBOX_PROJECTS%" (
-    for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){if($prop.Value.nodejsVersion){Write-Output \\"FOUND|$($prop.Value.nodejsVersion)|$($prop.Value.name)\\"}else{Write-Output 'NOTFOUND||'};exit}}Write-Output 'NOTFOUND||'"') do (
+    for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){if($prop.Value.nodejsVersion){Write-Output \\"FOUND|$($prop.Value.nodejsVersion)|$($prop.Value.name)\\"}else{Write-Output 'NOTFOUND||'};exit}}Write-Output 'NOTFOUND||'"') do (
         if "%%a"=="FOUND" (
             set "NODE_VERSION=%%b"
         )
@@ -1171,7 +1171,7 @@ set "CURRENT_DIR=%CD%"
 REM Find project for current directory
 set "PHP_VERSION="
 if exist "%DEVBOX_PROJECTS%" (
-    for /f "tokens=1-2 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){Write-Output \\"FOUND|$($prop.Value.phpVersion)\\";exit}}Write-Output 'NOTFOUND|'"') do (
+    for /f "tokens=1-2 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){Write-Output \\"FOUND|$($prop.Value.phpVersion)\\";exit}}Write-Output 'NOTFOUND|'"') do (
         if "%%a"=="FOUND" set "PHP_VERSION=%%b"
     )
 )
