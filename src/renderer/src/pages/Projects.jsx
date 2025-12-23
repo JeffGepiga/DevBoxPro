@@ -14,10 +14,12 @@ import {
   Filter,
   RefreshCw,
   FolderSearch,
+  FolderPlus,
   Download,
   X,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -90,6 +92,37 @@ function Projects() {
     }
   };
 
+  const handleImportFolder = async () => {
+    try {
+      // Open folder picker dialog
+      const folderPath = await window.devbox?.system.selectDirectory();
+      if (!folderPath) return; // User cancelled
+
+      // Check if project is already registered
+      const existingProject = projects.find(p => p.path === folderPath);
+      if (existingProject) {
+        alert(`This folder is already registered as project "${existingProject.name}"`);
+        return;
+      }
+
+      // Detect project type from folder contents
+      const projectInfo = await window.devbox?.projects.detectType(folderPath);
+
+      // Open import modal with detected info
+      setImportModal({
+        open: true,
+        project: projectInfo || {
+          name: folderPath.split(/[\\/]/).pop(),
+          path: folderPath,
+          type: 'custom'
+        }
+      });
+    } catch (error) {
+      // Failed to import folder
+      console.error('Failed to import folder:', error);
+    }
+  };
+
   const handleImportProject = async (config) => {
     try {
       await window.devbox?.projects.registerExisting(config);
@@ -123,9 +156,18 @@ function Projects() {
         </div>
         <div className="flex items-center gap-3">
           <button
+            onClick={handleImportFolder}
+            className="btn-secondary"
+            title="Import an existing project folder"
+          >
+            <FolderPlus className="w-4 h-4" />
+            Import Project
+          </button>
+          <button
             onClick={handleScanProjects}
             disabled={isScanning}
             className="btn-secondary"
+            title="Scan projects directory for unregistered projects"
           >
             {isScanning ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -395,11 +437,112 @@ function ImportProjectModal({ project, onClose, onImport }) {
     name: project.name,
     path: project.path,
     type: project.type,
-    phpVersion: '8.3',
+    phpVersion: '',
     webServer: 'nginx',
     database: 'none',
+    services: {
+      redis: false,
+      redisVersion: '',
+      nodejs: false,
+      nodejsVersion: '',
+      queue: false,
+    },
   });
   const [isImporting, setIsImporting] = useState(false);
+  const [installedPhpVersions, setInstalledPhpVersions] = useState([]);
+  const [installedWebServers, setInstalledWebServers] = useState({ nginx: [], apache: [] });
+  const [installedDatabases, setInstalledDatabases] = useState({ mysql: [], mariadb: [] });
+  const [installedRedis, setInstalledRedis] = useState([]);
+  const [installedNodejs, setInstalledNodejs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showServices, setShowServices] = useState(false);
+
+  // Fetch installed binaries on mount
+  useEffect(() => {
+    const fetchBinaries = async () => {
+      try {
+        const status = await window.devbox?.binaries.getStatus();
+        if (status) {
+          // Get installed PHP versions (sorted descending - newest first)
+          const phpVersions = Object.entries(status.php || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version)
+            .sort((a, b) => parseFloat(b) - parseFloat(a));
+
+          // Get installed web servers
+          const nginxVersions = Object.entries(status.nginx || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+          const apacheVersions = Object.entries(status.apache || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+
+          // Get installed databases
+          const mysqlVersions = Object.entries(status.mysql || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+          const mariadbVersions = Object.entries(status.mariadb || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+
+          // Get installed Redis
+          const redisVersions = Object.entries(status.redis || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+
+          // Get installed Node.js
+          const nodejsVersions = Object.entries(status.nodejs || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+
+          setInstalledPhpVersions(phpVersions);
+          setInstalledWebServers({ nginx: nginxVersions, apache: apacheVersions });
+          setInstalledDatabases({ mysql: mysqlVersions, mariadb: mariadbVersions });
+          setInstalledRedis(redisVersions);
+          setInstalledNodejs(nodejsVersions);
+
+          // Set default PHP version to first available
+          if (phpVersions.length > 0) {
+            setConfig(prev => ({ ...prev, phpVersion: phpVersions[0] }));
+          }
+
+          // Set default web server based on what's installed
+          if (nginxVersions.length === 0 && apacheVersions.length > 0) {
+            setConfig(prev => ({ ...prev, webServer: 'apache' }));
+          }
+
+          // Set default versions for optional services
+          if (redisVersions.length > 0) {
+            setConfig(prev => ({
+              ...prev,
+              services: { ...prev.services, redisVersion: redisVersions[0] }
+            }));
+          }
+          if (nodejsVersions.length > 0) {
+            setConfig(prev => ({
+              ...prev,
+              services: { ...prev.services, nodejsVersion: nodejsVersions[0] }
+            }));
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching binaries:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchBinaries();
+  }, []);
+
+  const toggleService = (service) => {
+    setConfig(prev => ({
+      ...prev,
+      services: {
+        ...prev.services,
+        [service]: !prev.services[service],
+      },
+    }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -411,10 +554,20 @@ function ImportProjectModal({ project, onClose, onImport }) {
     }
   };
 
+  const hasNoPhpInstalled = installedPhpVersions.length === 0;
+  const hasNoWebServer = installedWebServers.nginx.length === 0 && installedWebServers.apache.length === 0;
+  const hasNoDatabase = installedDatabases.mysql.length === 0 && installedDatabases.mariadb.length === 0;
+
+  // Count available optional services
+  const hasRedis = installedRedis.length > 0;
+  const hasNodejs = installedNodejs.length > 0;
+  const isLaravel = config.type === 'laravel';
+  const hasAnyOptionalService = hasRedis || hasNodejs || isLaravel;
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             Import Project
           </h3>
@@ -426,133 +579,261 @@ function ImportProjectModal({ project, onClose, onImport }) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Project Name (read-only, using folder name) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Project Name
-            </label>
-            <input
-              type="text"
-              value={config.name}
-              disabled
-              className="input bg-gray-100 dark:bg-gray-700"
-            />
-            <p className="text-xs text-gray-500 mt-1">Using folder name</p>
-          </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+              <span className="ml-3 text-gray-600 dark:text-gray-400">Loading binaries...</span>
+            </div>
+          ) : (
+            <>
+              {/* Basic Info Section */}
+              <div className="grid grid-cols-2 gap-4">
+                {/* Project Name (read-only) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Project Name
+                  </label>
+                  <input
+                    type="text"
+                    value={config.name}
+                    disabled
+                    className="input bg-gray-100 dark:bg-gray-700 text-sm"
+                  />
+                </div>
 
-          {/* Path (read-only) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Path
-            </label>
-            <input
-              type="text"
-              value={config.path}
-              disabled
-              className="input bg-gray-100 dark:bg-gray-700 text-sm"
-            />
-          </div>
+                {/* Project Type */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Type
+                  </label>
+                  <select
+                    value={config.type}
+                    onChange={(e) => setConfig({ ...config, type: e.target.value })}
+                    className="select"
+                  >
+                    <option value="laravel">Laravel</option>
+                    <option value="symfony">Symfony</option>
+                    <option value="wordpress">WordPress</option>
+                    <option value="custom">Custom PHP</option>
+                  </select>
+                </div>
+              </div>
 
-          {/* Project Type */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Project Type
-            </label>
-            <select
-              value={config.type}
-              onChange={(e) => setConfig({ ...config, type: e.target.value })}
-              className="select"
-            >
-              <option value="laravel">Laravel</option>
-              <option value="symfony">Symfony</option>
-              <option value="wordpress">WordPress</option>
-              <option value="custom">Custom PHP</option>
-            </select>
-          </div>
+              {/* Path (read-only) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Path
+                </label>
+                <input
+                  type="text"
+                  value={config.path}
+                  disabled
+                  className="input bg-gray-100 dark:bg-gray-700 text-xs"
+                />
+              </div>
 
-          {/* PHP Version */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              PHP Version
-            </label>
-            <select
-              value={config.phpVersion}
-              onChange={(e) => setConfig({ ...config, phpVersion: e.target.value })}
-              className="select"
-            >
-              <option value="8.4">PHP 8.4</option>
-              <option value="8.3">PHP 8.3</option>
-              <option value="8.2">PHP 8.2</option>
-              <option value="8.1">PHP 8.1</option>
-              <option value="8.0">PHP 8.0</option>
-              <option value="7.4">PHP 7.4</option>
-            </select>
-          </div>
+              {/* PHP & Web Server Row */}
+              <div className="grid grid-cols-2 gap-4">
+                {/* PHP Version */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    PHP Version
+                  </label>
+                  {hasNoPhpInstalled ? (
+                    <div className="p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                      <p className="text-xs text-amber-700 dark:text-amber-300">No PHP installed</p>
+                    </div>
+                  ) : (
+                    <select
+                      value={config.phpVersion}
+                      onChange={(e) => setConfig({ ...config, phpVersion: e.target.value })}
+                      className="select"
+                    >
+                      {installedPhpVersions.map((version) => (
+                        <option key={version} value={version}>PHP {version}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
 
-          {/* Web Server */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Web Server
-            </label>
-            <select
-              value={config.webServer}
-              onChange={(e) => setConfig({ ...config, webServer: e.target.value })}
-              className="select"
-            >
-              <option value="nginx">Nginx</option>
-              <option value="apache">Apache</option>
-            </select>
-          </div>
+                {/* Web Server */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Web Server
+                  </label>
+                  {hasNoWebServer ? (
+                    <div className="p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                      <p className="text-xs text-amber-700 dark:text-amber-300">No web server</p>
+                    </div>
+                  ) : (
+                    <select
+                      value={config.webServer}
+                      onChange={(e) => setConfig({ ...config, webServer: e.target.value })}
+                      className="select"
+                    >
+                      {installedWebServers.nginx.length > 0 && <option value="nginx">Nginx</option>}
+                      {installedWebServers.apache.length > 0 && <option value="apache">Apache</option>}
+                    </select>
+                  )}
+                </div>
+              </div>
 
-          {/* Database */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Database
-            </label>
-            <select
-              value={config.database}
-              onChange={(e) => setConfig({ ...config, database: e.target.value })}
-              className="select"
-            >
-              <option value="none">None</option>
-              <option value="mysql">MySQL</option>
-              <option value="mariadb">MariaDB</option>
-            </select>
-            {config.database !== 'none' && (
-              <p className="text-xs text-gray-500 mt-1">
-                A database named "{config.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}" will be created
-              </p>
-            )}
-          </div>
+              {/* Database */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Database
+                </label>
+                <select
+                  value={config.database}
+                  onChange={(e) => setConfig({ ...config, database: e.target.value })}
+                  className="select"
+                >
+                  <option value="none">None</option>
+                  {installedDatabases.mysql.length > 0 && <option value="mysql">MySQL</option>}
+                  {installedDatabases.mariadb.length > 0 && <option value="mariadb">MariaDB</option>}
+                </select>
+                {config.database !== 'none' && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Database "{config.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}" will be created
+                  </p>
+                )}
+              </div>
 
-          {/* Actions */}
-          <div className="flex justify-end gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="btn-secondary"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isImporting}
-              className="btn-primary"
-            >
-              {isImporting ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  Importing...
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4" />
-                  Import Project
-                </>
+              {/* Optional Services Section */}
+              {hasAnyOptionalService && (
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setShowServices(!showServices)}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Optional Services
+                    </span>
+                    {showServices ? (
+                      <ChevronUp className="w-4 h-4 text-gray-500" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-gray-500" />
+                    )}
+                  </button>
+
+                  {showServices && (
+                    <div className="p-4 space-y-4">
+                      {/* Redis */}
+                      {hasRedis && (
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-3 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={config.services.redis}
+                              onChange={() => toggleService('redis')}
+                              className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                            />
+                            <div className="flex-1">
+                              <span className="text-sm font-medium text-gray-900 dark:text-white">Redis</span>
+                              <p className="text-xs text-gray-500">Cache & session storage</p>
+                            </div>
+                          </label>
+                          {config.services.redis && (
+                            <select
+                              value={config.services.redisVersion}
+                              onChange={(e) => setConfig(prev => ({
+                                ...prev,
+                                services: { ...prev.services, redisVersion: e.target.value }
+                              }))}
+                              className="select text-sm ml-7"
+                            >
+                              {installedRedis.map((version) => (
+                                <option key={version} value={version}>Redis {version}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Node.js */}
+                      {hasNodejs && (
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-3 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={config.services.nodejs}
+                              onChange={() => toggleService('nodejs')}
+                              className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                            />
+                            <div className="flex-1">
+                              <span className="text-sm font-medium text-gray-900 dark:text-white">Node.js</span>
+                              <p className="text-xs text-gray-500">For npm/frontend builds</p>
+                            </div>
+                          </label>
+                          {config.services.nodejs && (
+                            <select
+                              value={config.services.nodejsVersion}
+                              onChange={(e) => setConfig(prev => ({
+                                ...prev,
+                                services: { ...prev.services, nodejsVersion: e.target.value }
+                              }))}
+                              className="select text-sm ml-7"
+                            >
+                              {installedNodejs.map((version) => (
+                                <option key={version} value={version}>Node {version}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Queue Worker (Laravel only) */}
+                      {isLaravel && (
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={config.services.queue}
+                            onChange={() => toggleService('queue')}
+                            className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          />
+                          <div className="flex-1">
+                            <span className="text-sm font-medium text-gray-900 dark:text-white">Queue Worker</span>
+                            <p className="text-xs text-gray-500">Background job processing</p>
+                          </div>
+                        </label>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
-            </button>
-          </div>
+
+              {/* Actions */}
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="btn-secondary"
+                  disabled={isImporting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isImporting || hasNoPhpInstalled || hasNoWebServer}
+                  className="btn-primary"
+                >
+                  {isImporting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      Import Project
+                    </>
+                  )}
+                </button>
+              </div>
+            </>
+          )}
         </form>
       </div>
     </div>
@@ -564,8 +845,11 @@ function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [error, setError] = useState(null);
+  const [isHovered, setIsHovered] = useState(false);
 
-  const handleStart = async () => {
+  const handleStart = async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
     setIsStarting(true);
     setError(null);
     try {
@@ -580,7 +864,9 @@ function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
     }
   };
 
-  const handleStop = async () => {
+  const handleStop = async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
     setIsStopping(true);
     setError(null);
     try {
@@ -595,6 +881,12 @@ function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
     }
   };
 
+  const handleMenuClick = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setShowMenu(!showMenu);
+  };
+
   const typeColors = {
     laravel: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
     symfony: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
@@ -603,66 +895,92 @@ function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
   };
 
   return (
-    <div className="card overflow-hidden">
+    <Link
+      to={`/projects/${project.id}`}
+      className={clsx(
+        'card overflow-hidden block transition-all duration-200 cursor-pointer',
+        'hover:shadow-lg hover:border-primary-300 dark:hover:border-primary-600',
+        'hover:scale-[1.02] active:scale-[0.99]',
+        isHovered && 'ring-2 ring-primary-200 dark:ring-primary-700'
+      )}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => {
+        setIsHovered(false);
+        setShowMenu(false);
+      }}
+    >
       <div className="p-6">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className={project.isRunning ? 'status-running' : 'status-stopped'} />
-            <Link
-              to={`/projects/${project.id}`}
-              className="text-lg font-semibold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400"
-            >
+            <span className="text-lg font-semibold text-gray-900 dark:text-white">
               {project.name}
-            </Link>
+            </span>
           </div>
-          <div className="relative">
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="btn-ghost btn-icon"
-            >
-              <MoreVertical className="w-4 h-4" />
-            </button>
-            {showMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-10">
-                <button
-                  onClick={() => {
-                    window.devbox?.projects.openFolder(project.id);
-                    setShowMenu(false);
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
-                >
-                  <Folder className="w-4 h-4" />
-                  Open Folder
-                </button>
-                <button
-                  onClick={async () => {
-                    setError(null);
-                    try {
-                      await window.devbox?.projects.openInEditor(project.id, defaultEditor || 'vscode');
-                    } catch (err) {
-                      setError(err.message || 'Failed to open in editor');
-                    }
-                    setShowMenu(false);
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
-                >
-                  <Code className="w-4 h-4" />
-                  Open in Editor
-                </button>
-                <hr className="my-1 border-gray-200 dark:border-gray-700" />
-                <button
-                  onClick={() => {
-                    onDelete();
-                    setShowMenu(false);
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete
-                </button>
-              </div>
-            )}
+          <div className="flex items-center gap-2">
+            {/* View Details indicator on hover */}
+            <span className={clsx(
+              'text-xs text-primary-500 dark:text-primary-400 flex items-center gap-1 transition-opacity duration-200',
+              isHovered ? 'opacity-100' : 'opacity-0'
+            )}>
+              View Details
+              <ChevronRight className="w-3 h-3" />
+            </span>
+            <div className="relative">
+              <button
+                onClick={handleMenuClick}
+                className="btn-ghost btn-icon"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+              {showMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-10">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      window.devbox?.projects.openFolder(project.id);
+                      setShowMenu(false);
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                  >
+                    <Folder className="w-4 h-4" />
+                    Open Folder
+                  </button>
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setError(null);
+                      try {
+                        await window.devbox?.projects.openInEditor(project.id, defaultEditor || 'vscode');
+                      } catch (err) {
+                        setError(err.message || 'Failed to open in editor');
+                      }
+                      setShowMenu(false);
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                  >
+                    <Code className="w-4 h-4" />
+                    Open in Editor
+                  </button>
+                  <hr className="my-1 border-gray-200 dark:border-gray-700" />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      onDelete();
+                      setShowMenu(false);
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -734,7 +1052,11 @@ function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
         </div>
         {project.isRunning && (
           <button
-            onClick={() => window.devbox?.projects.openInBrowser(project.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              window.devbox?.projects.openInBrowser(project.id);
+            }}
             className="btn-ghost btn-sm"
           >
             <ExternalLink className="w-4 h-4" />
@@ -742,7 +1064,7 @@ function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
           </button>
         )}
       </div>
-    </div>
+    </Link>
   );
 }
 

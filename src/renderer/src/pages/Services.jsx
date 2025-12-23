@@ -140,11 +140,6 @@ function Services() {
       if (project.services?.mysql) required.add('mysql');
       if (project.services?.mariadb) required.add('mariadb');
       if (project.services?.redis) required.add('redis');
-
-      required.add('mailpit');
-      if (project.services?.mysql || project.services?.mariadb) {
-        required.add('phpmyadmin');
-      }
     }
 
     return required;
@@ -204,6 +199,7 @@ function Services() {
       color: 'green',
       defaultPort: serviceConfig.defaultPorts.mailpit || 8025,
       webUrl: `http://localhost:${serviceConfig.defaultPorts.mailpit || 8025}`,
+      alwaysShow: true,
     },
     phpmyadmin: {
       name: 'phpMyAdmin',
@@ -212,6 +208,7 @@ function Services() {
       color: 'orange',
       defaultPort: serviceConfig.defaultPorts.phpmyadmin || 8080,
       webUrl: `http://localhost:${serviceConfig.defaultPorts.phpmyadmin || 8080}`,
+      alwaysShow: true,
     },
   }), [serviceConfig]);
 
@@ -228,9 +225,16 @@ function Services() {
   // Build list of service cards to display (including individual version cards)
   const serviceCards = useMemo(() => {
     const cards = [];
-    const servicesToShow = runningProjects.length === 0
+    const servicesToShow = new Set(runningProjects.length === 0
       ? Object.keys(serviceInfo).filter(n => n !== 'nginx' && n !== 'apache')
-      : Array.from(requiredServices);
+      : [...requiredServices]);
+
+    // Always show services marked as alwaysShow
+    Object.entries(serviceInfo).forEach(([name, info]) => {
+      if (info.alwaysShow) {
+        servicesToShow.add(name);
+      }
+    });
 
     for (const name of servicesToShow) {
       const info = serviceInfo[name];
@@ -584,15 +588,13 @@ function VersionServiceCard({
         </button>
 
         {isRunning && info.webUrl && (
-          <a
-            href={info.webUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={() => window.devbox?.system.openExternal(info.webUrl)}
             className="btn-ghost btn-sm"
           >
             <ExternalLink className="w-4 h-4" />
             Open
-          </a>
+          </button>
         )}
       </div>
     </div>
@@ -690,15 +692,13 @@ function SimpleServiceCard({
         </button>
 
         {isRunning && info.webUrl && (
-          <a
-            href={info.webUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={() => window.devbox?.system.openExternal(info.webUrl)}
             className="btn-ghost btn-sm"
           >
             <ExternalLink className="w-4 h-4" />
             Open
-          </a>
+          </button>
         )}
       </div>
     </div>

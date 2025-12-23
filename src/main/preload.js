@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('devbox', {
     regenerateVhost: (id) => ipcRenderer.invoke('projects:regenerateVhost', id),
     scanUnregistered: () => ipcRenderer.invoke('projects:scanUnregistered'),
     registerExisting: (config) => ipcRenderer.invoke('projects:registerExisting', config),
+    detectType: (folderPath) => ipcRenderer.invoke('projects:detectType', folderPath),
     // Service version operations
     getServiceVersions: (id) => ipcRenderer.invoke('projects:getServiceVersions', id),
     updateServiceVersions: (id, versions) => ipcRenderer.invoke('projects:updateServiceVersions', id, versions),
@@ -71,7 +72,7 @@ contextBridge.exposeInMainWorld('devbox', {
     importDatabase: (name, filePath, mode) => ipcRenderer.invoke('database:importDatabase', name, filePath, mode),
     exportDatabase: (name, filePath) => ipcRenderer.invoke('database:exportDatabase', name, filePath),
     runQuery: (database, query) => ipcRenderer.invoke('database:runQuery', database, query),
-    getPhpMyAdminUrl: () => ipcRenderer.invoke('database:getPhpMyAdminUrl'),
+    getPhpMyAdminUrl: (dbType, version) => ipcRenderer.invoke('database:getPhpMyAdminUrl', dbType, version),
     getActiveDatabaseType: () => ipcRenderer.invoke('database:getActiveDatabaseType'),
     setActiveDatabaseType: (dbType, version) => ipcRenderer.invoke('database:setActiveDatabaseType', dbType, version),
     getDatabaseInfo: () => ipcRenderer.invoke('database:getDatabaseInfo'),

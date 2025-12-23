@@ -2583,6 +2583,15 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
     // Store the actual port being used
     this.serviceConfigs.phpmyadmin.actualPort = port;
 
+    // Update phpMyAdmin configuration to support all installed database versions
+    // This allows connecting to any running database instance
+    try {
+      await this.updatePhpMyAdminConfig(phpmyadminPath);
+    } catch (error) {
+      this.managers.log?.systemError('Failed to update phpMyAdmin config', { error: error.message });
+      // Continue anyway, it might still work with defaults
+    }
+
     // Get PHP directory for php.ini location
     const phpDir = path.dirname(phpPath);
 
@@ -2628,6 +2637,89 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       status.error = `phpMyAdmin failed to start properly: ${error.message}`;
       throw error;
     }
+  }
+
+  // Update phpMyAdmin configuration with all installed database servers
+  async updatePhpMyAdminConfig(pmaPath) {
+    const servers = [];
+    let serverIndex = 1;
+
+    // Get installed binaries to filter only installed database versions
+    let installedBinaries = { mysql: {}, mariadb: {} };
+    if (this.managers.binaryDownload) {
+      try {
+        installedBinaries = await this.managers.binaryDownload.getInstalledBinaries();
+      } catch (err) {
+        this.managers.log?.systemWarn('Could not get installed binaries, showing all versions', { error: err.message });
+      }
+    }
+
+    // Helper to add server config
+    const addServer = (name, port, verboseName) => {
+      servers.push(`
+$cfg['Servers'][${serverIndex}]['verbose'] = '${verboseName}';
+$cfg['Servers'][${serverIndex}]['host'] = '127.0.0.1';
+$cfg['Servers'][${serverIndex}]['port'] = '${port}';
+$cfg['Servers'][${serverIndex}]['auth_type'] = 'cookie';
+$cfg['Servers'][${serverIndex}]['user'] = 'root';
+$cfg['Servers'][${serverIndex}]['password'] = '';
+$cfg['Servers'][${serverIndex}]['AllowNoPassword'] = true;
+`);
+      serverIndex++;
+    };
+
+    // Add MySQL versions (only installed ones)
+    // Sort versions to ensure deterministic ID assignment (newer first)
+    // This is crucial for the Smart URL strategy to work correctly
+    const mysqlVersions = (SERVICE_VERSIONS.mysql || [])
+      .filter(v => installedBinaries.mysql?.[v] === true)
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+    for (const version of mysqlVersions) {
+      const port = this.getVersionPort('mysql', version, this.serviceConfigs.mysql.defaultPort);
+      addServer('mysql', port, `MySQL ${version}`);
+    }
+
+    // Add MariaDB versions (only installed ones)
+    const mariadbVersions = (SERVICE_VERSIONS.mariadb || [])
+      .filter(v => installedBinaries.mariadb?.[v] === true)
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+    for (const version of mariadbVersions) {
+      const port = this.getVersionPort('mariadb', version, this.serviceConfigs.mariadb.defaultPort);
+      addServer('mariadb', port, `MariaDB ${version}`);
+    }
+
+    // If no servers found, add a default fallback
+    if (servers.length === 0) {
+      addServer('mysql', 3306, 'MySQL');
+    }
+
+    // Generate secret for cookie auth
+    const generateSecret = (length) => {
+      const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=';
+      let result = '';
+      for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    };
+
+    const configContent = `<?php
+/**
+ * phpMyAdmin configuration for DevBox Pro
+ * AUTO-GENERATED - DO NOT EDIT MANUALLY
+ */
+
+$cfg['blowfish_secret'] = '${generateSecret(32)}';
+$cfg['UploadDir'] = '';
+$cfg['SaveDir'] = '';
+$cfg['DefaultLang'] = 'en';
+$cfg['ServerDefault'] = 1; // Default to first server
+
+// Server Configurations
+${servers.join('')}
+`;
+
+    await fs.writeFile(path.join(pmaPath, 'config.inc.php'), configContent);
   }
 
   // Utility methods - Path helpers for versioned services
@@ -2927,6 +3019,18 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
       httpPort: config.actualHttpPort || config.defaultPort,
       sslPort: config.actualSslPort || config.sslPort,
     };
+  }
+
+  /**
+   * Calculate port for a specific version based on offset
+   * @param {string} service - Service name (mysql, mariadb, etc)
+   * @param {string} version - Version string
+   * @param {number} defaultPort - Base port
+   * @returns {number} - Calculated port
+   */
+  getVersionPort(service, version, defaultPort) {
+    const offset = this.versionPortOffsets[service]?.[version] || 0;
+    return defaultPort + offset;
   }
 
   async getResourceUsage() {

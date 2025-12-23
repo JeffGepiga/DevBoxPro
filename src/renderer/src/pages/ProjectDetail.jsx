@@ -618,6 +618,13 @@ function OverviewTab({ project, processes, refreshProjects }) {
     }
   };
 
+  const openPhpMyAdmin = async (dbType, version) => {
+    const url = await window.devbox?.database.getPhpMyAdminUrl(dbType, version);
+    if (url) {
+      window.devbox?.system.openExternal(url);
+    }
+  };
+
   const handleSaveChanges = async () => {
     if (!hasPendingChanges) return;
 
@@ -670,8 +677,6 @@ function OverviewTab({ project, processes, refreshProjects }) {
     { id: 'mariadb', name: 'MariaDB', icon: '🗃️', installed: isAnyVersionInstalled(binariesStatus?.mariadb), isDatabase: true, hasVersions: true },
     { id: 'redis', name: 'Redis', icon: '⚡', installed: isAnyVersionInstalled(binariesStatus?.redis), hasVersions: true },
     { id: 'nodejs', name: 'Node.js', icon: <NodeJsIcon className="w-5 h-5 text-green-600" />, installed: isAnyVersionInstalled(binariesStatus?.nodejs), hasVersions: true },
-    { id: 'mailpit', name: 'Mailpit', icon: '📧', installed: binariesStatus?.mailpit?.installed === true },
-    { id: 'phpmyadmin', name: 'phpMyAdmin', icon: '🔧', installed: binariesStatus?.phpmyadmin?.installed === true },
     { id: 'queue', name: 'Queue Worker', icon: '📋', installed: true }, // Always available for Laravel
   ];
 
@@ -1012,6 +1017,23 @@ function OverviewTab({ project, processes, refreshProjects }) {
                       {(isChanged || versionChanged) && (
                         <span className="text-xs text-yellow-600 dark:text-yellow-400">Modified</span>
                       )}
+
+                      {/* phpMyAdmin Button for active database */}
+                      {isEnabled && service.isDatabase && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openPhpMyAdmin(service.id, currentVersion);
+                          }}
+                          className="btn-ghost btn-xs flex items-center gap-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
+                          title={`Open ${service.name} ${currentVersion} in phpMyAdmin`}
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span className="hidden sm:inline">phpMyAdmin</span>
+                        </button>
+                      )}
+
+                      {/* Version selector for services that support it */}
                       {/* Version selector for services that support it */}
                       {service.hasVersions && isEnabled && (
                         <select
