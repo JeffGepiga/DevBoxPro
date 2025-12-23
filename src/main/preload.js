@@ -72,7 +72,7 @@ contextBridge.exposeInMainWorld('devbox', {
     importDatabase: (name, filePath, mode) => ipcRenderer.invoke('database:importDatabase', name, filePath, mode),
     exportDatabase: (name, filePath) => ipcRenderer.invoke('database:exportDatabase', name, filePath),
     runQuery: (database, query) => ipcRenderer.invoke('database:runQuery', database, query),
-    getPhpMyAdminUrl: () => ipcRenderer.invoke('database:getPhpMyAdminUrl'),
+    getPhpMyAdminUrl: (dbType, version) => ipcRenderer.invoke('database:getPhpMyAdminUrl', dbType, version),
     getActiveDatabaseType: () => ipcRenderer.invoke('database:getActiveDatabaseType'),
     setActiveDatabaseType: (dbType, version) => ipcRenderer.invoke('database:setActiveDatabaseType', dbType, version),
     getDatabaseInfo: () => ipcRenderer.invoke('database:getDatabaseInfo'),

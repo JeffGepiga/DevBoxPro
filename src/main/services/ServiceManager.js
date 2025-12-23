@@ -2644,6 +2644,16 @@ dbfilename dump_${version.replace(/\./g, '')}.rdb
     const servers = [];
     let serverIndex = 1;
 
+    // Get installed binaries to filter only installed database versions
+    let installedBinaries = { mysql: {}, mariadb: {} };
+    if (this.managers.binaryDownload) {
+      try {
+        installedBinaries = await this.managers.binaryDownload.getInstalledBinaries();
+      } catch (err) {
+        this.managers.log?.systemWarn('Could not get installed binaries, showing all versions', { error: err.message });
+      }
+    }
+
     // Helper to add server config
     const addServer = (name, port, verboseName) => {
       servers.push(`
@@ -2658,17 +2668,21 @@ $cfg['Servers'][${serverIndex}]['AllowNoPassword'] = true;
       serverIndex++;
     };
 
-    // Add MySQL versions
+    // Add MySQL versions (only installed ones)
     // Sort versions to ensure deterministic ID assignment (newer first)
     // This is crucial for the Smart URL strategy to work correctly
-    const mysqlVersions = (SERVICE_VERSIONS.mysql || []).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+    const mysqlVersions = (SERVICE_VERSIONS.mysql || [])
+      .filter(v => installedBinaries.mysql?.[v] === true)
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
     for (const version of mysqlVersions) {
       const port = this.getVersionPort('mysql', version, this.serviceConfigs.mysql.defaultPort);
       addServer('mysql', port, `MySQL ${version}`);
     }
 
-    // Add MariaDB versions
-    const mariadbVersions = (SERVICE_VERSIONS.mariadb || []).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+    // Add MariaDB versions (only installed ones)
+    const mariadbVersions = (SERVICE_VERSIONS.mariadb || [])
+      .filter(v => installedBinaries.mariadb?.[v] === true)
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
     for (const version of mariadbVersions) {
       const port = this.getVersionPort('mariadb', version, this.serviceConfigs.mariadb.defaultPort);
       addServer('mariadb', port, `MariaDB ${version}`);
@@ -3005,6 +3019,18 @@ ${servers.join('')}
       httpPort: config.actualHttpPort || config.defaultPort,
       sslPort: config.actualSslPort || config.sslPort,
     };
+  }
+
+  /**
+   * Calculate port for a specific version based on offset
+   * @param {string} service - Service name (mysql, mariadb, etc)
+   * @param {string} version - Version string
+   * @param {number} defaultPort - Base port
+   * @returns {number} - Calculated port
+   */
+  getVersionPort(service, version, defaultPort) {
+    const offset = this.versionPortOffsets[service]?.[version] || 0;
+    return defaultPort + offset;
   }
 
   async getResourceUsage() {

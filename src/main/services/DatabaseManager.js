@@ -164,11 +164,23 @@ class DatabaseManager {
       // If specific type/version requested, find its server ID
       // This matches the logic in ServiceManager.updatePhpMyAdminConfig
       if (dbType && version) {
+        // Get installed binaries to filter only installed database versions (matches updatePhpMyAdminConfig)
+        let installedBinaries = { mysql: {}, mariadb: {} };
+        if (this.managers.binaryDownload) {
+          try {
+            installedBinaries = await this.managers.binaryDownload.getInstalledBinaries();
+          } catch (err) {
+            // Fall back to assuming all versions are installed
+          }
+        }
+
         let currentId = 1;
         let found = false;
 
-        // MySQL versions
-        const mysqlVersions = (SERVICE_VERSIONS.mysql || []).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+        // MySQL versions (only installed ones, sorted newer first to match config)
+        const mysqlVersions = (SERVICE_VERSIONS.mysql || [])
+          .filter(v => installedBinaries.mysql?.[v] === true)
+          .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
         for (const v of mysqlVersions) {
           if (dbType === 'mysql' && version === v) {
             serverId = currentId;
@@ -179,8 +191,10 @@ class DatabaseManager {
         }
 
         if (!found) {
-          // MariaDB versions
-          const mariadbVersions = (SERVICE_VERSIONS.mariadb || []).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+          // MariaDB versions (only installed ones, sorted newer first to match config)
+          const mariadbVersions = (SERVICE_VERSIONS.mariadb || [])
+            .filter(v => installedBinaries.mariadb?.[v] === true)
+            .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
           for (const v of mariadbVersions) {
             if (dbType === 'mariadb' && version === v) {
               serverId = currentId;
@@ -1133,11 +1147,7 @@ class DatabaseManager {
     });
   }
 
-  getPhpMyAdminUrl() {
-    const settings = this.configStore.get('settings', {});
-    const port = settings.phpMyAdminPort || 8080;
-    return `http://127.0.0.1:${port}`;
-  }
+  // NOTE: getPhpMyAdminUrl has been moved to line 145 with multi-version support
 
   /**
    * Drop all tables in a database (for clean import)
