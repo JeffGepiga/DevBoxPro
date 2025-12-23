@@ -354,6 +354,21 @@ class BinaryDownloadManager {
           filename: 'composer.phar',
         },
       },
+      // Git Portable - for cloning repositories
+      git: {
+        portable: {
+          win: {
+            url: 'https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.2/PortableGit-2.47.1.2-64-bit.7z.exe',
+            filename: 'PortableGit-2.47.1.2-64-bit.7z.exe',
+          },
+          mac: {
+            // On macOS, Git is typically installed via Xcode Command Line Tools or Homebrew
+            url: 'builtin',
+            note: 'Install via: xcode-select --install or brew install git',
+          },
+          label: 'Portable',
+        },
+      },
     };
 
     // Version metadata for UI display and compatibility checks
@@ -537,6 +552,7 @@ class BinaryDownloadManager {
     await fs.ensureDir(path.join(this.resourcesPath, 'apache'));
     await fs.ensureDir(path.join(this.resourcesPath, 'nodejs'));
     await fs.ensureDir(path.join(this.resourcesPath, 'composer'));
+    await fs.ensureDir(path.join(this.resourcesPath, 'git'));
     await fs.ensureDir(path.join(this.resourcesPath, 'downloads'));
 
     // Load cached config from previous updates
@@ -818,6 +834,7 @@ class BinaryDownloadManager {
       apache: {},
       nodejs: {},
       composer: false,
+      git: false,
     };
 
     // Check PHP versions - requires both php.exe and php-cgi.exe for a complete installation
@@ -898,6 +915,11 @@ class BinaryDownloadManager {
     // Check Composer
     const composerPath = path.join(this.resourcesPath, 'composer', 'composer.phar');
     installed.composer = await fs.pathExists(composerPath);
+
+    // Check Git (Portable Git)
+    const gitPath = path.join(this.resourcesPath, 'git', platform);
+    const gitExe = platform === 'win' ? 'cmd/git.exe' : 'bin/git';
+    installed.git = await fs.pathExists(path.join(gitPath, gitExe));
 
     return installed;
   }
@@ -2560,6 +2582,77 @@ exit 1
 
       proc.on('error', reject);
     });
+  }
+
+  // Download and install Portable Git (Windows only)
+  async downloadGit() {
+    const platform = this.getPlatform();
+    const id = 'git-portable';
+
+    // On macOS, Git should be installed via system (xcode-select or brew)
+    if (platform === 'mac') {
+      return {
+        success: false,
+        error: 'Git on macOS should be installed via: xcode-select --install or brew install git'
+      };
+    }
+
+    const downloadInfo = this.downloads.git?.portable?.[platform];
+    if (!downloadInfo || downloadInfo.url === 'builtin') {
+      throw new Error('Git download not available for this platform');
+    }
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
+      await this.downloadFile(downloadInfo.url, downloadPath, id);
+
+      await this.checkCancelled(id, downloadPath);
+      this.emitProgress(id, { status: 'extracting', progress: 50, message: 'Extracting Portable Git (this may take a few minutes)...' });
+
+      const gitPath = path.join(this.resourcesPath, 'git', platform);
+      await fs.ensureDir(gitPath);
+
+      // PortableGit is a self-extracting 7z archive
+      // We need to run it with -o to specify output directory and -y to auto-confirm
+      const { spawn } = require('child_process');
+
+      await new Promise((resolve, reject) => {
+        const proc = spawn(downloadPath, ['-o' + gitPath, '-y'], {
+          windowsHide: true,
+          stdio: 'ignore',
+        });
+
+        proc.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Git extraction failed with code ${code}`));
+          }
+        });
+
+        proc.on('error', (err) => {
+          reject(new Error(`Failed to extract Git: ${err.message}`));
+        });
+      });
+
+      // Clean up download
+      await fs.remove(downloadPath);
+
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+
+      return {
+        success: true,
+        path: gitPath,
+      };
+    } catch (error) {
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
   }
 }
 

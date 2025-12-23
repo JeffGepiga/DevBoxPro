@@ -16,6 +16,13 @@ import {
   Server,
   Layers,
   Code,
+  GitBranch,
+  Key,
+  Copy,
+  Lock,
+  Loader2,
+  Plus,
+  RefreshCw,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -119,7 +126,9 @@ function CreateProject() {
     mariadb: false,
     redis: false,
     nodejs: [],
+    git: false, // Track Git availability
   });
+  const [gitStatus, setGitStatus] = useState({ available: false, source: null, checking: true });
   const [formData, setFormData] = useState({
     name: '',
     path: '',
@@ -141,8 +150,18 @@ function CreateProject() {
     ssl: true,
     webServer: 'nginx', // 'nginx' or 'apache'
     webServerVersion: '1.28',
+    // Git clone options
+    projectSource: 'new', // 'new' or 'clone'
+    repositoryUrl: '',
+    authType: 'public', // 'public', 'token', 'ssh'
+    accessToken: '',
   });
   const [compatibilityWarnings, setCompatibilityWarnings] = useState([]);
+  const [sshKeyInfo, setSshKeyInfo] = useState({ exists: false, publicKey: '' });
+  const [testingAuth, setTestingAuth] = useState(false);
+  const [authTestResult, setAuthTestResult] = useState(null);
+  const [generatingSshKey, setGeneratingSshKey] = useState(false);
+  const [sshKeyError, setSshKeyError] = useState(null);
 
   // Load default projects path from settings
   useEffect(() => {
@@ -293,6 +312,7 @@ function CreateProject() {
             nodejs: nodejsVersions,
             nginx: nginxVersions,
             apache: apacheVersions,
+            git: status.git || false,
           });
 
           // Set default versions to first available
@@ -318,6 +338,32 @@ function CreateProject() {
       }
     };
     checkBinaries();
+  }, []);
+
+  // Check Git availability (system or portable)
+  useEffect(() => {
+    const checkGit = async () => {
+      try {
+        const result = await window.devbox?.git?.isAvailable();
+        setGitStatus({
+          available: result?.available || false,
+          source: result?.source || null,
+          version: result?.version || null,
+          checking: false,
+        });
+
+        // Also check for existing SSH key
+        if (result?.available) {
+          const sshResult = await window.devbox?.git?.getSshPublicKey();
+          if (sshResult?.exists) {
+            setSshKeyInfo({ exists: true, publicKey: sshResult.publicKey });
+          }
+        }
+      } catch (error) {
+        setGitStatus({ available: false, source: null, checking: false });
+      }
+    };
+    checkGit();
   }, []);
 
   // Check compatibility when form changes
@@ -408,8 +454,10 @@ function CreateProject() {
   const handleCreate = async () => {
     setIsCreating(true);
 
-    // Reset and show installation progress if installing fresh
-    const shouldShowProgress = formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress');
+    // Reset and show installation progress if installing fresh OR cloning from repository
+    const shouldShowProgress =
+      (formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress')) ||
+      (formData.projectSource === 'clone' && formData.repositoryUrl);
 
     if (shouldShowProgress) {
       setInstallOutput([]); // Clear previous output
@@ -422,6 +470,11 @@ function CreateProject() {
       const project = await createProject({
         ...formData,
         domains: formData.domain ? [formData.domain] : undefined,
+        // Ensure clone config is explicitly passed
+        projectSource: formData.projectSource,
+        repositoryUrl: formData.repositoryUrl,
+        authType: formData.authType,
+        accessToken: formData.accessToken,
       });
 
       if (project) {
@@ -596,6 +649,17 @@ function CreateProject() {
                 setPathManuallySet={setPathManuallySet}
                 defaultProjectsPath={defaultProjectsPath}
                 serviceConfig={serviceConfig}
+                gitStatus={gitStatus}
+                sshKeyInfo={sshKeyInfo}
+                setSshKeyInfo={setSshKeyInfo}
+                testingAuth={testingAuth}
+                setTestingAuth={setTestingAuth}
+                authTestResult={authTestResult}
+                setAuthTestResult={setAuthTestResult}
+                generatingSshKey={generatingSshKey}
+                sshKeyError={sshKeyError}
+                setGeneratingSshKey={setGeneratingSshKey}
+                setSshKeyError={setSshKeyError}
               />
             )}
             {currentStep === 2 && (
@@ -713,7 +777,26 @@ function StepProjectType({ formData, updateFormData }) {
   );
 }
 
-function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersions, setPathManuallySet, defaultProjectsPath, serviceConfig }) {
+function StepDetails({
+  formData,
+  updateFormData,
+  onSelectPath,
+  availablePhpVersions,
+  setPathManuallySet,
+  defaultProjectsPath,
+  serviceConfig,
+  gitStatus,
+  sshKeyInfo,
+  setSshKeyInfo,
+  testingAuth,
+  setTestingAuth,
+  authTestResult,
+  setAuthTestResult,
+  generatingSshKey,
+  sshKeyError,
+  setGeneratingSshKey,
+  setSshKeyError,
+}) {
   // Use available (installed) versions - these already include custom imported versions
   // Sort them in descending order (newest first)
   const phpVersions = (availablePhpVersions || []).slice().sort((a, b) => {
@@ -722,6 +805,90 @@ function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersi
     return bNum - aNum;
   });
   const hasNoPhpInstalled = phpVersions.length === 0;
+
+  // Handle repository URL change with auto-extraction of project name
+  const handleRepoUrlChange = (url) => {
+    updateFormData({ repositoryUrl: url });
+    setAuthTestResult(null);
+
+    // Try to extract project name from URL
+    if (url && !formData.name) {
+      const match = url.match(/\/([^/]+?)(?:\.git)?$/);
+      if (match) {
+        const projectName = match[1].replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        updateFormData({ name: projectName, repositoryUrl: url });
+      }
+    }
+  };
+
+  // Handle test connection
+  const handleTestConnection = async () => {
+    if (!formData.repositoryUrl) return;
+
+    setTestingAuth(true);
+    setAuthTestResult(null);
+
+    try {
+      const result = await window.devbox?.git?.testAuth(formData.repositoryUrl, {
+        authType: formData.authType,
+        accessToken: formData.accessToken,
+      });
+      setAuthTestResult(result);
+    } catch (error) {
+      setAuthTestResult({ success: false, error: error.message });
+    } finally {
+      setTestingAuth(false);
+    }
+  };
+
+  // Handle SSH key generation
+  const handleGenerateSshKey = async () => {
+    setGeneratingSshKey(true);
+    setSshKeyError(null);
+
+    try {
+      const result = await window.devbox?.git?.generateSshKey();
+      if (result?.success) {
+        setSshKeyInfo({ exists: true, publicKey: result.publicKey });
+      } else {
+        setSshKeyError(result?.error || 'Failed to generate SSH key');
+      }
+    } catch (error) {
+      setSshKeyError(error.message || 'Failed to generate SSH key');
+    } finally {
+      setGeneratingSshKey(false);
+    }
+  };
+
+  // Handle copy SSH key to clipboard
+  const handleCopySshKey = () => {
+    if (sshKeyInfo.publicKey) {
+      navigator.clipboard.writeText(sshKeyInfo.publicKey);
+    }
+  };
+
+  // Handle regenerate SSH key
+  const handleRegenerateSshKey = async () => {
+    if (!window.confirm('Are you sure you want to generate a new SSH key? You will need to update your Git provider with the new public key.')) {
+      return;
+    }
+
+    setGeneratingSshKey(true);
+    setSshKeyError(null);
+
+    try {
+      const result = await window.devbox?.git?.regenerateSshKey();
+      if (result?.success) {
+        setSshKeyInfo({ exists: true, publicKey: result.publicKey });
+      } else {
+        setSshKeyError(result?.error || 'Failed to regenerate SSH key');
+      }
+    } catch (error) {
+      setSshKeyError(error.message || 'Failed to regenerate SSH key');
+    } finally {
+      setGeneratingSshKey(false);
+    }
+  };
 
   return (
     <div>
@@ -733,6 +900,240 @@ function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersi
       </p>
 
       <div className="space-y-6">
+        {/* Project Source Selection - Only for Laravel/custom projects */}
+        {(formData.type === 'laravel' || formData.type === 'custom') && (
+          <div>
+            <label className="label">Project Source</label>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={() => updateFormData({ projectSource: 'new', repositoryUrl: '', authType: 'public' })}
+                className={clsx(
+                  'p-4 rounded-xl border-2 text-left transition-all flex items-center gap-3',
+                  formData.projectSource === 'new'
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                )}
+              >
+                <Plus className="w-6 h-6 text-primary-500" />
+                <div>
+                  <span className="font-medium text-gray-900 dark:text-white">Create New</span>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Start a fresh project</p>
+                </div>
+              </button>
+              <button
+                onClick={() => updateFormData({ projectSource: 'clone', installFresh: false })}
+                disabled={gitStatus?.checking}
+                className={clsx(
+                  'p-4 rounded-xl border-2 text-left transition-all flex items-center gap-3',
+                  formData.projectSource === 'clone'
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600',
+                  gitStatus?.checking && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                <GitBranch className="w-6 h-6 text-green-500" />
+                <div>
+                  <span className="font-medium text-gray-900 dark:text-white">Clone Repository</span>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {gitStatus?.checking ? 'Checking Git...' : 'From GitHub, GitLab, etc.'}
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            {/* Git not available warning */}
+            {formData.projectSource === 'clone' && !gitStatus?.available && !gitStatus?.checking && (
+              <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span className="font-medium">Git is not installed</span>
+                </div>
+                <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
+                  Install Git from the Binary Manager or ensure it's in your system PATH.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Repository URL input - only shown for clone */}
+        {formData.projectSource === 'clone' && gitStatus?.available && (
+          <>
+            <div>
+              <label className="label">Repository URL</label>
+              <input
+                type="text"
+                value={formData.repositoryUrl}
+                onChange={(e) => handleRepoUrlChange(e.target.value)}
+                className="input"
+                placeholder="https://github.com/user/repo.git or git@github.com:user/repo.git"
+              />
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Enter the full URL to clone the repository
+              </p>
+            </div>
+
+            {/* Authentication Type */}
+            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+              <label className="label mb-3">Authentication</label>
+              <div className="space-y-3">
+                {/* Public */}
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={formData.authType === 'public'}
+                    onChange={() => updateFormData({ authType: 'public', accessToken: '' })}
+                    className="w-4 h-4 text-primary-600"
+                  />
+                  <div className="flex-1">
+                    <span className="font-medium text-gray-900 dark:text-white">Public Repository</span>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">No authentication required</p>
+                  </div>
+                </label>
+
+                {/* Access Token */}
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={formData.authType === 'token'}
+                    onChange={() => updateFormData({ authType: 'token' })}
+                    className="w-4 h-4 text-primary-600 mt-1"
+                  />
+                  <div className="flex-1">
+                    <span className="font-medium text-gray-900 dark:text-white">Personal Access Token</span>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">For private repositories (HTTPS)</p>
+                    {formData.authType === 'token' && (
+                      <input
+                        type="password"
+                        value={formData.accessToken}
+                        onChange={(e) => updateFormData({ accessToken: e.target.value })}
+                        className="input w-full"
+                        placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                      />
+                    )}
+                  </div>
+                </label>
+
+                {/* SSH */}
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={formData.authType === 'ssh'}
+                    onChange={() => updateFormData({ authType: 'ssh' })}
+                    className="w-4 h-4 text-primary-600 mt-1"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900 dark:text-white">SSH Key</span>
+                      <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full">
+                        More Secure
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">For private repositories (SSH)</p>
+                    {formData.authType === 'ssh' && (
+                      <div className="space-y-2">
+                        {sshKeyInfo.exists ? (
+                          <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Public Key (add this to your Git provider)
+                              </span>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleCopySshKey}
+                                  className="btn-sm btn-secondary"
+                                  title="Copy to clipboard"
+                                >
+                                  <Copy className="w-4 h-4" />
+                                  Copy
+                                </button>
+                                <button
+                                  onClick={handleRegenerateSshKey}
+                                  disabled={generatingSshKey}
+                                  className="btn-sm btn-secondary"
+                                  title="Generate a new SSH key"
+                                >
+                                  {generatingSshKey ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <RefreshCw className="w-4 h-4" />
+                                  )}
+                                  New Key
+                                </button>
+                              </div>
+                            </div>
+                            <code className="text-xs text-gray-600 dark:text-gray-400 break-all block">
+                              {sshKeyInfo.publicKey}
+                            </code>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <button
+                              onClick={handleGenerateSshKey}
+                              disabled={generatingSshKey}
+                              className="btn-secondary"
+                            >
+                              {generatingSshKey ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  Generating...
+                                </>
+                              ) : (
+                                <>
+                                  <Key className="w-4 h-4" />
+                                  Generate SSH Key
+                                </>
+                              )}
+                            </button>
+                            {sshKeyError && (
+                              <p className="text-sm text-red-600 dark:text-red-400">
+                                {sshKeyError}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </label>
+              </div>
+
+              {/* Test Connection Button */}
+              {formData.repositoryUrl && (
+                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleTestConnection}
+                      disabled={testingAuth}
+                      className="btn-secondary"
+                    >
+                      {testingAuth ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Testing...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4" />
+                          Test Connection
+                        </>
+                      )}
+                    </button>
+                    {authTestResult && (
+                      <span className={clsx(
+                        'text-sm font-medium',
+                        authTestResult.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                      )}>
+                        {authTestResult.success ? '✓ Connected successfully!' : `✗ ${authTestResult.error}`}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
         <div>
           <label className="label">Project Name</label>
           <input
@@ -801,8 +1202,8 @@ function StepDetails({ formData, updateFormData, onSelectPath, availablePhpVersi
           )}
         </div>
 
-        {/* Fresh Install Toggle */}
-        {(formData.type === 'laravel' || formData.type === 'wordpress') && (
+        {/* Fresh Install Toggle - only for new projects */}
+        {formData.projectSource === 'new' && (formData.type === 'laravel' || formData.type === 'wordpress') && (
           <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
