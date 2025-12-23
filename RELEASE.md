@@ -15,6 +15,12 @@
 - **IP Address Retrieval** – Automatically detects and displays your machine's local IP address
 - **Project Sharing Options** – Enable or disable network access per project with a simple toggle
 
+#### 🔗 Git Clone Repository
+- **Clone from GitHub, GitLab, Bitbucket** – Create new projects by cloning existing Git repositories
+- **Multiple Authentication Methods** – Support for public repos, Personal Access Tokens, and SSH keys
+- **Built-in SSH Key Management** – Generate, copy, and regenerate SSH keys directly from the app
+- **Auto Laravel Setup** – Automatically runs `composer install`, `.env` setup, and `artisan key:generate` after cloning Laravel projects
+
 ### 🐛 Bug Fixes
 
 #### 🔧 Multiple Running Services Fix
