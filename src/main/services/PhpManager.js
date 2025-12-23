@@ -266,8 +266,78 @@ opcache.revalidate_freq = 0
     }
   }
 
+  /**
+   * Validate PHP command to prevent command injection
+   * @param {string} command - The PHP code to validate
+   * @returns {boolean} True if command appears safe
+   */
+  validatePhpCommand(command) {
+    if (!command || typeof command !== 'string') {
+      return false;
+    }
+
+    // Block shell execution functions that could be used for command injection
+    const dangerousPatterns = [
+      /\bexec\s*\(/i,
+      /\bshell_exec\s*\(/i,
+      /\bsystem\s*\(/i,
+      /\bpassthru\s*\(/i,
+      /\bpopen\s*\(/i,
+      /\bproc_open\s*\(/i,
+      /\bpcntl_exec\s*\(/i,
+      /`[^`]*`/,  // Backtick execution
+      /\$\{.*\}/,  // Variable interpolation that could be exploited
+    ];
+
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(command)) {
+        this.managers?.log?.systemWarn('Blocked potentially dangerous PHP command', {
+          pattern: pattern.toString(),
+        });
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Validate artisan command to prevent command injection
+   * @param {string} command - The artisan command to validate
+   * @returns {boolean} True if command appears safe
+   */
+  validateArtisanCommand(command) {
+    if (!command || typeof command !== 'string') {
+      return false;
+    }
+
+    // Block shell metacharacters that could chain commands or do command substitution
+    // Allow quotes since they're legitimate in artisan arguments
+    const dangerousChars = /[;&|`$(){}[\]<>\\]/;
+    if (dangerousChars.test(command)) {
+      this.managers?.log?.systemWarn('Blocked artisan command with dangerous characters', {
+        command: command.substring(0, 50),
+      });
+      return false;
+    }
+
+    return true;
+  }
+
   async runCommand(version, workingDir, command) {
     const phpPath = this.getPhpBinaryPath(version);
+
+    // Security: Validate command before execution
+    if (!this.validatePhpCommand(command)) {
+      throw new Error('Command contains potentially dangerous patterns and was blocked for security reasons.');
+    }
+
+    // Log command execution for security auditing
+    this.managers?.log?.systemInfo('Executing PHP command', {
+      version,
+      workingDir,
+      commandLength: command.length,
+    });
 
     return new Promise((resolve, reject) => {
       const proc = spawn(phpPath, ['-r', command], {
@@ -310,8 +380,20 @@ opcache.revalidate_freq = 0
       throw new Error('This is not a Laravel project (artisan not found)');
     }
 
+    // Security: Validate artisan command before execution
+    if (!this.validateArtisanCommand(artisanCommand)) {
+      throw new Error('Artisan command contains invalid characters and was blocked for security reasons.');
+    }
+
+    // Log command execution for security auditing
+    this.managers?.log?.systemInfo('Executing artisan command', {
+      version,
+      projectPath,
+      command: artisanCommand,
+    });
+
     return new Promise((resolve, reject) => {
-      const args = ['artisan', ...artisanCommand.split(' ')];
+      const args = ['artisan', ...artisanCommand.split(' ').filter(arg => arg.trim())];
       const proc = spawn(phpPath, args, {
         cwd: projectPath,
         env: process.env,

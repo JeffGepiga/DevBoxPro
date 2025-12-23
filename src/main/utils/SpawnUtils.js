@@ -87,6 +87,71 @@ function spawnAsync(command, args = [], options = {}) {
 }
 
 /**
+ * Create a sanitized environment object for spawned processes
+ * Filters out sensitive environment variables that shouldn't be passed to child processes
+ * @param {object} additionalEnv - Additional environment variables to include
+ * @returns {object} - Sanitized environment object
+ */
+function getSanitizedEnv(additionalEnv = {}) {
+    // Environment variables that should be filtered out for security
+    const sensitivePatterns = [
+        /^AWS_/, // AWS credentials
+        /^AZURE_/, // Azure credentials
+        /^GCP_/, // Google Cloud credentials
+        /^GOOGLE_/, // Google credentials
+        /SECRET/i, // Any secret
+        /PASSWORD/i, // Passwords
+        /TOKEN/i, // Tokens
+        /KEY/i, // API keys (but allow PATH, PATHEXT, etc.)
+        /CREDENTIAL/i, // Credentials
+        /^NPM_TOKEN$/,
+        /^GITHUB_TOKEN$/,
+        /^GH_TOKEN$/,
+    ];
+
+    // Keys to always allow even if they match patterns
+    const allowList = [
+        'PATH',
+        'PATHEXT',
+        'HOMEDRIVE',
+        'HOMEPATH',
+        'USERPROFILE',
+        'USERNAME',
+        'TEMP',
+        'TMP',
+        'SYSTEMROOT',
+        'WINDIR',
+        'COMSPEC',
+        'HOME',
+        'USER',
+        'SHELL',
+        'TERM',
+        'LANG',
+        'LC_ALL',
+        'NODE_ENV',
+    ];
+
+    const sanitized = {};
+
+    for (const [key, value] of Object.entries(process.env)) {
+        // Always allow whitelisted keys
+        if (allowList.includes(key.toUpperCase())) {
+            sanitized[key] = value;
+            continue;
+        }
+
+        // Filter out sensitive variables
+        const isSensitive = sensitivePatterns.some(pattern => pattern.test(key));
+        if (!isSensitive) {
+            sanitized[key] = value;
+        }
+    }
+
+    // Add any additional environment variables
+    return { ...sanitized, ...additionalEnv };
+}
+
+/**
  * Check if a command exists in PATH (replaces `where` / `which`)
  * @param {string} command - Command name to check
  * @returns {boolean} - True if command exists
@@ -211,6 +276,7 @@ async function killProcessesByPath(processName, pathFilter) {
 module.exports = {
     spawnSyncSafe,
     spawnAsync,
+    getSanitizedEnv,
     commandExists,
     killProcessByName,
     killProcessByPid,

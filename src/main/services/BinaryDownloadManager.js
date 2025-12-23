@@ -2233,6 +2233,22 @@ AddType application/x-httpd-php-source .phps
         await this.createApacheConfig(extractPath);
       }
 
+      // Handle Node.js imports - move files from nested node-* directory if needed
+      if (serviceName === 'nodejs') {
+        const contents = await fs.readdir(extractPath);
+        const extractedDir = contents.find((d) => d.startsWith('node-'));
+        if (extractedDir) {
+          const srcPath = path.join(extractPath, extractedDir);
+          const files = await fs.readdir(srcPath);
+          for (const file of files) {
+            await fs.move(path.join(srcPath, file), path.join(extractPath, file), { overwrite: true });
+          }
+          await fs.remove(srcPath);
+        }
+        // Set up PATH configuration for this Node.js version
+        await this.setupNodejsEnvironment(version, extractPath);
+      }
+
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true, version, path: extractPath };
     } catch (error) {

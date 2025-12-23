@@ -219,31 +219,57 @@ class DatabaseManager {
   }
 
   // Create an init file with SQL commands to reset credentials
+  // Security: File is created with restrictive permissions and auto-deleted
   async createCredentialResetInitFile(newUser, newPassword) {
     const dbType = this.getActiveDatabaseType();
     const dataPath = path.join(app.getPath('userData'), 'data');
     const initFilePath = path.join(dataPath, dbType, 'credential_reset.sql');
 
-    // Escape password for SQL
-    const escapedPassword = newPassword.replace(/'/g, "''");
+    // Security: Escape password for SQL - escape single quotes and backslashes
+    const escapedPassword = newPassword.replace(/\\/g, '\\\\').replace(/'/g, "''");
+
+    // Security: Also validate username to prevent SQL injection
+    const safeUser = newUser.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 32);
 
     // Build SQL commands - these run with skip-grant-tables so no auth needed
     const sqlCommands = [
       `FLUSH PRIVILEGES;`,
-      `CREATE USER IF NOT EXISTS '${newUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';`,
-      `CREATE USER IF NOT EXISTS '${newUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';`,
-      `CREATE USER IF NOT EXISTS '${newUser}'@'%' IDENTIFIED BY '${escapedPassword}';`,
-      `ALTER USER '${newUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';`,
-      `ALTER USER '${newUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';`,
-      `ALTER USER '${newUser}'@'%' IDENTIFIED BY '${escapedPassword}';`,
-      `GRANT ALL PRIVILEGES ON *.* TO '${newUser}'@'localhost' WITH GRANT OPTION;`,
-      `GRANT ALL PRIVILEGES ON *.* TO '${newUser}'@'127.0.0.1' WITH GRANT OPTION;`,
-      `GRANT ALL PRIVILEGES ON *.* TO '${newUser}'@'%' WITH GRANT OPTION;`,
+      `CREATE USER IF NOT EXISTS '${safeUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';`,
+      `CREATE USER IF NOT EXISTS '${safeUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';`,
+      `CREATE USER IF NOT EXISTS '${safeUser}'@'%' IDENTIFIED BY '${escapedPassword}';`,
+      `ALTER USER '${safeUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';`,
+      `ALTER USER '${safeUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';`,
+      `ALTER USER '${safeUser}'@'%' IDENTIFIED BY '${escapedPassword}';`,
+      `GRANT ALL PRIVILEGES ON *.* TO '${safeUser}'@'localhost' WITH GRANT OPTION;`,
+      `GRANT ALL PRIVILEGES ON *.* TO '${safeUser}'@'127.0.0.1' WITH GRANT OPTION;`,
+      `GRANT ALL PRIVILEGES ON *.* TO '${safeUser}'@'%' WITH GRANT OPTION;`,
       `FLUSH PRIVILEGES;`,
     ];
 
     await fs.ensureDir(path.dirname(initFilePath));
     await fs.writeFile(initFilePath, sqlCommands.join('\n'), 'utf8');
+
+    // Security: Set restrictive file permissions (owner read/write only on Unix)
+    if (process.platform !== 'win32') {
+      try {
+        await fs.chmod(initFilePath, 0o600);
+      } catch (e) {
+        this.managers.log?.systemWarn('Could not set restrictive permissions on init file', { error: e.message });
+      }
+    }
+
+    // Security: Schedule auto-deletion of the credentials file after 60 seconds
+    // This ensures the file doesn't linger with plaintext credentials
+    setTimeout(async () => {
+      try {
+        if (await fs.pathExists(initFilePath)) {
+          await fs.remove(initFilePath);
+          this.managers.log?.systemInfo('Cleaned up credential init file');
+        }
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }, 60000);
 
     return initFilePath;
   }
@@ -419,6 +445,40 @@ class DatabaseManager {
   }
 
   /**
+   * Validate import/export file path for security
+   * @param {string} filePath - The file path to validate
+   * @param {boolean} checkExtension - Whether to validate file extension
+   * @returns {Object} { valid: boolean, error?: string }
+   */
+  validateFilePath(filePath, checkExtension = true) {
+    if (!filePath || typeof filePath !== 'string') {
+      return { valid: false, error: 'Invalid file path' };
+    }
+
+    // Security: Block path traversal attempts
+    const normalizedPath = path.normalize(filePath);
+    if (normalizedPath.includes('..')) {
+      this.managers.log?.systemWarn('Blocked path traversal attempt in database import/export', {
+        path: filePath.substring(0, 100),
+      });
+      return { valid: false, error: 'Invalid file path (path traversal detected)' };
+    }
+
+    // Security: Check for valid SQL file extensions
+    if (checkExtension) {
+      const validExtensions = ['.sql', '.sql.gz', '.gz'];
+      const lowerPath = filePath.toLowerCase();
+      const hasValidExtension = validExtensions.some(ext => lowerPath.endsWith(ext));
+
+      if (!hasValidExtension) {
+        return { valid: false, error: 'Invalid file type. Only .sql and .sql.gz files are supported.' };
+      }
+    }
+
+    return { valid: true };
+  }
+
+  /**
    * Import a database from SQL file
    * @param {string} databaseName - Name of the database to import into
    * @param {string} filePath - Path to the SQL file (.sql or .sql.gz)
@@ -428,11 +488,22 @@ class DatabaseManager {
   async importDatabase(databaseName, filePath, progressCallback = null, mode = 'merge') {
     const safeName = this.sanitizeName(databaseName);
 
+    // Security: Validate file path
+    const pathValidation = this.validateFilePath(filePath, true);
+    if (!pathValidation.valid) {
+      throw new Error(pathValidation.error);
+    }
+
     if (!(await fs.pathExists(filePath))) {
       throw new Error('Import file not found');
     }
 
-    // Importing database
+    // Security: Log import operation
+    this.managers.log?.systemInfo('Database import started', {
+      database: safeName,
+      fileSize: (await fs.stat(filePath)).size,
+      mode,
+    });
 
     // Verify database exists before importing
     const databases = await this.listDatabases();
@@ -1049,8 +1120,29 @@ class DatabaseManager {
     });
   }
 
+  /**
+   * Run an arbitrary SQL query on a database
+   * 
+   * SECURITY NOTE: This method accepts raw SQL queries from the renderer process.
+   * While database names are sanitized, the query itself is executed as-is.
+   * This is acceptable for a local development tool but requires:
+   * - The application to be run locally (not exposed to network)
+   * - The renderer to be trusted (context isolation is enabled)
+   * 
+   * @param {string} databaseName - The database to run the query against
+   * @param {string} query - The SQL query to execute
+   * @returns {Promise<Array>} Query results
+   */
   async runQuery(databaseName, query) {
     const safeName = this.sanitizeName(databaseName);
+
+    // Security: Log query execution for auditing (truncate long queries)
+    this.managers.log?.systemInfo('Executing database query', {
+      database: safeName,
+      queryLength: query?.length || 0,
+      queryPreview: query?.substring(0, 50) + (query?.length > 50 ? '...' : ''),
+    });
+
     return this.runDbQuery(query, safeName);
   }
 

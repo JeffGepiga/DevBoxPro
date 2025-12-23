@@ -313,24 +313,45 @@ class GitManager {
 
             proc.on('close', (code) => {
                 if (code === 0) {
+                    // Security: Log successful clone without exposing sensitive data
+                    this.managers?.log?.systemInfo('Repository cloned successfully', {
+                        destPath,
+                        authType,
+                    });
                     resolve({ success: true });
                 } else {
                     // Clean up failed clone attempt
                     fs.remove(destPath).catch(() => { });
 
+                    // Security: Sanitize error output to remove any tokens before logging or returning
+                    let sanitizedOutput = errorOutput;
+                    if (accessToken) {
+                        // Remove any occurrence of the access token from error output
+                        sanitizedOutput = sanitizedOutput.replace(new RegExp(accessToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[TOKEN]');
+                    }
+                    // Also sanitize any https://TOKEN@... patterns
+                    sanitizedOutput = sanitizedOutput.replace(/https:\/\/[^@]+@/g, 'https://[REDACTED]@');
+
                     // Parse error message
                     let error = 'Clone failed';
-                    if (errorOutput.includes('Repository not found')) {
+                    if (sanitizedOutput.includes('Repository not found')) {
                         error = 'Repository not found. Check the URL or your access permissions.';
-                    } else if (errorOutput.includes('Authentication failed')) {
+                    } else if (sanitizedOutput.includes('Authentication failed')) {
                         error = 'Authentication failed. Check your access token or SSH key.';
-                    } else if (errorOutput.includes('Permission denied')) {
+                    } else if (sanitizedOutput.includes('Permission denied')) {
                         error = 'Permission denied. Check your SSH key configuration.';
-                    } else if (errorOutput.includes('already exists')) {
+                    } else if (sanitizedOutput.includes('already exists')) {
                         error = 'Destination folder already exists and is not empty.';
-                    } else if (errorOutput.trim()) {
-                        error = errorOutput.trim().split('\n').pop();
+                    } else if (sanitizedOutput.trim()) {
+                        error = sanitizedOutput.trim().split('\n').pop();
                     }
+
+                    // Security: Log failed clone without exposing sensitive data
+                    this.managers?.log?.systemWarn('Repository clone failed', {
+                        destPath,
+                        authType,
+                        error: error.substring(0, 200),
+                    });
 
                     resolve({ success: false, error });
                 }

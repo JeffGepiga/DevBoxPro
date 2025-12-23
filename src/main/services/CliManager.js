@@ -63,6 +63,33 @@ class CliManager {
   }
 
   /**
+   * Get the first available installed Node.js version
+   * Falls back to '20' if none found (for backwards compatibility)
+   */
+  getFirstInstalledNodeVersion() {
+    if (!this.resourcesPath) return '20';
+
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const nodejsDir = path.join(this.resourcesPath, 'nodejs');
+
+    try {
+      if (!fs.existsSync(nodejsDir)) return '20';
+
+      const versions = fs.readdirSync(nodejsDir)
+        .filter(v => v !== 'downloads' && v !== 'win' && v !== 'mac')
+        .filter(v => {
+          const nodeExe = process.platform === 'win32' ? 'node.exe' : 'node';
+          return fs.existsSync(path.join(nodejsDir, v, platform, nodeExe));
+        })
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true })); // Sort descending
+
+      return versions[0] || '20';
+    } catch (e) {
+      return '20';
+    }
+  }
+
+  /**
    * Sync all projects to the central projects.json file
    * This file is used by the CLI scripts to find project configs
    */
@@ -73,13 +100,16 @@ class CliManager {
     const projects = this.configStore.get('projects', []);
     const projectMappings = {};
 
+    // Get default Node.js version (first installed, or '20' fallback)
+    const defaultNodeVersion = this.getFirstInstalledNodeVersion();
+
     for (const project of projects) {
       const normalizedPath = path.normalize(project.path);
       projectMappings[normalizedPath] = {
         id: project.id,
         name: project.name,
         phpVersion: project.phpVersion || '8.3',
-        nodejsVersion: project.services?.nodejs ? (project.services.nodejsVersion || '20') : null,
+        nodejsVersion: project.services?.nodejs ? (project.services.nodejsVersion || defaultNodeVersion) : null,
       };
     }
 
@@ -123,7 +153,7 @@ class CliManager {
 
     // Node.js path
     if (project.services?.nodejs) {
-      const nodeVersion = project.services.nodejsVersion || '20';
+      const nodeVersion = project.services.nodejsVersion || this.getFirstInstalledNodeVersion();
       const nodePath = this.getNodePath(nodeVersion);
       if (nodePath) {
         env.PATH = `${path.dirname(nodePath)}${path.delimiter}${env.PATH}`;
@@ -208,7 +238,7 @@ class CliManager {
       case 'npm':
       case 'npx':
         if (project.services?.nodejs) {
-          const nodeVersion = project.services.nodejsVersion || '20';
+          const nodeVersion = project.services.nodejsVersion || this.getFirstInstalledNodeVersion();
           const nodePath = this.getNodePath(nodeVersion);
           if (nodePath) {
             const nodeDir = path.dirname(nodePath);

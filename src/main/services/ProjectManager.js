@@ -2485,9 +2485,45 @@ server {
     return configPath;
   }
 
+  /**
+   * Validate domain name to prevent command injection
+   * Only allows safe characters that are valid in domain names
+   * @param {string} domain - The domain to validate
+   * @returns {boolean} True if domain is valid and safe
+   */
+  validateDomainName(domain) {
+    if (!domain || typeof domain !== 'string') {
+      return false;
+    }
+
+    // Strict domain validation - only alphanumeric, hyphens, and dots
+    // Must start and end with alphanumeric
+    const domainPattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i;
+
+    if (!domainPattern.test(domain)) {
+      this.managers.log?.systemWarn('Invalid domain name rejected', { domain: domain.substring(0, 50) });
+      return false;
+    }
+
+    // Additional safety: block any shell metacharacters
+    const dangerousChars = /[;&|`$(){}[\]<>\\'"!#~*?]/;
+    if (dangerousChars.test(domain)) {
+      this.managers.log?.systemWarn('Domain contains dangerous characters', { domain: domain.substring(0, 50) });
+      return false;
+    }
+
+    return true;
+  }
+
   // Add domain to hosts file (requires admin privileges)
   async addToHostsFile(domain) {
     if (!domain) return;
+
+    // Security: Validate domain before using in any commands
+    if (!this.validateDomainName(domain)) {
+      this.managers.log?.systemWarn('Rejected invalid domain for hosts file', { domain: domain.substring(0, 50) });
+      return { success: false, error: 'Invalid domain name format' };
+    }
 
     const hostsPath = process.platform === 'win32'
       ? 'C:\\Windows\\System32\\drivers\\etc\\hosts'
@@ -2497,12 +2533,14 @@ server {
       const hostsContent = await fs.readFile(hostsPath, 'utf-8');
 
       // Check if domain already exists (check both with and without www)
-      const domainRegex = new RegExp(`^\\s*127\\.0\\.0\\.1\\s+${domain.replace('.', '\\.')}\\s*$`, 'm');
+      // Escape dots for regex
+      const escapedDomain = domain.replace(/\./g, '\\.');
+      const domainRegex = new RegExp(`^\\s*127\\.0\\.0\\.1\\s+${escapedDomain}\\s*$`, 'm');
       if (domainRegex.test(hostsContent)) {
         return { success: true, alreadyExists: true };
       }
 
-      // Entries to add
+      // Entries to add - domain already validated, safe to use
       const entries = [
         `127.0.0.1\t${domain}`,
         `127.0.0.1\twww.${domain}`
@@ -2515,23 +2553,27 @@ server {
         icns: undefined // Can add icon path later
       };
 
+      const { app } = require('electron');
+      const tempDir = app.getPath('temp');
+
       if (process.platform === 'win32') {
-        // Create a batch script to add the entries
-        const { app } = require('electron');
-        const tempDir = app.getPath('temp');
+        // Security: Write entries to a temp file first, then use type command to append
+        // This avoids shell interpretation of the domain content
+        const tempEntriesPath = path.join(tempDir, 'devbox-hosts-entries.txt');
         const scriptPath = path.join(tempDir, 'devbox-hosts-update.bat');
 
-        // Build the batch commands to echo each entry
-        const batchContent = entries.map(entry =>
-          `echo ${entry}>> "${hostsPath}"`
-        ).join('\r\n');
+        // Write the entries directly to a file (no shell involved)
+        await fs.writeFile(tempEntriesPath, '\r\n' + entries.join('\r\n') + '\r\n', 'utf8');
 
+        // Create batch script that uses type to append the file content
+        const batchContent = `type "${tempEntriesPath}" >> "${hostsPath}"`;
         await fs.writeFile(scriptPath, batchContent);
 
         return new Promise((resolve) => {
           sudo.exec(`cmd /c "${scriptPath}"`, options, async (error, stdout, stderr) => {
-            // Clean up temp file
+            // Clean up temp files
             try { await fs.remove(scriptPath); } catch (e) { }
+            try { await fs.remove(tempEntriesPath); } catch (e) { }
 
             if (error) {
               this.managers.log?.systemWarn(`Could not update hosts file automatically`, { error: error.message });
@@ -2542,12 +2584,20 @@ server {
           });
         });
       } else {
-        // On macOS/Linux, use sudo-prompt with tee
-        const entry = entries.join('\n');
-        const command = `sh -c "echo '${entry}' >> ${hostsPath}"`;
+        // On macOS/Linux, write entries to temp file and use cat to append
+        const tempEntriesPath = path.join(tempDir, 'devbox-hosts-entries.txt');
+
+        // Write entries directly to file (no shell involved)
+        await fs.writeFile(tempEntriesPath, '\n' + entries.join('\n') + '\n', 'utf8');
+
+        // Use cat with proper escaping - the temp file path is trusted
+        const command = `cat "${tempEntriesPath}" >> "${hostsPath}"`;
 
         return new Promise((resolve) => {
-          sudo.exec(command, options, (error, stdout, stderr) => {
+          sudo.exec(command, options, async (error, stdout, stderr) => {
+            // Clean up temp file
+            try { await fs.remove(tempEntriesPath); } catch (e) { }
+
             if (error) {
               this.managers.log?.systemWarn(`Could not update hosts file automatically`, { error: error.message });
               resolve({ success: false, error: error.message });
