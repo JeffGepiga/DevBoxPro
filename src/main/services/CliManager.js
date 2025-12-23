@@ -1044,15 +1044,10 @@ set "DEVBOX_PROJECTS=${projectsFilePath}"
 set "DEFAULT_NODE=${defaultNodeVersion}"
 set "CURRENT_DIR=%CD%"
 
-REM Find project for current directory
+REM Find project for current directory using PowerShell helper
 set "NODE_VERSION="
-if exist "%DEVBOX_PROJECTS%" (
-    for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){if($prop.Value.nodejsVersion){Write-Output \\"FOUND|$($prop.Value.nodejsVersion)|$($prop.Value.name)\\"}else{Write-Output 'NOTFOUND||'};exit}}Write-Output 'NOTFOUND||'"') do (
-        if "%%a"=="FOUND" (
-            set "NODE_VERSION=%%b"
-            set "PROJECT_NAME=%%c"
-        )
-    )
+for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';if(Test-Path '%DEVBOX_PROJECTS%'){$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower();foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower();if($d.StartsWith($pp) -and $prop.Value.nodejsVersion){Write-Output $prop.Value.nodejsVersion;exit}}}Write-Output ''"') do (
+    if not "%%a"=="" set "NODE_VERSION=%%a"
 )
 
 REM Use project version or default
@@ -1064,17 +1059,11 @@ if exist "%NODE_PATH%\\node.exe" (
     "%NODE_PATH%\\node.exe" %*
     exit /b %ERRORLEVEL%
 ) else (
-    REM Try system node as fallback
-    where node >nul 2>&1
-    if %ERRORLEVEL%==0 (
-        node %*
-        exit /b %ERRORLEVEL%
-    ) else (
-        echo [DevBox Pro] Node.js %NODE_VERSION% not found. Install from Binaries page or set a default version.
-        exit /b 1
-    )
+    echo [DevBox Pro] Node.js %NODE_VERSION% not found.
+    exit /b 1
 )
 `;
+
 
     // NPM shim
     const npmShim = `@echo off
@@ -1086,14 +1075,10 @@ set "DEVBOX_PROJECTS=${projectsFilePath}"
 set "DEFAULT_NODE=${defaultNodeVersion}"
 set "CURRENT_DIR=%CD%"
 
-REM Find project for current directory
+REM Find project for current directory using PowerShell helper
 set "NODE_VERSION="
-if exist "%DEVBOX_PROJECTS%" (
-    for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){if($prop.Value.nodejsVersion){Write-Output \\"FOUND|$($prop.Value.nodejsVersion)|$($prop.Value.name)\\"}else{Write-Output 'NOTFOUND||'};exit}}Write-Output 'NOTFOUND||'"') do (
-        if "%%a"=="FOUND" (
-            set "NODE_VERSION=%%b"
-        )
-    )
+for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';if(Test-Path '%DEVBOX_PROJECTS%'){$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower();foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower();if($d.StartsWith($pp) -and $prop.Value.nodejsVersion){Write-Output $prop.Value.nodejsVersion;exit}}}Write-Output ''"') do (
+    if not "%%a"=="" set "NODE_VERSION=%%a"
 )
 
 REM Use project version or default
@@ -1105,15 +1090,8 @@ if exist "%NODE_PATH%\\npm.cmd" (
     call "%NODE_PATH%\\npm.cmd" %*
     exit /b %ERRORLEVEL%
 ) else (
-    REM Try system npm as fallback
-    where npm >nul 2>&1
-    if %ERRORLEVEL%==0 (
-        call npm %*
-        exit /b %ERRORLEVEL%
-    ) else (
-        echo [DevBox Pro] npm not found. Install Node.js from Binaries page or set a default version.
-        exit /b 1
-    )
+    echo [DevBox Pro] npm not found.
+    exit /b 1
 )
 `;
 
@@ -1127,14 +1105,10 @@ set "DEVBOX_PROJECTS=${projectsFilePath}"
 set "DEFAULT_NODE=${defaultNodeVersion}"
 set "CURRENT_DIR=%CD%"
 
-REM Find project for current directory
+REM Find project for current directory using PowerShell helper
 set "NODE_VERSION="
-if exist "%DEVBOX_PROJECTS%" (
-    for /f "tokens=1-3 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){if($prop.Value.nodejsVersion){Write-Output \\"FOUND|$($prop.Value.nodejsVersion)|$($prop.Value.name)\\"}else{Write-Output 'NOTFOUND||'};exit}}Write-Output 'NOTFOUND||'"') do (
-        if "%%a"=="FOUND" (
-            set "NODE_VERSION=%%b"
-        )
-    )
+for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';if(Test-Path '%DEVBOX_PROJECTS%'){$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower();foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower();if($d.StartsWith($pp) -and $prop.Value.nodejsVersion){Write-Output $prop.Value.nodejsVersion;exit}}}Write-Output ''"') do (
+    if not "%%a"=="" set "NODE_VERSION=%%a"
 )
 
 REM Use project version or default
@@ -1146,15 +1120,8 @@ if exist "%NODE_PATH%\\npx.cmd" (
     call "%NODE_PATH%\\npx.cmd" %*
     exit /b %ERRORLEVEL%
 ) else (
-    REM Try system npx as fallback
-    where npx >nul 2>&1
-    if %ERRORLEVEL%==0 (
-        call npx %*
-        exit /b %ERRORLEVEL%
-    ) else (
-        echo [DevBox Pro] npx not found. Install Node.js from Binaries page or set a default version.
-        exit /b 1
-    )
+    echo [DevBox Pro] npx not found.
+    exit /b 1
 )
 `;
 
@@ -1168,12 +1135,10 @@ set "DEVBOX_PROJECTS=${projectsFilePath}"
 set "DEFAULT_PHP=${defaultPhpVersion}"
 set "CURRENT_DIR=%CD%"
 
-REM Find project for current directory
+REM Find project for current directory using PowerShell helper
 set "PHP_VERSION="
-if exist "%DEVBOX_PROJECTS%" (
-    for /f "tokens=1-2 delims=|" %%a in ('powershell -NoProfile -Command "$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^|ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower().Replace('/','\\\');foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower().Replace('/','\\\');if($d.StartsWith($pp) -or $d -eq $pp){Write-Output \\"FOUND|$($prop.Value.phpVersion)\\";exit}}Write-Output 'NOTFOUND|'"') do (
-        if "%%a"=="FOUND" set "PHP_VERSION=%%b"
-    )
+for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';if(Test-Path '%DEVBOX_PROJECTS%'){$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower();foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower();if($d.StartsWith($pp)){Write-Output $prop.Value.phpVersion;exit}}}Write-Output ''"') do (
+    if not "%%a"=="" set "PHP_VERSION=%%a"
 )
 
 REM Use project version or default
@@ -1182,28 +1147,17 @@ if "%PHP_VERSION%"=="" set "PHP_VERSION=%DEFAULT_PHP%"
 set "PHP_PATH=%DEVBOX_RESOURCES%\\php\\%PHP_VERSION%\\win"
 set "COMPOSER_PATH=%DEVBOX_RESOURCES%\\composer\\composer.phar"
 
-if exist "%COMPOSER_PATH%" (
-    if exist "%PHP_PATH%\\php.exe" (
+if exist "%PHP_PATH%\\php.exe" (
+    if exist "%COMPOSER_PATH%" (
         "%PHP_PATH%\\php.exe" "%COMPOSER_PATH%" %*
         exit /b %ERRORLEVEL%
     ) else (
-        REM Try system PHP with DevBox composer
-        where php >nul 2>&1
-        if %ERRORLEVEL%==0 (
-            php "%COMPOSER_PATH%" %*
-            exit /b %ERRORLEVEL%
-        )
-    )
-) else (
-    REM Try system composer as fallback
-    where composer >nul 2>&1
-    if %ERRORLEVEL%==0 (
-        call composer %*
-        exit /b %ERRORLEVEL%
-    ) else (
-        echo [DevBox Pro] Composer not found. Install from Binaries page.
+        echo [DevBox Pro] Composer not found.
         exit /b 1
     )
+) else (
+    echo [DevBox Pro] PHP %PHP_VERSION% not found.
+    exit /b 1
 )
 `;
 
