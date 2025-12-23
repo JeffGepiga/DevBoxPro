@@ -284,13 +284,13 @@ try {
         if ($currentDirLower.StartsWith($projPath) -or $currentDirLower -eq $projPath) {
             $php = if ($prop.Value.phpVersion) { $prop.Value.phpVersion } else { "8.3" }
             $node = if ($prop.Value.nodejsVersion) { $prop.Value.nodejsVersion } else { "" }
-            Write-Output "$php|$node"
+            Write-Output "FOUND|$php|$node"
             exit 0
         }
     }
-    Write-Output "8.3|"
+    Write-Output "NOTFOUND||"
 } catch {
-    Write-Output "8.3|"
+    Write-Output "NOTFOUND||"
 }
 `;
 
@@ -341,21 +341,24 @@ if not exist "%DEVBOX_PROJECTS%" (
 )
 
 REM Find matching project using PowerShell helper script
+set "PROJECT_STATUS="
 set "PHP_VERSION=8.3"
 set "NODE_VERSION="
-set "FOUND_PROJECT="
 
-for /f "tokens=1,2 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%DEVBOX_CLI%\\find-project.ps1" "%DEVBOX_PROJECTS%" "%CURRENT_DIR%"') do (
-    set "PHP_VERSION=%%a"
-    set "NODE_VERSION=%%b"
-    set "FOUND_PROJECT=1"
+for /f "tokens=1,2,3 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%DEVBOX_CLI%\\find-project.ps1" "%DEVBOX_PROJECTS%" "%CURRENT_DIR%"') do (
+    set "PROJECT_STATUS=%%a"
+    set "PHP_VERSION=%%b"
+    set "NODE_VERSION=%%c"
 )
 
-if not defined FOUND_PROJECT (
-    echo Warning: Not in a DevBox Pro project directory
-    echo Running command with system defaults...
-    %*
-    exit /b %ERRORLEVEL%
+if "%PROJECT_STATUS%"=="NOTFOUND" (
+    echo Error: Not in a DevBox Pro project directory.
+    echo.
+    echo Current directory: %CURRENT_DIR%
+    echo.
+    echo To use this command, navigate to a folder registered in DevBox Pro,
+    echo or register this folder as a project in DevBox Pro.
+    exit /b 1
 )
 
 REM Set up paths based on detected versions

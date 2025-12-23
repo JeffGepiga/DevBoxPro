@@ -1023,7 +1023,6 @@ class ProjectManager {
         envContent = envContent.trim() + '\n' + newLine + '\n';
       }
     }
-
     await fs.writeFile(envPath, envContent);
   }
 
@@ -1045,9 +1044,29 @@ class ProjectManager {
     const envContent = await fs.readFile(envPath, 'utf-8');
     const environment = {};
 
-    // Parse .env file line by line
+    // Parse .env file - handle multi-line values in quotes
     const lines = envContent.split('\n');
+    let currentKey = null;
+    let currentValue = '';
+    let inMultilineQuote = null; // null, '"', or "'"
+
     for (const line of lines) {
+      // If we're in a multi-line value, accumulate until closing quote
+      if (inMultilineQuote) {
+        currentValue += '\n' + line;
+        // Check if this line ends the multi-line value
+        const trimmedLine = line.trimEnd();
+        if (trimmedLine.endsWith(inMultilineQuote) && !trimmedLine.endsWith('\\' + inMultilineQuote)) {
+          // End of multi-line value - remove the closing quote
+          currentValue = currentValue.slice(0, -1);
+          environment[currentKey] = currentValue;
+          currentKey = null;
+          currentValue = '';
+          inMultilineQuote = null;
+        }
+        continue;
+      }
+
       // Skip comments and empty lines
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) {
@@ -1060,14 +1079,34 @@ class ProjectManager {
         const key = trimmed.substring(0, equalsIndex).trim();
         let value = trimmed.substring(equalsIndex + 1).trim();
 
-        // Remove surrounding quotes if present
-        if ((value.startsWith('"') && value.endsWith('"')) ||
-          (value.startsWith("'") && value.endsWith("'"))) {
-          value = value.slice(1, -1);
-        }
+        // Check for quoted values
+        const startsWithDoubleQuote = value.startsWith('"');
+        const startsWithSingleQuote = value.startsWith("'");
 
-        environment[key] = value;
+        if (startsWithDoubleQuote || startsWithSingleQuote) {
+          const quote = startsWithDoubleQuote ? '"' : "'";
+          const valueWithoutStartQuote = value.slice(1);
+
+          // Check if value ends with the same quote (single-line quoted value)
+          if (valueWithoutStartQuote.endsWith(quote) && !valueWithoutStartQuote.endsWith('\\' + quote)) {
+            // Single-line quoted value - remove both quotes
+            environment[key] = valueWithoutStartQuote.slice(0, -1);
+          } else {
+            // Multi-line quoted value - start accumulating
+            currentKey = key;
+            currentValue = valueWithoutStartQuote;
+            inMultilineQuote = quote;
+          }
+        } else {
+          // Unquoted value
+          environment[key] = value;
+        }
       }
+    }
+
+    // Handle unclosed multi-line value (edge case)
+    if (currentKey && inMultilineQuote) {
+      environment[currentKey] = currentValue;
     }
 
     return environment;

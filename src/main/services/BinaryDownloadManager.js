@@ -1061,7 +1061,25 @@ class BinaryDownloadManager {
           cancelError.cancelled = true;
           reject(cancelError);
         } else {
-          reject(err);
+          // Provide user-friendly error messages for common network errors
+          let userMessage = err.message;
+          if (err.code === 'ENOTFOUND') {
+            userMessage = 'Cannot reach download server. Check your internet connection.';
+          } else if (err.code === 'ECONNREFUSED') {
+            userMessage = 'Connection refused. Server may be down or blocked by firewall.';
+          } else if (err.code === 'ETIMEDOUT' || err.code === 'ESOCKETTIMEDOUT') {
+            userMessage = 'Connection timed out. Check your internet or firewall settings.';
+          } else if (err.code === 'ECONNRESET') {
+            userMessage = 'Connection was reset. This may be caused by a firewall or proxy.';
+          } else if (err.code === 'CERT_HAS_EXPIRED' || err.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE') {
+            userMessage = 'SSL certificate error. Check your system date/time or antivirus settings.';
+          } else if (err.code === 'EACCES' || err.code === 'EPERM') {
+            userMessage = 'Permission denied. Run as administrator or check antivirus.';
+          }
+          const networkError = new Error(userMessage);
+          networkError.code = err.code;
+          networkError.originalError = err.message;
+          reject(networkError);
         }
       });
 

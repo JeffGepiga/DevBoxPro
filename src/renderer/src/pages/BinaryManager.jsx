@@ -647,10 +647,17 @@ function BinaryManager() {
         );
       case 'error':
         return (
-          <span className="text-red-600 dark:text-red-400 flex items-center gap-1" title={p.error}>
-            <AlertCircle className="w-4 h-4" />
-            Failed
-          </span>
+          <div className="flex flex-col">
+            <span className="text-red-600 dark:text-red-400 flex items-center gap-1">
+              <AlertCircle className="w-4 h-4" />
+              Download Failed
+            </span>
+            {p.error && (
+              <span className="text-xs text-red-500 dark:text-red-400/80 mt-0.5 max-w-xs">
+                {p.error}
+              </span>
+            )}
+          </div>
         );
       case 'cancelled':
         return (
