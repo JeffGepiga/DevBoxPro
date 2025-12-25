@@ -20,9 +20,11 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '../context/AppContext';
+import { useModal } from '../context/ModalContext';
 
 function Databases() {
   const { databaseOperation, setDatabaseOperation, clearDatabaseOperation } = useApp();
+  const { showAlert, showConfirm } = useModal();
   const [databases, setDatabases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -222,12 +224,20 @@ function Databases() {
       loadDatabases();
     } catch (error) {
       // Error creating database
-      alert('Failed to create database: ' + error.message);
+      await showAlert({ title: 'Error', message: 'Failed to create database: ' + error.message, type: 'error' });
     }
   };
 
   const handleDeleteDatabase = async (name) => {
-    if (!window.confirm(`Are you sure you want to delete "${name}"? This cannot be undone.`)) {
+    const confirmed = await showConfirm({
+      title: 'Delete Database',
+      message: `Are you sure you want to delete "${name}"?`,
+      detail: 'This action cannot be undone.',
+      confirmText: 'Delete',
+      confirmStyle: 'danger',
+      type: 'danger'
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -236,7 +246,7 @@ function Databases() {
       loadDatabases();
     } catch (error) {
       // Error deleting database
-      alert('Failed to delete database: ' + error.message);
+      await showAlert({ title: 'Error', message: 'Failed to delete database: ' + error.message, type: 'error' });
     }
   };
 

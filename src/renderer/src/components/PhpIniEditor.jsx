@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, RotateCcw, FileText, AlertTriangle, Check } from 'lucide-react';
 import clsx from 'clsx';
+import { useModal } from '../context/ModalContext';
 
 function PhpIniEditor({ version, isOpen, onClose }) {
+  const { showConfirm } = useModal();
   const [content, setContent] = useState('');
   const [originalContent, setOriginalContent] = useState('');
   const [loading, setLoading] = useState(true);
@@ -55,10 +57,18 @@ function PhpIniEditor({ version, isOpen, onClose }) {
   };
 
   const handleReset = async () => {
-    if (!window.confirm('Are you sure you want to reset php.ini to default? This will overwrite your changes.')) {
+    const confirmed = await showConfirm({
+      title: 'Reset php.ini',
+      message: 'Are you sure you want to reset php.ini to default?',
+      detail: 'This will overwrite your changes.',
+      confirmText: 'Reset',
+      confirmStyle: 'danger',
+      type: 'warning'
+    });
+    if (!confirmed) {
       return;
     }
-    
+
     setLoading(true);
     setError(null);
     try {
@@ -71,9 +81,16 @@ function PhpIniEditor({ version, isOpen, onClose }) {
     }
   };
 
-  const handleClose = () => {
+  const handleClose = async () => {
     if (hasChanges) {
-      if (!window.confirm('You have unsaved changes. Are you sure you want to close?')) {
+      const confirmed = await showConfirm({
+        title: 'Unsaved Changes',
+        message: 'You have unsaved changes. Are you sure you want to close?',
+        confirmText: 'Close',
+        confirmStyle: 'warning',
+        type: 'warning'
+      });
+      if (!confirmed) {
         return;
       }
     }

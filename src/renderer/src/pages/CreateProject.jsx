@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { useModal } from '../context/ModalContext';
 import InstallationProgress from '../components/InstallationProgress';
 import {
   ArrowLeft,
@@ -494,7 +495,12 @@ function CreateProject() {
         setInstallComplete(true);
         setInstallError(true);
       } else {
-        alert('Failed to create project: ' + error.message);
+        // Note: Can't use useModal here since this is in the parent component
+        // For now we show the error in the install progress modal
+        setInstallOutput((prev) => [...prev, { text: `Error: ${error.message}`, type: 'error' }]);
+        setShowInstallProgress(true);
+        setInstallComplete(true);
+        setInstallError(true);
       }
     } finally {
       setIsCreating(false);
@@ -797,6 +803,8 @@ function StepDetails({
   setGeneratingSshKey,
   setSshKeyError,
 }) {
+  const { showConfirm } = useModal();
+
   // Use available (installed) versions - these already include custom imported versions
   // Sort them in descending order (newest first)
   const phpVersions = (availablePhpVersions || []).slice().sort((a, b) => {
@@ -869,7 +877,17 @@ function StepDetails({
 
   // Handle regenerate SSH key
   const handleRegenerateSshKey = async () => {
-    if (!window.confirm('Are you sure you want to generate a new SSH key? You will need to update your Git provider with the new public key.')) {
+    // Use custom modal instead of window.confirm() to avoid Electron focus issues
+    const confirmed = await showConfirm({
+      type: 'warning',
+      title: 'Regenerate SSH Key',
+      message: 'Are you sure you want to generate a new SSH key?',
+      detail: 'You will need to update your Git provider with the new public key.',
+      confirmText: 'Regenerate',
+      confirmStyle: 'warning',
+    });
+
+    if (!confirmed) {
       return;
     }
 

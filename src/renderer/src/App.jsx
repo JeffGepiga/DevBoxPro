@@ -13,12 +13,13 @@ import Settings from './pages/Settings';
 import CreateProject from './pages/CreateProject';
 import BinaryManager from './pages/BinaryManager';
 import { AppProvider, useApp } from './context/AppContext';
+import { ModalProvider } from './context/ModalContext';
 
 // Global database operation notification component
 function GlobalDatabaseNotification() {
   const { databaseOperation, clearDatabaseOperation } = useApp();
   const location = useLocation();
-  
+
   // Don't show on Databases page - it has its own notification
   if (location.pathname === '/databases' || !databaseOperation) {
     return null;
@@ -28,11 +29,11 @@ function GlobalDatabaseNotification() {
     <div className="fixed bottom-4 right-4 z-50 max-w-md">
       <div className={clsx(
         'rounded-lg shadow-lg p-4 border-2 flex items-center gap-3',
-        databaseOperation.status === 'error' 
-          ? 'border-red-400 bg-red-50 dark:bg-red-900/90' 
+        databaseOperation.status === 'error'
+          ? 'border-red-400 bg-red-50 dark:bg-red-900/90'
           : databaseOperation.status === 'complete'
-          ? 'border-green-400 bg-green-50 dark:bg-green-900/90'
-          : 'border-blue-400 bg-blue-50 dark:bg-blue-900/90'
+            ? 'border-green-400 bg-green-50 dark:bg-green-900/90'
+            : 'border-blue-400 bg-blue-50 dark:bg-blue-900/90'
       )}>
         <div className="flex-shrink-0">
           {databaseOperation.status === 'error' ? (
@@ -52,8 +53,8 @@ function GlobalDatabaseNotification() {
           </div>
           <p className={clsx(
             'text-xs truncate',
-            databaseOperation.status === 'error' 
-              ? 'text-red-600 dark:text-red-400' 
+            databaseOperation.status === 'error'
+              ? 'text-red-600 dark:text-red-400'
               : 'text-gray-500 dark:text-gray-400'
           )}>
             {databaseOperation.message}
@@ -105,7 +106,7 @@ function App() {
         const settings = await window.devbox?.settings.getAll();
         const savedTheme = settings?.settings?.theme || 'system';
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        
+
         if (savedTheme === 'dark') {
           setDarkMode(true);
         } else if (savedTheme === 'light') {
@@ -120,7 +121,7 @@ function App() {
         setDarkMode(prefersDark);
       }
     };
-    
+
     loadTheme();
 
     // Listen for system preference changes (only applies when theme is 'system')
@@ -150,7 +151,9 @@ function App() {
 
   return (
     <AppProvider>
-      <AppContent darkMode={darkMode} setDarkMode={setDarkMode} />
+      <ModalProvider>
+        <AppContent darkMode={darkMode} setDarkMode={setDarkMode} />
+      </ModalProvider>
     </AppProvider>
   );
 }

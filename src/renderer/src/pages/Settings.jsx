@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { useModal } from '../context/ModalContext';
 import {
   Save,
   RefreshCw,
@@ -26,6 +27,7 @@ import clsx from 'clsx';
 
 function Settings() {
   const { settings, refreshSettings } = useApp();
+  const { showAlert, showConfirm } = useModal();
   const [localSettings, setLocalSettings] = useState({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -73,14 +75,21 @@ function Settings() {
       setTimeout(() => setSaved(false), 2000);
     } catch (error) {
       // Error saving settings
-      alert('Failed to save settings');
+      await showAlert({ title: 'Error', message: 'Failed to save settings', type: 'error' });
     } finally {
       setSaving(false);
     }
   };
 
   const handleReset = async () => {
-    if (window.confirm('Reset all settings to defaults?')) {
+    const confirmed = await showConfirm({
+      title: 'Reset Settings',
+      message: 'Reset all settings to defaults?',
+      confirmText: 'Reset',
+      confirmStyle: 'danger',
+      type: 'warning'
+    });
+    if (confirmed) {
       await window.devbox?.settings.reset();
       await refreshSettings();
       const newSettings = await window.devbox?.settings.getAll();
@@ -91,7 +100,7 @@ function Settings() {
   const handleExportConfig = async () => {
     try {
       // In a real app, this would use a save dialog
-      alert('Config exported to devbox-config.json');
+      await showAlert({ title: 'Export Config', message: 'Config exported to devbox-config.json', type: 'success' });
     } catch (error) {
       // Error exporting config
     }
@@ -100,7 +109,7 @@ function Settings() {
   const handleImportConfig = async () => {
     try {
       // In a real app, this would use a file picker
-      alert('Import config feature coming soon');
+      await showAlert({ title: 'Coming Soon', message: 'Import config feature coming soon', type: 'info' });
     } catch (error) {
       // Error importing config
     }
