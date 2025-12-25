@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { useModal } from '../context/ModalContext';
 import { Link } from 'react-router-dom';
 import {
   Plus,
@@ -25,6 +26,7 @@ import clsx from 'clsx';
 
 function Projects() {
   const { projects, loading, startProject, stopProject, deleteProject, refreshProjects, settings } = useApp();
+  const { showAlert } = useModal();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -65,7 +67,7 @@ function Projects() {
       setDeleteFiles(false);
     } catch (error) {
       // Failed to delete project
-      alert('Failed to delete project: ' + error.message);
+      await showAlert({ title: 'Error', message: 'Failed to delete project: ' + error.message, type: 'error' });
     } finally {
       setIsDeleting(false);
     }
@@ -101,7 +103,7 @@ function Projects() {
       // Check if project is already registered
       const existingProject = projects.find(p => p.path === folderPath);
       if (existingProject) {
-        alert(`This folder is already registered as project "${existingProject.name}"`);
+        await showAlert({ title: 'Already Registered', message: `This folder is already registered as project "${existingProject.name}"`, type: 'warning' });
         return;
       }
 

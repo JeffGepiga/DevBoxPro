@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { useModal } from '../context/ModalContext';
 import ProjectTerminal from '../components/ProjectTerminal';
 import {
   ArrowLeft,
@@ -439,6 +440,7 @@ function ProjectDetail() {
 }
 
 function OverviewTab({ project, processes, refreshProjects }) {
+  const { showConfirm, showAlert } = useModal();
   const runningProcesses = processes.filter((p) => p.isRunning);
   const [phpVersions, setPhpVersions] = useState([]);
   const [binariesStatus, setBinariesStatus] = useState({});
@@ -649,13 +651,19 @@ function OverviewTab({ project, processes, refreshProjects }) {
 
       // If project is running, ask to restart
       if (project.isRunning) {
-        if (window.confirm('Settings saved! Do you want to restart the project to apply changes?')) {
+        const shouldRestart = await showConfirm({
+          title: 'Restart Project?',
+          message: 'Settings saved! Do you want to restart the project to apply changes?',
+          confirmText: 'Restart',
+          type: 'question'
+        });
+        if (shouldRestart) {
           await window.devbox?.projects.restart(project.id);
         }
       }
     } catch (error) {
       // Error saving settings
-      alert('Failed to save settings: ' + error.message);
+      await showAlert({ title: 'Error', message: 'Failed to save settings: ' + error.message, type: 'error' });
     } finally {
       setSavingSettings(false);
     }
@@ -1159,6 +1167,7 @@ function LogsTab({ logs, onRefresh, projectId }) {
 }
 
 function WorkersTab({ processes, projectId, onRefresh }) {
+  const { showConfirm } = useModal();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProcess, setNewProcess] = useState({
     name: '',
@@ -1190,7 +1199,14 @@ function WorkersTab({ processes, projectId, onRefresh }) {
   };
 
   const handleRemoveProcess = async (name) => {
-    if (window.confirm(`Remove process "${name}"?`)) {
+    const confirmed = await showConfirm({
+      title: 'Remove Process',
+      message: `Remove process "${name}"?`,
+      confirmText: 'Remove',
+      confirmStyle: 'danger',
+      type: 'warning'
+    });
+    if (confirmed) {
       await window.devbox?.supervisor.removeProcess(projectId, name);
       onRefresh();
     }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { useModal } from '../context/ModalContext';
 import {
   RefreshCw,
   Search,
@@ -17,6 +18,7 @@ import clsx from 'clsx';
 
 function Logs() {
   const { projects, services } = useApp();
+  const { showConfirm } = useModal();
   const [selectedSource, setSelectedSource] = useState('all');
   const [selectedLevel, setSelectedLevel] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -156,7 +158,14 @@ function Logs() {
   const clearLogs = async () => {
     if (selectedSource === 'all') {
       // Clear all logs - ask for confirmation
-      if (!window.confirm('Clear all logs from all projects and services?')) {
+      const confirmed = await showConfirm({
+        title: 'Clear All Logs',
+        message: 'Clear all logs from all projects and services?',
+        confirmText: 'Clear All',
+        confirmStyle: 'danger',
+        type: 'warning'
+      });
+      if (!confirmed) {
         return;
       }
       // Clear all project logs

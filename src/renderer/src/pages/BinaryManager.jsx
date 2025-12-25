@@ -26,6 +26,7 @@ import {
 import clsx from 'clsx';
 import PhpIniEditor from '../components/PhpIniEditor';
 import { useApp } from '../context/AppContext';
+import { useModal } from '../context/ModalContext';
 
 function BinaryManager() {
   // Use global state for download progress (persists across navigation)
@@ -36,6 +37,7 @@ function BinaryManager() {
     setDownloadProgress: setProgressGlobal,
     clearDownload,
   } = useApp();
+  const { showAlert, showConfirm } = useModal();
 
   const [installed, setInstalled] = useState({
     php: {},
@@ -437,7 +439,7 @@ function BinaryManager() {
 
       const filePath = file.path;
       if (!filePath) {
-        alert('Could not get file path. Please try again.');
+        showAlert({ title: 'Error', message: 'Could not get file path. Please try again.', type: 'error' });
         return;
       }
 
@@ -496,7 +498,7 @@ function BinaryManager() {
   const handleConfirmImport = async () => {
     const { service, filePath, customVersion } = importModal;
     if (!customVersion.trim()) {
-      alert('Please enter or select a version.');
+      await showAlert({ title: 'Validation Error', message: 'Please enter or select a version.', type: 'warning' });
       return;
     }
     setImportModal({ ...importModal, open: false });
@@ -514,7 +516,7 @@ function BinaryManager() {
 
       const filePath = file.path;
       if (!filePath) {
-        alert('Could not get file path. Please try again.');
+        showAlert({ title: 'Error', message: 'Could not get file path. Please try again.', type: 'error' });
         return;
       }
 
@@ -571,10 +573,18 @@ function BinaryManager() {
 
   const handleRemove = async (type, version = null) => {
     const confirmMsg = version
-      ? `Remove PHP ${version}? You'll need to re-download it to use it again.`
-      : `Remove ${type}? You'll need to re-download it to use it again.`;
+      ? `Remove ${type} ${version}?`
+      : `Remove ${type}?`;
 
-    if (!window.confirm(confirmMsg)) return;
+    const confirmed = await showConfirm({
+      title: 'Remove Binary',
+      message: confirmMsg,
+      detail: "You'll need to re-download it to use it again.",
+      confirmText: 'Remove',
+      confirmStyle: 'danger',
+      type: 'warning'
+    });
+    if (!confirmed) return;
 
     try {
       await window.devbox?.binaries.remove(type, version);
