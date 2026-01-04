@@ -640,6 +640,97 @@ function NetworkSettings({ settings, updateSetting }) {
       </div>
 
       <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          Server Timezone
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Sets the timezone for PHP, MySQL, and MariaDB services. Changes require service restart.
+        </p>
+        <div className="flex gap-3 items-start">
+          <div className="flex-1">
+            <select
+              value={
+                // Check if current value is in the list of presets
+                ['UTC', 'Asia/Manila', 'Asia/Singapore', 'Asia/Shanghai', 'Asia/Hong_Kong',
+                  'Asia/Tokyo', 'Asia/Seoul', 'America/New_York', 'America/Chicago',
+                  'America/Denver', 'America/Los_Angeles', 'America/Sao_Paulo',
+                  'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow',
+                  'Australia/Sydney', 'Australia/Melbourne', 'Pacific/Auckland',
+                  'Asia/Dubai', 'Asia/Kolkata', 'Asia/Jakarta'].includes(settings.serverTimezone)
+                  ? settings.serverTimezone
+                  : 'custom'
+              }
+              onChange={(e) => {
+                if (e.target.value !== 'custom') {
+                  updateSetting('serverTimezone', e.target.value);
+                }
+              }}
+              className="select w-72"
+            >
+              <optgroup label="Common">
+                <option value="UTC">UTC (Coordinated Universal Time)</option>
+                <option value="Asia/Manila">Asia/Manila (Philippine Time, UTC+8)</option>
+                <option value="Asia/Singapore">Asia/Singapore (SGT, UTC+8)</option>
+                <option value="Asia/Shanghai">Asia/Shanghai (CST, UTC+8)</option>
+                <option value="Asia/Hong_Kong">Asia/Hong_Kong (HKT, UTC+8)</option>
+                <option value="Asia/Tokyo">Asia/Tokyo (JST, UTC+9)</option>
+                <option value="Asia/Seoul">Asia/Seoul (KST, UTC+9)</option>
+              </optgroup>
+              <optgroup label="Americas">
+                <option value="America/New_York">America/New_York (Eastern Time)</option>
+                <option value="America/Chicago">America/Chicago (Central Time)</option>
+                <option value="America/Denver">America/Denver (Mountain Time)</option>
+                <option value="America/Los_Angeles">America/Los_Angeles (Pacific Time)</option>
+                <option value="America/Sao_Paulo">America/Sao_Paulo (Brasilia Time)</option>
+              </optgroup>
+              <optgroup label="Europe">
+                <option value="Europe/London">Europe/London (GMT/BST)</option>
+                <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
+                <option value="Europe/Berlin">Europe/Berlin (CET/CEST)</option>
+                <option value="Europe/Moscow">Europe/Moscow (MSK, UTC+3)</option>
+              </optgroup>
+              <optgroup label="Australia/Pacific">
+                <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
+                <option value="Australia/Melbourne">Australia/Melbourne (AEST/AEDT)</option>
+                <option value="Pacific/Auckland">Pacific/Auckland (NZST/NZDT)</option>
+              </optgroup>
+              <optgroup label="Other">
+                <option value="Asia/Dubai">Asia/Dubai (GST, UTC+4)</option>
+                <option value="Asia/Kolkata">Asia/Kolkata (IST, UTC+5:30)</option>
+                <option value="Asia/Jakarta">Asia/Jakarta (WIB, UTC+7)</option>
+                <option value="custom">Custom...</option>
+              </optgroup>
+            </select>
+          </div>
+        </div>
+        {/* Custom timezone input */}
+        <div className="mt-3">
+          <label className="label text-sm">Or enter IANA timezone manually:</label>
+          <div className="flex gap-2 items-center">
+            <input
+              type="text"
+              value={settings.serverTimezone || 'UTC'}
+              onChange={(e) => updateSetting('serverTimezone', e.target.value)}
+              className="input w-72"
+              placeholder="e.g., America/New_York"
+            />
+            <a
+              href="https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary-600 hover:text-primary-700 dark:text-primary-400 text-sm"
+              onClick={(e) => {
+                e.preventDefault();
+                window.devbox?.system?.openExternal('https://en.wikipedia.org/wiki/List_of_tz_database_time_zones');
+              }}
+            >
+              View all timezones
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Port Configuration
         </h3>

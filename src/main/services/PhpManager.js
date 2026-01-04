@@ -196,6 +196,10 @@ class PhpManager {
     const iniPath = path.join(phpPath, 'php.ini');
     const templatePath = path.join(phpPath, 'php.ini-development');
 
+    // Get timezone from settings
+    const settings = this.configStore?.get('settings', {}) || {};
+    const timezone = settings.serverTimezone || 'UTC';
+
     if (await fs.pathExists(templatePath)) {
       await fs.copy(templatePath, iniPath);
     } else {
@@ -226,7 +230,7 @@ error_log = ${path.join(phpPath, 'php_errors.log').replace(/\\/g, '/')}
 post_max_size = 64M
 upload_max_filesize = 64M
 max_file_uploads = 20
-date.timezone = UTC
+date.timezone = ${timezone}
 
 ; Extensions (uncomment to enable)
 extension_dir = "${path.join(phpPath, 'ext').replace(/\\/g, '/')}"

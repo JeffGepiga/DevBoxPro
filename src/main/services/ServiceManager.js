@@ -2011,6 +2011,11 @@ FLUSH PRIVILEGES;
     // Build init-file line if provided (for applying credentials from ConfigStore)
     const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
 
+    // Get timezone from settings and convert to UTC offset for MySQL compatibility
+    const settings = this.configStore?.get('settings', {}) || {};
+    const timezone = settings.serverTimezone || 'UTC';
+    const timezoneOffset = this.getTimezoneOffset(timezone);
+
     let config;
     if (isWindows) {
       // Windows-specific config for MySQL
@@ -2025,6 +2030,7 @@ enable-named-pipe=ON
 socket=MYSQL_${version.replace(/\./g, '')}
 pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+default-time-zone='${timezoneOffset}'
 ${initFileLine}innodb_buffer_pool_size=128M
 innodb_redo_log_capacity=100M
 max_connections=100
@@ -2043,6 +2049,7 @@ bind-address=127.0.0.1
 socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+default-time-zone='${timezoneOffset}'
 ${initFileLine}
 [client]
 port=${port}
@@ -2051,6 +2058,74 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     }
 
     await fs.writeFile(configPath, config);
+  }
+
+  /**
+   * Convert IANA timezone name to UTC offset string for MySQL compatibility.
+   * MySQL on Windows doesn't have timezone tables loaded by default, so we use offsets.
+   * For unknown timezones, we try to calculate the offset dynamically using JavaScript's Intl API.
+   * @param {string} timezone - IANA timezone name (e.g., 'Asia/Manila')
+   * @returns {string} UTC offset string (e.g., '+08:00')
+   */
+  getTimezoneOffset(timezone) {
+    // Known offsets for common timezones (note: doesn't handle DST)
+    const knownOffsets = {
+      'UTC': '+00:00',
+      'Asia/Manila': '+08:00',
+      'Asia/Singapore': '+08:00',
+      'Asia/Shanghai': '+08:00',
+      'Asia/Hong_Kong': '+08:00',
+      'Asia/Tokyo': '+09:00',
+      'Asia/Seoul': '+09:00',
+      'Asia/Dubai': '+04:00',
+      'Asia/Kolkata': '+05:30',
+      'Asia/Jakarta': '+07:00',
+      'America/New_York': '-05:00',
+      'America/Chicago': '-06:00',
+      'America/Denver': '-07:00',
+      'America/Los_Angeles': '-08:00',
+      'America/Sao_Paulo': '-03:00',
+      'Europe/London': '+00:00',
+      'Europe/Paris': '+01:00',
+      'Europe/Berlin': '+01:00',
+      'Europe/Moscow': '+03:00',
+      'Australia/Sydney': '+10:00',
+      'Australia/Melbourne': '+10:00',
+      'Pacific/Auckland': '+12:00',
+    };
+
+    // If we have a known offset, use it
+    if (knownOffsets[timezone]) {
+      return knownOffsets[timezone];
+    }
+
+    // Try to dynamically calculate offset for unknown timezones
+    try {
+      const now = new Date();
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        timeZoneName: 'shortOffset',
+      });
+
+      const parts = formatter.formatToParts(now);
+      const tzPart = parts.find(p => p.type === 'timeZoneName');
+
+      if (tzPart && tzPart.value) {
+        // Format like "GMT+8" or "GMT-5:30"
+        const match = tzPart.value.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+        if (match) {
+          const sign = match[1];
+          const hours = match[2].padStart(2, '0');
+          const minutes = match[3] || '00';
+          return `${sign}${hours}:${minutes}`;
+        }
+      }
+    } catch (e) {
+      // Invalid timezone - fall back to UTC
+      this.managers?.log?.systemWarn(`Invalid timezone: ${timezone}, falling back to UTC`);
+    }
+
+    return '+00:00';
   }
 
   // MariaDB
@@ -2262,6 +2337,11 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     // Build init-file line if provided (for applying credentials from ConfigStore)
     const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
 
+    // Get timezone from settings and convert to UTC offset for compatibility
+    const settings = this.configStore?.get('settings', {}) || {};
+    const timezone = settings.serverTimezone || 'UTC';
+    const timezoneOffset = this.getTimezoneOffset(timezone);
+
     let config;
     if (isWindows) {
       // Windows-specific config - no socket, use TCP/IP and named pipe
@@ -2276,6 +2356,7 @@ enable_named_pipe=ON
 socket=MARIADB_${version.replace(/\./g, '')}
 pid-file=${path.join(dataDir, 'mariadb.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+default-time-zone='${timezoneOffset}'
 ${initFileLine}innodb_buffer_pool_size=128M
 max_connections=100
 
@@ -2293,6 +2374,7 @@ bind-address=127.0.0.1
 socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
 pid-file=${path.join(dataDir, 'mariadb.pid').replace(/\\/g, '/')}
 log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+default-time-zone='${timezoneOffset}'
 ${initFileLine}
 [client]
 port=${port}

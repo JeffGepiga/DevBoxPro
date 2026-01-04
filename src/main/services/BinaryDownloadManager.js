@@ -1351,6 +1351,10 @@ class BinaryDownloadManager {
     const extPrefix = platform === 'win' ? 'php_' : '';
     const extSuffix = platform === 'win' ? '.dll' : '.so';
 
+    // Get timezone from settings
+    const settings = this.configStore?.get('settings', {}) || {};
+    const timezone = settings.serverTimezone || 'UTC';
+
     // Download CA certificate bundle for curl/openssl if on Windows
     let cacertPath = '';
     if (platform === 'win') {
@@ -1421,7 +1425,7 @@ extension_dir = "${extDir}"
 cli_server.color = On
 
 [Date]
-date.timezone = UTC
+date.timezone = ${timezone}
 
 [Pdo_mysql]
 pdo_mysql.default_socket=

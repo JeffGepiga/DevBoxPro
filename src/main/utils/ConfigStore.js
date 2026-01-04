@@ -47,6 +47,7 @@ class ConfigStore {
         activeDatabaseType: 'mysql',
         dbUser: 'root',
         dbPassword: '',
+        serverTimezone: 'UTC', // IANA timezone for PHP, MySQL, MariaDB
       },
       projects: [],
       phpVersions: {},
