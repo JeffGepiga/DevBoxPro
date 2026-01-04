@@ -1027,11 +1027,17 @@ set "DEVBOX_PROJECTS=${projectsFilePath}"
 set "DEFAULT_PHP=${defaultPhpVersion}"
 set "CURRENT_DIR=%CD%"
 
-REM Find project for current directory using PowerShell helper
+REM Create temp PowerShell script to find project PHP version
+set "TEMP_PS=%TEMP%\\devbox_php_lookup.ps1"
+echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower() >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ $pp = $prop.Name.ToLower(); if($d.StartsWith($pp)){ $prop.Value.phpVersion; exit } } >> "%TEMP_PS%"
+
 set "PHP_VERSION="
-for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';if(Test-Path '%DEVBOX_PROJECTS%'){$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower();foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower();if($d.StartsWith($pp)){Write-Output $prop.Value.phpVersion;exit}}}Write-Output ''"') do (
+for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (
     if not "%%a"=="" set "PHP_VERSION=%%a"
 )
+del "%TEMP_PS%" 2>nul
 
 REM Use project version or default
 if "%PHP_VERSION%"=="" set "PHP_VERSION=%DEFAULT_PHP%"
@@ -1057,11 +1063,17 @@ set "DEVBOX_PROJECTS=${projectsFilePath}"
 set "DEFAULT_NODE=${defaultNodeVersion}"
 set "CURRENT_DIR=%CD%"
 
-REM Find project for current directory using PowerShell helper
+REM Create temp PowerShell script to find project Node version
+set "TEMP_PS=%TEMP%\\devbox_node_lookup.ps1"
+echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower() >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ $pp = $prop.Name.ToLower(); if($d.StartsWith($pp) -and $prop.Value.nodejsVersion){ $prop.Value.nodejsVersion; exit } } >> "%TEMP_PS%"
+
 set "NODE_VERSION="
-for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';if(Test-Path '%DEVBOX_PROJECTS%'){$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower();foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower();if($d.StartsWith($pp) -and $prop.Value.nodejsVersion){Write-Output $prop.Value.nodejsVersion;exit}}}Write-Output ''"') do (
+for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (
     if not "%%a"=="" set "NODE_VERSION=%%a"
 )
+del "%TEMP_PS%" 2>nul
 
 REM Use project version or default
 if "%NODE_VERSION%"=="" set "NODE_VERSION=%DEFAULT_NODE%"
@@ -1088,11 +1100,17 @@ set "DEVBOX_PROJECTS=${projectsFilePath}"
 set "DEFAULT_NODE=${defaultNodeVersion}"
 set "CURRENT_DIR=%CD%"
 
-REM Find project for current directory using PowerShell helper
+REM Create temp PowerShell script to find project Node version
+set "TEMP_PS=%TEMP%\\devbox_npm_lookup.ps1"
+echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower() >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ $pp = $prop.Name.ToLower(); if($d.StartsWith($pp) -and $prop.Value.nodejsVersion){ $prop.Value.nodejsVersion; exit } } >> "%TEMP_PS%"
+
 set "NODE_VERSION="
-for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';if(Test-Path '%DEVBOX_PROJECTS%'){$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower();foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower();if($d.StartsWith($pp) -and $prop.Value.nodejsVersion){Write-Output $prop.Value.nodejsVersion;exit}}}Write-Output ''"') do (
+for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (
     if not "%%a"=="" set "NODE_VERSION=%%a"
 )
+del "%TEMP_PS%" 2>nul
 
 REM Use project version or default
 if "%NODE_VERSION%"=="" set "NODE_VERSION=%DEFAULT_NODE%"
@@ -1118,11 +1136,17 @@ set "DEVBOX_PROJECTS=${projectsFilePath}"
 set "DEFAULT_NODE=${defaultNodeVersion}"
 set "CURRENT_DIR=%CD%"
 
-REM Find project for current directory using PowerShell helper
+REM Create temp PowerShell script to find project Node version
+set "TEMP_PS=%TEMP%\\devbox_npx_lookup.ps1"
+echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower() >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ $pp = $prop.Name.ToLower(); if($d.StartsWith($pp) -and $prop.Value.nodejsVersion){ $prop.Value.nodejsVersion; exit } } >> "%TEMP_PS%"
+
 set "NODE_VERSION="
-for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';if(Test-Path '%DEVBOX_PROJECTS%'){$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower();foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower();if($d.StartsWith($pp) -and $prop.Value.nodejsVersion){Write-Output $prop.Value.nodejsVersion;exit}}}Write-Output ''"') do (
+for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (
     if not "%%a"=="" set "NODE_VERSION=%%a"
 )
+del "%TEMP_PS%" 2>nul
 
 REM Use project version or default
 if "%NODE_VERSION%"=="" set "NODE_VERSION=%DEFAULT_NODE%"
@@ -1148,11 +1172,17 @@ set "DEVBOX_PROJECTS=${projectsFilePath}"
 set "DEFAULT_PHP=${defaultPhpVersion}"
 set "CURRENT_DIR=%CD%"
 
-REM Find project for current directory using PowerShell helper
+REM Create temp PowerShell script to find project PHP version
+set "TEMP_PS=%TEMP%\\devbox_composer_lookup.ps1"
+echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower() >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ $pp = $prop.Name.ToLower(); if($d.StartsWith($pp)){ $prop.Value.phpVersion; exit } } >> "%TEMP_PS%"
+
 set "PHP_VERSION="
-for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue';if(Test-Path '%DEVBOX_PROJECTS%'){$p=Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json;$d='%CURRENT_DIR%'.ToLower();foreach($prop in $p.PSObject.Properties){$pp=$prop.Name.ToLower();if($d.StartsWith($pp)){Write-Output $prop.Value.phpVersion;exit}}}Write-Output ''"') do (
+for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (
     if not "%%a"=="" set "PHP_VERSION=%%a"
 )
+del "%TEMP_PS%" 2>nul
 
 REM Use project version or default
 if "%PHP_VERSION%"=="" set "PHP_VERSION=%DEFAULT_PHP%"
