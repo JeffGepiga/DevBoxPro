@@ -889,6 +889,35 @@ function OverviewTab({ project, processes, refreshProjects }) {
               🔒 HTTPS enabled for all domains
             </p>
           )}
+
+          {/* Document Root */}
+          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+              Document Root
+            </label>
+            <input
+              type="text"
+              value={getEffectiveValue('documentRoot') || ''}
+              onChange={(e) => {
+                const newValue = e.target.value;
+                if (newValue === (project.documentRoot || '')) {
+                  const { documentRoot, ...rest } = pendingChanges;
+                  setPendingChanges(rest);
+                } else {
+                  setPendingChanges({ ...pendingChanges, documentRoot: newValue });
+                }
+              }}
+              placeholder={
+                project.type === 'wordpress' ? 'Default: project root' :
+                  project.type === 'laravel' || project.type === 'symfony' ? 'Default: public' :
+                    'Default: auto-detect (public, www, web)'
+              }
+              className="input text-sm w-full"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              The folder web server points to. Leave empty to use default based on project type.
+            </p>
+          </div>
         </div>
 
         {/* Web Server */}
@@ -1107,7 +1136,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 }
 

@@ -933,11 +933,18 @@ if ($newArray.Count -lt $pathArray.Count) {
     return this.configStore.get('settings.defaultPhpVersion', null);
   }
 
+
   /**
    * Set default PHP version
    */
   setDefaultPhpVersion(version) {
-    this.configStore.set('settings.defaultPhpVersion', version);
+    const settings = this.configStore.get('settings', {});
+    if (version) {
+      settings.defaultPhpVersion = version;
+    } else {
+      delete settings.defaultPhpVersion;
+    }
+    this.configStore.set('settings', settings);
   }
 
   /**
@@ -951,7 +958,13 @@ if ($newArray.Count -lt $pathArray.Count) {
    * Set default Node.js version
    */
   setDefaultNodeVersion(version) {
-    this.configStore.set('settings.defaultNodeVersion', version);
+    const settings = this.configStore.get('settings', {});
+    if (version) {
+      settings.defaultNodeVersion = version;
+    } else {
+      delete settings.defaultNodeVersion;
+    }
+    this.configStore.set('settings', settings);
   }
 
   /**

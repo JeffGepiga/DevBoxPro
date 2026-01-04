@@ -16,7 +16,7 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
-    "adm-zip": "^0.5.10",
+    "adm-zip": "^0.5.16",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.7",
     "express": "^4.18.2",

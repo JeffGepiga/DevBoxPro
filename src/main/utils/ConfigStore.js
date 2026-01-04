@@ -36,7 +36,7 @@ class ConfigStore {
         autoStartOnLaunch: true,
         portRangeStart: 8000,
         sslEnabled: true,
-        defaultPhpVersion: '8.2',
+        defaultPhpVersion: null,
         defaultEditor: 'vscode',
         theme: 'system',
         phpMyAdminPort: 8080,

@@ -3,10 +3,12 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
 import InstallationProgress from '../components/InstallationProgress';
+import ImportProjectModal from '../components/ImportProjectModal';
 import {
   ArrowLeft,
   ArrowRight,
   Folder,
+  FolderOpen,
   Check,
   Database,
   Globe,
@@ -156,6 +158,8 @@ function CreateProject() {
     repositoryUrl: '',
     authType: 'public', // 'public', 'token', 'ssh'
     accessToken: '',
+    documentRoot: '', // Custom document root (relative to project path or absolute)
+    wordpressVersion: 'latest', // WordPress version selection
   });
   const [compatibilityWarnings, setCompatibilityWarnings] = useState([]);
   const [sshKeyInfo, setSshKeyInfo] = useState({ exists: false, publicKey: '' });
@@ -163,6 +167,14 @@ function CreateProject() {
   const [authTestResult, setAuthTestResult] = useState(null);
   const [generatingSshKey, setGeneratingSshKey] = useState(false);
   const [sshKeyError, setSshKeyError] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importProjectData, setImportProjectData] = useState(null);
+
+  // Handle import project selection
+  const handleImportProject = (projectInfo) => {
+    setImportProjectData(projectInfo);
+    setShowImportModal(true);
+  };
 
   // Load default projects path from settings
   useEffect(() => {
@@ -457,7 +469,7 @@ function CreateProject() {
 
     // Reset and show installation progress if installing fresh OR cloning from repository
     const shouldShowProgress =
-      (formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress')) ||
+      (formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress' || formData.type === 'symfony')) ||
       (formData.projectSource === 'clone' && formData.repositoryUrl);
 
     if (shouldShowProgress) {
@@ -644,7 +656,11 @@ function CreateProject() {
           {/* Step Content */}
           <div className="card p-8 mb-8">
             {currentStep === 0 && (
-              <StepProjectType formData={formData} updateFormData={updateFormData} />
+              <StepProjectType
+                formData={formData}
+                updateFormData={updateFormData}
+                onImportProject={handleImportProject}
+              />
             )}
             {currentStep === 1 && (
               <StepDetails
@@ -731,11 +747,53 @@ function CreateProject() {
           </div>
         </>
       )}
+
+      {/* Import Project Modal */}
+      {showImportModal && importProjectData && (
+        <ImportProjectModal
+          project={importProjectData}
+          onClose={() => {
+            setShowImportModal(false);
+            setImportProjectData(null);
+          }}
+          onImport={async (config) => {
+            try {
+              const result = await createProject(config);
+              if (result?.id) {
+                navigate('/projects');
+              }
+            } catch (error) {
+              console.error('Import failed:', error);
+            }
+            setShowImportModal(false);
+            setImportProjectData(null);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function StepProjectType({ formData, updateFormData }) {
+function StepProjectType({ formData, updateFormData, onImportProject }) {
+  const handleImportFolder = async () => {
+    try {
+      // Open folder picker dialog
+      const folderPath = await window.devbox?.system.selectDirectory();
+      if (!folderPath) return; // User cancelled
+
+      // Detect project type from folder contents
+      const projectInfo = await window.devbox?.projects.detectType(folderPath);
+
+      onImportProject({
+        path: folderPath,
+        name: projectInfo?.name || folderPath.split(/[\\/]/).pop(),
+        type: projectInfo?.type || 'custom',
+      });
+    } catch (error) {
+      console.error('Error selecting folder:', error);
+    }
+  };
+
   return (
     <div>
       <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
@@ -751,10 +809,10 @@ function StepProjectType({ formData, updateFormData }) {
           return (
             <button
               key={type.id}
-              onClick={() => updateFormData({ type: type.id })}
+              onClick={() => updateFormData({ type: type.id, projectSource: 'new' })}
               className={clsx(
                 'p-6 rounded-xl border-2 text-left transition-all',
-                formData.type === type.id
+                formData.type === type.id && formData.projectSource !== 'import'
                   ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
                   : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
               )}
@@ -779,6 +837,66 @@ function StepProjectType({ formData, updateFormData }) {
           );
         })}
       </div>
+
+      {/* Import Existing Project */}
+      <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+        <h3 className="text-md font-medium text-gray-900 dark:text-white mb-3">
+          Or import an existing project
+        </h3>
+        <button
+          onClick={handleImportFolder}
+          className={clsx(
+            'w-full p-6 rounded-xl border-2 border-dashed text-left transition-all',
+            formData.projectSource === 'import'
+              ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+              : 'border-gray-300 dark:border-gray-600 hover:border-primary-400 dark:hover:border-primary-500 hover:bg-gray-50 dark:hover:bg-gray-800'
+          )}
+        >
+          <div className="flex items-center gap-4">
+            <div className="p-3 rounded-lg bg-gray-100 dark:bg-gray-700">
+              <FolderOpen className="w-8 h-8 text-gray-600 dark:text-gray-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Import Existing Project
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Select a folder containing an existing PHP project
+              </p>
+            </div>
+          </div>
+        </button>
+      </div>
+
+      {/* WordPress Version Selection */}
+      {formData.type === 'wordpress' && (
+        <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            WordPress Version
+          </label>
+          <select
+            value={formData.wordpressVersion}
+            onChange={(e) => updateFormData({ wordpressVersion: e.target.value })}
+            className="input w-full max-w-xs"
+          >
+            <option value="latest">Latest (Recommended)</option>
+            <option value="6.8">6.8</option>
+            <option value="6.7">6.7</option>
+            <option value="6.6">6.6</option>
+            <option value="6.5">6.5</option>
+            <option value="6.4">6.4</option>
+            <option value="6.3">6.3</option>
+            <option value="6.2">6.2</option>
+            <option value="6.1">6.1</option>
+            <option value="6.0">6.0</option>
+            <option value="5.9">5.9 (PHP 5.6+)</option>
+            <option value="5.8">5.8 (PHP 5.6+)</option>
+          </select>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            WordPress 6.4+ requires PHP 7.4 or higher. Older versions support PHP 5.6+.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -1724,6 +1842,31 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig })
             </div>
           </label>
         </div>
+
+        {/* Document Root */}
+        <div>
+          <label className="label">Document Root (Optional)</label>
+          <input
+            type="text"
+            value={formData.documentRoot}
+            onChange={(e) => updateFormData({ documentRoot: e.target.value })}
+            className="input"
+            placeholder={
+              formData.type === 'wordpress' ? '.' :
+                formData.type === 'laravel' || formData.type === 'symfony' ? 'public' :
+                  'public, www, web, or .'
+            }
+          />
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            The folder the web server points to.
+            {formData.type === 'laravel' || formData.type === 'symfony'
+              ? ' Default: public'
+              : formData.type === 'wordpress'
+                ? ' Default: project root'
+                : ' Leave empty for auto-detection (public, www, web) or project root'
+            }
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -1811,19 +1954,33 @@ function StepReview({ formData }) {
           </div>
         </div>
 
+        {/* Document Root (if custom) */}
+        {formData.documentRoot && (
+          <div>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+              Document Root
+            </h3>
+            <p className="text-gray-900 dark:text-white font-mono text-sm bg-gray-100 dark:bg-gray-800 p-2 rounded">
+              {formData.documentRoot}
+            </p>
+          </div>
+        )}
+
         {/* Fresh Install Notice */}
-        {formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress') && (
+        {formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress' || formData.type === 'symfony') && (
           <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
             <div className="flex items-center gap-2">
               <span className="text-xl">📦</span>
               <div>
                 <h3 className="font-medium text-blue-900 dark:text-blue-100">
-                  Fresh {formData.type === 'laravel' ? 'Laravel' : 'WordPress'} Installation
+                  Fresh {formData.type === 'laravel' ? 'Laravel' : formData.type === 'symfony' ? 'Symfony' : 'WordPress'} Installation
                 </h3>
                 <p className="text-sm text-blue-700 dark:text-blue-300">
                   {formData.type === 'laravel'
                     ? `Will run "composer create-project" and generate app key${formData.services.nodejs ? ', then "npm install"' : ''} to set up a complete Laravel application.`
-                    : 'Will download and install a fresh WordPress copy.'}
+                    : formData.type === 'symfony'
+                      ? 'Will run "composer create-project symfony/skeleton" and install webapp dependencies.'
+                      : 'Will run "composer create-project johnpbloch/wordpress" and configure wp-config.php.'}
                 </p>
               </div>
             </div>
