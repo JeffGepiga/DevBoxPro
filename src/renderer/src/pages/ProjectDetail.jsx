@@ -1205,6 +1205,75 @@ function WorkersTab({ processes, projectId, onRefresh }) {
     autostart: true,
     autorestart: true,
   });
+  const [expandedLogs, setExpandedLogs] = useState({});
+  const [workerLogs, setWorkerLogs] = useState({});
+  const [autoRefresh, setAutoRefresh] = useState(true);
+
+  // Load logs for expanded workers
+  const loadWorkerLogs = async (processName) => {
+    try {
+      const logs = await window.devbox?.supervisor?.getWorkerLogs?.(projectId, processName, 200);
+      setWorkerLogs(prev => ({ ...prev, [processName]: logs || [] }));
+    } catch (error) {
+      console.error('Error loading worker logs:', error);
+    }
+  };
+
+  // Subscribe to real-time output
+  useEffect(() => {
+    const unsubscribe = window.devbox?.supervisor?.onOutput?.((data) => {
+      if (data.projectId === projectId) {
+        const timestamp = new Date(data.timestamp).toLocaleTimeString();
+        const prefix = data.type === 'stderr' ? '[ERR]' : '[OUT]';
+        const formattedLine = `[${timestamp}] ${prefix} ${data.output.trim()}`;
+
+        setWorkerLogs(prev => {
+          const currentLogs = prev[data.processName] || [];
+          const newLogs = [...currentLogs];
+          // Split by newlines and add each line
+          data.output.split('\n').filter(line => line.trim()).forEach(line => {
+            newLogs.push(`[${timestamp}] ${prefix} ${line}`);
+          });
+          // Keep last 500 lines
+          return { ...prev, [data.processName]: newLogs.slice(-500) };
+        });
+      }
+    });
+
+    return () => unsubscribe?.();
+  }, [projectId]);
+
+  // Auto-refresh logs for expanded workers
+  useEffect(() => {
+    if (!autoRefresh) return;
+
+    const expandedNames = Object.keys(expandedLogs).filter(name => expandedLogs[name]);
+    if (expandedNames.length === 0) return;
+
+    const interval = setInterval(() => {
+      expandedNames.forEach(loadWorkerLogs);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [expandedLogs, autoRefresh, projectId]);
+
+  const toggleLogs = async (processName) => {
+    const isExpanding = !expandedLogs[processName];
+    setExpandedLogs(prev => ({ ...prev, [processName]: isExpanding }));
+
+    if (isExpanding) {
+      await loadWorkerLogs(processName);
+    }
+  };
+
+  const clearWorkerLogs = async (processName) => {
+    try {
+      await window.devbox?.supervisor?.clearWorkerLogs?.(projectId, processName);
+      setWorkerLogs(prev => ({ ...prev, [processName]: [] }));
+    } catch (error) {
+      console.error('Error clearing worker logs:', error);
+    }
+  };
 
   const handleAddProcess = async () => {
     try {
@@ -1247,10 +1316,21 @@ function WorkersTab({ processes, projectId, onRefresh }) {
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           Supervisor Processes
         </h3>
-        <button onClick={() => setShowAddForm(true)} className="btn-primary btn-sm">
-          <Plus className="w-4 h-4" />
-          Add Worker
-        </button>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            Auto-refresh
+          </label>
+          <button onClick={() => setShowAddForm(true)} className="btn-primary btn-sm">
+            <Plus className="w-4 h-4" />
+            Add Worker
+          </button>
+        </div>
       </div>
 
       {showAddForm && (
@@ -1302,50 +1382,123 @@ function WorkersTab({ processes, projectId, onRefresh }) {
 
       <div className="space-y-4">
         {processes.map((process) => (
-          <div key={process.name} className="card p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className={process.isRunning ? 'status-running' : 'status-stopped'} />
-                <div>
-                  <p className="font-medium text-gray-900 dark:text-white">{process.name}</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{process.command}</p>
+          <div key={process.name} className="card overflow-hidden">
+            <div className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={process.isRunning ? 'status-running' : 'status-stopped'} />
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">{process.name}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{process.command}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {process.instances || process.numprocs} worker(s)
+                  </span>
+                  <button
+                    onClick={() => toggleLogs(process.name)}
+                    className={clsx(
+                      'btn-ghost btn-sm',
+                      expandedLogs[process.name] && 'bg-gray-100 dark:bg-gray-700'
+                    )}
+                    title="View logs"
+                  >
+                    <Terminal className="w-4 h-4" />
+                    Logs
+                  </button>
+                  {process.isRunning ? (
+                    <button
+                      onClick={() => handleStopProcess(process.name)}
+                      className="btn-secondary btn-sm"
+                    >
+                      <Square className="w-4 h-4" />
+                      Stop
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleStartProcess(process.name)}
+                      className="btn-success btn-sm"
+                    >
+                      <Play className="w-4 h-4" />
+                      Start
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleRemoveProcess(process.name)}
+                    className="btn-ghost btn-sm text-red-500"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {process.instances || process.numprocs} worker(s)
-                </span>
-                {process.isRunning ? (
-                  <button
-                    onClick={() => handleStopProcess(process.name)}
-                    className="btn-secondary btn-sm"
-                  >
-                    <Square className="w-4 h-4" />
-                    Stop
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleStartProcess(process.name)}
-                    className="btn-success btn-sm"
-                  >
-                    <Play className="w-4 h-4" />
-                    Start
-                  </button>
-                )}
-                <button
-                  onClick={() => handleRemoveProcess(process.name)}
-                  className="btn-ghost btn-sm text-red-500"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
             </div>
+
+            {/* Expandable Logs Section */}
+            {expandedLogs[process.name] && (
+              <div className="border-t border-gray-200 dark:border-gray-700">
+                <div className="p-2 bg-gray-50 dark:bg-gray-800/50 flex items-center justify-between">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {(workerLogs[process.name] || []).length} log entries
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => loadWorkerLogs(process.name)}
+                      className="btn-ghost btn-xs"
+                      title="Refresh logs"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={() => clearWorkerLogs(process.name)}
+                      className="btn-ghost btn-xs text-red-500"
+                      title="Clear logs"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+                <div
+                  className="p-3 bg-gray-900 max-h-64 overflow-auto font-mono text-xs"
+                  style={{ scrollBehavior: 'smooth' }}
+                  ref={(el) => {
+                    // Auto-scroll to bottom on new content
+                    if (el && autoRefresh) {
+                      el.scrollTop = el.scrollHeight;
+                    }
+                  }}
+                >
+                  {(workerLogs[process.name] || []).length > 0 ? (
+                    (workerLogs[process.name] || []).map((line, index) => (
+                      <div
+                        key={index}
+                        className={clsx(
+                          'py-0.5 hover:bg-gray-800',
+                          line.includes('[ERR]') ? 'text-red-400' : 'text-gray-300'
+                        )}
+                      >
+                        {line}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-gray-500">
+                      {process.isRunning
+                        ? 'Waiting for output... Start the worker to see logs here.'
+                        : 'No logs available. Start the worker to begin logging.'}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         ))}
         {processes.length === 0 && (
           <div className="card p-12 text-center">
             <Cpu className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
             <p className="text-gray-500 dark:text-gray-400">No workers configured</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
+              Add a worker to run background processes like queue workers, schedulers, or Horizon.
+            </p>
           </div>
         )}
       </div>

@@ -111,6 +111,17 @@ contextBridge.exposeInMainWorld('devbox', {
       ipcRenderer.invoke('supervisor:stopProcess', projectId, processName),
     restartProcess: (projectId, processName) =>
       ipcRenderer.invoke('supervisor:restartProcess', projectId, processName),
+    getWorkerLogs: (projectId, processName, lines) =>
+      ipcRenderer.invoke('supervisor:getWorkerLogs', projectId, processName, lines),
+    clearWorkerLogs: (projectId, processName) =>
+      ipcRenderer.invoke('supervisor:clearWorkerLogs', projectId, processName),
+    getAllWorkerLogs: (projectId, lines) =>
+      ipcRenderer.invoke('supervisor:getAllWorkerLogs', projectId, lines),
+    onOutput: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('supervisor:output', handler);
+      return () => ipcRenderer.removeListener('supervisor:output', handler);
+    },
   },
 
   // Log operations
@@ -157,6 +168,7 @@ contextBridge.exposeInMainWorld('devbox', {
     saveFile: (options) => ipcRenderer.invoke('system:saveFile', options),
     openExternal: (url) => ipcRenderer.invoke('system:openExternal', url),
     openPath: (path) => ipcRenderer.invoke('system:openPath', path),
+    getAppDataPath: () => ipcRenderer.invoke('system:getAppDataPath'),
     getAppVersion: () => ipcRenderer.invoke('system:getAppVersion'),
     getPlatform: () => ipcRenderer.invoke('system:getPlatform'),
     getLocalIpAddresses: () => ipcRenderer.invoke('system:getLocalIpAddresses'),
@@ -262,6 +274,7 @@ contextBridge.exposeInMainWorld('devbox', {
       'update:available',
       'update:downloaded',
       'binaries:progress',
+      'supervisor:output',
     ];
 
     if (validChannels.includes(channel)) {

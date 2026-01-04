@@ -185,6 +185,11 @@ server {
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
         include ${fastcgiParamsPath};
         fastcgi_hide_header X-Powered-By;
+        
+        # Timeout settings for long-running PHP processes (0 = unlimited)
+        fastcgi_read_timeout 0;
+        fastcgi_connect_timeout 60s;
+        fastcgi_send_timeout 0;
     }
 
     location ~ /\\.(?!well-known).* {
@@ -228,6 +233,11 @@ server {
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
         include ${fastcgiParamsPath};
         fastcgi_hide_header X-Powered-By;
+        
+        # Timeout settings for long-running PHP processes (0 = unlimited)
+        fastcgi_read_timeout 0;
+        fastcgi_connect_timeout 60s;
+        fastcgi_send_timeout 0;
     }
 
     location ~ /\\.(?!well-known).* {
@@ -285,7 +295,8 @@ ${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
         Require all granted
     </Directory>
 
-    # PHP-FPM proxy
+    # PHP-FPM/CGI proxy with timeout for long-running processes (0 = unlimited)
+    ProxyTimeout 0
     <FilesMatch \\.php$>
         SetHandler "proxy:fcgi://127.0.0.1:${phpFpmPort}"
     </FilesMatch>
@@ -316,6 +327,8 @@ ${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
         Require all granted
     </Directory>
 
+    # PHP-FPM/CGI proxy with timeout for long-running processes (0 = unlimited)
+    ProxyTimeout 0
     <FilesMatch \\.php$>
         SetHandler "proxy:fcgi://127.0.0.1:${phpFpmPort}"
     </FilesMatch>

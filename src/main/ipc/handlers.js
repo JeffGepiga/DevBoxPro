@@ -457,6 +457,18 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return supervisor.restartProcess(projectId, processName);
   });
 
+  ipcMain.handle('supervisor:getWorkerLogs', async (event, projectId, processName, lines) => {
+    return supervisor.getWorkerLogs(projectId, processName, lines);
+  });
+
+  ipcMain.handle('supervisor:clearWorkerLogs', async (event, projectId, processName) => {
+    return supervisor.clearWorkerLogs(projectId, processName);
+  });
+
+  ipcMain.handle('supervisor:getAllWorkerLogs', async (event, projectId, lines) => {
+    return supervisor.getAllWorkerLogsForProject(projectId, lines);
+  });
+
   // ============ LOG HANDLERS ============
   ipcMain.handle('logs:getProjectLogs', async (event, projectId, lines = 100) => {
     return log.getProjectLogs(projectId, lines);
@@ -537,8 +549,16 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('system:openPath', async (event, folderPath) => {
-    await shell.openPath(folderPath);
+    // shell.openPath returns an error string if it fails, empty string on success
+    const error = await shell.openPath(folderPath);
+    if (error) {
+      throw new Error(error);
+    }
     return true;
+  });
+
+  ipcMain.handle('system:getAppDataPath', async () => {
+    return app.getPath('userData');
   });
 
   ipcMain.handle('system:getAppVersion', async () => {

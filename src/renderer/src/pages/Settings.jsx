@@ -792,7 +792,10 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
   const [isClearing, setIsClearing] = useState(false);
   const [clearResult, setClearResult] = useState(null);
 
-  // Load config info on mount
+  // App data path for Data Location section
+  const [appDataPath, setAppDataPath] = useState(null);
+
+  // Load config info and app data path on mount
   useEffect(() => {
     const loadConfigInfo = async () => {
       try {
@@ -802,7 +805,16 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
         // Error loading config info
       }
     };
+    const loadAppDataPath = async () => {
+      try {
+        const dataPath = await window.devbox?.system?.getAppDataPath?.();
+        setAppDataPath(dataPath);
+      } catch (error) {
+        // Error loading app data path
+      }
+    };
     loadConfigInfo();
+    loadAppDataPath();
   }, []);
 
   const handleCheckBinaryUpdates = async () => {
@@ -1100,12 +1112,19 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
           DevBox Pro stores data in the following location:
         </p>
         <button
-          onClick={() => window.devbox?.system?.openPath?.(settings.dataPath || '~/.devbox-pro')}
+          onClick={() => {
+            const pathToOpen = appDataPath || settings.dataPath;
+            if (pathToOpen) {
+              window.devbox?.system?.openPath?.(pathToOpen)?.catch((err) => {
+                console.error('Failed to open path:', err);
+              });
+            }
+          }}
           className="block w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm text-left hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors group"
           title="Click to open folder"
         >
           <code className="text-gray-700 dark:text-gray-300 group-hover:text-primary-600 dark:group-hover:text-primary-400">
-            {settings.dataPath || '~/.devbox-pro'}
+            {appDataPath || settings.dataPath || 'Loading...'}
           </code>
           <ExternalLink className="w-4 h-4 inline ml-2 opacity-0 group-hover:opacity-100 text-gray-400" />
         </button>

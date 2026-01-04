@@ -26,14 +26,21 @@ class SupervisorManager {
     this.configStore = configStore;
     this.managers = managers;
     this.processes = new Map(); // projectId -> { processName -> processInfo }
+    this.mainWindow = null; // Will be set by main.js
+    this.logsPath = null; // Will be set in initialize()
   }
 
   async initialize() {
     const { app } = require('electron');
     const dataPath = path.join(app.getPath('userData'), 'data');
     const supervisorPath = path.join(dataPath, 'supervisor');
+    this.logsPath = path.join(supervisorPath, 'logs');
     await fs.ensureDir(supervisorPath);
-    await fs.ensureDir(path.join(supervisorPath, 'logs'));
+    await fs.ensureDir(this.logsPath);
+  }
+
+  setMainWindow(mainWindow) {
+    this.mainWindow = mainWindow;
   }
 
   async addProcess(projectId, config) {
@@ -142,6 +149,7 @@ class SupervisorManager {
 
       if (process.platform === 'win32') {
         // On Windows, use spawnHidden to run without a console window
+        // but still capture stdout/stderr
         proc = spawnHidden(command, args, {
           cwd: workingDir,
           env: {
@@ -149,6 +157,37 @@ class SupervisorManager {
             ...project.environment,
             ...config.environment,
           },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+
+        // Capture output on Windows too - use config.name so all instances log to same file
+        proc.stdout?.on('data', (data) => {
+          this.logOutput(projectId, config.name, data.toString(), 'stdout');
+        });
+
+        proc.stderr?.on('data', (data) => {
+          this.logOutput(projectId, config.name, data.toString(), 'stderr');
+        });
+
+        proc.on('error', (error) => {
+          this.managers.log?.systemError(`Supervisor process ${instanceName} error`, { error: error.message });
+          this.logOutput(projectId, config.name, `[ERROR] ${error.message}\n`, 'stderr');
+          this.updateProcessStatus(projectId, config.name, 'error', null);
+        });
+
+        proc.on('exit', (code, signal) => {
+          this.logOutput(projectId, config.name, `[PROCESS EXITED] Code: ${code}, Signal: ${signal}\n`, 'stdout');
+          // Auto-restart if enabled
+          if (config.autorestart && code !== 0) {
+            this.logOutput(projectId, config.name, '[AUTO-RESTARTING]...\n', 'stdout');
+            setTimeout(() => {
+              this.startProcess(projectId, config).catch(() => {
+                // Failed to restart - will be retried
+              });
+            }, 1000);
+          } else {
+            this.updateProcessStatus(projectId, config.name, 'stopped', null);
+          }
         });
       } else {
         proc = spawn(command, args, {
@@ -163,11 +202,11 @@ class SupervisorManager {
         });
 
         proc.stdout.on('data', (data) => {
-          this.logOutput(projectId, instanceName, data.toString(), 'stdout');
+          this.logOutput(projectId, config.name, data.toString(), 'stdout');
         });
 
         proc.stderr.on('data', (data) => {
-          this.logOutput(projectId, instanceName, data.toString(), 'stderr');
+          this.logOutput(projectId, config.name, data.toString(), 'stderr');
         });
 
         proc.on('error', (error) => {
@@ -337,8 +376,84 @@ class SupervisorManager {
   }
 
   logOutput(projectId, processName, output, type) {
-    // This would integrate with LogManager
-    // Silently log output - can be enhanced later to write to log files
+    // Write to log file
+    if (this.logsPath) {
+      const logFile = path.join(this.logsPath, `${projectId}-${processName}.log`);
+      const timestamp = new Date().toISOString();
+      const prefix = type === 'stderr' ? '[ERR]' : '[OUT]';
+      const formattedOutput = output.split('\n')
+        .filter(line => line.trim())
+        .map(line => `[${timestamp}] ${prefix} ${line}`)
+        .join('\n');
+
+      if (formattedOutput) {
+        fs.appendFileSync(logFile, formattedOutput + '\n');
+      }
+    }
+
+    // Send to renderer for real-time display
+    if (this.mainWindow) {
+      this.mainWindow.webContents.send('supervisor:output', {
+        projectId,
+        processName,
+        output,
+        type,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  async getWorkerLogs(projectId, processName, lines = 200) {
+    if (!this.logsPath) {
+      return [];
+    }
+
+    const logFile = path.join(this.logsPath, `${projectId}-${processName}.log`);
+
+    if (!await fs.pathExists(logFile)) {
+      return [];
+    }
+
+    try {
+      const content = await fs.readFile(logFile, 'utf8');
+      const allLines = content.split('\n').filter(line => line.trim());
+      // Return last N lines
+      return allLines.slice(-lines);
+    } catch (error) {
+      this.managers.log?.systemError('Error reading worker logs', { error: error.message });
+      return [];
+    }
+  }
+
+  async clearWorkerLogs(projectId, processName) {
+    if (!this.logsPath) {
+      return { success: false, error: 'Logs path not initialized' };
+    }
+
+    const logFile = path.join(this.logsPath, `${projectId}-${processName}.log`);
+
+    try {
+      if (await fs.pathExists(logFile)) {
+        await fs.remove(logFile);
+      }
+      return { success: true };
+    } catch (error) {
+      this.managers.log?.systemError('Error clearing worker logs', { error: error.message });
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getAllWorkerLogsForProject(projectId, lines = 100) {
+    const project = this.getProject(projectId);
+    if (!project || !project.supervisor?.processes) {
+      return {};
+    }
+
+    const logs = {};
+    for (const process of project.supervisor.processes) {
+      logs[process.name] = await this.getWorkerLogs(projectId, process.name, lines);
+    }
+    return logs;
   }
 
   // Queue worker helpers for Laravel

@@ -293,6 +293,9 @@ async function startup() {
     // Setup IPC handlers
     setupIpcHandlers(ipcMain, managers, mainWindow);
 
+    // Set mainWindow on supervisor for real-time output events
+    managers.supervisor.setMainWindow(mainWindow);
+
     // Initialize remaining managers in background (don't block UI)
     initializeManagersDeferred().then(() => {
       // Auto-start services if enabled (after deferred init)
