@@ -780,19 +780,166 @@ if ($found) { 'FOUND' } else { 'NOTFOUND' }
   }
 
   /**
-   * Add CLI path to user's PATH (Windows only, requires admin for system PATH)
+   * Add CLI path to user's PATH
+   * Windows: Tries System PATH first, falls back to User PATH
+   * Mac/Linux: Adds to shell config file (~/.zshrc or ~/.bashrc)
    */
   async addToPath() {
-    if (process.platform !== 'win32') {
-      throw new Error('Automatic PATH modification only supported on Windows. See manual instructions.');
-    }
-
     const cliPath = this.getCliPath();
-    // Normalize the path - remove trailing slashes for consistent comparison
     const normalizedCliPath = cliPath.replace(/[\\/]+$/, '');
 
+    if (process.platform === 'win32') {
+      // Windows: Try System PATH first, then User PATH
+      const systemResult = await this.tryAddToSystemPath(normalizedCliPath);
+      const userResult = await this.addToUserPath(normalizedCliPath);
+
+      return {
+        success: true,
+        systemPath: systemResult,
+        userPath: userResult,
+        message: systemResult.success
+          ? 'Added to System PATH (takes priority over all other paths)'
+          : 'Added to User PATH (at the beginning for priority)',
+        note: 'Please restart your terminal/editor for changes to take effect.',
+      };
+    } else {
+      // Mac/Linux: Add to shell config file
+      return await this.addToUnixPath(normalizedCliPath);
+    }
+  }
+
+  /**
+   * Add CLI path to Unix shell config (~/.zshrc or ~/.bashrc)
+   */
+  async addToUnixPath(cliPath) {
+    const homeDir = os.homedir();
+    const shell = process.env.SHELL || '/bin/bash';
+    const rcFile = shell.includes('zsh') ? '.zshrc' : '.bashrc';
+    const rcPath = path.join(homeDir, rcFile);
+
+    const exportLine = `export PATH="${cliPath}:$PATH"  # DevBox Pro CLI`;
+    const marker = '# DevBox Pro CLI';
+
+    try {
+      let content = '';
+      if (await fs.pathExists(rcPath)) {
+        content = await fs.readFile(rcPath, 'utf8');
+      }
+
+      // Check if already added
+      if (content.includes(marker)) {
+        return {
+          success: true,
+          message: 'Already in PATH',
+          rcFile: rcPath,
+          note: 'DevBox Pro CLI is already configured in your shell.',
+        };
+      }
+
+      // Prepend the export line (for priority)
+      const newContent = exportLine + '\n' + content;
+      await fs.writeFile(rcPath, newContent, 'utf8');
+
+      return {
+        success: true,
+        message: `Added to ${rcFile}`,
+        rcFile: rcPath,
+        note: `Please restart your terminal or run: source ~/${rcFile}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to modify ${rcFile}: ${error.message}`,
+        rcFile: rcPath,
+      };
+    }
+  }
+
+  /**
+   * Try to add CLI path to System PATH (requires elevation via UAC)
+   */
+  async tryAddToSystemPath(normalizedCliPath) {
+    const tempScriptFile = path.join(os.tmpdir(), 'devbox_add_path.ps1');
+    const tempResultFile = path.join(os.tmpdir(), 'devbox_path_result.txt');
+
+    // Write PowerShell script to temp file
+    const psScript = `
+$targetPath = '${normalizedCliPath.replace(/'/g, "''")}'
+$resultFile = '${tempResultFile.replace(/\\/g, '\\\\')}'
+$systemPath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+if ([string]::IsNullOrEmpty($systemPath)) { $systemPath = '' }
+if ($systemPath.StartsWith($targetPath + ';') -or $systemPath -eq $targetPath) {
+  'ALREADY_FIRST' | Out-File -FilePath $resultFile -Encoding utf8 -NoNewline
+  exit 0
+}
+$pathArray = $systemPath.Split(';') | Where-Object { $_.Trim() -ne '' }
+$pathArray = $pathArray | Where-Object { $_.Trim().TrimEnd('\\', '/') -ine $targetPath }
+$newPath = if ($pathArray.Count -gt 0) { "$targetPath;" + ($pathArray -join ';') } else { $targetPath }
+try {
+  [Environment]::SetEnvironmentVariable('Path', $newPath, 'Machine')
+  'SUCCESS' | Out-File -FilePath $resultFile -Encoding utf8 -NoNewline
+} catch {
+  'FAILED' | Out-File -FilePath $resultFile -Encoding utf8 -NoNewline
+}
+`;
+
+    try {
+      // Write script to temp file
+      await fs.writeFile(tempScriptFile, psScript, 'utf8');
+
+      // Remove old result file if exists
+      if (await fs.pathExists(tempResultFile)) {
+        await fs.remove(tempResultFile);
+      }
+
+      return new Promise((resolve) => {
+        // Run elevated using Start-Process -Verb RunAs (triggers UAC)
+        const elevatedCommand = `Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '${tempScriptFile.replace(/\\/g, '\\\\')}'`;
+
+        const child = spawn('powershell', ['-NoProfile', '-Command', elevatedCommand], {
+          windowsHide: true,
+        });
+
+        child.on('error', async () => {
+          await fs.remove(tempScriptFile).catch(() => { });
+          resolve({ success: false, reason: 'spawn_error' });
+        });
+
+        child.on('close', async () => {
+          // Clean up script file
+          await fs.remove(tempScriptFile).catch(() => { });
+
+          // Read result from temp file
+          try {
+            const exists = await fs.pathExists(tempResultFile);
+
+            if (exists) {
+              const result = (await fs.readFile(tempResultFile, 'utf8')).trim();
+              await fs.remove(tempResultFile);
+              if (result === 'SUCCESS' || result === 'ALREADY_FIRST') {
+                resolve({ success: true, message: result });
+              } else {
+                resolve({ success: false, reason: 'failed' });
+              }
+            } else {
+              // No result file means UAC was cancelled
+              resolve({ success: false, reason: 'uac_cancelled' });
+            }
+          } catch (e) {
+            resolve({ success: false, reason: 'read_error' });
+          }
+        });
+      });
+    } catch (e) {
+      return { success: false, reason: 'write_error' };
+    }
+  }
+
+  /**
+   * Add CLI path to User PATH
+   */
+  async addToUserPath(normalizedCliPath) {
     return new Promise((resolve, reject) => {
-      // Use spawn instead of exec to avoid escaping issues
       const psScript = `
 $targetPath = '${normalizedCliPath.replace(/'/g, "''")}'
 $currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -805,7 +952,7 @@ $pathArray = $pathArray | Where-Object { $_.Trim().TrimEnd('\\', '/') -ine $targ
 # PREPEND the DevBox Pro CLI path (at the beginning) so it takes precedence
 $newPath = if ($pathArray.Count -gt 0) { "$targetPath;" + ($pathArray -join ';') } else { $targetPath }
 [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-Write-Output 'Added to PATH (at the beginning for priority)'
+Write-Output 'Added to User PATH'
 `;
 
       const child = spawn('powershell', ['-NoProfile', '-Command', psScript], {
@@ -824,34 +971,184 @@ Write-Output 'Added to PATH (at the beginning for priority)'
       });
 
       child.on('error', (error) => {
-        reject(new Error(`Failed to add to PATH: ${error.message}`));
+        reject(new Error(`Failed to add to User PATH: ${error.message}`));
       });
 
       child.on('close', (code) => {
         if (code !== 0) {
-          reject(new Error(`Failed to add to PATH: ${stderr}`));
+          reject(new Error(`Failed to add to User PATH: ${stderr}`));
         } else {
-          resolve({
-            success: true,
-            message: stdout.trim(),
-            note: 'Please restart your terminal/editor for changes to take effect.',
-          });
+          resolve({ success: true, message: stdout.trim() });
         }
       });
     });
   }
 
   /**
-   * Remove CLI path from user's PATH
+   * Remove CLI path from PATH
+   * Windows: Removes from both System and User PATH
+   * Mac/Linux: Removes from shell config file
    */
   async removeFromPath() {
-    if (process.platform !== 'win32') {
-      throw new Error('Automatic PATH modification only supported on Windows.');
-    }
-
     const cliPath = this.getCliPath();
     const normalizedCliPath = cliPath.replace(/[\\/]+$/, '');
 
+    if (process.platform === 'win32') {
+      // Windows: Remove from both System PATH and User PATH
+      const systemResult = await this.tryRemoveFromSystemPath(normalizedCliPath);
+      const userResult = await this.removeFromUserPath(normalizedCliPath);
+
+      return {
+        success: true,
+        systemPath: systemResult,
+        userPath: userResult,
+        message: 'Removed from PATH',
+        note: 'Please restart your terminal/editor for changes to take effect.',
+      };
+    } else {
+      // Mac/Linux: Remove from shell config file
+      return await this.removeFromUnixPath(normalizedCliPath);
+    }
+  }
+
+  /**
+   * Remove CLI path from Unix shell config (~/.zshrc or ~/.bashrc)
+   */
+  async removeFromUnixPath(cliPath) {
+    const homeDir = os.homedir();
+    const shell = process.env.SHELL || '/bin/bash';
+    const rcFile = shell.includes('zsh') ? '.zshrc' : '.bashrc';
+    const rcPath = path.join(homeDir, rcFile);
+
+    const marker = '# DevBox Pro CLI';
+
+    try {
+      if (!await fs.pathExists(rcPath)) {
+        return {
+          success: true,
+          message: 'Not in PATH',
+          rcFile: rcPath,
+        };
+      }
+
+      const content = await fs.readFile(rcPath, 'utf8');
+
+      // Check if our marker exists
+      if (!content.includes(marker)) {
+        return {
+          success: true,
+          message: 'Not in PATH',
+          rcFile: rcPath,
+        };
+      }
+
+      // Remove lines containing our marker
+      const lines = content.split('\n');
+      const newLines = lines.filter(line => !line.includes(marker));
+      const newContent = newLines.join('\n');
+
+      await fs.writeFile(rcPath, newContent, 'utf8');
+
+      return {
+        success: true,
+        message: `Removed from ${rcFile}`,
+        rcFile: rcPath,
+        note: `Please restart your terminal or run: source ~/${rcFile}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to modify ${rcFile}: ${error.message}`,
+        rcFile: rcPath,
+      };
+    }
+  }
+
+  /**
+   * Try to remove CLI path from System PATH (requires elevation via UAC)
+   */
+  async tryRemoveFromSystemPath(normalizedCliPath) {
+    const tempScriptFile = path.join(os.tmpdir(), 'devbox_remove_path.ps1');
+    const tempResultFile = path.join(os.tmpdir(), 'devbox_path_remove_result.txt');
+
+    // Write PowerShell script to temp file
+    const psScript = `
+$targetPath = '${normalizedCliPath.replace(/'/g, "''")}'
+$resultFile = '${tempResultFile.replace(/\\/g, '\\\\')}'
+$systemPath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+if ([string]::IsNullOrEmpty($systemPath)) {
+  'NOT_IN_PATH' | Out-File -FilePath $resultFile -Encoding utf8 -NoNewline
+  exit 0
+}
+$pathArray = $systemPath.Split(';') | Where-Object { $_.Trim() -ne '' }
+$newArray = $pathArray | Where-Object { $_.Trim().TrimEnd('\\', '/') -ine $targetPath }
+if ($newArray.Count -lt $pathArray.Count) {
+  try {
+    $newPath = $newArray -join ';'
+    [Environment]::SetEnvironmentVariable('Path', $newPath, 'Machine')
+    'REMOVED' | Out-File -FilePath $resultFile -Encoding utf8 -NoNewline
+  } catch {
+    'FAILED' | Out-File -FilePath $resultFile -Encoding utf8 -NoNewline
+  }
+} else {
+  'NOT_IN_PATH' | Out-File -FilePath $resultFile -Encoding utf8 -NoNewline
+}
+`;
+
+    try {
+      // Write script to temp file
+      await fs.writeFile(tempScriptFile, psScript, 'utf8');
+
+      // Remove old result file if exists
+      if (await fs.pathExists(tempResultFile)) {
+        await fs.remove(tempResultFile);
+      }
+
+      return new Promise((resolve) => {
+        // Run elevated using Start-Process -Verb RunAs (triggers UAC)
+        const elevatedCommand = `Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '${tempScriptFile.replace(/\\/g, '\\\\')}'`;
+
+        const child = spawn('powershell', ['-NoProfile', '-Command', elevatedCommand], {
+          windowsHide: true,
+        });
+
+        child.on('error', async () => {
+          await fs.remove(tempScriptFile).catch(() => { });
+          resolve({ success: false, reason: 'spawn_error' });
+        });
+
+        child.on('close', async () => {
+          // Clean up script file
+          await fs.remove(tempScriptFile).catch(() => { });
+
+          // Read result from temp file
+          try {
+            if (await fs.pathExists(tempResultFile)) {
+              const result = (await fs.readFile(tempResultFile, 'utf8')).trim();
+              await fs.remove(tempResultFile);
+              if (result === 'REMOVED' || result === 'NOT_IN_PATH') {
+                resolve({ success: true, message: result });
+              } else {
+                resolve({ success: false, reason: 'failed' });
+              }
+            } else {
+              // No result file means UAC was cancelled
+              resolve({ success: false, reason: 'uac_cancelled' });
+            }
+          } catch (e) {
+            resolve({ success: false, reason: 'read_error' });
+          }
+        });
+      });
+    } catch (e) {
+      return { success: false, reason: 'write_error' };
+    }
+  }
+
+  /**
+   * Remove CLI path from User PATH
+   */
+  async removeFromUserPath(normalizedCliPath) {
     return new Promise((resolve, reject) => {
       const psScript = `
 $targetPath = '${normalizedCliPath.replace(/'/g, "''")}'
@@ -887,18 +1184,14 @@ if ($newArray.Count -lt $pathArray.Count) {
       });
 
       child.on('error', (error) => {
-        reject(new Error(`Failed to remove from PATH: ${error.message}`));
+        reject(new Error(`Failed to remove from User PATH: ${error.message}`));
       });
 
       child.on('close', (code) => {
         if (code !== 0) {
-          reject(new Error(`Failed to remove from PATH: ${stderr}`));
+          reject(new Error(`Failed to remove from User PATH: ${stderr}`));
         } else {
-          resolve({
-            success: true,
-            message: stdout.trim(),
-            note: 'Please restart your terminal/editor for changes to take effect.',
-          });
+          resolve({ success: true, message: stdout.trim() });
         }
       });
     });
@@ -938,13 +1231,12 @@ if ($newArray.Count -lt $pathArray.Count) {
    * Set default PHP version
    */
   setDefaultPhpVersion(version) {
-    const settings = this.configStore.get('settings', {});
     if (version) {
-      settings.defaultPhpVersion = version;
+      this.configStore.set('settings.defaultPhpVersion', version);
     } else {
-      delete settings.defaultPhpVersion;
+      // Use configStore.delete() directly to ensure value is removed
+      this.configStore.delete('settings.defaultPhpVersion');
     }
-    this.configStore.set('settings', settings);
   }
 
   /**
@@ -958,13 +1250,12 @@ if ($newArray.Count -lt $pathArray.Count) {
    * Set default Node.js version
    */
   setDefaultNodeVersion(version) {
-    const settings = this.configStore.get('settings', {});
     if (version) {
-      settings.defaultNodeVersion = version;
+      this.configStore.set('settings.defaultNodeVersion', version);
     } else {
-      delete settings.defaultNodeVersion;
+      // Use configStore.delete() directly to ensure value is removed
+      this.configStore.delete('settings.defaultNodeVersion');
     }
-    this.configStore.set('settings', settings);
   }
 
   /**

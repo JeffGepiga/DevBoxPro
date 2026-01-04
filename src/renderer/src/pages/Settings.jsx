@@ -133,34 +133,37 @@ function Settings() {
             Configure DevBox Pro preferences
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleReset} className="btn-secondary">
-            <RotateCcw className="w-4 h-4" />
-            Reset
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className={clsx('btn-primary', saved && 'bg-green-600 hover:bg-green-700')}
-          >
-            {saving ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Saving...
-              </>
-            ) : saved ? (
-              <>
-                <Check className="w-4 h-4" />
-                Saved!
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                Save Changes
-              </>
-            )}
-          </button>
-        </div>
+        {/* Only show Save/Reset for tabs that need manual saving */}
+        {['general', 'network', 'appearance'].includes(activeTab) && (
+          <div className="flex items-center gap-2">
+            <button onClick={handleReset} className="btn-secondary">
+              <RotateCcw className="w-4 h-4" />
+              Reset
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className={clsx('btn-primary', saved && 'bg-green-600 hover:bg-green-700')}
+            >
+              {saving ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Saving...
+                </>
+              ) : saved ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  Saved!
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  Save Changes
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-8">
@@ -345,10 +348,9 @@ function CliSettings() {
       setDirectShimsEnabled(enabled);
 
       if (enabled) {
-        // Add to PATH automatically
-        if (!cliStatus?.inPath) {
-          await window.devbox?.cli?.addToPath();
-        }
+        // Add to PATH automatically - always try to ensure System PATH priority
+        await window.devbox?.cli?.addToPath();
+
         setMessage({
           type: 'success',
           text: 'Terminal commands enabled! Restart your terminal or VS Code to use php, npm, node, and composer directly.'
@@ -1092,30 +1094,21 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
 
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Configuration
-        </h3>
-        <div className="flex gap-4">
-          <button onClick={onExport} className="btn-secondary">
-            <Download className="w-4 h-4" />
-            Export Config
-          </button>
-          <button onClick={onImport} className="btn-secondary">
-            <Upload className="w-4 h-4" />
-            Import Config
-          </button>
-        </div>
-      </div>
-
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Data Location
         </h3>
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
           DevBox Pro stores data in the following location:
         </p>
-        <code className="block p-3 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm">
-          {settings.dataPath || '~/.devbox-pro'}
-        </code>
+        <button
+          onClick={() => window.devbox?.system?.openPath?.(settings.dataPath || '~/.devbox-pro')}
+          className="block w-full p-3 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm text-left hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors group"
+          title="Click to open folder"
+        >
+          <code className="text-gray-700 dark:text-gray-300 group-hover:text-primary-600 dark:group-hover:text-primary-400">
+            {settings.dataPath || '~/.devbox-pro'}
+          </code>
+          <ExternalLink className="w-4 h-4 inline ml-2 opacity-0 group-hover:opacity-100 text-gray-400" />
+        </button>
       </div>
 
       <div className="card p-6 border-red-200 dark:border-red-900/50">

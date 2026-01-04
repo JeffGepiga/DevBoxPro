@@ -156,6 +156,7 @@ contextBridge.exposeInMainWorld('devbox', {
     selectFile: (filters) => ipcRenderer.invoke('system:selectFile', filters),
     saveFile: (options) => ipcRenderer.invoke('system:saveFile', options),
     openExternal: (url) => ipcRenderer.invoke('system:openExternal', url),
+    openPath: (path) => ipcRenderer.invoke('system:openPath', path),
     getAppVersion: () => ipcRenderer.invoke('system:getAppVersion'),
     getPlatform: () => ipcRenderer.invoke('system:getPlatform'),
     getLocalIpAddresses: () => ipcRenderer.invoke('system:getLocalIpAddresses'),

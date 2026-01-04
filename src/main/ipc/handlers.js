@@ -536,6 +536,11 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return true;
   });
 
+  ipcMain.handle('system:openPath', async (event, folderPath) => {
+    await shell.openPath(folderPath);
+    return true;
+  });
+
   ipcMain.handle('system:getAppVersion', async () => {
     return app.getVersion();
   });
