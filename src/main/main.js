@@ -426,15 +426,19 @@ async function gracefulShutdown() {
 }
 
 app.on('before-quit', async (event) => {
-  if (!isShuttingDown) {
-    event.preventDefault();
-    app.isQuitting = true;
-
-    await gracefulShutdown();
-
-    // Now quit the app
-    app.quit();
+  // Already shutting down, don't prevent - let it quit
+  if (isShuttingDown) {
+    return;
   }
+
+  // First time - prevent quit, do graceful shutdown, then quit again
+  event.preventDefault();
+  app.isQuitting = true;
+
+  await gracefulShutdown();
+
+  // Now quit the app - isShuttingDown is true so this will go through
+  app.quit();
 });
 
 // Handle uncaught exceptions
