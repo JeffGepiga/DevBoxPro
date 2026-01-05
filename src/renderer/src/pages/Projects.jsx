@@ -436,16 +436,19 @@ function DiscoveredProjectCard({ project, onImport }) {
 }
 
 function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
+  const { projectLoadingStates, setProjectLoading } = useApp();
+  const loadingState = projectLoadingStates[project.id];
+  const isStarting = loadingState === 'starting';
+  const isStopping = loadingState === 'stopping';
+
   const [showMenu, setShowMenu] = useState(false);
-  const [isStarting, setIsStarting] = useState(false);
-  const [isStopping, setIsStopping] = useState(false);
   const [error, setError] = useState(null);
   const [isHovered, setIsHovered] = useState(false);
 
   const handleStart = async (e) => {
     e.stopPropagation();
     e.preventDefault();
-    setIsStarting(true);
+    setProjectLoading(project.id, 'starting');
     setError(null);
     try {
       const result = await onStart();
@@ -455,14 +458,14 @@ function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
     } catch (err) {
       setError(err.message || 'Failed to start project');
     } finally {
-      setIsStarting(false);
+      setProjectLoading(project.id, null);
     }
   };
 
   const handleStop = async (e) => {
     e.stopPropagation();
     e.preventDefault();
-    setIsStopping(true);
+    setProjectLoading(project.id, 'stopping');
     setError(null);
     try {
       const result = await onStop();
@@ -472,7 +475,7 @@ function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
     } catch (err) {
       setError(err.message || 'Failed to stop project');
     } finally {
-      setIsStopping(false);
+      setProjectLoading(project.id, null);
     }
   };
 

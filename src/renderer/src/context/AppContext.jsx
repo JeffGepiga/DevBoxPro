@@ -9,9 +9,10 @@ const initialState = {
   settings: {},
   loading: true,
   error: null,
-  databaseOperation: null, // { type: 'import'|'export', status, message, dbName }
+  databaseOperations: {}, // { [operationId]: { type, status, message, dbName, progress } } - supports multiple concurrent operations
   downloadProgress: {}, // { [id]: { status, progress, error } }
   downloading: {}, // { [id]: boolean }
+  projectLoadingStates: {}, // { [projectId]: 'starting' | 'stopping' | null } - shared across pages
 };
 
 function appReducer(state, action) {
@@ -47,8 +48,22 @@ function appReducer(state, action) {
       return { ...state, loading: action.payload };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
-    case 'SET_DATABASE_OPERATION':
-      return { ...state, databaseOperation: action.payload };
+    case 'SET_DATABASE_OPERATION': {
+      const { operationId, ...operationData } = action.payload;
+      if (!operationId) return state; // Ignore operations without ID
+      return {
+        ...state,
+        databaseOperations: {
+          ...state.databaseOperations,
+          [operationId]: operationData
+        }
+      };
+    }
+    case 'REMOVE_DATABASE_OPERATION': {
+      const newOps = { ...state.databaseOperations };
+      delete newOps[action.payload];
+      return { ...state, databaseOperations: newOps };
+    }
     case 'SET_DOWNLOAD_PROGRESS':
       return {
         ...state,
@@ -65,6 +80,18 @@ function appReducer(state, action) {
       delete newProgress[action.payload];
       delete newDownloading[action.payload];
       return { ...state, downloadProgress: newProgress, downloading: newDownloading };
+    case 'SET_PROJECT_LOADING':
+      return {
+        ...state,
+        projectLoadingStates: {
+          ...state.projectLoadingStates,
+          [action.payload.projectId]: action.payload.loadingState
+        }
+      };
+    case 'CLEAR_PROJECT_LOADING':
+      const newLoadingStates = { ...state.projectLoadingStates };
+      delete newLoadingStates[action.payload];
+      return { ...state, projectLoadingStates: newLoadingStates };
     default:
       return state;
   }
@@ -115,22 +142,24 @@ export function AppProvider({ children }) {
       dispatch({ type: 'SET_RESOURCE_USAGE', payload: data });
     });
 
-    // Database import/export progress listeners
+    // Database import/export progress listeners - now with multi-operation support
     const unsubImport = window.devbox?.database.onImportProgress?.((progress) => {
+      if (!progress.operationId) return; // Ignore progress without operationId
       dispatch({ type: 'SET_DATABASE_OPERATION', payload: { type: 'import', ...progress } });
-      // Auto-clear on complete after 5 seconds
-      if (progress.status === 'complete') {
+      // Auto-clear on complete/error/cancelled after 5 seconds
+      if (['complete', 'error', 'cancelled'].includes(progress.status)) {
         setTimeout(() => {
-          dispatch({ type: 'SET_DATABASE_OPERATION', payload: null });
+          dispatch({ type: 'REMOVE_DATABASE_OPERATION', payload: progress.operationId });
         }, 5000);
       }
     });
     const unsubExport = window.devbox?.database.onExportProgress?.((progress) => {
+      if (!progress.operationId) return; // Ignore progress without operationId
       dispatch({ type: 'SET_DATABASE_OPERATION', payload: { type: 'export', ...progress } });
-      // Auto-clear on complete after 5 seconds
-      if (progress.status === 'complete') {
+      // Auto-clear on complete/error/cancelled after 5 seconds
+      if (['complete', 'error', 'cancelled'].includes(progress.status)) {
         setTimeout(() => {
-          dispatch({ type: 'SET_DATABASE_OPERATION', payload: null });
+          dispatch({ type: 'REMOVE_DATABASE_OPERATION', payload: progress.operationId });
         }, 5000);
       }
     });
@@ -264,12 +293,22 @@ export function AppProvider({ children }) {
     await refreshServices();
   }, [refreshServices]);
 
-  const setDatabaseOperation = useCallback((operation) => {
-    dispatch({ type: 'SET_DATABASE_OPERATION', payload: operation });
+  const setDatabaseOperation = useCallback((operationId, operation) => {
+    dispatch({ type: 'SET_DATABASE_OPERATION', payload: { operationId, ...operation } });
   }, []);
 
-  const clearDatabaseOperation = useCallback(() => {
-    dispatch({ type: 'SET_DATABASE_OPERATION', payload: null });
+  const removeDatabaseOperation = useCallback((operationId) => {
+    dispatch({ type: 'REMOVE_DATABASE_OPERATION', payload: operationId });
+  }, []);
+
+  const cancelDatabaseOperation = useCallback(async (operationId) => {
+    try {
+      await window.devbox?.database.cancelOperation(operationId);
+      // The progress callback will handle the state update with 'cancelled' status
+    } catch (error) {
+      // If cancel fails, just remove the operation from state
+      dispatch({ type: 'REMOVE_DATABASE_OPERATION', payload: operationId });
+    }
   }, []);
 
   // Download actions
@@ -285,6 +324,15 @@ export function AppProvider({ children }) {
     dispatch({ type: 'CLEAR_DOWNLOAD', payload: id });
   }, []);
 
+  // Project loading state actions - shared across pages
+  const setProjectLoading = useCallback((projectId, loadingState) => {
+    if (loadingState) {
+      dispatch({ type: 'SET_PROJECT_LOADING', payload: { projectId, loadingState } });
+    } else {
+      dispatch({ type: 'CLEAR_PROJECT_LOADING', payload: projectId });
+    }
+  }, []);
+
   const value = {
     ...state,
     dispatch,
@@ -298,10 +346,12 @@ export function AppProvider({ children }) {
     startService,
     stopService,
     setDatabaseOperation,
-    clearDatabaseOperation,
+    removeDatabaseOperation,
+    cancelDatabaseOperation,
     setDownloading,
     setDownloadProgress,
     clearDownload,
+    setProjectLoading,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

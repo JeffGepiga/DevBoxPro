@@ -315,24 +315,26 @@ function StatCard({ title, value, icon: Icon, color }) {
 }
 
 function ProjectRow({ project, onStart, onStop }) {
-  const [isStarting, setIsStarting] = useState(false);
-  const [isStopping, setIsStopping] = useState(false);
+  const { projectLoadingStates, setProjectLoading } = useApp();
+  const loadingState = projectLoadingStates[project.id];
+  const isStarting = loadingState === 'starting';
+  const isStopping = loadingState === 'stopping';
 
   const handleStart = async () => {
-    setIsStarting(true);
+    setProjectLoading(project.id, 'starting');
     try {
       await onStart();
     } finally {
-      setIsStarting(false);
+      setProjectLoading(project.id, null);
     }
   };
 
   const handleStop = async () => {
-    setIsStopping(true);
+    setProjectLoading(project.id, 'stopping');
     try {
       await onStop();
     } finally {
-      setIsStopping(false);
+      setProjectLoading(project.id, null);
     }
   };
 
@@ -346,7 +348,7 @@ function ProjectRow({ project, onStart, onStop }) {
   return (
     <div className="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
       <div className="flex items-center gap-3">
-        <div className={statusColors[project.isRunning ? 'running' : 'stopped']} />
+        <div className={statusColors[isStarting ? 'starting' : (project.isRunning ? 'running' : 'stopped')]} />
         <div>
           <Link
             to={`/projects/${project.id}`}

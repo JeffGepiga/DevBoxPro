@@ -39,14 +39,16 @@ function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { projects, startProject, stopProject, deleteProject, refreshProjects, settings } = useApp();
+  const { projects, startProject, stopProject, deleteProject, refreshProjects, settings, projectLoadingStates, setProjectLoading } = useApp();
+  const loadingState = projectLoadingStates[id];
+  const isStarting = loadingState === 'starting';
+  const isStopping = loadingState === 'stopping';
+
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'overview');
   const [project, setProject] = useState(null);
   const [logs, setLogs] = useState([]);
   const [processes, setProcesses] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isStarting, setIsStarting] = useState(false);
-  const [isStopping, setIsStopping] = useState(false);
   const [actionError, setActionError] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -105,7 +107,7 @@ function ProjectDetail() {
   };
 
   const handleStart = async () => {
-    setIsStarting(true);
+    setProjectLoading(id, 'starting');
     setActionError(null);
     try {
       const result = await startProject(id);
@@ -115,12 +117,12 @@ function ProjectDetail() {
     } catch (err) {
       setActionError(err.message || 'Failed to start project');
     } finally {
-      setIsStarting(false);
+      setProjectLoading(id, null);
     }
   };
 
   const handleStop = async () => {
-    setIsStopping(true);
+    setProjectLoading(id, 'stopping');
     setActionError(null);
     try {
       const result = await stopProject(id);
@@ -130,7 +132,7 @@ function ProjectDetail() {
     } catch (err) {
       setActionError(err.message || 'Failed to stop project');
     } finally {
-      setIsStopping(false);
+      setProjectLoading(id, null);
     }
   };
 

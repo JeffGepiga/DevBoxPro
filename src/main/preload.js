@@ -79,6 +79,8 @@ contextBridge.exposeInMainWorld('devbox', {
     resetCredentials: (user, password) => ipcRenderer.invoke('database:resetCredentials', user, password),
     syncCredentialsToAllVersions: (newUser, newPassword, oldPassword) =>
       ipcRenderer.invoke('database:syncCredentialsToAllVersions', newUser, newPassword, oldPassword),
+    cancelOperation: (operationId) => ipcRenderer.invoke('database:cancelOperation', operationId),
+    getRunningOperations: () => ipcRenderer.invoke('database:getRunningOperations'),
     onImportProgress: (callback) => {
       const handler = (event, data) => callback(data);
       ipcRenderer.on('database:importProgress', handler);

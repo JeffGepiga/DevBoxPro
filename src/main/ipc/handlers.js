@@ -403,6 +403,16 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return service.syncCredentialsToAllVersions(newUser, newPassword, oldPassword);
   });
 
+  // Cancel a running import/export operation
+  ipcMain.handle('database:cancelOperation', async (event, operationId) => {
+    return database.cancelOperation(operationId);
+  });
+
+  // Get list of running database operations
+  ipcMain.handle('database:getRunningOperations', async () => {
+    return database.getRunningOperations();
+  });
+
   // ============ SSL HANDLERS ============
   ipcMain.handle('ssl:getCertificates', async () => {
     return ssl.listCertificates();

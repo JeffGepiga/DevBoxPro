@@ -6,6 +6,7 @@ const { app } = require('electron');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
 const { Transform } = require('stream');
+const { v4: uuidv4 } = require('uuid');
 const { SERVICE_VERSIONS } = require('../../shared/serviceConfig');
 
 class DatabaseManager {
@@ -19,6 +20,50 @@ class DatabaseManager {
       user: 'root',
       password: '',
     };
+    // Track running import/export operations for cancellation
+    this.runningOperations = new Map(); // operationId -> { proc, type, dbName }
+  }
+
+  /**
+   * Cancel a running import/export operation
+   * @param {string} operationId - The operation ID to cancel
+   * @returns {Object} { success: boolean, error?: string }
+   */
+  cancelOperation(operationId) {
+    const operation = this.runningOperations.get(operationId);
+    if (!operation) {
+      return { success: false, error: 'Operation not found or already completed' };
+    }
+
+    try {
+      if (operation.proc && !operation.proc.killed) {
+        operation.proc.kill('SIGTERM');
+        // Give it a moment, then force kill if needed
+        setTimeout(() => {
+          if (operation.proc && !operation.proc.killed) {
+            operation.proc.kill('SIGKILL');
+          }
+        }, 1000);
+      }
+      this.runningOperations.delete(operationId);
+      this.managers.log?.systemInfo('Database operation cancelled', { operationId, type: operation.type, dbName: operation.dbName });
+      return { success: true };
+    } catch (error) {
+      this.managers.log?.systemError('Failed to cancel database operation', { operationId, error: error.message });
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Get list of running operations
+   * @returns {Array} Array of { operationId, type, dbName }
+   */
+  getRunningOperations() {
+    return Array.from(this.runningOperations.entries()).map(([id, op]) => ({
+      operationId: id,
+      type: op.type,
+      dbName: op.dbName,
+    }));
   }
 
   async initialize() {
@@ -484,9 +529,11 @@ class DatabaseManager {
    * @param {string} filePath - Path to the SQL file (.sql or .sql.gz)
    * @param {Function} progressCallback - Callback for progress updates
    * @param {string} mode - Import mode: 'clean' (drop all tables first) or 'merge' (keep existing)
+   * @returns {Promise<Object>} { success: boolean, operationId: string }
    */
   async importDatabase(databaseName, filePath, progressCallback = null, mode = 'merge') {
     const safeName = this.sanitizeName(databaseName);
+    const operationId = uuidv4();
 
     // Security: Validate file path
     const pathValidation = this.validateFilePath(filePath, true);
@@ -501,6 +548,7 @@ class DatabaseManager {
     // Security: Log import operation
     this.managers.log?.systemInfo('Database import started', {
       database: safeName,
+      operationId,
       fileSize: (await fs.stat(filePath)).size,
       mode,
     });
@@ -512,7 +560,7 @@ class DatabaseManager {
       throw new Error(`Database '${databaseName}' does not exist. Please create it first.`);
     }
 
-    progressCallback?.({ status: 'starting', message: 'Starting import...' });
+    progressCallback?.({ operationId, status: 'starting', message: 'Starting import...', dbName: safeName });
 
     const isGzipped = filePath.toLowerCase().endsWith('.gz');
     const clientPath = this.getDbClientPath();
@@ -530,7 +578,7 @@ class DatabaseManager {
       try {
         // If clean mode, drop all existing tables first
         if (mode === 'clean') {
-          progressCallback?.({ status: 'cleaning', message: 'Dropping existing tables...' });
+          progressCallback?.({ operationId, status: 'cleaning', message: 'Recreating database (clean import)...', dbName: safeName });
           await this.dropAllTables(safeName);
         }
 
@@ -539,7 +587,7 @@ class DatabaseManager {
         const totalSize = fileStats.size;
         let processedBytes = 0;
 
-        progressCallback?.({ status: 'importing', message: 'Importing to database (streaming)...', progress: 0 });
+        progressCallback?.({ operationId, status: 'importing', message: 'Importing to database (streaming)...', progress: 0, dbName: safeName });
 
         const args = [
           `-h${this.dbConfig.host}`,
@@ -559,6 +607,9 @@ class DatabaseManager {
           windowsHide: true,
         });
 
+        // Track this operation for cancellation
+        this.runningOperations.set(operationId, { proc, type: 'import', dbName: safeName });
+
         let stderr = '';
         proc.stderr.on('data', (data) => {
           stderr += data.toString();
@@ -575,9 +626,11 @@ class DatabaseManager {
             const sizeMB = (processedBytes / (1024 * 1024)).toFixed(1);
             const totalMB = (totalSize / (1024 * 1024)).toFixed(1);
             progressCallback?.({
+              operationId,
               status: 'importing',
               message: `Importing... ${sizeMB}MB / ${totalMB}MB (${progress}%)`,
-              progress
+              progress,
+              dbName: safeName
             });
           }
         });
@@ -587,13 +640,14 @@ class DatabaseManager {
 
         // Set up the pipeline
         if (isGzipped) {
-          progressCallback?.({ status: 'importing', message: 'Decompressing and importing (streaming)...', progress: 0 });
+          progressCallback?.({ operationId, status: 'importing', message: 'Decompressing and importing (streaming)...', progress: 0, dbName: safeName });
 
           // Use streaming decompression - much faster and memory efficient
           const gunzip = zlib.createGunzip();
 
           gunzip.on('error', (err) => {
             proc.stdin.end();
+            this.runningOperations.delete(operationId);
             reject(new Error(`Decompression error: ${err.message}`));
           });
 
@@ -604,32 +658,41 @@ class DatabaseManager {
 
         readStream.on('error', (err) => {
           proc.stdin.end();
+          this.runningOperations.delete(operationId);
           reject(new Error(`Read error: ${err.message}`));
         });
 
         sqlProcessor.on('error', (err) => {
           proc.stdin.end();
+          this.runningOperations.delete(operationId);
           reject(new Error(`SQL processing error: ${err.message}`));
         });
 
         proc.on('close', (code) => {
+          this.runningOperations.delete(operationId);
           if (code === 0) {
             // Import completed successfully
-            progressCallback?.({ status: 'complete', message: 'Import completed successfully!' });
-            resolve({ success: true });
+            progressCallback?.({ operationId, status: 'complete', message: 'Import completed successfully!', dbName: safeName });
+            resolve({ success: true, operationId });
+          } else if (code === null) {
+            // Process was killed (cancelled)
+            progressCallback?.({ operationId, status: 'cancelled', message: 'Import cancelled', dbName: safeName });
+            resolve({ success: false, cancelled: true, operationId });
           } else {
             const errorMsg = stderr || `Process exited with code ${code}`;
-            progressCallback?.({ status: 'error', message: `Import failed: ${errorMsg}` });
+            progressCallback?.({ operationId, status: 'error', message: `Import failed: ${errorMsg}`, dbName: safeName });
             reject(new Error(`Import failed: ${errorMsg}`));
           }
         });
 
         proc.on('error', (error) => {
-          progressCallback?.({ status: 'error', message: `Import error: ${error.message}` });
+          this.runningOperations.delete(operationId);
+          progressCallback?.({ operationId, status: 'error', message: `Import error: ${error.message}`, dbName: safeName });
           reject(error);
         });
       } catch (error) {
-        progressCallback?.({ status: 'error', message: `Import error: ${error.message}` });
+        this.runningOperations.delete(operationId);
+        progressCallback?.({ operationId, status: 'error', message: `Import error: ${error.message}`, dbName: safeName });
         reject(error);
       }
     });
@@ -1032,9 +1095,10 @@ class DatabaseManager {
 
   async exportDatabase(databaseName, outputPath, progressCallback = null) {
     const safeName = this.sanitizeName(databaseName);
+    const operationId = uuidv4();
 
     // Exporting database
-    progressCallback?.({ status: 'starting', message: 'Starting export...' });
+    progressCallback?.({ operationId, status: 'starting', message: 'Starting export...', dbName: safeName });
 
     const dumpPath = this.getDbDumpPath();
     const port = this.getActualPort();
@@ -1060,6 +1124,8 @@ class DatabaseManager {
         '--triggers',
         '--quick',
         '--lock-tables=false',
+        '--force', // Continue despite errors
+        '--no-tablespaces', // Skip tablespace info (avoids some permission issues)
       ];
 
       if (password) {
@@ -1068,12 +1134,15 @@ class DatabaseManager {
 
       args.push(safeName);
 
-      progressCallback?.({ status: 'dumping', message: 'Creating database dump...' });
+      progressCallback?.({ operationId, status: 'dumping', message: 'Creating database dump...', dbName: safeName });
 
       const proc = spawn(dumpPath, args, {
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       });
+
+      // Track this operation for cancellation
+      this.runningOperations.set(operationId, { proc, type: 'export', dbName: safeName });
 
       // Create gzip stream and pipe to file
       const gzip = zlib.createGzip({ level: 6 });
@@ -1087,7 +1156,7 @@ class DatabaseManager {
       proc.stdout.on('data', () => {
         if (!dataReceived) {
           dataReceived = true;
-          progressCallback?.({ status: 'compressing', message: 'Compressing and writing backup...' });
+          progressCallback?.({ operationId, status: 'compressing', message: 'Compressing and writing backup...', dbName: safeName });
         }
       });
 
@@ -1101,20 +1170,36 @@ class DatabaseManager {
       });
 
       outputStream.on('finish', () => {
+        this.runningOperations.delete(operationId);
         // Export completed successfully
-        progressCallback?.({ status: 'complete', message: 'Export completed successfully!', path: finalPath });
-        resolve({ success: true, path: finalPath });
+        progressCallback?.({ operationId, status: 'complete', message: 'Export completed successfully!', path: finalPath, dbName: safeName });
+        resolve({ success: true, path: finalPath, operationId });
       });
 
       proc.on('close', (code) => {
-        if (code !== 0 && stderr) {
-          progressCallback?.({ status: 'error', message: `Export failed: ${stderr}` });
-          reject(new Error(`Export failed: ${stderr}`));
+        this.runningOperations.delete(operationId);
+        if (code === null) {
+          // Process was killed (cancelled)
+          progressCallback?.({ operationId, status: 'cancelled', message: 'Export cancelled', dbName: safeName });
+          resolve({ success: false, cancelled: true, operationId });
+        } else if (code !== 0 && stderr) {
+          // Check if it's a view-related error but we still got some data
+          const isViewError = stderr.includes('View') && (stderr.includes('references invalid') || stderr.includes('1356'));
+          if (isViewError && dataReceived) {
+            // Partial success - some tables exported but views had issues
+            const warningMsg = 'Export completed with warnings: Some views could not be exported (they may reference invalid tables/columns)';
+            progressCallback?.({ operationId, status: 'complete', message: warningMsg, path: finalPath, dbName: safeName });
+            resolve({ success: true, path: finalPath, operationId, warning: stderr });
+          } else {
+            progressCallback?.({ operationId, status: 'error', message: `Export failed: ${stderr}`, dbName: safeName });
+            reject(new Error(`Export failed: ${stderr}`));
+          }
         }
       });
 
       proc.on('error', (error) => {
-        progressCallback?.({ status: 'error', message: `Export error: ${error.message}` });
+        this.runningOperations.delete(operationId);
+        progressCallback?.({ operationId, status: 'error', message: `Export error: ${error.message}`, dbName: safeName });
         reject(error);
       });
     });
@@ -1242,30 +1327,24 @@ class DatabaseManager {
   // NOTE: getPhpMyAdminUrl has been moved to line 145 with multi-version support
 
   /**
-   * Drop all tables in a database (for clean import)
+   * Drop and recreate the database for clean import
+   * This removes all objects: tables, views, procedures, functions, triggers, events
    */
   async dropAllTables(databaseName) {
+    const safeName = this.sanitizeName(databaseName);
+
     try {
-      // Get list of all tables
-      const tables = await this.getTables(databaseName);
+      this.managers.log?.systemInfo(`Dropping and recreating database '${safeName}' for clean import`);
 
-      if (tables.length === 0) {
-        // No tables to drop
-        return;
-      }
+      // Drop the database entirely
+      await this.runDbQuery(`DROP DATABASE IF EXISTS \`${safeName}\``);
 
-      // Dropping tables for clean import
+      // Recreate the database with proper character set
+      await this.runDbQuery(`CREATE DATABASE \`${safeName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
 
-      // Build a single SQL statement with foreign key checks disabled
-      // This ensures everything runs in the same session
-      const dropStatements = tables.map(table => `DROP TABLE IF EXISTS \`${table}\``).join('; ');
-      const combinedSql = `SET FOREIGN_KEY_CHECKS = 0; ${dropStatements}; SET FOREIGN_KEY_CHECKS = 1;`;
-
-      await this.runDbQuery(combinedSql, databaseName);
-
-      // All tables dropped successfully
+      this.managers.log?.systemInfo(`Database '${safeName}' recreated successfully`);
     } catch (error) {
-      this.managers.log?.systemError(`Error dropping tables in ${databaseName}`, { error: error.message });
+      this.managers.log?.systemError(`Error recreating database ${safeName}`, { error: error.message });
       throw error;
     }
   }

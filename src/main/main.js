@@ -102,6 +102,22 @@ async function createWindow() {
     managers.log?.systemError(`Failed to load: ${errorDescription} (${errorCode})`);
   });
 
+  // Disable browser shortcuts that don't make sense for a desktop app
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    // Block Ctrl/Cmd+R (reload), Ctrl/Cmd+Shift+R (hard reload)
+    if ((input.control || input.meta) && input.key.toLowerCase() === 'r') {
+      event.preventDefault();
+    }
+    // Block Ctrl/Cmd+Shift+I in production (DevTools) - allow in dev
+    if (!isDev && (input.control || input.meta) && input.shift && input.key.toLowerCase() === 'i') {
+      event.preventDefault();
+    }
+    // Block Ctrl/Cmd+U (view source)
+    if ((input.control || input.meta) && input.key.toLowerCase() === 'u') {
+      event.preventDefault();
+    }
+  });
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
   });

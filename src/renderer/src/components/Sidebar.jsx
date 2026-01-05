@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   FolderKanban,
@@ -28,6 +28,15 @@ const navigation = [
 
 function Sidebar({ darkMode, setDarkMode }) {
   const location = useLocation();
+  const navigate = useNavigate();
+
+  // Prevent Ctrl+click from opening new tab - handle navigation programmatically
+  const handleNavClick = (e, href) => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      e.preventDefault();
+      navigate(href);
+    }
+  };
 
   return (
     <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
@@ -45,6 +54,7 @@ function Sidebar({ darkMode, setDarkMode }) {
       <div className="px-4 py-4">
         <NavLink
           to="/projects/new"
+          onClick={(e) => handleNavClick(e, '/projects/new')}
           className="btn-primary w-full flex items-center justify-center gap-2"
         >
           <Plus className="w-4 h-4" />
@@ -62,6 +72,7 @@ function Sidebar({ darkMode, setDarkMode }) {
             <NavLink
               key={item.name}
               to={item.href}
+              onClick={(e) => handleNavClick(e, item.href)}
               className={clsx(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 isActive
@@ -81,6 +92,7 @@ function Sidebar({ darkMode, setDarkMode }) {
         {/* Settings */}
         <NavLink
           to="/settings"
+          onClick={(e) => handleNavClick(e, '/settings')}
           className={clsx(
             'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
             location.pathname === '/settings'

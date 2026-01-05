@@ -23,7 +23,7 @@ import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
 
 function Databases() {
-  const { databaseOperation, setDatabaseOperation, clearDatabaseOperation } = useApp();
+  const { databaseOperations, removeDatabaseOperation, cancelDatabaseOperation } = useApp();
   const { showAlert, showConfirm } = useModal();
   const [databases, setDatabases] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -264,13 +264,11 @@ function Databases() {
       });
 
       if (filePath) {
-        setDatabaseOperation({ type: 'export', status: 'starting', message: 'Starting export...', dbName: name });
+        // Progress will be updated via the global context listener (backend sends operationId)
         await window.devbox?.database.exportDatabase(name, filePath);
-        // Progress will be updated via the global context listener
       }
     } catch (error) {
-      // Error exporting database
-      setDatabaseOperation({ type: 'export', status: 'error', message: error.message, dbName: name });
+      // Error handled - user may have cancelled file dialog
     }
   };
 
@@ -296,13 +294,11 @@ function Databases() {
     setShowImportModal(null);
 
     try {
-      setDatabaseOperation({ type: 'import', status: 'starting', message: 'Starting import...', dbName });
+      // Progress will be updated via the global context listener (backend sends operationId)
       await window.devbox?.database.importDatabase(dbName, filePath, mode);
-      // Progress will be updated via the global context listener
       loadDatabases();
     } catch (error) {
-      // Error importing database
-      setDatabaseOperation({ type: 'import', status: 'error', message: error.message, dbName });
+      // Error handled via backend progress callback
     }
   };
 
@@ -384,46 +380,67 @@ function Databases() {
         </div>
       </div>
 
-      {/* Operation Progress Notification */}
-      {databaseOperation && (
-        <div className={clsx(
-          'card p-4 mb-6 border-2 flex items-center justify-between',
-          databaseOperation.status === 'error'
-            ? 'border-red-400 bg-red-50 dark:bg-red-900/20'
-            : databaseOperation.status === 'complete'
-              ? 'border-green-400 bg-green-50 dark:bg-green-900/20'
-              : 'border-blue-400 bg-blue-50 dark:bg-blue-900/20'
-        )}>
-          <div className="flex items-center gap-3">
-            {databaseOperation.status === 'error' ? (
-              <AlertCircle className="w-5 h-5 text-red-500" />
-            ) : databaseOperation.status === 'complete' ? (
-              <CheckCircle className="w-5 h-5 text-green-500" />
-            ) : (
-              <RefreshCw className="w-5 h-5 text-blue-500 animate-spin" />
-            )}
-            <div>
-              <p className="font-medium text-gray-900 dark:text-white">
-                {databaseOperation.type === 'export' ? 'Exporting' : 'Importing'} {databaseOperation.dbName}
-              </p>
-              <p className={clsx(
-                'text-sm',
-                databaseOperation.status === 'error'
-                  ? 'text-red-600 dark:text-red-400'
-                  : 'text-gray-500 dark:text-gray-400'
-              )}>
-                {databaseOperation.message}
-              </p>
-            </div>
-          </div>
-          {(databaseOperation.status === 'complete' || databaseOperation.status === 'error') && (
-            <button
-              onClick={clearDatabaseOperation}
-              className="btn-ghost btn-sm"
+      {/* Operation Progress Notifications - supports multiple concurrent operations */}
+      {Object.keys(databaseOperations).length > 0 && (
+        <div className="space-y-3 mb-6">
+          {Object.entries(databaseOperations).map(([operationId, operation]) => (
+            <div
+              key={operationId}
+              className={clsx(
+                'card p-4 border-2 flex items-center justify-between',
+                operation.status === 'error' || operation.status === 'cancelled'
+                  ? 'border-red-400 bg-red-50 dark:bg-red-900/20'
+                  : operation.status === 'complete'
+                    ? 'border-green-400 bg-green-50 dark:bg-green-900/20'
+                    : 'border-blue-400 bg-blue-50 dark:bg-blue-900/20'
+              )}
             >
-              <X className="w-4 h-4" />
-            </button>
-          )}
+              <div className="flex items-center gap-3">
+                {operation.status === 'error' || operation.status === 'cancelled' ? (
+                  <AlertCircle className="w-5 h-5 text-red-500" />
+                ) : operation.status === 'complete' ? (
+                  <CheckCircle className="w-5 h-5 text-green-500" />
+                ) : (
+                  <RefreshCw className="w-5 h-5 text-blue-500 animate-spin" />
+                )}
+                <div>
+                  <p className="font-medium text-gray-900 dark:text-white">
+                    {operation.type === 'export' ? 'Exporting' : 'Importing'} {operation.dbName}
+                  </p>
+                  <p className={clsx(
+                    'text-sm',
+                    operation.status === 'error' || operation.status === 'cancelled'
+                      ? 'text-red-600 dark:text-red-400'
+                      : 'text-gray-500 dark:text-gray-400'
+                  )}>
+                    {operation.message}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Cancel button for in-progress operations */}
+                {!['complete', 'error', 'cancelled'].includes(operation.status) && (
+                  <button
+                    onClick={() => cancelDatabaseOperation(operationId)}
+                    className="btn-ghost btn-sm text-red-500 hover:text-red-600"
+                    title="Cancel operation"
+                  >
+                    <Square className="w-4 h-4" />
+                    Cancel
+                  </button>
+                )}
+                {/* Dismiss button for completed/error operations */}
+                {['complete', 'error', 'cancelled'].includes(operation.status) && (
+                  <button
+                    onClick={() => removeDatabaseOperation(operationId)}
+                    className="btn-ghost btn-sm"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -607,6 +624,7 @@ function Databases() {
               <DatabaseCard
                 key={db.name}
                 database={db}
+                databaseOperations={databaseOperations}
                 onDelete={() => handleDeleteDatabase(db.name)}
                 onExport={() => handleExportDatabase(db.name)}
                 onImport={() => handleImportDatabase(db.name)}
@@ -754,8 +772,13 @@ function Databases() {
   );
 }
 
-function DatabaseCard({ database, onDelete, onExport, onImport }) {
+function DatabaseCard({ database, databaseOperations = {}, onDelete, onExport, onImport }) {
   const [showMenu, setShowMenu] = useState(false);
+
+  // Check if there's an operation in progress for this database
+  const dbOperations = Object.values(databaseOperations).filter(op => op.dbName === database.name);
+  const isExporting = dbOperations.some(op => op.type === 'export' && !['complete', 'error', 'cancelled'].includes(op.status));
+  const isImporting = dbOperations.some(op => op.type === 'import' && !['complete', 'error', 'cancelled'].includes(op.status));
 
   return (
     <div className="card p-4">
@@ -774,23 +797,34 @@ function DatabaseCard({ database, onDelete, onExport, onImport }) {
       <div className="flex items-center gap-2">
         <button
           onClick={onExport}
-          className="btn-ghost btn-sm flex-1"
-          title="Export database"
+          disabled={isExporting}
+          className={clsx('btn-ghost btn-sm flex-1', isExporting && 'opacity-50 cursor-not-allowed')}
+          title={isExporting ? 'Export in progress...' : 'Export database'}
         >
-          <Download className="w-4 h-4" />
-          Export
+          {isExporting ? (
+            <RefreshCw className="w-4 h-4 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4" />
+          )}
+          {isExporting ? 'Exporting...' : 'Export'}
         </button>
         <button
           onClick={onImport}
-          className="btn-ghost btn-sm flex-1"
-          title="Import into database"
+          disabled={isImporting}
+          className={clsx('btn-ghost btn-sm flex-1', isImporting && 'opacity-50 cursor-not-allowed')}
+          title={isImporting ? 'Import in progress...' : 'Import into database'}
         >
-          <Upload className="w-4 h-4" />
-          Import
+          {isImporting ? (
+            <RefreshCw className="w-4 h-4 animate-spin" />
+          ) : (
+            <Upload className="w-4 h-4" />
+          )}
+          {isImporting ? 'Importing...' : 'Import'}
         </button>
         <button
           onClick={onDelete}
-          className="btn-ghost btn-sm btn-icon text-red-500 hover:text-red-600"
+          disabled={isExporting || isImporting}
+          className={clsx('btn-ghost btn-sm btn-icon text-red-500 hover:text-red-600', (isExporting || isImporting) && 'opacity-50 cursor-not-allowed')}
           title="Delete database"
         >
           <Trash2 className="w-4 h-4" />
