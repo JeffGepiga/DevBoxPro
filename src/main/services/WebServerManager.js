@@ -366,7 +366,7 @@ ${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
         cwd: project.path,
         env: {
           ...process.env,
-          PHP_FCGI_MAX_REQUESTS: '0', // Unlimited requests
+          PHP_FCGI_MAX_REQUESTS: '500', // Restart workers after 500 requests to prevent memory accumulation
           PHP_FCGI_CHILDREN: '4',
         },
         detached: true,
