@@ -25,6 +25,8 @@ import {
   Layers,
   AlertTriangle,
   X,
+  Pencil,
+  Check,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -35,8 +37,9 @@ const NodeJsIcon = ({ className }) => (
   </svg>
 );
 
-function ProjectDetail() {
-  const { id } = useParams();
+function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
+  const params = useParams();
+  const id = propProjectId || params.id;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { projects, startProject, stopProject, deleteProject, refreshProjects, settings, projectLoadingStates, setProjectLoading } = useApp();
@@ -55,6 +58,9 @@ function ProjectDetail() {
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [webServerPorts, setWebServerPorts] = useState({ httpPort: 80, sslPort: 443 });
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
 
   // Update tab from URL params
   useEffect(() => {
@@ -171,6 +177,24 @@ function ProjectDetail() {
     setDeleteFiles(false);
   };
 
+  const handleSaveName = async () => {
+    if (!editedName.trim() || editedName.trim() === project.name) {
+      setIsEditingName(false);
+      return;
+    }
+
+    setIsSavingName(true);
+    try {
+      await window.devbox?.projects.update(id, { name: editedName.trim() });
+      await refreshProjects();
+      setIsEditingName(false);
+    } catch (err) {
+      setActionError(err.message || 'Failed to update project name');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -218,9 +242,61 @@ function ProjectDetail() {
           <div className="flex items-center gap-4">
             <div className={project.isRunning ? 'status-running w-4 h-4' : 'status-stopped w-4 h-4'} />
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {project.name}
-              </h1>
+              {isEditingName ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={editedName}
+                    onChange={(e) => setEditedName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveName();
+                      } else if (e.key === 'Escape') {
+                        setIsEditingName(false);
+                        setEditedName(project.name);
+                      }
+                    }}
+                    autoFocus
+                    className="text-2xl font-bold text-gray-900 dark:text-white bg-transparent border-b-2 border-primary-500 outline-none px-1"
+                  />
+                  <button
+                    onClick={handleSaveName}
+                    disabled={isSavingName || !editedName.trim()}
+                    className="p-1 text-green-600 hover:text-green-700 disabled:opacity-50"
+                    title="Save"
+                  >
+                    {isSavingName ? (
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Check className="w-5 h-5" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsEditingName(false);
+                      setEditedName(project.name);
+                    }}
+                    className="p-1 text-gray-500 hover:text-gray-700"
+                    title="Cancel"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              ) : (
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2 group">
+                  {project.name}
+                  <button
+                    onClick={() => {
+                      setEditedName(project.name);
+                      setIsEditingName(true);
+                    }}
+                    className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Edit project name"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                </h1>
+              )}
               <p className="text-gray-500 dark:text-gray-400">{project.path}</p>
             </div>
           </div>
@@ -304,19 +380,19 @@ function ProjectDetail() {
       </div>
 
       {/* Tab Content */}
+      {/* Terminal is always mounted but hidden when not active to preserve state */}
       {activeTab === 'overview' && (
         <OverviewTab project={project} processes={processes} refreshProjects={refreshProjects} />
       )}
-      {activeTab === 'terminal' && (
-        <div className="h-[500px]">
-          <ProjectTerminal
-            projectId={id}
-            projectPath={project.path}
-            phpVersion={project.phpVersion}
-            autoFocus={true}
-          />
-        </div>
-      )}
+      <div className="h-[500px]" style={{ display: activeTab === 'terminal' ? 'block' : 'none' }}>
+        <ProjectTerminal
+          projectId={id}
+          projectPath={project.path}
+          phpVersion={project.phpVersion}
+          autoFocus={activeTab === 'terminal'}
+          onClose={onCloseTerminal}
+        />
+      </div>
       {activeTab === 'logs' && <LogsTab logs={logs} onRefresh={loadLogs} projectId={id} />}
       {activeTab === 'workers' && (
         <WorkersTab processes={processes} projectId={id} onRefresh={loadProcesses} />

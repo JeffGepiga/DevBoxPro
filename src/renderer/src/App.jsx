@@ -74,22 +74,66 @@ function GlobalDatabaseNotification() {
 }
 
 function AppContent({ darkMode, setDarkMode }) {
+  const location = useLocation();
+
+  // Track ALL visited project IDs to keep their terminals alive
+  const [visitedProjectIds, setVisitedProjectIds] = React.useState(new Set());
+
+  // Check if we're currently viewing a project detail page
+  const projectMatch = location.pathname.match(/^\/projects\/([^/]+)$/);
+  const currentProjectId = projectMatch ? projectMatch[1] : null;
+  const isOnProjectDetail = currentProjectId !== null && currentProjectId !== 'new';
+
+  // Add current project to visited set when navigating to it
+  React.useEffect(() => {
+    if (isOnProjectDetail && currentProjectId) {
+      setVisitedProjectIds(prev => {
+        if (prev.has(currentProjectId)) return prev;
+        const next = new Set(prev);
+        next.add(currentProjectId);
+        return next;
+      });
+    }
+  }, [isOnProjectDetail, currentProjectId]);
+
+  // Handler to close/unmount a specific project's terminal
+  const handleCloseProject = React.useCallback((projectId) => {
+    setVisitedProjectIds(prev => {
+      const next = new Set(prev);
+      next.delete(projectId);
+      return next;
+    });
+  }, []);
+
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar darkMode={darkMode} setDarkMode={setDarkMode} />
-      <main className="flex-1 overflow-auto">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/projects/new" element={<CreateProject />} />
-          <Route path="/projects/:id" element={<ProjectDetail />} />
-          <Route path="/services" element={<Services />} />
-          <Route path="/databases" element={<Databases />} />
-          <Route path="/logs" element={<Logs />} />
-          <Route path="/binaries" element={<BinaryManager />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+      <main className="flex-1 overflow-auto relative">
+        {/* Regular routes - hidden when on project detail */}
+        <div style={{ display: isOnProjectDetail ? 'none' : 'block' }}>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/projects/new" element={<CreateProject />} />
+            <Route path="/projects/:id" element={null} /> {/* Placeholder - actual ProjectDetail rendered separately for persistence */}
+            <Route path="/services" element={<Services />} />
+            <Route path="/databases" element={<Databases />} />
+            <Route path="/logs" element={<Logs />} />
+            <Route path="/binaries" element={<BinaryManager />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
+
+        {/* All visited ProjectDetails - kept mounted to preserve terminal state */}
+        {Array.from(visitedProjectIds).map(projectId => (
+          <div key={projectId} style={{ display: currentProjectId === projectId ? 'block' : 'none' }}>
+            <ProjectDetail
+              projectId={projectId}
+              onCloseTerminal={() => handleCloseProject(projectId)}
+            />
+          </div>
+        ))}
       </main>
       <GlobalDatabaseNotification />
     </div>

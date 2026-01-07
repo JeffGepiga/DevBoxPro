@@ -23,7 +23,7 @@ import {
 import clsx from 'clsx';
 
 function Services() {
-  const { services, resourceUsage, startService, stopService, refreshServices, projects } = useApp();
+  const { services, resourceUsage, startService, stopService, refreshServices, refreshProjects, projects } = useApp();
   const [loadingServices, setLoadingServices] = useState(new Set());
   const [binariesStatus, setBinariesStatus] = useState({});
   const [runningVersions, setRunningVersions] = useState({});
@@ -317,6 +317,7 @@ function Services() {
     try {
       await window.devbox?.services.stopAll();
       await refreshServices();
+      await refreshProjects();  // Also refresh projects since stopAll stops them too
     } finally {
       setLoadingServices(new Set());
     }

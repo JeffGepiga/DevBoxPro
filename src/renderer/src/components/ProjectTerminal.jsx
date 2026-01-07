@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Terminal as TerminalIcon, Play, Square, Trash2, Copy, Check, Maximize2 } from 'lucide-react';
+import { Terminal as TerminalIcon, Play, Square, Trash2, Copy, Check, Maximize2, X } from 'lucide-react';
 import clsx from 'clsx';
 
 // Try to use XTerminal if available, fallback to simple terminal
@@ -66,7 +66,11 @@ const AnsiText = ({ text }) => {
   return <span dangerouslySetInnerHTML={{ __html: html }} />;
 };
 
-function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus = false, useXterm = false }) {
+// Constants for auto-cleanup
+const MAX_OUTPUT_LINES = 500;  // Limit output to prevent memory bloat
+const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;  // 10 minutes
+
+function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus = false, useXterm = false, onClose }) {
   const [output, setOutput] = useState([]);
   const [command, setCommand] = useState('');
   const [isRunning, setIsRunning] = useState(false);
@@ -76,6 +80,8 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
   const [waitingForInput, setWaitingForInput] = useState(false);
   const outputRef = useRef(null);
   const inputRef = useRef(null);
+  const lastActivityRef = useRef(Date.now());
+  const inactivityTimerRef = useRef(null);
 
   // Auto-scroll to bottom when output changes
   useEffect(() => {
@@ -116,8 +122,38 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
 
   const addOutput = useCallback((text, type = 'stdout') => {
     const timestamp = new Date().toLocaleTimeString();
-    setOutput((prev) => [...prev, { text, type, timestamp }]);
+    lastActivityRef.current = Date.now();  // Track activity
+    setOutput((prev) => {
+      const newOutput = [...prev, { text, type, timestamp }];
+      // Limit output to prevent memory bloat
+      if (newOutput.length > MAX_OUTPUT_LINES) {
+        return newOutput.slice(-MAX_OUTPUT_LINES);
+      }
+      return newOutput;
+    });
   }, []);
+
+  // Inactivity timeout - auto-close after 10 minutes of no activity
+  useEffect(() => {
+    if (!onClose) return;  // No close handler, skip timeout
+
+    const checkInactivity = () => {
+      const now = Date.now();
+      const timeSinceActivity = now - lastActivityRef.current;
+      if (timeSinceActivity >= INACTIVITY_TIMEOUT_MS && !isRunning) {
+        onClose();  // Close this terminal
+      }
+    };
+
+    // Check every minute
+    inactivityTimerRef.current = setInterval(checkInactivity, 60000);
+
+    return () => {
+      if (inactivityTimerRef.current) {
+        clearInterval(inactivityTimerRef.current);
+      }
+    };
+  }, [onClose, isRunning]);
 
   const sendInputToProcess = async (input) => {
     if (!input.trim()) return;
@@ -261,6 +297,15 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
           >
             <Trash2 className="w-4 h-4" />
           </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded transition-colors"
+              title="Close terminal (free memory)"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
