@@ -29,6 +29,11 @@ class ConfigStore {
   getDefaults() {
     const dataPath = path.join(os.homedir(), '.devbox-pro');
 
+    // Platform-specific default projects path
+    const defaultProjectsPath = process.platform === 'win32'
+      ? 'C:/Projects'
+      : path.join(os.homedir(), 'Projects');
+
     return {
       dataPath,
       settings: {
@@ -48,6 +53,7 @@ class ConfigStore {
         dbUser: 'root',
         dbPassword: '',
         serverTimezone: 'UTC', // IANA timezone for PHP, MySQL, MariaDB
+        defaultProjectsPath, // Platform-specific default
       },
       projects: [],
       phpVersions: {},
