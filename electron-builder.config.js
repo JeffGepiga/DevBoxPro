@@ -132,7 +132,7 @@ module.exports = {
   },
   publish: {
     provider: 'github',
-    owner: 'devbox-pro',
-    repo: 'devbox-pro',
+    owner: 'JeffGepiga',
+    repo: 'DevBoxPro',
   },
 };
