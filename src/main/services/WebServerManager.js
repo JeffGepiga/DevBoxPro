@@ -11,8 +11,13 @@ class WebServerManager {
     this.managers = managers;
     this.resourcesPath = path.join(app.getPath('userData'), 'resources');
     this.dataPath = path.join(app.getPath('userData'), 'data');
-    this.processes = new Map(); // projectId -> { server, phpFpm }
+    this.processes = new Map(); // projectId -> { server, phpFpm, phpFpmPort }
     this.serverType = 'nginx'; // 'nginx' or 'apache'
+
+    // Memory monitoring settings
+    this.phpMemoryLimitMB = 300; // Restart PHP-CGI if memory exceeds this (in MB)
+    this.memoryCheckInterval = null; // Timer for periodic memory checks
+    this.memoryCheckIntervalMs = 30000; // Check every 30 seconds
   }
 
   async initialize() {
@@ -22,6 +27,148 @@ class WebServerManager {
 
     // Load preferred server type from config
     this.serverType = this.configStore.get('settings.webServer', 'nginx');
+
+    // Start memory monitoring for Windows
+    if (process.platform === 'win32') {
+      this.startMemoryMonitoring();
+    }
+  }
+
+  // Start periodic memory monitoring for PHP-CGI processes
+  startMemoryMonitoring() {
+    if (this.memoryCheckInterval) {
+      clearInterval(this.memoryCheckInterval);
+    }
+
+    this.memoryCheckInterval = setInterval(() => {
+      this.checkPhpMemoryUsage();
+    }, this.memoryCheckIntervalMs);
+
+    this.managers?.log?.system('PHP memory monitoring started', {
+      limitMB: this.phpMemoryLimitMB,
+      checkIntervalMs: this.memoryCheckIntervalMs
+    });
+  }
+
+  // Stop memory monitoring
+  stopMemoryMonitoring() {
+    if (this.memoryCheckInterval) {
+      clearInterval(this.memoryCheckInterval);
+      this.memoryCheckInterval = null;
+    }
+  }
+
+  // Check memory usage of all PHP-CGI processes and restart if needed
+  async checkPhpMemoryUsage() {
+    for (const [projectId, processInfo] of this.processes) {
+      if (!processInfo.phpFpm || !processInfo.phpFpm.pid) continue;
+
+      try {
+        const memoryMB = await this.getProcessMemory(processInfo.phpFpm.pid);
+
+        // Get project's PHP version to read its memory_limit from php.ini
+        const project = await this.managers?.project?.getProject(projectId);
+        const phpVersion = project?.phpVersion || '8.4';
+        const memoryLimitMB = await this.getPhpMemoryLimit(phpVersion);
+
+        if (memoryMB > memoryLimitMB) {
+          this.managers?.log?.system(`PHP-CGI memory limit exceeded for project ${projectId}`, {
+            memoryMB: Math.round(memoryMB),
+            limitMB: memoryLimitMB
+          });
+
+          if (project && processInfo.phpFpmPort) {
+            await this.restartPhpFpm(projectId, project, processInfo.phpFpmPort);
+          }
+        }
+      } catch (err) {
+        // Process may have exited, ignore
+      }
+    }
+  }
+
+  // Get memory_limit from php.ini for a specific PHP version
+  async getPhpMemoryLimit(phpVersion) {
+    try {
+      const platform = this.getPlatform();
+      const phpIniPath = path.join(this.resourcesPath, 'php', phpVersion, platform, 'php.ini');
+      const content = await fs.readFile(phpIniPath, 'utf8');
+
+      // Parse memory_limit from php.ini
+      const match = content.match(/^\s*memory_limit\s*=\s*(\S+)/m);
+      if (match) {
+        const value = match[1].trim();
+        // Handle -1 (unlimited) - use fallback
+        if (value === '-1') return this.phpMemoryLimitMB;
+        // Parse values like 256M, 512M, 1G
+        const numMatch = value.match(/^(\d+)\s*([KMG])?$/i);
+        if (numMatch) {
+          const num = parseInt(numMatch[1], 10);
+          const unit = (numMatch[2] || 'M').toUpperCase();
+          if (unit === 'K') return num / 1024;
+          if (unit === 'M') return num;
+          if (unit === 'G') return num * 1024;
+        }
+      }
+    } catch (err) {
+      // Can't read php.ini, use default
+    }
+    return this.phpMemoryLimitMB; // Fallback to default (300MB)
+  }
+
+  // Get memory usage of a process by PID (Windows only)
+  async getProcessMemory(pid) {
+    return new Promise((resolve, reject) => {
+      const { exec } = require('child_process');
+      exec(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, (error, stdout) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        // Parse CSV output: "name","pid","session","session#","mem usage"
+        const match = stdout.match(/"([^"]+)","(\d+)","[^"]*","[^"]*","([\d,]+)\s*K"/);
+        if (match) {
+          const memoryKB = parseInt(match[3].replace(/,/g, ''), 10);
+          resolve(memoryKB / 1024); // Convert to MB
+        } else {
+          reject(new Error('Could not parse memory usage'));
+        }
+      });
+    });
+  }
+
+  // Restart PHP-FPM/CGI for a project
+  async restartPhpFpm(projectId, project, port) {
+    const processInfo = this.processes.get(projectId);
+    if (!processInfo || !processInfo.phpFpm) return;
+
+    this.managers?.log?.system(`Restarting PHP-CGI for project ${projectId} due to high memory`);
+
+    // Kill the old process
+    try {
+      await new Promise((resolve) => {
+        treeKill(processInfo.phpFpm.pid, 'SIGTERM', (err) => {
+          resolve(); // Continue even if kill fails
+        });
+      });
+    } catch (err) {
+      // Ignore errors
+    }
+
+    // Wait a moment for the process to fully terminate
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Start a new PHP-CGI process
+    try {
+      const newPhpProcess = await this.startPhpFpm(project, port);
+      processInfo.phpFpm = newPhpProcess;
+      this.managers?.log?.system(`PHP-CGI restarted successfully for project ${projectId}`);
+    } catch (err) {
+      this.managers?.log?.systemError(`Failed to restart PHP-CGI for project ${projectId}`, {
+        error: err.message
+      });
+    }
   }
 
   getPlatform() {
@@ -366,8 +513,8 @@ ${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
         cwd: project.path,
         env: {
           ...process.env,
-          PHP_FCGI_MAX_REQUESTS: '500', // Restart workers after 500 requests to prevent memory accumulation
-          PHP_FCGI_CHILDREN: '4',
+          PHP_FCGI_MAX_REQUESTS: '100', // Restart workers after 100 requests to prevent memory accumulation
+          PHP_FCGI_CHILDREN: '1', // Use 1 child process to reduce memory footprint (similar to Laragon)
         },
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -651,6 +798,34 @@ IncludeOptional "${vhostsDir.replace(/\\/g, '/')}/*.conf"
     this.processes.delete(projectId);
 
     return { success: true };
+  }
+
+  // Check memory usage of all PHP-CGI processes and restart if needed
+  async checkPhpMemoryUsage() {
+    if (process.platform !== 'win32') return; // Only needed on Windows
+
+    for (const [projectId, processInfo] of this.processes) {
+      if (!processInfo.phpFpm || !processInfo.phpFpm.pid) continue;
+
+      try {
+        const memoryMB = await this.getProcessMemory(processInfo.phpFpm.pid);
+
+        if (memoryMB > this.phpMemoryLimitMB) {
+          this.managers?.log?.system(`PHP-CGI memory limit exceeded for project ${projectId}`, {
+            memoryMB: Math.round(memoryMB),
+            limitMB: this.phpMemoryLimitMB
+          });
+
+          // Get project info to restart PHP
+          const project = await this.managers?.project?.getProject(projectId);
+          if (project && processInfo.phpFpmPort) {
+            await this.restartPhpFpm(projectId, project, processInfo.phpFpmPort);
+          }
+        }
+      } catch (err) {
+        // Process may have exited, ignore
+      }
+    }
   }
 
   // Kill a process
