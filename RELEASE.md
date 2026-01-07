@@ -1,4 +1,4 @@
-# 🚀 DevBox Pro v1.0.1-BETA
+# 🚀 DevBox Pro v1.0.2-BETA
 
 **Pre-Release | Your all-in-one local development environment for PHP**
 
@@ -6,38 +6,21 @@
 
 ---
 
-## 🆕 What's New in v1.0.1
+## 🆕 What's New in v1.0.2
 
 ### ✨ New Features
 
-#### 🌐 Local Network Project Sharing
-- **Share projects across your local network** – Access your development projects from other devices on the same network
-- **IP Address Retrieval** – Automatically detects and displays your machine's local IP address
-- **Project Sharing Options** – Enable or disable network access per project with a simple toggle
-
-#### 🔗 Git Clone Repository
-- **Clone from GitHub, GitLab, Bitbucket** – Create new projects by cloning existing Git repositories
-- **Multiple Authentication Methods** – Support for public repos, Personal Access Tokens, and SSH keys
-- **Built-in SSH Key Management** – Generate, copy, and regenerate SSH keys directly from the app
-- **Auto Laravel Setup** – Automatically runs `composer install`, `.env` setup, and `artisan key:generate` after cloning Laravel projects
-
-#### 💻 Direct Terminal Commands
-- **Removed `dvp` prefix requirement** – Use standard `php`, `npm`, `node`, `composer` commands
-- **Automatic version detection** – DevBox Pro uses the correct version for each project
-- **Simplified setup** – Just enable in Settings and restart your terminal
-- **Works with any editor** – VS Code, Windows Terminal, PowerShell, and more
-
-### 🐛 Bug Fixes
-
-#### 🔧 Multiple Running Services Fix
-- **Resolved service conflicts** – Fixed issues when running multiple services simultaneously
-- **Improved service management** – Better handling of concurrent service operations
-- **Enhanced stability** – More reliable service startup and shutdown sequences
+#### 🔄 Auto-Update System
+- **Check for Updates** – Built-in update checker in Settings → Advanced tab
+- **One-Click Download** – Download new versions directly within the app with progress indicator
+- **Install & Restart** – Seamlessly install updates and restart the application
+- **GitHub Releases Integration** – Updates are fetched securely from GitHub Releases
 
 ### 🧹 Improvements
 
-- **Code cleanup** – Removed unnecessary console logs for cleaner production output
-- **Project tab revamp** – Improved project management interface
+- **Better version display** – Current version shown in the update checker
+- **Download progress** – Real-time progress bar with download speed (MB/s)
+- **Development mode handling** – Clear messaging when running in development mode
 
 ---
 
@@ -82,25 +65,25 @@
 - **Symfony** – console commands ready
 - **Custom PHP** – works with any PHP application
 
-### ☁️ Cloud Configuration Updates
-- Remote binary definitions – new versions without app update
-- Compatibility rules sync – updated version warnings
-- One-click update check from Settings
+### 🌐 Local Network Project Sharing
+- Share projects across your local network
+- Enable/disable per project with a simple toggle
 
-### 💻 Terminal Commands (Simplified!)
-Use `php`, `npm`, `node`, and `composer` directly from any terminal - DevBox Pro automatically uses the correct version for your project:
+### 🔗 Git Clone Repository
+- Clone from GitHub, GitLab, Bitbucket
+- Support for public repos, Personal Access Tokens, and SSH keys
+- Built-in SSH Key Management
+
+### 💻 Terminal Commands
+Use `php`, `npm`, `node`, and `composer` directly from any terminal:
 
 ```bash
-# Navigate to your project and run commands directly
 cd C:\Projects\my-laravel-app
 
 php artisan migrate      # Uses project's PHP version automatically
 composer install         # Uses correct PHP for Composer
 npm install              # Uses project's Node.js version
-npm run dev              # Run npm scripts
 ```
-
-> **New in v1.0.2:** No more `dvp` prefix needed! Just enable Terminal Commands in Settings and use commands directly.
 
 ---
 
@@ -108,13 +91,13 @@ npm run dev              # Run npm scripts
 
 | File | Description |
 |------|-------------|
-| **DevBox.Pro.Setup.1.0.1-BETA.exe** | Installer version (recommended) |
-| **DevBox.Pro.1.0.1-Portable-BETA.exe** | Portable version – no installation required |
+| **DevBox.Pro.Setup.1.0.2-BETA.exe** | Installer version (recommended) |
+| **DevBox.Pro.1.0.2-Portable-BETA.exe** | Portable version – no installation required |
+| **latest.yml** | Auto-updater manifest |
 
 ### 🍎 macOS Support
 
-> **Note**: macOS builds are not yet available. The application has not been tested on macOS. 
-> Please wait for a future release that includes macOS support. Stay tuned!
+> **Note**: macOS builds are not yet available. Stay tuned!
 
 ### System Requirements (Windows)
 - **OS**: Windows 10/11 (64-bit)
@@ -149,6 +132,7 @@ This version is for **testing and feedback purposes**. Please expect:
 - First launch may take a few seconds while initializing
 - Windows Defender may prompt for firewall access on first service start
 - Some antivirus software may flag the portable version (false positive)
+- Auto-updater requires app to be code-signed to avoid SmartScreen warning (planned for future)
 
 ---
 

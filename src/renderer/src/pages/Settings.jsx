@@ -22,6 +22,7 @@ import {
   ExternalLink,
   Trash2,
   AlertTriangle,
+  ArrowUpCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -886,6 +887,14 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
   // App data path for Data Location section
   const [appDataPath, setAppDataPath] = useState(null);
 
+  // App update state
+  const [checkingAppUpdate, setCheckingAppUpdate] = useState(false);
+  const [appUpdateResult, setAppUpdateResult] = useState(null);
+  const [downloadingUpdate, setDownloadingUpdate] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(null);
+  const [updateDownloaded, setUpdateDownloaded] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState(null);
+
   // Load config info and app data path on mount
   useEffect(() => {
     const loadConfigInfo = async () => {
@@ -906,7 +915,64 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
     };
     loadConfigInfo();
     loadAppDataPath();
+
+    // Load current app version
+    const loadVersion = async () => {
+      const version = await window.devbox?.system?.getAppVersion?.();
+      setCurrentVersion(version);
+    };
+    loadVersion();
+
+    // Subscribe to update events
+    const unsubProgress = window.devbox?.update?.onProgress?.((data) => {
+      setDownloadProgress(data);
+    });
+
+    const unsubStatus = window.devbox?.update?.onStatus?.((data) => {
+      if (data.status === 'downloaded') {
+        setDownloadingUpdate(false);
+        setUpdateDownloaded(true);
+        setDownloadProgress(null);
+      } else if (data.status === 'error') {
+        setDownloadingUpdate(false);
+        setAppUpdateResult({ success: false, error: data.error });
+      }
+    });
+
+    return () => {
+      unsubProgress?.();
+      unsubStatus?.();
+    };
   }, []);
+
+  const handleCheckAppUpdate = async () => {
+    setCheckingAppUpdate(true);
+    setAppUpdateResult(null);
+    setUpdateDownloaded(false);
+    try {
+      const result = await window.devbox?.update?.checkForUpdates();
+      setAppUpdateResult(result);
+    } catch (error) {
+      setAppUpdateResult({ success: false, error: error.message });
+    } finally {
+      setCheckingAppUpdate(false);
+    }
+  };
+
+  const handleDownloadUpdate = async () => {
+    setDownloadingUpdate(true);
+    setDownloadProgress(null);
+    try {
+      await window.devbox?.update?.downloadUpdate();
+    } catch (error) {
+      setDownloadingUpdate(false);
+      setAppUpdateResult({ success: false, error: error.message });
+    }
+  };
+
+  const handleInstallUpdate = () => {
+    window.devbox?.update?.quitAndInstall();
+  };
 
   const handleCheckBinaryUpdates = async () => {
     setCheckingBinaryUpdates(true);
@@ -1003,6 +1069,143 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
 
   return (
     <div className="space-y-6">
+      {/* App Update Section */}
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          Application Updates
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Check for new versions of DevBox Pro.
+          {currentVersion && (
+            <span className="ml-2 text-gray-400">(Current: v{currentVersion})</span>
+          )}
+        </p>
+
+        <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <ArrowUpCircle className="w-5 h-5 text-primary-500" />
+                <h4 className="font-medium text-gray-900 dark:text-white">DevBox Pro</h4>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Updates are downloaded from GitHub Releases
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {updateDownloaded ? (
+                <button
+                  onClick={handleInstallUpdate}
+                  className="btn-primary text-sm py-1.5 px-3"
+                >
+                  <Download className="w-4 h-4" />
+                  Install & Restart
+                </button>
+              ) : downloadingUpdate ? (
+                <button disabled className="btn-secondary text-sm py-1.5 px-3 opacity-75">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Downloading...
+                </button>
+              ) : appUpdateResult?.updateAvailable ? (
+                <button
+                  onClick={handleDownloadUpdate}
+                  className="btn-primary text-sm py-1.5 px-3"
+                >
+                  <Download className="w-4 h-4" />
+                  Download v{appUpdateResult.latestVersion}
+                </button>
+              ) : (
+                <button
+                  onClick={handleCheckAppUpdate}
+                  disabled={checkingAppUpdate}
+                  className="btn-secondary text-sm py-1.5 px-3"
+                >
+                  {checkingAppUpdate ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <RefreshCw className="w-4 h-4" />
+                      Check for Updates
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Download Progress */}
+          {downloadingUpdate && downloadProgress && (
+            <div className="mt-3">
+              <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                <span>Downloading update...</span>
+                <span>{Math.round(downloadProgress.percent || 0)}%</span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div
+                  className="bg-primary-500 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${downloadProgress.percent || 0}%` }}
+                />
+              </div>
+              {downloadProgress.bytesPerSecond && (
+                <p className="text-xs text-gray-400 mt-1">
+                  {(downloadProgress.bytesPerSecond / 1024 / 1024).toFixed(2)} MB/s
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Update Result */}
+          {appUpdateResult && !downloadingUpdate && !updateDownloaded && (
+            <div className={clsx(
+              'mt-3 p-3 rounded-lg text-sm',
+              appUpdateResult.success
+                ? appUpdateResult.updateAvailable
+                  ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200'
+                  : 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200'
+                : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200'
+            )}>
+              {appUpdateResult.success ? (
+                appUpdateResult.updateAvailable ? (
+                  <div>
+                    <span className="font-medium">Update available: v{appUpdateResult.latestVersion}</span>
+                    {appUpdateResult.releaseDate && (
+                      <p className="text-xs mt-1">
+                        Released: {new Date(appUpdateResult.releaseDate).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                ) : appUpdateResult.message?.includes('development') ? (
+                  <span className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    {appUpdateResult.message}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <Check className="w-4 h-4" />
+                    You're running the latest version (v{appUpdateResult.currentVersion})
+                  </span>
+                )
+              ) : (
+                <span className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  {appUpdateResult.error}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Update Downloaded */}
+          {updateDownloaded && (
+            <div className="mt-3 p-3 rounded-lg text-sm bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200">
+              <span className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4" />
+                Update downloaded! Click "Install & Restart" to complete the update.
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Remote Updates Section */}
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">

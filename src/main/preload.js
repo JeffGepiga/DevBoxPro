@@ -178,6 +178,24 @@ contextBridge.exposeInMainWorld('devbox', {
     clearAllData: (deleteProjectFiles) => ipcRenderer.invoke('system:clearAllData', deleteProjectFiles),
   },
 
+  // Update operations
+  update: {
+    checkForUpdates: () => ipcRenderer.invoke('update:checkForUpdates'),
+    downloadUpdate: () => ipcRenderer.invoke('update:downloadUpdate'),
+    quitAndInstall: () => ipcRenderer.invoke('update:quitAndInstall'),
+    getStatus: () => ipcRenderer.invoke('update:getStatus'),
+    onStatus: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('update:status', handler);
+      return () => ipcRenderer.removeListener('update:status', handler);
+    },
+    onProgress: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('update:progress', handler);
+      return () => ipcRenderer.removeListener('update:progress', handler);
+    },
+  },
+
   // Terminal operations
   terminal: {
     runCommand: (projectId, command, options) => ipcRenderer.invoke('terminal:runCommand', projectId, command, options),
@@ -275,6 +293,8 @@ contextBridge.exposeInMainWorld('devbox', {
       'resource:update',
       'update:available',
       'update:downloaded',
+      'update:status',
+      'update:progress',
       'binaries:progress',
       'supervisor:output',
     ];

@@ -584,9 +584,43 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return managers.webServer.getLocalIpAddresses();
   });
 
+  // ============ UPDATE HANDLERS ============
+  ipcMain.handle('update:checkForUpdates', async () => {
+    if (!managers.update) {
+      return { success: false, error: 'Update manager not initialized' };
+    }
+    return managers.update.checkForUpdates();
+  });
+
+  ipcMain.handle('update:downloadUpdate', async () => {
+    if (!managers.update) {
+      return { success: false, error: 'Update manager not initialized' };
+    }
+    return managers.update.downloadUpdate();
+  });
+
+  ipcMain.handle('update:quitAndInstall', async () => {
+    if (!managers.update) {
+      return { success: false, error: 'Update manager not initialized' };
+    }
+    managers.update.quitAndInstall();
+    return { success: true };
+  });
+
+  ipcMain.handle('update:getStatus', async () => {
+    if (!managers.update) {
+      return { success: false, error: 'Update manager not initialized' };
+    }
+    return managers.update.getStatus();
+  });
+
+  // Keep legacy handler for backward compatibility
   ipcMain.handle('system:checkForUpdates', async () => {
-    // Auto-updater implementation would go here
-    return { updateAvailable: false };
+    if (!managers.update) {
+      return { updateAvailable: false };
+    }
+    const result = await managers.update.checkForUpdates();
+    return { updateAvailable: result.updateAvailable || false };
   });
 
   ipcMain.handle('system:clearAllData', async (event, deleteProjectFiles = false) => {

@@ -11,6 +11,7 @@ const BinaryDownloadManager = require('./services/BinaryDownloadManager');
 const { WebServerManager } = require('./services/WebServerManager');
 const CliManager = require('./services/CliManager');
 const { GitManager } = require('./services/GitManager');
+const { UpdateManager } = require('./services/UpdateManager');
 const { ConfigStore } = require('./utils/ConfigStore');
 const { setupIpcHandlers } = require('./ipc/handlers');
 
@@ -258,6 +259,7 @@ async function initializeManagers() {
   managers.webServer = new WebServerManager(configStore, managers);
   managers.cli = new CliManager(configStore, managers);
   managers.git = new GitManager(configStore, managers);
+  managers.update = new UpdateManager(managers);
 
   // Critical initializations (must complete before UI)
   await Promise.all([
@@ -311,6 +313,9 @@ async function startup() {
 
     // Set mainWindow on supervisor for real-time output events
     managers.supervisor.setMainWindow(mainWindow);
+
+    // Set mainWindow on update manager for update progress events
+    managers.update.setMainWindow(mainWindow);
 
     // Initialize remaining managers in background (don't block UI)
     initializeManagersDeferred().then(() => {
