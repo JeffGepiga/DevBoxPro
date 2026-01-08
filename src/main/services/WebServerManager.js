@@ -135,11 +135,25 @@ class WebServerManager {
     const fastcgiParamsPath = path.join(this.resourcesPath, 'nginx', nginxVersion, platform, 'conf', 'fastcgi_params').replace(/\\/g, '/');
 
     // Determine document root
-    // Default to /public for Laravel/modern frameworks, but fallback to root if it doesn't exist
-    // or if project type is explicitly wordpress/simple-php
-    let docRoot = path.join(projectPath, 'public');
-    if (project.type === 'wordpress' || !await fs.pathExists(docRoot)) {
-      docRoot = projectPath;
+    // Priority: project.documentRoot > /public (if exists) > project root
+    let docRoot;
+    if (project.documentRoot) {
+      // If documentRoot is "/", ".", or empty, use project root
+      if (project.documentRoot === '/' || project.documentRoot === '.' || project.documentRoot === '') {
+        docRoot = projectPath;
+      } else if (path.isAbsolute(project.documentRoot) && project.documentRoot !== '/') {
+        // Absolute path (but not just "/") - use as-is
+        docRoot = project.documentRoot;
+      } else {
+        // Relative path - append to project path
+        docRoot = path.join(projectPath, project.documentRoot);
+      }
+    } else {
+      // Default behavior: /public for Laravel/modern frameworks, fallback to root
+      docRoot = path.join(projectPath, 'public');
+      if (project.type === 'wordpress' || !await fs.pathExists(docRoot)) {
+        docRoot = projectPath;
+      }
     }
     const docRootNginx = docRoot.replace(/\\/g, '/');
 
@@ -274,9 +288,25 @@ server {
     const finalPort = usePort80 ? 80 : port;
 
     // Determine document root
-    let docRoot = path.join(projectPath, 'public');
-    if (project.type === 'wordpress' || !await fs.pathExists(docRoot)) {
-      docRoot = projectPath;
+    // Priority: project.documentRoot > /public (if exists) > project root
+    let docRoot;
+    if (project.documentRoot) {
+      // If documentRoot is "/", ".", or empty, use project root
+      if (project.documentRoot === '/' || project.documentRoot === '.' || project.documentRoot === '') {
+        docRoot = projectPath;
+      } else if (path.isAbsolute(project.documentRoot) && project.documentRoot !== '/') {
+        // Absolute path (but not just "/") - use as-is
+        docRoot = project.documentRoot;
+      } else {
+        // Relative path - append to project path
+        docRoot = path.join(projectPath, project.documentRoot);
+      }
+    } else {
+      // Default behavior: /public for Laravel/modern frameworks, fallback to root
+      docRoot = path.join(projectPath, 'public');
+      if (project.type === 'wordpress' || !await fs.pathExists(docRoot)) {
+        docRoot = projectPath;
+      }
     }
     const docRootApache = docRoot.replace(/\\/g, '/');
 
@@ -296,6 +326,11 @@ ${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
         Options Indexes FollowSymLinks MultiViews
         AllowOverride All
         Require all granted
+        
+        # Handle non-existent PHP files through Laravel's front controller
+        RewriteEngine On
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteRule ^(.+\.php)$ /index.php [L,QSA]
     </Directory>
 
     # PHP-FPM/CGI proxy with timeout for long-running processes (0 = unlimited)
@@ -328,6 +363,11 @@ ${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
         Options Indexes FollowSymLinks MultiViews
         AllowOverride All
         Require all granted
+        
+        # Handle non-existent PHP files through Laravel's front controller
+        RewriteEngine On
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteRule ^(.+\.php)$ /index.php [L,QSA]
     </Directory>
 
     # PHP-FPM/CGI proxy with timeout for long-running processes (0 = unlimited)

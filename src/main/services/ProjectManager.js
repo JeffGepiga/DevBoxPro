@@ -2156,10 +2156,15 @@ class ProjectManager {
   getDocumentRoot(project) {
     // If a custom document root is set, use it
     if (project.documentRoot) {
-      // Check if it's an absolute path or relative to project path
-      if (path.isAbsolute(project.documentRoot)) {
+      // If documentRoot is "/" or ".", use project root
+      if (project.documentRoot === '/' || project.documentRoot === '.' || project.documentRoot === '') {
+        return project.path;
+      }
+      // Check if it's an absolute path (but not just "/")
+      if (path.isAbsolute(project.documentRoot) && project.documentRoot !== '/') {
         return project.documentRoot;
       }
+      // Relative path - append to project path
       return path.join(project.path, project.documentRoot);
     }
 
