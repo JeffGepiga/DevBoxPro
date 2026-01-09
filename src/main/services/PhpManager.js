@@ -330,6 +330,7 @@ opcache.revalidate_freq = 0
 
   async runCommand(version, workingDir, command) {
     const phpPath = this.getPhpBinaryPath(version);
+    const phpDir = this.phpVersions[version]?.path;
 
     // Security: Validate command before execution
     if (!this.validatePhpCommand(command)) {
@@ -343,10 +344,15 @@ opcache.revalidate_freq = 0
       commandLength: command.length,
     });
 
+    // Add PHP directory to PATH so Windows can find PHP's DLLs (libssl, libcrypto, etc.)
+    const envPath = phpDir
+      ? (process.platform === 'win32' ? `${phpDir};${process.env.PATH || ''}` : `${phpDir}:${process.env.PATH || ''}`)
+      : process.env.PATH;
+
     return new Promise((resolve, reject) => {
       const proc = spawn(phpPath, ['-r', command], {
         cwd: workingDir,
-        env: process.env,
+        env: { ...process.env, PATH: envPath },
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });
@@ -378,6 +384,7 @@ opcache.revalidate_freq = 0
 
   async runArtisan(version, projectPath, artisanCommand) {
     const phpPath = this.getPhpBinaryPath(version);
+    const phpDir = this.phpVersions[version]?.path;
     const artisanPath = path.join(projectPath, 'artisan');
 
     if (!(await fs.pathExists(artisanPath))) {
@@ -396,11 +403,16 @@ opcache.revalidate_freq = 0
       command: artisanCommand,
     });
 
+    // Add PHP directory to PATH so Windows can find PHP's DLLs (libssl, libcrypto, etc.)
+    const envPath = phpDir
+      ? (process.platform === 'win32' ? `${phpDir};${process.env.PATH || ''}` : `${phpDir}:${process.env.PATH || ''}`)
+      : process.env.PATH;
+
     return new Promise((resolve, reject) => {
       const args = ['artisan', ...artisanCommand.split(' ').filter(arg => arg.trim())];
       const proc = spawn(phpPath, args, {
         cwd: projectPath,
-        env: process.env,
+        env: { ...process.env, PATH: envPath },
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });
@@ -433,13 +445,19 @@ opcache.revalidate_freq = 0
 
   async runComposer(version, projectPath, composerCommand) {
     const phpPath = this.getPhpBinaryPath(version);
+    const phpDir = this.phpVersions[version]?.path;
     const composerPath = this.getComposerPath();
+
+    // Add PHP directory to PATH so Windows can find PHP's DLLs (libssl, libcrypto, etc.)
+    const envPath = phpDir
+      ? (process.platform === 'win32' ? `${phpDir};${process.env.PATH || ''}` : `${phpDir}:${process.env.PATH || ''}`)
+      : process.env.PATH;
 
     return new Promise((resolve, reject) => {
       const args = [composerPath, ...composerCommand.split(' ')];
       const proc = spawn(phpPath, args, {
         cwd: projectPath,
-        env: process.env,
+        env: { ...process.env, PATH: envPath },
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });
@@ -476,9 +494,16 @@ opcache.revalidate_freq = 0
 
   async getPhpInfo(version) {
     const phpPath = this.getPhpBinaryPath(version);
+    const phpDir = this.phpVersions[version]?.path;
+
+    // Add PHP directory to PATH so Windows can find PHP's DLLs (libssl, libcrypto, etc.)
+    const envPath = phpDir
+      ? (process.platform === 'win32' ? `${phpDir};${process.env.PATH || ''}` : `${phpDir}:${process.env.PATH || ''}`)
+      : process.env.PATH;
 
     return new Promise((resolve, reject) => {
       const proc = spawn(phpPath, ['-i'], {
+        env: { ...process.env, PATH: envPath },
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });

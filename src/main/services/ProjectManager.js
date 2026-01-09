@@ -476,12 +476,19 @@ class ProjectManager {
           const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
           const platform = process.platform === 'win32' ? 'win' : 'mac';
           const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
-          const phpPath = path.join(resourcePath, 'php', project.phpVersion, platform, phpExe);
+          const phpDir = path.join(resourcePath, 'php', project.phpVersion, platform);
+          const phpPath = path.join(phpDir, phpExe);
+
+          // Add PHP directory to PATH so Windows can find PHP's DLLs (libssl, libcrypto, etc.)
+          const envPath = platform === 'win'
+            ? `${phpDir};${process.env.PATH || ''}`
+            : `${phpDir}:${process.env.PATH || ''}`;
 
           if (await fs.pathExists(phpPath)) {
             await new Promise((resolve) => {
               const proc = spawn(phpPath, ['artisan', 'optimize'], {
                 cwd: project.path,
+                env: { ...process.env, PATH: envPath },
                 stdio: ['ignore', 'pipe', 'pipe'],
                 windowsHide: true
               });
@@ -653,12 +660,19 @@ class ProjectManager {
       const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
       const platform = process.platform === 'win32' ? 'win' : 'mac';
       const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
-      const phpPath = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
+      const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
+      const phpPath = path.join(phpDir, phpExe);
+
+      // Add PHP directory to PATH so Windows can find PHP's DLLs (libssl, libcrypto, etc.)
+      const envPath = platform === 'win'
+        ? `${phpDir};${process.env.PATH || ''}`
+        : `${phpDir}:${process.env.PATH || ''}`;
 
       if (await fs.pathExists(phpPath)) {
         await new Promise((resolve) => {
           const proc = spawn(phpPath, ['artisan', 'key:generate'], {
             cwd: projectPath,
+            env: { ...process.env, PATH: envPath },
             stdio: ['ignore', 'pipe', 'pipe'],
             windowsHide: true
           });
@@ -856,12 +870,19 @@ class ProjectManager {
       const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
       const platform = process.platform === 'win32' ? 'win' : 'mac';
       const resourcePath = this.configStore.get('resourcePath') || require('path').join(require('electron').app.getPath('userData'), 'resources');
-      const phpPath = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
+      const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
+      const phpPath = path.join(phpDir, phpExe);
+
+      // Add PHP directory to PATH so Windows can find PHP's DLLs (libssl, libcrypto, etc.)
+      const envPath = platform === 'win'
+        ? `${phpDir};${process.env.PATH || ''}`
+        : `${phpDir}:${process.env.PATH || ''}`;
 
       if (await fs.pathExists(phpPath)) {
         await new Promise((resolve, reject) => {
           const proc = spawn(phpPath, ['artisan', 'key:generate'], {
             cwd: projectPath,
+            env: { ...process.env, PATH: envPath },
             stdio: ['ignore', 'pipe', 'pipe'],
             windowsHide: true
           });
@@ -1982,6 +2003,11 @@ class ProjectManager {
     const webServer = project.webServer || 'nginx';
     const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
 
+    // Track if web server was already running before we start
+    // This is needed to know if we should reload config for new vhosts
+    const webServerStatus = serviceManager.serviceStatus.get(webServer);
+    const webServerWasRunning = webServerStatus?.status === 'running';
+
     const servicesToStart = [];
 
     // Only start the web server the project needs (with version)
@@ -2099,6 +2125,21 @@ class ProjectManager {
 
     if (results.success) {
       this.managers.log?.project(project.id, `Services ready: ${results.started.join(', ')}`);
+
+      // If the web server was already running (not just started), reload it to pick up new vhost config
+      // This ensures new projects are accessible without a full service restart
+      if (webServerWasRunning) {
+        try {
+          if (webServer === 'nginx') {
+            await serviceManager.reloadNginx();
+          } else if (webServer === 'apache') {
+            await serviceManager.reloadApache();
+          }
+          this.managers.log?.project(project.id, `Reloaded ${webServer} to pick up new configuration`);
+        } catch (reloadError) {
+          this.managers.log?.systemWarn(`Could not reload ${webServer}`, { error: reloadError.message });
+        }
+      }
     } else {
       this.managers.log?.systemError(`Critical services failed for project ${project.name}`, { failures: results.criticalFailures });
       this.managers.log?.project(project.id, `Service failures: ${results.errors.join('; ')}`, 'error');

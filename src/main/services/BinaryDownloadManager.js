@@ -2501,7 +2501,8 @@ exit 1
   // Run Composer command with specific PHP version
   async runComposer(projectPath, command, phpVersion = '8.3', onOutput = null) {
     const platform = this.getPlatform();
-    const phpPath = path.join(this.resourcesPath, 'php', phpVersion, platform, platform === 'win' ? 'php.exe' : 'php');
+    const phpDir = path.join(this.resourcesPath, 'php', phpVersion, platform);
+    const phpPath = path.join(phpDir, platform === 'win' ? 'php.exe' : 'php');
     const composerPhar = this.getComposerPath();
 
     // Checking PHP path
@@ -2525,10 +2526,16 @@ exit 1
       // Log the command being run
       // Running Composer command
 
+      // Add PHP directory to PATH so Windows can find PHP's DLLs (libssl, libcrypto, etc.)
+      const envPath = platform === 'win'
+        ? `${phpDir};${process.env.PATH || ''}`
+        : `${phpDir}:${process.env.PATH || ''}`;
+
       const proc = spawn(phpPath, args, {
         cwd: projectPath,
         env: {
           ...process.env,
+          PATH: envPath,
           COMPOSER_HOME: path.join(this.resourcesPath, 'composer'),
           COMPOSER_NO_INTERACTION: '1',
         },
