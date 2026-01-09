@@ -287,6 +287,8 @@ contextBridge.exposeInMainWorld('devbox', {
     const validChannels = [
       'project:statusChanged',
       'project:webServerChanged',
+      'project:autoStarting',
+      'project:autoStarted',
       'service:statusChanged',
       'log:newEntry',
       'terminal:output',

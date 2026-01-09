@@ -105,7 +105,7 @@ const WIZARD_STEPS = [
 
 function CreateProject() {
   const navigate = useNavigate();
-  const { createProject, settings } = useApp();
+  const { createProject, settings, refreshProjects } = useApp();
   const [currentStep, setCurrentStep] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
   const [showInstallProgress, setShowInstallProgress] = useState(false);
@@ -249,8 +249,10 @@ function CreateProject() {
     };
 
     // Handle installation complete event - auto redirect to project overview
-    const handleInstallComplete = (event, data) => {
+    const handleInstallComplete = async (event, data) => {
       if (data?.projectId) {
+        // Refresh projects to get updated running status
+        await refreshProjects();
         // Small delay to let user see the success message
         setTimeout(() => {
           setShowInstallProgress(false);
@@ -271,7 +273,7 @@ function CreateProject() {
         cleanupComplete();
       }
     };
-  }, [navigate]); // Add navigate dependency
+  }, [navigate, refreshProjects]); // Add navigate and refreshProjects dependency
 
   // Check available binaries on mount
   useEffect(() => {

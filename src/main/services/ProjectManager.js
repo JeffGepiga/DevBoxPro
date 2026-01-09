@@ -1022,16 +1022,23 @@ class ProjectManager {
       const http = require('http');
 
       await new Promise((resolve, reject) => {
-        const downloadFile = (url, dest) => {
+        const downloadFile = (url, dest, retryWithoutVerify = false) => {
           const file = fs.createWriteStream(dest);
           const protocol = url.startsWith('https') ? https : http;
 
-          const request = protocol.get(url, (response) => {
+          // On Windows, SSL certificate verification can fail. Use agent with fallback.
+          const options = url.startsWith('https') ? {
+            agent: new https.Agent({
+              rejectUnauthorized: !retryWithoutVerify // First try with verification, then without
+            })
+          } : {};
+
+          const request = protocol.get(url, options, (response) => {
             // Handle redirects
             if (response.statusCode === 301 || response.statusCode === 302) {
               file.close();
               fs.unlinkSync(dest);
-              downloadFile(response.headers.location, dest);
+              downloadFile(response.headers.location, dest, retryWithoutVerify);
               return;
             }
 
@@ -1067,6 +1074,16 @@ class ProjectManager {
           request.on('error', (err) => {
             file.close();
             fs.unlink(dest, () => { }); // Delete partial file
+
+            // If SSL certificate error and we haven't retried yet, try without verification
+            if (!retryWithoutVerify && (err.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
+              err.code === 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' ||
+              err.message.includes('certificate') ||
+              err.message.includes('SSL'))) {
+              onOutput('   SSL certificate verification failed, retrying...', 'warning');
+              downloadFile(url, dest, true);
+              return;
+            }
             reject(err);
           });
         };

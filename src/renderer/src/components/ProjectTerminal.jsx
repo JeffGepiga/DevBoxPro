@@ -299,7 +299,14 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
           </button>
           {onClose && (
             <button
-              onClick={onClose}
+              onClick={() => {
+                // Clear output to free memory
+                setOutput([]);
+                setCommandHistory([]);
+                setCommand('');
+                // Then notify parent
+                onClose();
+              }}
               className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded transition-colors"
               title="Close terminal (free memory)"
             >

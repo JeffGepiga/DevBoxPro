@@ -142,6 +142,23 @@ export function AppProvider({ children }) {
       dispatch({ type: 'SET_RESOURCE_USAGE', payload: data });
     });
 
+    // Auto-start loading state listeners
+    window.devbox.on('project:autoStarting', (data) => {
+      // Set loading state for this project
+      dispatch({ type: 'SET_PROJECT_LOADING', payload: { projectId: data.projectId, loadingState: 'starting' } });
+    });
+
+    window.devbox.on('project:autoStarted', (data) => {
+      // Clear loading state for this project
+      dispatch({ type: 'CLEAR_PROJECT_LOADING', payload: data.projectId });
+      // Refresh projects to get updated status
+      window.devbox?.projects?.getAll?.().then(projects => {
+        if (projects) {
+          dispatch({ type: 'SET_PROJECTS', payload: projects });
+        }
+      });
+    });
+
     // Database import/export progress listeners - now with multi-operation support
     const unsubImport = window.devbox?.database.onImportProgress?.((progress) => {
       if (!progress.operationId) return; // Ignore progress without operationId

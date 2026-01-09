@@ -335,9 +335,33 @@ async function startup() {
       if (autoStartProjects.length > 0) {
         for (const project of autoStartProjects) {
           try {
+            // Notify frontend that this project is starting (for loading state)
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('project:autoStarting', {
+                projectId: project.id,
+                projectName: project.name
+              });
+            }
+
             await managers.project.startProject(project.id);
+
+            // Notify frontend that project started successfully
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('project:autoStarted', {
+                projectId: project.id,
+                success: true
+              });
+            }
           } catch (err) {
             managers.log?.systemError(`Failed to auto-start project ${project.name}`, { error: err.message });
+            // Notify frontend about failure
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('project:autoStarted', {
+                projectId: project.id,
+                success: false,
+                error: err.message
+              });
+            }
           }
         }
       }

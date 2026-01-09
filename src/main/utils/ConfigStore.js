@@ -38,7 +38,7 @@ class ConfigStore {
       dataPath,
       settings: {
         autoStartServices: true,
-        autoStartOnLaunch: true,
+        autoStartOnLaunch: false,
         portRangeStart: 8000,
         sslEnabled: true,
         defaultPhpVersion: null,

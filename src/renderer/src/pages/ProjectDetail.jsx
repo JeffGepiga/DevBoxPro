@@ -390,7 +390,7 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
           projectPath={project.path}
           phpVersion={project.phpVersion}
           autoFocus={activeTab === 'terminal'}
-          onClose={onCloseTerminal}
+          onClose={() => setActiveTab('overview')}
         />
       </div>
       {activeTab === 'logs' && <LogsTab logs={logs} onRefresh={loadLogs} projectId={id} />}

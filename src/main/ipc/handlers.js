@@ -518,7 +518,22 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('settings:set', async (event, key, value) => {
-    return config.set(key, value);
+    const result = config.set(key, value);
+
+    // Handle launch on system startup setting
+    if (key === 'settings.autoStartOnLaunch') {
+      try {
+        app.setLoginItemSettings({
+          openAtLogin: value === true,
+          // On macOS, we can hide the app window on startup (optional)
+          // openAsHidden: process.platform === 'darwin' ? false : undefined,
+        });
+      } catch (err) {
+        managers.log?.systemError('Failed to set login item settings', { error: err.message });
+      }
+    }
+
+    return result;
   });
 
   ipcMain.handle('settings:getAll', async () => {
