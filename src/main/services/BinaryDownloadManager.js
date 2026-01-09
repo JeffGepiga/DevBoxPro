@@ -975,7 +975,7 @@ class BinaryDownloadManager {
     }
   }
 
-  async downloadFile(url, destPath, id) {
+  async downloadFile(url, destPath, id, retryWithoutVerify = false) {
     // Ensure the directory exists before downloading
     await fs.ensureDir(path.dirname(destPath));
 
@@ -988,14 +988,24 @@ class BinaryDownloadManager {
       const downloadInfo = { request: null, file, reject, destPath };
       this.activeDownloads.set(id, downloadInfo);
 
-      const request = protocol.get(url, {
+      // Build request options with SSL fallback for Windows
+      const requestOptions = {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'application/octet-stream, application/zip, */*',
           'Accept-Language': 'en-US,en;q=0.9',
           'Host': parsedUrl.host,
         },
-      }, (response) => {
+      };
+
+      // Add SSL fallback agent for Windows certificate issues
+      if (url.startsWith('https')) {
+        requestOptions.agent = new https.Agent({
+          rejectUnauthorized: !retryWithoutVerify
+        });
+      }
+
+      const request = protocol.get(url, requestOptions, (response) => {
         // Handle redirects
         if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307) {
           file.close();
@@ -1061,6 +1071,22 @@ class BinaryDownloadManager {
           cancelError.cancelled = true;
           reject(cancelError);
         } else {
+          // Check if SSL certificate error and retry without verification
+          const isSSLError = err.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
+            err.code === 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' ||
+            err.code === 'CERT_HAS_EXPIRED' ||
+            err.message.includes('certificate') ||
+            err.message.includes('SSL');
+
+          if (!retryWithoutVerify && isSSLError) {
+            this.managers?.log?.systemWarn(`SSL certificate error for ${id}, retrying without verification`, { error: err.message });
+            // Retry download without SSL verification
+            this.downloadFile(url, destPath, id, true)
+              .then(resolve)
+              .catch(reject);
+            return;
+          }
+
           // Provide user-friendly error messages for common network errors
           let userMessage = err.message;
           if (err.code === 'ENOTFOUND') {
@@ -1076,6 +1102,14 @@ class BinaryDownloadManager {
           } else if (err.code === 'EACCES' || err.code === 'EPERM') {
             userMessage = 'Permission denied. Run as administrator or check antivirus.';
           }
+
+          // Log error to system logs
+          this.managers?.log?.systemError(`Download failed for ${id}`, {
+            url,
+            error: err.message,
+            code: err.code
+          });
+
           const networkError = new Error(userMessage);
           networkError.code = err.code;
           networkError.originalError = err.message;
@@ -1338,6 +1372,7 @@ class BinaryDownloadManager {
       if (error.cancelled) {
         return { success: false, cancelled: true };
       }
+      this.managers?.log?.systemError(`Failed to download PHP ${version}`, { error: error.message });
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1546,6 +1581,7 @@ ${extensionLines.join('\n')}
       if (error.cancelled) {
         return { success: false, cancelled: true };
       }
+      this.managers?.log?.systemError(`Failed to download MySQL ${version}`, { error: error.message });
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1580,6 +1616,7 @@ ${extensionLines.join('\n')}
       if (error.cancelled) {
         return { success: false, cancelled: true };
       }
+      this.managers?.log?.systemError(`Failed to download MariaDB ${version}`, { error: error.message });
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1614,6 +1651,7 @@ ${extensionLines.join('\n')}
       if (error.cancelled) {
         return { success: false, cancelled: true };
       }
+      this.managers?.log?.systemError(`Failed to download Redis ${version}`, { error: error.message });
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1648,6 +1686,7 @@ ${extensionLines.join('\n')}
       if (error.cancelled) {
         return { success: false, cancelled: true };
       }
+      this.managers?.log?.systemError('Failed to download Mailpit', { error: error.message });
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1681,6 +1720,7 @@ ${extensionLines.join('\n')}
       if (error.cancelled) {
         return { success: false, cancelled: true };
       }
+      this.managers?.log?.systemError('Failed to download phpMyAdmin', { error: error.message });
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1741,6 +1781,7 @@ $cfg['ServerDefault'] = 1;
       if (error.cancelled) {
         return { success: false, cancelled: true };
       }
+      this.managers?.log?.systemError(`Failed to download Nginx ${version}`, { error: error.message });
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -1886,6 +1927,7 @@ server {
       if (error.cancelled) {
         return { success: false, cancelled: true };
       }
+      this.managers?.log?.systemError(`Failed to download Apache ${version}`, { error: error.message });
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -2350,6 +2392,7 @@ AddType application/x-httpd-php-source .phps
       if (error.cancelled) {
         return { success: false, cancelled: true };
       }
+      this.managers?.log?.systemError(`Failed to download Node.js ${version}`, { error: error.message });
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -2441,6 +2484,7 @@ AddType application/x-httpd-php-source .phps
         path: composerDir,
       };
     } catch (error) {
+      this.managers?.log?.systemError('Failed to download Composer', { error: error.message });
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
@@ -2695,6 +2739,7 @@ exit 1
       if (error.cancelled) {
         return { success: false, cancelled: true };
       }
+      this.managers?.log?.systemError('Failed to download Git', { error: error.message });
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }

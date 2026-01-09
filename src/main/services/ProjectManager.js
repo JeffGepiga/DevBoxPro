@@ -2400,6 +2400,11 @@ class ProjectManager {
       // Reload nginx to pick up config changes
       try {
         await this.managers.service?.reloadNginx();
+        // On Windows, add a small delay to ensure SSL config is fully applied
+        // This fixes issues where nginx serves wrong certificates immediately after reload
+        if (process.platform === 'win32') {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
       } catch (error) {
         this.managers.log?.systemWarn('Could not reload nginx', { error: error.message });
       }
