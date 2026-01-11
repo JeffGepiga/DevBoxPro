@@ -98,6 +98,10 @@ async function createWindow() {
     await mainWindow.loadFile(rendererPath);
   }
 
+  // Update managers with new window reference
+  if (managers.supervisor) managers.supervisor.setMainWindow(mainWindow);
+  if (managers.update) managers.update.setMainWindow(mainWindow);
+
   // Log renderer errors
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     managers.log?.systemError(`Failed to load: ${errorDescription} (${errorCode})`);

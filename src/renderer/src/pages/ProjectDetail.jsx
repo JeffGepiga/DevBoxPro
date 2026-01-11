@@ -1300,8 +1300,8 @@ function WorkersTab({ processes, projectId, onRefresh }) {
   // Subscribe to real-time output
   useEffect(() => {
     const unsubscribe = window.devbox?.supervisor?.onOutput?.((data) => {
-      if (data.projectId === projectId) {
-        const timestamp = new Date(data.timestamp).toLocaleTimeString();
+      if (data.projectId == projectId) {
+        const timestamp = data.timestamp; // Match file log format (ISO)
         const prefix = data.type === 'stderr' ? '[ERR]' : '[OUT]';
         const formattedLine = `[${timestamp}] ${prefix} ${data.output.trim()}`;
 
@@ -1459,7 +1459,7 @@ function WorkersTab({ processes, projectId, onRefresh }) {
       )}
 
       <div className="space-y-4">
-        {processes.map((process) => (
+        {Array.isArray(processes) && processes.map((process) => (
           <div key={process.name} className="card overflow-hidden">
             <div className="p-4">
               <div className="flex items-center justify-between">
