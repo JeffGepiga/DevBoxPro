@@ -2678,21 +2678,6 @@ exit 1
       COMPOSER_NO_INTERACTION: '1',
     };
 
-    // Pre-warm PHP on Windows to force DLL loading before Composer runs
-    // This fixes the 0xC0000135 (DLL not found) error on first run after fresh install
-    if (platform === 'win') {
-      try {
-        await spawnAsync(phpPath, ['-v'], {
-          cwd: projectPath,
-          env: spawnEnv,
-          timeout: 10000,
-        });
-      } catch (warmupError) {
-        // Log but don't fail - the actual command might still work
-        this.managers?.log?.systemWarn('[runComposer] PHP pre-warm failed', { error: warmupError.message });
-      }
-    }
-
     const spawnOptions = {
       cwd: projectPath,
       env: spawnEnv,
