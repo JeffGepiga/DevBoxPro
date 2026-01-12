@@ -2554,6 +2554,7 @@ server {
     error_page 404 /index.php;
 
     location ~ \\.php$ {
+        try_files $uri /index.php?$query_string;
         fastcgi_pass 127.0.0.1:${phpFpmPort};
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
@@ -2628,6 +2629,7 @@ server {
     error_page 404 /index.php;
 
     location ~ \\.php$ {
+        try_files $uri /index.php?$query_string;
         fastcgi_pass 127.0.0.1:${phpFpmPort};
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
