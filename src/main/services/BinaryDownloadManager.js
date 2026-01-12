@@ -10,6 +10,7 @@ const tar = require('tar');
 const AdmZip = require('adm-zip');
 const { exec, spawn } = require('child_process');
 const { Worker } = require('worker_threads');
+const { spawnAsync } = require('../utils/SpawnUtils');
 
 // Import centralized service configuration
 const { SERVICE_VERSIONS, VERSION_PORT_OFFSETS, DEFAULT_PORTS } = require('../../shared/serviceConfig');
@@ -1363,6 +1364,11 @@ class BinaryDownloadManager {
       // Create default php.ini
       await this.createPhpIni(extractPath, version);
 
+      // On Windows, ensure VC++ Runtime DLLs are bundled with PHP
+      if (platform === 'win') {
+        await this.ensureVCRedist(extractPath);
+      }
+
       // Cleanup download
       await fs.remove(downloadPath);
 
@@ -1549,6 +1555,101 @@ ${extensionLines.join('\n')}
       this.managers?.log?.systemWarn('Could not download CA certificate bundle', { error: error.message });
       // Return empty string - PHP will still work but HTTPS may have issues
       return '';
+    }
+  }
+
+  /**
+   * Ensure Visual C++ Runtime DLLs are bundled with PHP on Windows
+   * PHP for Windows requires vcruntime140.dll and related DLLs to run
+   * We try to copy from System32 first, then download from remote as fallback
+   */
+  async ensureVCRedist(phpPath) {
+    // Required VC++ Runtime DLLs for PHP (VS 2015-2022)
+    const requiredDlls = [
+      'vcruntime140.dll',
+      'msvcp140.dll',
+      'vcruntime140_1.dll', // Required for some PHP versions
+    ];
+
+    // Remote URL for VC++ DLLs (hosted on GitHub)
+    const vcRedistBaseUrl = 'https://raw.githubusercontent.com/JeffGepiga/DevBoxPro/main/vcredist';
+
+    // Check if DLLs already exist
+    const missingDlls = [];
+    for (const dll of requiredDlls) {
+      const dllPath = path.join(phpPath, dll);
+      if (!await fs.pathExists(dllPath)) {
+        missingDlls.push(dll);
+      }
+    }
+
+    if (missingDlls.length === 0) {
+      // All DLLs already present
+      return;
+    }
+
+    // Try to copy from Windows System32 first (fastest if available)
+    const system32Path = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
+    const stillMissing = [];
+
+    for (const dll of missingDlls) {
+      const systemDll = path.join(system32Path, dll);
+      const destDll = path.join(phpPath, dll);
+
+      try {
+        if (await fs.pathExists(systemDll)) {
+          await fs.copy(systemDll, destDll);
+          this.managers?.log?.info(`[ensureVCRedist] Copied ${dll} from System32`);
+        } else {
+          stillMissing.push(dll);
+        }
+      } catch (err) {
+        this.managers?.log?.systemWarn(`[ensureVCRedist] Could not copy ${dll} from System32`, { error: err.message });
+        stillMissing.push(dll);
+      }
+    }
+
+    // Download missing DLLs from remote
+    for (const dll of stillMissing) {
+      const destDll = path.join(phpPath, dll);
+      const dllUrl = `${vcRedistBaseUrl}/${dll}`;
+
+      try {
+        this.managers?.log?.info(`[ensureVCRedist] Downloading ${dll} from remote...`);
+
+        await new Promise((resolve, reject) => {
+          const file = createWriteStream(destDll);
+          https.get(dllUrl, (response) => {
+            if (response.statusCode === 200) {
+              response.pipe(file);
+              file.on('finish', () => {
+                file.close();
+                resolve();
+              });
+            } else if (response.statusCode === 302 || response.statusCode === 301) {
+              // Follow redirect
+              https.get(response.headers.location, (res2) => {
+                if (res2.statusCode === 200) {
+                  res2.pipe(file);
+                  file.on('finish', () => {
+                    file.close();
+                    resolve();
+                  });
+                } else {
+                  reject(new Error(`Failed to download ${dll}: ${res2.statusCode}`));
+                }
+              }).on('error', reject);
+            } else {
+              reject(new Error(`Failed to download ${dll}: ${response.statusCode}`));
+            }
+          }).on('error', reject);
+        });
+
+        this.managers?.log?.info(`[ensureVCRedist] Downloaded ${dll} successfully`);
+      } catch (err) {
+        this.managers?.log?.systemWarn(`[ensureVCRedist] Could not download ${dll}`, { error: err.message });
+        // Don't fail completely - PHP might still work if other DLLs are present
+      }
     }
   }
 
@@ -2564,66 +2665,60 @@ exit 1
       throw new Error(error);
     }
 
-    return new Promise((resolve, reject) => {
-      const args = [composerPhar, ...command.split(' ')];
+    const args = [composerPhar, ...command.split(' ')];
 
-      // Log the command being run
-      // Running Composer command
-
-      // Add PHP directory to PATH so Windows can find PHP's DLLs (libssl, libcrypto, etc.)
-      const envPath = platform === 'win'
+    // Build environment with PHP directory in PATH
+    const spawnEnv = {
+      ...process.env,
+      // Add PHP directory to PATH so Windows can find PHP's DLLs
+      PATH: platform === 'win'
         ? `${phpDir};${process.env.PATH || ''}`
-        : `${phpDir}:${process.env.PATH || ''}`;
+        : `${phpDir}:${process.env.PATH || ''}`,
+      COMPOSER_HOME: path.join(this.resourcesPath, 'composer'),
+      COMPOSER_NO_INTERACTION: '1',
+    };
 
-      const proc = spawn(phpPath, args, {
-        cwd: projectPath,
-        env: {
-          ...process.env,
-          PATH: envPath,
-          COMPOSER_HOME: path.join(this.resourcesPath, 'composer'),
-          COMPOSER_NO_INTERACTION: '1',
-        },
-        windowsHide: true,
-      });
+    // Pre-warm PHP on Windows to force DLL loading before Composer runs
+    // This fixes the 0xC0000135 (DLL not found) error on first run after fresh install
+    if (platform === 'win') {
+      try {
+        await spawnAsync(phpPath, ['-v'], {
+          cwd: projectPath,
+          env: spawnEnv,
+          timeout: 10000,
+        });
+      } catch (warmupError) {
+        // Log but don't fail - the actual command might still work
+        this.managers?.log?.systemWarn('[runComposer] PHP pre-warm failed', { error: warmupError.message });
+      }
+    }
 
-      let stdout = '';
-      let stderr = '';
+    const spawnOptions = {
+      cwd: projectPath,
+      env: spawnEnv,
+      onStdout: (text) => onOutput?.(text.trim(), 'stdout'),
+      onStderr: (text) => onOutput?.(text.trim(), 'stderr'),
+    };
 
-      proc.stdout.on('data', (data) => {
-        const text = data.toString();
-        stdout += text;
-        onOutput?.(text.trim(), 'stdout');
-        if (onOutput) {
-          onOutput(text, 'stdout');
-        }
-      });
+    // Use direct PHP spawn for all platforms
+    const spawnCommand = phpPath;
+    const spawnArgs = args;
 
-      proc.stderr.on('data', (data) => {
-        const text = data.toString();
-        stderr += text;
-        onOutput?.(text.trim(), 'stderr');
-        if (onOutput) {
-          onOutput(text, 'stderr');
-        }
-      });
+    try {
+      const { code, error, stderr } = await spawnAsync(spawnCommand, spawnArgs, spawnOptions);
 
-      proc.on('close', (code) => {
-        // Composer process completed
-        if (code === 0) {
-          resolve({ stdout, stderr });
-        } else {
-          const errorMsg = stderr || `Composer exited with code ${code}`;
-          if (onOutput) onOutput(`Process exited with code ${code}`, 'error');
-          reject(new Error(errorMsg));
-        }
-      });
-
-      proc.on('error', (err) => {
-        this.managers?.log?.systemError('[runComposer] Process error', { error: err.message });
-        if (onOutput) onOutput(`Process error: ${err.message}`, 'error');
-        reject(err);
-      });
-    });
+      if (code === 0) {
+        return { stdout: '', stderr: '' }; // Output handled via callbacks
+      } else {
+        const errorMsg = stderr || error?.message || `Composer exited with code ${code}`;
+        if (onOutput) onOutput(`Process exited with code ${code}`, 'error');
+        throw new Error(errorMsg);
+      }
+    } catch (err) {
+      this.managers?.log?.systemError('[runComposer] Process error', { error: err.message });
+      if (onOutput) onOutput(`Process error: ${err.message}`, 'error');
+      throw err;
+    }
   }
 
   // Run npm command with specific Node.js version

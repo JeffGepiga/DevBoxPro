@@ -60,10 +60,12 @@ function spawnAsync(command, args = [], options = {}) {
 
         proc.stdout?.on('data', (data) => {
             stdout += data.toString();
+            if (options.onStdout) options.onStdout(data.toString());
         });
 
         proc.stderr?.on('data', (data) => {
             stderr += data.toString();
+            if (options.onStderr) options.onStderr(data.toString());
         });
 
         proc.on('error', (error) => {
