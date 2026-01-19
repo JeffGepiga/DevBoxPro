@@ -874,8 +874,10 @@ class BinaryDownloadManager {
       const redisExe = platform === 'win' ? 'redis-server.exe' : 'redis-server';
       installed.redis[version] = await fs.pathExists(path.join(redisPath, redisExe));
     }
-    // Also scan for custom Redis versions
-    await this.scanCustomVersions('redis', installed.redis, platform, platform === 'win' ? 'redis-server.exe' : 'redis-server');
+    // Also scan for custom Redis versions using recursive scanner
+    const redisExe = platform === 'win' ? 'redis-server.exe' : 'redis-server';
+    await this.scanBinaryVersionsRecursive('redis', installed.redis, platform, redisExe);
+
 
     // Check Mailpit
     const mailpitPath = path.join(this.resourcesPath, 'mailpit', platform);
@@ -892,8 +894,9 @@ class BinaryDownloadManager {
       const nginxExe = platform === 'win' ? 'nginx.exe' : 'nginx';
       installed.nginx[version] = await fs.pathExists(path.join(nginxPath, nginxExe));
     }
-    // Also scan for custom Nginx versions
-    await this.scanCustomVersions('nginx', installed.nginx, platform, platform === 'win' ? 'nginx.exe' : 'nginx');
+    // Also scan for custom Nginx versions using recursive scanner
+    const nginxExe = platform === 'win' ? 'nginx.exe' : 'nginx';
+    await this.scanBinaryVersionsRecursive('nginx', installed.nginx, platform, nginxExe);
 
     // Check Apache versions
     for (const version of this.versionMeta.apache) {
@@ -910,8 +913,9 @@ class BinaryDownloadManager {
       const nodeExe = platform === 'win' ? 'node.exe' : 'bin/node';
       installed.nodejs[version] = await fs.pathExists(path.join(nodePath, nodeExe));
     }
-    // Also scan for custom Node.js versions
-    await this.scanCustomVersions('nodejs', installed.nodejs, platform, platform === 'win' ? 'node.exe' : 'bin/node');
+    // Also scan for custom Node.js versions using recursive scanner
+    const nodeExe = platform === 'win' ? 'node.exe' : 'node';
+    await this.scanBinaryVersionsRecursive('nodejs', installed.nodejs, platform, nodeExe);
 
     // Check Composer
     const composerPath = path.join(this.resourcesPath, 'composer', 'composer.phar');
@@ -975,6 +979,73 @@ class BinaryDownloadManager {
       this.managers?.log?.systemWarn('Error scanning custom PHP versions', { error: error.message });
     }
   }
+
+  // Universal recursive scanner for binaries that may be in nested directory structures
+  // This handles both standard paths and nested directories from archive extraction
+  // Used for: Redis, Nginx, Node.js, and any other services with potential nesting
+  async scanBinaryVersionsRecursive(serviceName, installedObj, platform, exeName, maxDepth = 2) {
+    try {
+      const serviceDir = path.join(this.resourcesPath, serviceName);
+      if (!await fs.pathExists(serviceDir)) return;
+
+      const dirs = await fs.readdir(serviceDir);
+      for (const dir of dirs) {
+        // Skip if already checked (predefined version) or if it's the platform folder (old structure)
+        if (installedObj[dir] !== undefined || dir === 'win' || dir === 'mac') continue;
+
+        // First check the standard path: {service}/{version}/{platform}/{exeName}
+        const standardPath = path.join(serviceDir, dir, platform, exeName);
+        if (await fs.pathExists(standardPath)) {
+          installedObj[dir] = true;
+          continue;
+        }
+
+        // If not found in standard path, recursively search up to maxDepth levels deep
+        // This handles cases where extraction creates nested directories
+        const versionPlatformDir = path.join(serviceDir, dir, platform);
+        if (await fs.pathExists(versionPlatformDir)) {
+          const found = await this.findExecutableRecursive(versionPlatformDir, exeName, 0, maxDepth);
+          if (found) {
+            installedObj[dir] = true;
+          }
+        }
+      }
+    } catch (error) {
+      this.managers?.log?.systemWarn(`Error scanning ${serviceName} versions`, { error: error.message });
+    }
+  }
+
+  // Recursively search for executable in directory tree
+
+  // maxDepth controls how many levels deep we search (prevents infinite loops)
+  async findExecutableRecursive(dir, exeName, currentDepth, maxDepth) {
+    if (currentDepth > maxDepth) return false;
+
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+
+      // First check if the executable exists in current directory
+      for (const entry of entries) {
+        if (entry.isFile() && entry.name === exeName) {
+          return true;
+        }
+      }
+
+      // If not found, recursively check subdirectories
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const subDir = path.join(dir, entry.name);
+          const found = await this.findExecutableRecursive(subDir, exeName, currentDepth + 1, maxDepth);
+          if (found) return true;
+        }
+      }
+    } catch (error) {
+      // Ignore errors for individual directories (permissions, etc.)
+    }
+
+    return false;
+  }
+
 
   async downloadFile(url, destPath, id, retryWithoutVerify = false) {
     // Ensure the directory exists before downloading
