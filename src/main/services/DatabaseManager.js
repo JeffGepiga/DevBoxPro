@@ -63,6 +63,8 @@ class DatabaseManager {
       operationId: id,
       type: op.type,
       dbName: op.dbName,
+      status: op.status || 'running',
+      error: op.error,
     }));
   }
 
@@ -636,7 +638,8 @@ class DatabaseManager {
         });
 
         // Create SQL processor transform stream to handle generated columns
-        const sqlProcessor = this.createSqlProcessorStream();
+        const capturedVirtualColumns = []; // Store { table, def } for restoration
+        const sqlProcessor = this.createSqlProcessorStream(capturedVirtualColumns);
 
         // Set up the pipeline
         if (isGzipped) {
@@ -668,29 +671,70 @@ class DatabaseManager {
           reject(new Error(`SQL processing error: ${err.message}`));
         });
 
-        proc.on('close', (code) => {
-          this.runningOperations.delete(operationId);
+        proc.on('close', async (code) => {
           if (code === 0) {
-            // Import completed successfully
-            progressCallback?.({ operationId, status: 'complete', message: 'Import completed successfully!', dbName: safeName });
-            resolve({ success: true, operationId });
+            try {
+              // Import successful, now restore virtual columns
+              if (capturedVirtualColumns.length > 0) {
+                progressCallback?.({ operationId, status: 'restoring', message: `Restoring ${capturedVirtualColumns.length} virtual columns...`, dbName: safeName });
+
+                for (const vc of capturedVirtualColumns) {
+                  try {
+                    // We use the same connection/db
+                    await this.runDbQuery(`ALTER TABLE \`${vc.table}\` ADD COLUMN ${vc.def}`, safeName);
+                  } catch (alterErr) {
+                    this.managers.log?.systemWarn(`Failed to restore virtual column for ${vc.table}`, { error: alterErr.message, def: vc.def });
+                    // We continue trying to restore others even if one fails
+                  }
+                }
+              }
+
+              this.runningOperations.delete(operationId);
+              // Import completed successfully
+              progressCallback?.({ operationId, status: 'complete', message: 'Import completed successfully!', dbName: safeName });
+              resolve({ success: true, operationId });
+            } catch (postImportError) {
+              // This is a partial failure - data is in but post-processing failed
+              this.runningOperations.delete(operationId);
+              progressCallback?.({ operationId, status: 'complete', message: 'Import completed with warnings (virtual columns)', dbName: safeName });
+              resolve({ success: true, operationId, warning: postImportError.message });
+            }
           } else if (code === null) {
+            this.runningOperations.delete(operationId);
             // Process was killed (cancelled)
             progressCallback?.({ operationId, status: 'cancelled', message: 'Import cancelled', dbName: safeName });
             resolve({ success: false, cancelled: true, operationId });
           } else {
+            // Error occurred - keep operation in map but mark as failed so UI can still see it
+            // We update the operation object to indicate failure
             const errorMsg = stderr || `Process exited with code ${code}`;
+            const op = this.runningOperations.get(operationId);
+            if (op) {
+              op.status = 'failed';
+              op.error = errorMsg;
+              // Auto-remove after 5 minutes if not manually cleared, to prevent memory leaks
+              setTimeout(() => {
+                this.runningOperations.delete(operationId);
+              }, 5 * 60 * 1000);
+            }
+
             progressCallback?.({ operationId, status: 'error', message: `Import failed: ${errorMsg}`, dbName: safeName });
             reject(new Error(`Import failed: ${errorMsg}`));
           }
         });
 
         proc.on('error', (error) => {
-          this.runningOperations.delete(operationId);
+          // Keep operation on error too
+          const op = this.runningOperations.get(operationId);
+          if (op) {
+            op.status = 'failed';
+            op.error = error.message;
+          }
           progressCallback?.({ operationId, status: 'error', message: `Import error: ${error.message}`, dbName: safeName });
           reject(error);
         });
       } catch (error) {
+        // Here we might not have a proc yet or it failed synchronously
         this.runningOperations.delete(operationId);
         progressCallback?.({ operationId, status: 'error', message: `Import error: ${error.message}`, dbName: safeName });
         reject(error);
@@ -703,13 +747,12 @@ class DatabaseManager {
    * - Tracks CREATE TABLE statements to identify generated columns by POSITION
    * - REMOVES generated column definitions from CREATE TABLE
    * - Modifies INSERT statements to remove values at those positions
+   * @param {Array} capturedVirtualColumns - Optional array to store removed column definitions { table, def }
    */
-  createSqlProcessorStream() {
+  createSqlProcessorStream(capturedVirtualColumns = []) {
     const self = this;
     let buffer = '';
     const generatedColumns = new Map(); // tableName (lowercase) -> array of column indices
-
-    // SQL Processor stream initialized
 
     return new Transform({
       transform(chunk, encoding, callback) {
@@ -747,64 +790,49 @@ class DatabaseManager {
           (match, tableName, tableDefinition, enginePart) => {
             const tableNameLower = tableName.toLowerCase();
 
-            // Split by lines and process
-            const lines = tableDefinition.split('\n');
-            const filteredLines = [];
+            // Use robust tokenizer to split definitions
+            const definitions = self.splitDefinitions(tableDefinition);
+            const filteredDefinitions = [];
             let columnIndex = 0;
             const virtualIndices = [];
 
-            for (let i = 0; i < lines.length; i++) {
-              const line = lines[i];
-              const trimmed = line.trim();
+            for (const def of definitions) {
+              const trimmed = def.trim();
+              if (!trimmed) continue;
 
-              // Skip empty lines
-              if (!trimmed) {
+              // Check if it's a key/constraint (not a column)
+              if (/^(PRIMARY KEY|KEY|UNIQUE KEY|CONSTRAINT|FOREIGN KEY|INDEX|CHECK|FULLTEXT)\b/i.test(trimmed)) {
+                filteredDefinitions.push(trimmed);
                 continue;
               }
 
-              // Keep PRIMARY KEY, KEY, CONSTRAINT, etc. as-is
-              if (/^(PRIMARY KEY|KEY|UNIQUE KEY|CONSTRAINT|FOREIGN KEY|INDEX|CHECK)\b/i.test(trimmed)) {
-                filteredLines.push(trimmed);
-                continue;
-              }
-
-              // Check if this is a column definition
+              // Assume it's a column if it starts with `name`
               const colMatch = trimmed.match(/^`(\w+)`/);
               if (colMatch) {
-                const columnName = colMatch[1];
-
-                // Check if it's a virtual/generated column
-                if (/GENERATED\s+ALWAYS\s+AS|AS\s*\(.*\)\s*(VIRTUAL|STORED)/i.test(trimmed)) {
+                // Check if virtual
+                if (/GENERATED\s+ALWAYS\s+AS/i.test(trimmed) || /AS\s*\(.*\)\s*(VIRTUAL|STORED)/i.test(trimmed)) {
                   virtualIndices.push(columnIndex);
-                  // Removing generated column from CREATE TABLE
+
+                  // Capture for restoration
+                  capturedVirtualColumns.push({
+                    table: tableName,
+                    def: trimmed
+                  });
+
                   columnIndex++;
-                  // Don't add this line
-                  continue;
+                  continue; // Skip this column
                 }
-
                 columnIndex++;
+                filteredDefinitions.push(trimmed);
+              } else {
+                // Fallback: if we can't identify it, keep it
+                filteredDefinitions.push(trimmed);
               }
-
-              filteredLines.push(trimmed);
             }
 
             if (virtualIndices.length > 0) {
               generatedColumns.set(tableNameLower, virtualIndices);
-              // Table has generated columns removed
-
-              // Rebuild with proper commas
-              // Remove trailing commas from all lines first
-              const cleanedLines = filteredLines.map(line => line.replace(/,\s*$/, ''));
-
-              // Add commas to all lines except the last one
-              const finalLines = cleanedLines.map((line, idx) => {
-                if (idx < cleanedLines.length - 1) {
-                  return '  ' + line + ',';
-                }
-                return '  ' + line;
-              });
-
-              const newDefinition = '\n' + finalLines.join('\n') + '\n';
+              const newDefinition = '\n  ' + filteredDefinitions.join(',\n  ') + '\n';
               return `CREATE TABLE \`${tableName}\` (${newDefinition}) ${enginePart}`;
             }
 
@@ -830,10 +858,42 @@ class DatabaseManager {
             continue;
           }
 
-          // Processing INSERT - removing generated column values
-
           const valuesStart = insertRegex.lastIndex;
-          let valuesEnd = toProcess.indexOf(';', valuesStart);
+          let valuesEnd = -1;
+
+          // Find end of values section (wait for semicolon outside strings)
+          let scannerIndex = valuesStart;
+          let inString = false;
+          let stringChar = '';
+
+          while (scannerIndex < toProcess.length) {
+            const char = toProcess[scannerIndex];
+            const nextChar = toProcess[scannerIndex + 1] || '';
+
+            if (inString) {
+              if (char === '\\') { scannerIndex += 2; continue; }
+              if (char === stringChar) {
+                if (nextChar === stringChar) { scannerIndex += 2; continue; }
+                inString = false;
+                scannerIndex++;
+                continue;
+              }
+              scannerIndex++;
+            } else {
+              if (char === "'" || char === '"') {
+                inString = true;
+                stringChar = char;
+                scannerIndex++;
+                continue;
+              }
+              if (char === ';') {
+                valuesEnd = scannerIndex;
+                break;
+              }
+              scannerIndex++;
+            }
+          }
+
           if (valuesEnd === -1) valuesEnd = toProcess.length;
 
           const valuesSection = toProcess.substring(valuesStart, valuesEnd);
@@ -846,7 +906,7 @@ class DatabaseManager {
         result += toProcess.substring(lastIndex);
 
         this.push(result);
-        callback();
+        if (callback) callback();
       },
 
       flush(callback) {
@@ -860,6 +920,72 @@ class DatabaseManager {
   }
 
   /**
+   * Split SQL definitions by comma, respecting parens/quotes
+   */
+  splitDefinitions(sql) {
+    const definitions = [];
+    let current = '';
+    let parenDepth = 0;
+    let inString = false;
+    let stringChar = '';
+
+    for (let i = 0; i < sql.length; i++) {
+      const char = sql[i];
+      const nextChar = sql[i + 1] || '';
+
+      if (inString) {
+        if (char === '\\') {
+          current += char + nextChar;
+          i++;
+          continue;
+        }
+        if (char === stringChar) {
+          if (nextChar === stringChar) {
+            current += char + nextChar;
+            i++;
+            continue;
+          }
+          inString = false;
+        }
+        current += char;
+        continue;
+      }
+
+      // Not in string
+      if (char === "'" || char === '"' || char === '`') {
+        inString = true;
+        stringChar = char;
+        current += char;
+        continue;
+      }
+
+      if (char === '(') {
+        parenDepth++;
+        current += char;
+        continue;
+      }
+      if (char === ')') {
+        parenDepth--;
+        current += char;
+        continue;
+      }
+
+      if (char === ',' && parenDepth === 0) {
+        definitions.push(current);
+        current = '';
+        continue;
+      }
+
+      current += char;
+    }
+
+    if (current.trim()) {
+      definitions.push(current);
+    }
+    return definitions;
+  }
+
+  /**
    * Remove values at specified indices from a VALUES clause
    * Handles multiple value sets: (a,b,c),(d,e,f)
    */
@@ -869,15 +995,9 @@ class DatabaseManager {
     // Parse value sets using proper state machine
     const valueSets = this.parseValueSets(valuesSection);
 
-    // Parsed value sets for column removal
-
     // Process each value set
     const processedSets = valueSets.map((valueSet, setIdx) => {
       const values = this.splitValues(valueSet);
-
-      if (setIdx === 0) {
-        // Processing value set for generated column removal
-      }
 
       // Filter out the generated column indices
       const filteredValues = [];
@@ -885,10 +1005,6 @@ class DatabaseManager {
         if (!indicesToRemove.includes(i)) {
           filteredValues.push(values[i]);
         }
-      }
-
-      if (setIdx === 0) {
-        // Values filtered for generated columns
       }
 
       return '(' + filteredValues.join(',') + ')';
@@ -947,7 +1063,6 @@ class DatabaseManager {
       if (!inString) {
         if (char === '(') {
           if (depth === 0) {
-            // Start of a new value set
             current = '';
           } else {
             current += char;
@@ -960,7 +1075,6 @@ class DatabaseManager {
         if (char === ')') {
           depth--;
           if (depth === 0) {
-            // End of a value set
             valueSets.push(current);
             current = '';
           } else {
