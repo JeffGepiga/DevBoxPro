@@ -47,6 +47,20 @@ function PhpIniEditor({ version, isOpen, onClose }) {
     try {
       await window.devbox?.binaries.savePhpIni(version, content);
       setOriginalContent(content);
+
+      // Auto-restart running projects using this PHP version
+      const allProjects = await window.devbox?.projects.getAll();
+      if (allProjects) {
+        const projectsToRestart = allProjects.filter(p =>
+          p.isRunning && p.phpVersion === version
+        );
+
+        // Restart projects sequentially
+        for (const project of projectsToRestart) {
+          await window.devbox?.projects.restart(project.id);
+        }
+      }
+
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
