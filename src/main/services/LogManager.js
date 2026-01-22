@@ -67,6 +67,16 @@ class LogManager extends EventEmitter {
   }
 
   writeLog(category, level, message, data) {
+    // If logsPath not initialized yet, log to console as fallback
+    if (!this.logsPath) {
+      const logEntry = this.formatLogEntry(level, message, data);
+      if (level === 'error') {
+        console.error(`[${category}] ${logEntry}`);
+      } else {
+        console.log(`[${category}] ${logEntry}`);
+      }
+      return;
+    }
     const logFile = path.join(this.logsPath, `${category}.log`);
     const logEntry = this.formatLogEntry(level, message, data);
     this.appendToLog(logFile, level, logEntry);

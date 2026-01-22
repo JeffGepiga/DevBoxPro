@@ -163,8 +163,8 @@ export function AppProvider({ children }) {
     const unsubImport = window.devbox?.database.onImportProgress?.((progress) => {
       if (!progress.operationId) return; // Ignore progress without operationId
       dispatch({ type: 'SET_DATABASE_OPERATION', payload: { type: 'import', ...progress } });
-      // Auto-clear on complete/error/cancelled after 5 seconds
-      if (['complete', 'error', 'cancelled'].includes(progress.status)) {
+      // Auto-clear on complete/cancelled after 5 seconds, but NOT errors (user must dismiss manually)
+      if (['complete', 'cancelled'].includes(progress.status)) {
         setTimeout(() => {
           dispatch({ type: 'REMOVE_DATABASE_OPERATION', payload: progress.operationId });
         }, 5000);
@@ -173,8 +173,8 @@ export function AppProvider({ children }) {
     const unsubExport = window.devbox?.database.onExportProgress?.((progress) => {
       if (!progress.operationId) return; // Ignore progress without operationId
       dispatch({ type: 'SET_DATABASE_OPERATION', payload: { type: 'export', ...progress } });
-      // Auto-clear on complete/error/cancelled after 5 seconds
-      if (['complete', 'error', 'cancelled'].includes(progress.status)) {
+      // Auto-clear on complete/cancelled after 5 seconds, but NOT errors (user must dismiss manually)
+      if (['complete', 'cancelled'].includes(progress.status)) {
         setTimeout(() => {
           dispatch({ type: 'REMOVE_DATABASE_OPERATION', payload: progress.operationId });
         }, 5000);
