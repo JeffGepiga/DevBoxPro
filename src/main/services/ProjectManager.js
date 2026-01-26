@@ -1507,6 +1507,103 @@ class ProjectManager {
     return { success: true, filesDeleted: deleteFiles };
   }
 
+  /**
+   * Move a project to a new location
+   * @param {string} id - Project ID
+   * @param {string} newPath - New destination path for the project
+   * @returns {Promise<{success: boolean, newPath: string}>}
+   */
+  async moveProject(id, newPath) {
+    const project = this.getProject(id);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+
+    const oldPath = project.path;
+
+    // Validate paths
+    if (!oldPath || !newPath) {
+      throw new Error('Invalid path');
+    }
+
+    // Check if old path exists
+    if (!await fs.pathExists(oldPath)) {
+      throw new Error(`Source path does not exist: ${oldPath}`);
+    }
+
+    // Check if new path already exists
+    if (await fs.pathExists(newPath)) {
+      throw new Error(`Destination path already exists: ${newPath}`);
+    }
+
+    // Stop project if running
+    const wasRunning = this.runningProjects.has(id);
+    if (wasRunning) {
+      this.managers.log?.project(id, `Stopping project before move: ${project.name}`);
+      await this.stopProject(id);
+    }
+
+    // Remove old virtual host configuration
+    try {
+      await this.removeVirtualHost(project);
+    } catch (error) {
+      this.managers.log?.systemWarn('Error removing old virtual host', { project: project.name, error: error.message });
+    }
+
+    // Move the directory
+    try {
+      this.managers.log?.project(id, `Moving project from ${oldPath} to ${newPath}`);
+      
+      // Ensure parent directory exists
+      await fs.ensureDir(path.dirname(newPath));
+      
+      // Move the entire directory
+      await fs.move(oldPath, newPath, { overwrite: false });
+    } catch (error) {
+      this.managers.log?.systemError('Error moving project files', { 
+        project: project.name, 
+        from: oldPath, 
+        to: newPath, 
+        error: error.message 
+      });
+      throw new Error(`Failed to move project files: ${error.message}`);
+    }
+
+    // Update project path in config
+    const projects = this.configStore.get('projects', []);
+    const index = projects.findIndex((p) => p.id === id);
+
+    if (index !== -1) {
+      projects[index] = {
+        ...projects[index],
+        path: newPath,
+        updatedAt: new Date().toISOString(),
+      };
+      this.configStore.set('projects', projects);
+    }
+
+    // Recreate virtual host with new path
+    try {
+      const updatedProject = this.getProject(id);
+      await this.createVirtualHost(updatedProject);
+    } catch (error) {
+      this.managers.log?.systemWarn('Error creating new virtual host', { project: project.name, error: error.message });
+    }
+
+    // Sync CLI projects file
+    await this.syncCliProjectsFile();
+
+    this.managers.log?.project(id, `Project moved successfully to ${newPath}`);
+
+    // Restart project if it was running
+    if (wasRunning) {
+      this.managers.log?.project(id, `Restarting project after move: ${project.name}`);
+      await this.startProject(id);
+    }
+
+    return { success: true, newPath };
+  }
+
   async startProject(id) {
     const project = this.getProject(id);
     if (!project) {

@@ -16,6 +16,7 @@ import {
   RefreshCw,
   FolderSearch,
   FolderPlus,
+  FolderOutput,
   Download,
   X,
   ChevronDown,
@@ -39,6 +40,8 @@ function Projects() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [moveModal, setMoveModal] = useState({ open: false, project: null });
+  const [isMoving, setIsMoving] = useState(false);
 
   const filteredProjects = projects.filter((project) => {
     const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -78,6 +81,51 @@ function Projects() {
     setDeleteModal({ open: false, project: null });
     setDeleteConfirmText('');
     setDeleteFiles(false);
+  };
+
+  const handleMoveClick = (project) => {
+    setMoveModal({ open: true, project });
+  };
+
+  const handleMoveConfirm = async () => {
+    if (!moveModal.project) return;
+
+    try {
+      // Open folder picker dialog
+      const newFolderPath = await window.devbox?.system.selectDirectory();
+      if (!newFolderPath) {
+        return; // User cancelled
+      }
+
+      // The new path should be the selected folder + project folder name
+      const projectFolderName = moveModal.project.path.split(/[\\/]/).pop();
+      const newPath = `${newFolderPath}${newFolderPath.endsWith('\\') || newFolderPath.endsWith('/') ? '' : '\\'}${projectFolderName}`;
+
+      setIsMoving(true);
+      
+      await window.devbox?.projects.move(moveModal.project.id, newPath);
+      
+      setMoveModal({ open: false, project: null });
+      refreshProjects?.();
+      
+      await showAlert({ 
+        title: 'Project Moved', 
+        message: `Project "${moveModal.project.name}" has been moved to:\n${newPath}`, 
+        type: 'success' 
+      });
+    } catch (error) {
+      await showAlert({ 
+        title: 'Error', 
+        message: 'Failed to move project: ' + error.message, 
+        type: 'error' 
+      });
+    } finally {
+      setIsMoving(false);
+    }
+  };
+
+  const handleMoveCancel = () => {
+    setMoveModal({ open: false, project: null });
   };
 
   const handleScanProjects = async () => {
@@ -280,6 +328,7 @@ function Projects() {
               onStart={() => startProject(project.id)}
               onStop={() => stopProject(project.id)}
               onDelete={() => handleDeleteClick(project)}
+              onMove={() => handleMoveClick(project)}
               defaultEditor={settings?.settings?.defaultEditor}
             />
           ))}
@@ -398,6 +447,77 @@ function Projects() {
           </div>
         </div>
       )}
+
+      {/* Move Project Modal */}
+      {moveModal.open && moveModal.project && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <FolderOutput className="w-5 h-5 text-primary-500" />
+                Move Project
+              </h3>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Move <strong className="text-gray-900 dark:text-white">{moveModal.project.name}</strong> to a different location?
+              </p>
+
+              <div className="p-3 mb-4 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Current location:</p>
+                <p className="text-sm font-mono text-gray-700 dark:text-gray-300 break-all">
+                  {moveModal.project.path}
+                </p>
+              </div>
+
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <p className="text-sm text-amber-700 dark:text-amber-400">
+                  ⚠️ All project files will be moved to the new location. The project will be stopped during the move if it's running.
+                </p>
+              </div>
+
+              {moveModal.project.type === 'laravel' && (
+                <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <p className="text-sm text-blue-700 dark:text-blue-400">
+                    💡 <strong>Laravel Note:</strong> After moving, run <code className="px-1 py-0.5 bg-blue-100 dark:bg-blue-800 rounded">composer dump-autoload</code> to update autoload paths.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+              <button
+                onClick={handleMoveCancel}
+                className="btn-secondary"
+                disabled={isMoving}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMoveConfirm}
+                disabled={isMoving}
+                className="btn-primary"
+              >
+                {isMoving ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Moving...
+                  </>
+                ) : (
+                  <>
+                    <FolderOutput className="w-4 h-4" />
+                    Choose Destination
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -435,7 +555,7 @@ function DiscoveredProjectCard({ project, onImport }) {
   );
 }
 
-function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
+function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor }) {
   const { projectLoadingStates, setProjectLoading } = useApp();
   const loadingState = projectLoadingStates[project.id];
   const isStarting = loadingState === 'starting';
@@ -545,6 +665,18 @@ function ProjectCard({ project, onStart, onStop, onDelete, defaultEditor }) {
                   >
                     <Folder className="w-4 h-4" />
                     Open Folder
+                  </button>
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setShowMenu(false);
+                      onMove();
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                  >
+                    <FolderOutput className="w-4 h-4" />
+                    Move Project
                   </button>
                   <button
                     onClick={async (e) => {

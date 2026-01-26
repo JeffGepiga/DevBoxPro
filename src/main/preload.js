@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('devbox', {
     openInEditor: (id, editor) => ipcRenderer.invoke('projects:openInEditor', id, editor),
     openInBrowser: (id) => ipcRenderer.invoke('projects:openInBrowser', id),
     openFolder: (id) => ipcRenderer.invoke('projects:openFolder', id),
+    move: (id, newPath) => ipcRenderer.invoke('projects:move', id, newPath),
     switchWebServer: (id, webServer) => ipcRenderer.invoke('projects:switchWebServer', id, webServer),
     regenerateVhost: (id) => ipcRenderer.invoke('projects:regenerateVhost', id),
     scanUnregistered: () => ipcRenderer.invoke('projects:scanUnregistered'),

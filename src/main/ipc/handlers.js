@@ -169,6 +169,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return true;
   });
 
+  ipcMain.handle('projects:move', async (event, id, newPath) => {
+    return project.moveProject(id, newPath);
+  });
+
   ipcMain.handle('projects:switchWebServer', async (event, id, webServer) => {
     const result = await project.switchWebServer(id, webServer);
     mainWindow?.webContents.send('project:webServerChanged', {
