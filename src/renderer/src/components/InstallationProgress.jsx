@@ -2,8 +2,25 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, CheckCircle, XCircle, Loader2, Wrench } from 'lucide-react';
 import clsx from 'clsx';
 
-function InstallationProgress({ isVisible, output, isComplete, hasError, onClose, onFixManually, projectName }) {
+function InstallationProgress({ isVisible, output, isComplete, hasError, onClose, onFixManually, projectName, projectType }) {
   const outputRef = useRef(null);
+
+  // Get display name for project type
+  const getProjectTypeLabel = (type) => {
+    const labels = {
+      laravel: 'Laravel',
+      wordpress: 'WordPress',
+      drupal: 'Drupal',
+      symfony: 'Symfony',
+      codeigniter: 'CodeIgniter',
+      craft: 'Craft CMS',
+      statamic: 'Statamic',
+      empty: 'PHP',
+    };
+    return labels[type] || type || 'Project';
+  };
+
+  const typeLabel = getProjectTypeLabel(projectType);
 
   useEffect(() => {
     if (outputRef.current) {
@@ -34,13 +51,13 @@ function InstallationProgress({ isVisible, output, isComplete, hasError, onClose
                   ? hasError
                     ? 'Installation Issue'
                     : 'Installation Complete'
-                  : 'Installing Laravel...'}
+                  : `Installing ${typeLabel}...`}
               </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 {isComplete
                   ? hasError
                     ? 'You can fix this manually or retry later'
-                    : 'Your Laravel project is ready'
+                    : `Your ${typeLabel} project is ready`
                   : 'This may take a few minutes...'}
               </p>
             </div>

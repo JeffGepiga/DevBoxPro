@@ -758,23 +758,52 @@ class DatabaseManager {
       transform(chunk, encoding, callback) {
         buffer += chunk.toString('utf8');
 
-        // Find the last complete statement
+        // Find the last complete statement by scanning forward and tracking string state
+        // This ensures we don't split in the middle of a quoted string
         let processUpTo = -1;
+        let inString = false;
+        let stringChar = '';
+        let lastValidSemicolon = -1;
 
-        for (let i = buffer.length - 1; i >= 0; i--) {
-          if (buffer[i] === ';') {
-            const after = buffer.substring(i + 1, i + 20);
-            if (!after || /^[\s\r\n]*($|--|\/\*|INSERT|CREATE|DROP|LOCK|UNLOCK|ALTER|SET)/i.test(after)) {
-              processUpTo = i;
-              break;
+        for (let i = 0; i < buffer.length; i++) {
+          const char = buffer[i];
+          const nextChar = buffer[i + 1] || '';
+
+          if (inString) {
+            // Handle escape sequences
+            if (char === '\\') {
+              i++; // Skip next character (escaped)
+              continue;
+            }
+            // Check for end of string (handle doubled quotes as escape)
+            if (char === stringChar) {
+              if (nextChar === stringChar) {
+                i++; // Skip doubled quote
+                continue;
+              }
+              inString = false;
+            }
+          } else {
+            // Not in string - check for string start or semicolon
+            if (char === "'" || char === '"') {
+              inString = true;
+              stringChar = char;
+            } else if (char === ';') {
+              // Found a semicolon outside of a string - this is a valid statement end
+              const after = buffer.substring(i + 1, i + 20);
+              if (!after || /^[\s\r\n]*($|--|\/\*|INSERT|CREATE|DROP|LOCK|UNLOCK|ALTER|SET)/i.test(after)) {
+                lastValidSemicolon = i;
+              }
             }
           }
         }
 
+        processUpTo = lastValidSemicolon;
+
         if (processUpTo === -1) {
           if (buffer.length > 10 * 1024 * 1024) {
             // Buffer too large, flushing
-            this.push(buffer);
+            this.push(Buffer.from(buffer, 'utf8'));
             buffer = '';
           }
           callback();
@@ -905,14 +934,14 @@ class DatabaseManager {
 
         result += toProcess.substring(lastIndex);
 
-        this.push(result);
+        this.push(Buffer.from(result, 'utf8'));
         if (callback) callback();
       },
 
       flush(callback) {
         if (buffer.trim()) {
           // Flushing remaining buffer
-          this.push(buffer);
+          this.push(Buffer.from(buffer, 'utf8'));
         }
         callback();
       }

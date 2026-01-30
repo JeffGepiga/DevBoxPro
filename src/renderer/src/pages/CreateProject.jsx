@@ -546,6 +546,7 @@ function CreateProject() {
         isComplete={installComplete}
         hasError={installError}
         projectName={formData.name}
+        projectType={formData.type}
         onClose={handleInstallClose}
         onFixManually={createdProject ? handleFixManually : null}
       />
