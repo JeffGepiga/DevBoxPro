@@ -1287,6 +1287,19 @@ function WorkersTab({ processes, projectId, onRefresh }) {
   const [workerLogs, setWorkerLogs] = useState({});
   const [autoRefresh, setAutoRefresh] = useState(true);
 
+  // Auto-expand logs for running processes on mount
+  useEffect(() => {
+    if (processes.length > 0) {
+      const runningProcesses = processes.filter(p => p.isRunning);
+      if (runningProcesses.length > 0) {
+        // Auto-expand the first running process
+        const firstRunning = runningProcesses[0];
+        setExpandedLogs(prev => ({ ...prev, [firstRunning.name]: true }));
+        loadWorkerLogs(firstRunning.name);
+      }
+    }
+  }, [processes.length]); // Only run when process count changes
+
   // Load logs for expanded workers
   const loadWorkerLogs = async (processName) => {
     try {
@@ -1300,10 +1313,10 @@ function WorkersTab({ processes, projectId, onRefresh }) {
   // Subscribe to real-time output
   useEffect(() => {
     const unsubscribe = window.devbox?.supervisor?.onOutput?.((data) => {
-      if (data.projectId == projectId) {
+      // Use strict equality and ensure both are strings for comparison
+      if (String(data.projectId) === String(projectId)) {
         const timestamp = data.timestamp; // Match file log format (ISO)
         const prefix = data.type === 'stderr' ? '[ERR]' : '[OUT]';
-        const formattedLine = `[${timestamp}] ${prefix} ${data.output.trim()}`;
 
         setWorkerLogs(prev => {
           const currentLogs = prev[data.processName] || [];
@@ -1357,8 +1370,14 @@ function WorkersTab({ processes, projectId, onRefresh }) {
     try {
       await window.devbox?.supervisor.addProcess(projectId, newProcess);
       setShowAddForm(false);
+      const processName = newProcess.name;
       setNewProcess({ name: '', command: '', numprocs: 1, autostart: true, autorestart: true });
-      onRefresh();
+      await onRefresh();
+      // Auto-expand logs for the newly added process
+      setTimeout(() => {
+        setExpandedLogs(prev => ({ ...prev, [processName]: true }));
+        loadWorkerLogs(processName);
+      }, 500); // Small delay to ensure process is started
     } catch (error) {
       // Error adding process
     }
@@ -1366,7 +1385,12 @@ function WorkersTab({ processes, projectId, onRefresh }) {
 
   const handleStartProcess = async (name) => {
     await window.devbox?.supervisor.startProcess(projectId, name);
-    onRefresh();
+    await onRefresh();
+    // Auto-expand logs when starting a process
+    setTimeout(() => {
+      setExpandedLogs(prev => ({ ...prev, [name]: true }));
+      loadWorkerLogs(name);
+    }, 300);
   };
 
   const handleStopProcess = async (name) => {
@@ -1559,11 +1583,19 @@ function WorkersTab({ processes, projectId, onRefresh }) {
                       </div>
                     ))
                   ) : (
-                    <p className="text-gray-500">
-                      {process.isRunning
-                        ? 'Waiting for output... Start the worker to see logs here.'
-                        : 'No logs available. Start the worker to begin logging.'}
-                    </p>
+                    <div className="text-gray-500 space-y-2">
+                      {process.isRunning ? (
+                        <>
+                          <p>⏳ Waiting for output...</p>
+                          <p className="text-xs text-gray-600 mt-2">
+                            💡 <strong>Tip:</strong> Laravel queue workers may not show output until a job is processed.
+                            <br />Add <code className="bg-gray-800 px-1 rounded text-gray-300">--verbose</code> or <code className="bg-gray-800 px-1 rounded text-gray-300">-vvv</code> flag to see detailed logs.
+                          </p>
+                        </>
+                      ) : (
+                        <p>No logs available. Start the worker to begin logging.</p>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

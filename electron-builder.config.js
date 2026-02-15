@@ -77,6 +77,10 @@ module.exports = {
     createStartMenuShortcut: true,
     shortcutName: 'DevBox Pro',
     include: 'resources/installer.nsh',
+    artifactName: 'DevBox-Pro-Setup-${version}.${ext}',
+  },
+  portable: {
+    artifactName: 'DevBox-Pro-${version}.${ext}',
   },
   mac: {
     target: [

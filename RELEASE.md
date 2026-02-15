@@ -1,23 +1,28 @@
-# 🚀 DevBox Pro v1.0.2
+# 🚀 DevBox Pro v1.0.3
 
 **Stable Release | Your all-in-one local development environment for PHP**
 
 ---
 
-## 🆕 What's New in v1.0.2
+## 🆕 What's New in v1.0.3
 
 ### ✨ New Features
 
-#### 🔄 Auto-Update System
-- **Check for Updates** – Built-in update checker in Settings → Advanced tab
-- **One-Click Download** – Download new versions directly within the app with progress indicator
-- **Install & Restart** – Seamlessly install updates and restart the application
-- **GitHub Releases Integration** – Updates are fetched securely from GitHub Releases
+#### 🎨 Enhanced Editor Support
+- **More Editor Options** – Added support for popular editors:
+  - Cursor (AI-powered editor)
+  - Antigravity
+  - Zed (high-performance collaborative editor)
+  - WebStorm, IntelliJ IDEA, Rider (JetBrains IDEs)
+  - Notepad++, Nova, and more
+- **Custom Editor Support** – Select "Other (Custom)" to use any code editor
+- **File Browser Integration** – Browse button to select custom editor executable
+- **Full Path Support** – Use either PATH commands or full executable paths
 
 ### 🧹 Improvements
 
-- **Better version display** – Current version shown in the update checker
-- **Download progress** – Real-time progress bar with download speed (MB/s)
+- **Better editor configuration** – Easier to set up your preferred code editor
+- **Platform-specific file filtering** – Automatic filtering for .exe/.cmd/.bat on Windows
 
 ---
 
@@ -88,8 +93,8 @@ npm install              # Uses project's Node.js version
 
 | File | Description |
 |------|-------------|
-| **DevBox Pro Setup 1.0.2.exe** | Installer version (recommended) |
-| **DevBox Pro 1.0.2.exe** | Portable version – no installation required |
+| **DevBox-Pro-Setup-1.0.3.exe** | Installer version (recommended) |
+| **DevBox-Pro-1.0.3.exe** | Portable version – no installation required |
 
 ### System Requirements (Windows)
 - **OS**: Windows 10/11 (64-bit)

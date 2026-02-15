@@ -290,10 +290,60 @@ function GeneralSettings({ settings, updateSetting }) {
           className="select w-full"
         >
           <option value="vscode">Visual Studio Code</option>
+          <option value="cursor">Cursor</option>
+          <option value="antigravity">Antigravity</option>
+          <option value="zed">Zed</option>
           <option value="phpstorm">PhpStorm</option>
+          <option value="webstorm">WebStorm</option>
+          <option value="intellij">IntelliJ IDEA</option>
+          <option value="rider">Rider</option>
           <option value="sublime">Sublime Text</option>
+          <option value="notepadpp">Notepad++</option>
+          <option value="nova">Nova</option>
           <option value="atom">Atom</option>
+          <option value="custom">Other (Custom)</option>
         </select>
+
+        {/* Custom Editor Command Input */}
+        {settings.defaultEditor === 'custom' && (
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Custom Editor Command
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={settings.customEditorCommand || ''}
+                onChange={(e) => updateSetting('customEditorCommand', e.target.value)}
+                placeholder="e.g., code, subl, notepad"
+                className="input flex-1"
+              />
+              <button
+                onClick={async () => {
+                  const isWindows = navigator.platform.toLowerCase().includes('win');
+                  const filters = isWindows
+                    ? [
+                        { name: 'Executable Files', extensions: ['exe', 'cmd', 'bat'] },
+                        { name: 'All Files', extensions: ['*'] }
+                      ]
+                    : [{ name: 'All Files', extensions: ['*'] }];
+                  
+                  const filePath = await window.devbox?.system?.selectFile(filters);
+                  if (filePath) {
+                    updateSetting('customEditorCommand', filePath);
+                  }
+                }}
+                className="btn-secondary whitespace-nowrap"
+              >
+                <Folder className="w-4 h-4" />
+                Browse
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              Enter the command-line executable for your editor (must be in PATH) or browse for the full path
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

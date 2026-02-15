@@ -12,7 +12,6 @@ function ImportProjectModal({ project, onClose, onImport }) {
         type: project.type || 'custom',
         phpVersion: '',
         webServer: 'nginx',
-        database: 'none',
         documentRoot: '', // Custom document root
         ssl: true,
         domain: '',
@@ -100,12 +99,13 @@ function ImportProjectModal({ project, onClose, onImport }) {
                     if (mysqlVersions.length > 0) {
                         setConfig(prev => ({
                             ...prev,
-                            services: { ...prev.services, mysqlVersion: mysqlVersions[0], mysql: true }
+                            services: { ...prev.services, mysqlVersion: mysqlVersions[0] }
                         }));
-                    } else if (mariadbVersions.length > 0) {
+                    }
+                    if (mariadbVersions.length > 0) {
                         setConfig(prev => ({
                             ...prev,
-                            services: { ...prev.services, mariadbVersion: mariadbVersions[0], mariadb: true }
+                            services: { ...prev.services, mariadbVersion: mariadbVersions[0] }
                         }));
                     }
                     if (redisVersions.length > 0) {
@@ -131,13 +131,34 @@ function ImportProjectModal({ project, onClose, onImport }) {
     }, []);
 
     const toggleService = (service) => {
-        setConfig(prev => ({
-            ...prev,
-            services: {
-                ...prev.services,
-                [service]: !prev.services[service],
-            },
-        }));
+        // Handle mutually exclusive databases
+        if (service === 'mysql' && !config.services.mysql) {
+            setConfig(prev => ({
+                ...prev,
+                services: {
+                    ...prev.services,
+                    mysql: true,
+                    mariadb: false, // Turn off MariaDB
+                },
+            }));
+        } else if (service === 'mariadb' && !config.services.mariadb) {
+            setConfig(prev => ({
+                ...prev,
+                services: {
+                    ...prev.services,
+                    mariadb: true,
+                    mysql: false, // Turn off MySQL
+                },
+            }));
+        } else {
+            setConfig(prev => ({
+                ...prev,
+                services: {
+                    ...prev.services,
+                    [service]: !prev.services[service],
+                },
+            }));
+        }
     };
 
     const handleSubmit = async (e) => {
@@ -158,10 +179,12 @@ function ImportProjectModal({ project, onClose, onImport }) {
     const hasNoWebServer = installedWebServers.nginx.length === 0 && installedWebServers.apache.length === 0;
 
     // Count available optional services
+    const hasMysql = installedDatabases.mysql.length > 0;
+    const hasMariadb = installedDatabases.mariadb.length > 0;
     const hasRedis = installedRedis.length > 0;
     const hasNodejs = installedNodejs.length > 0;
     const isLaravel = config.type === 'laravel';
-    const hasAnyOptionalService = hasRedis || hasNodejs || isLaravel;
+    const hasAnyOptionalService = hasMysql || hasMariadb || hasRedis || hasNodejs || isLaravel;
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -334,6 +357,78 @@ function ImportProjectModal({ project, onClose, onImport }) {
 
                                     {showServices && (
                                         <div className="p-4 space-y-4">
+                                            {/* Database Section */}
+                                            {(hasMysql || hasMariadb) && (
+                                                <div className="pb-4 border-b border-gray-200 dark:border-gray-700">
+                                                    <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-3">Database (choose one)</p>
+                                                    <div className="space-y-3">
+                                                        {/* MySQL */}
+                                                        {hasMysql && (
+                                                            <div className="space-y-2">
+                                                                <label className="flex items-center gap-3 cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={config.services.mysql}
+                                                                        onChange={() => toggleService('mysql')}
+                                                                        className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                                                    />
+                                                                    <div className="flex-1">
+                                                                        <span className="text-sm font-medium text-gray-900 dark:text-white">MySQL</span>
+                                                                        <p className="text-xs text-gray-500">Relational database</p>
+                                                                    </div>
+                                                                </label>
+                                                                {config.services.mysql && (
+                                                                    <select
+                                                                        value={config.services.mysqlVersion}
+                                                                        onChange={(e) => setConfig(prev => ({
+                                                                            ...prev,
+                                                                            services: { ...prev.services, mysqlVersion: e.target.value }
+                                                                        }))}
+                                                                        className="select text-sm ml-7"
+                                                                    >
+                                                                        {installedDatabases.mysql.map((version) => (
+                                                                            <option key={version} value={version}>MySQL {version}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* MariaDB */}
+                                                        {hasMariadb && (
+                                                            <div className="space-y-2">
+                                                                <label className="flex items-center gap-3 cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={config.services.mariadb}
+                                                                        onChange={() => toggleService('mariadb')}
+                                                                        className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                                                    />
+                                                                    <div className="flex-1">
+                                                                        <span className="text-sm font-medium text-gray-900 dark:text-white">MariaDB</span>
+                                                                        <p className="text-xs text-gray-500">MySQL-compatible database</p>
+                                                                    </div>
+                                                                </label>
+                                                                {config.services.mariadb && (
+                                                                    <select
+                                                                        value={config.services.mariadbVersion}
+                                                                        onChange={(e) => setConfig(prev => ({
+                                                                            ...prev,
+                                                                            services: { ...prev.services, mariadbVersion: e.target.value }
+                                                                        }))}
+                                                                        className="select text-sm ml-7"
+                                                                    >
+                                                                        {installedDatabases.mariadb.map((version) => (
+                                                                            <option key={version} value={version}>MariaDB {version}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+
                                             {/* Redis */}
                                             {hasRedis && (
                                                 <div className="space-y-2">

@@ -94,17 +94,38 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
     const editorConfigs = {
       vscode: { command: 'code', name: 'Visual Studio Code' },
+      cursor: { command: 'cursor', name: 'Cursor' },
+      antigravity: { command: 'antigravity', name: 'Antigravity' },
+      zed: { command: 'zed', name: 'Zed' },
       phpstorm: { command: 'phpstorm', name: 'PhpStorm' },
+      webstorm: { command: 'webstorm', name: 'WebStorm' },
+      intellij: { command: 'idea', name: 'IntelliJ IDEA' },
+      rider: { command: 'rider', name: 'Rider' },
       sublime: { command: 'subl', name: 'Sublime Text' },
+      notepadpp: { command: 'notepad++', name: 'Notepad++' },
+      nova: { command: 'nova', name: 'Nova' },
+      atom: { command: 'atom', name: 'Atom' },
     };
 
-    const config = editorConfigs[editor] || editorConfigs.vscode;
+    let editorConfig;
+    
+    // Handle custom editor
+    if (editor === 'custom') {
+      const customCommand = config.get('settings.customEditorCommand');
+      if (!customCommand || customCommand.trim() === '') {
+        throw new Error('Custom editor command not configured. Please set a custom editor command in Settings.');
+      }
+      editorConfig = { command: customCommand.trim(), name: 'Custom Editor' };
+    } else {
+      editorConfig = editorConfigs[editor] || editorConfigs.vscode;
+    }
+    
     const { spawn } = require('child_process');
     const { commandExists } = require('../utils/SpawnUtils');
 
     // Check if the editor command is available (uses spawn, no CMD window)
-    if (!commandExists(config.command)) {
-      throw new Error(`${config.name} is not installed or not in your system PATH. Please install ${config.name} or choose a different editor in Settings.`);
+    if (!commandExists(editorConfig.command)) {
+      throw new Error(`${editorConfig.name} is not installed or not in your system PATH. Please install ${editorConfig.name} or choose a different editor in Settings.`);
     }
 
     // Spawn the editor directly
@@ -117,7 +138,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
         // On Windows, 'code' is actually 'code.cmd' batch script, so we need shell: true
         // Combined with windowsHide: true, this prevents the CMD window flash
-        const child = spawn(config.command, [projectData.path], {
+        const child = spawn(editorConfig.command, [projectData.path], {
           detached: true,
           stdio: 'ignore',
           windowsHide: true,

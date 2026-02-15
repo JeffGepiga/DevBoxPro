@@ -132,7 +132,9 @@ class SupervisorManager {
     // Handle PHP-based commands
     if (command.startsWith('php ')) {
       command = phpPath;
-      args = config.command.substring(4).split(' ');
+      const commandArgs = config.command.substring(4).split(' ');
+      // Add -d output_buffering=0 to disable output buffering for real-time logs
+      args = ['-d', 'output_buffering=0', ...commandArgs];
     } else {
       const parts = config.command.split(' ');
       command = parts[0];
@@ -156,6 +158,9 @@ class SupervisorManager {
             ...process.env,
             ...project.environment,
             ...config.environment,
+            // Force unbuffered output for real-time logs
+            PYTHONUNBUFFERED: '1',
+            NODE_NO_READLINE: '1',
           },
           stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -196,6 +201,9 @@ class SupervisorManager {
             ...process.env,
             ...project.environment,
             ...config.environment,
+            // Force unbuffered output for real-time logs
+            PYTHONUNBUFFERED: '1',
+            NODE_NO_READLINE: '1',
           },
           stdio: ['ignore', 'pipe', 'pipe'],
           detached: true,

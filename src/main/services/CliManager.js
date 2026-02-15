@@ -115,8 +115,8 @@ class CliManager {
 
     const projectsFilePath = this.getProjectsFilePath();
     await fs.writeJson(projectsFilePath, projectMappings, { spaces: 2 });
-    // Projects file synced
-
+    
+    // Return the path for logging purposes
     return projectsFilePath;
   }
 
@@ -1321,8 +1321,16 @@ set "CURRENT_DIR=%CD%"
 REM Create temp PowerShell script to find project PHP version
 set "TEMP_PS=%TEMP%\\devbox_php_lookup.ps1"
 echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
-echo $d = '%CURRENT_DIR%'.ToLower() >> "%TEMP_PS%"
-echo foreach($prop in $p.PSObject.Properties){ $pp = $prop.Name.ToLower(); if($d.StartsWith($pp)){ $prop.Value.phpVersion; exit } } >> "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo $best = $null >> "%TEMP_PS%"
+echo $bestLen = 0 >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ >> "%TEMP_PS%"
+echo   $pp = $prop.Name.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo   if($d -eq $pp -or $d.StartsWith($pp + '\\')){ >> "%TEMP_PS%"
+echo     if($pp.Length -gt $bestLen){ $best = $prop.Value; $bestLen = $pp.Length } >> "%TEMP_PS%"
+echo   } >> "%TEMP_PS%"
+echo } >> "%TEMP_PS%"
+echo if($best -and $best.phpVersion){ $best.phpVersion } >> "%TEMP_PS%"
 
 set "PHP_VERSION="
 for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (
@@ -1357,8 +1365,16 @@ set "CURRENT_DIR=%CD%"
 REM Create temp PowerShell script to find project Node version
 set "TEMP_PS=%TEMP%\\devbox_node_lookup.ps1"
 echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
-echo $d = '%CURRENT_DIR%'.ToLower() >> "%TEMP_PS%"
-echo foreach($prop in $p.PSObject.Properties){ $pp = $prop.Name.ToLower(); if($d.StartsWith($pp) -and $prop.Value.nodejsVersion){ $prop.Value.nodejsVersion; exit } } >> "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo $best = $null >> "%TEMP_PS%"
+echo $bestLen = 0 >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ >> "%TEMP_PS%"
+echo   $pp = $prop.Name.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo   if($d -eq $pp -or $d.StartsWith($pp + '\\')){ >> "%TEMP_PS%"
+echo     if($pp.Length -gt $bestLen){ $best = $prop.Value; $bestLen = $pp.Length } >> "%TEMP_PS%"
+echo   } >> "%TEMP_PS%"
+echo } >> "%TEMP_PS%"
+echo if($best -and $best.nodejsVersion){ $best.nodejsVersion } >> "%TEMP_PS%"
 
 set "NODE_VERSION="
 for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (
@@ -1394,8 +1410,16 @@ set "CURRENT_DIR=%CD%"
 REM Create temp PowerShell script to find project Node version
 set "TEMP_PS=%TEMP%\\devbox_npm_lookup.ps1"
 echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
-echo $d = '%CURRENT_DIR%'.ToLower() >> "%TEMP_PS%"
-echo foreach($prop in $p.PSObject.Properties){ $pp = $prop.Name.ToLower(); if($d.StartsWith($pp) -and $prop.Value.nodejsVersion){ $prop.Value.nodejsVersion; exit } } >> "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo $best = $null >> "%TEMP_PS%"
+echo $bestLen = 0 >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ >> "%TEMP_PS%"
+echo   $pp = $prop.Name.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo   if($d -eq $pp -or $d.StartsWith($pp + '\\')){ >> "%TEMP_PS%"
+echo     if($pp.Length -gt $bestLen){ $best = $prop.Value; $bestLen = $pp.Length } >> "%TEMP_PS%"
+echo   } >> "%TEMP_PS%"
+echo } >> "%TEMP_PS%"
+echo if($best -and $best.nodejsVersion){ $best.nodejsVersion } >> "%TEMP_PS%"
 
 set "NODE_VERSION="
 for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (
@@ -1430,8 +1454,16 @@ set "CURRENT_DIR=%CD%"
 REM Create temp PowerShell script to find project Node version
 set "TEMP_PS=%TEMP%\\devbox_npx_lookup.ps1"
 echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
-echo $d = '%CURRENT_DIR%'.ToLower() >> "%TEMP_PS%"
-echo foreach($prop in $p.PSObject.Properties){ $pp = $prop.Name.ToLower(); if($d.StartsWith($pp) -and $prop.Value.nodejsVersion){ $prop.Value.nodejsVersion; exit } } >> "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo $best = $null >> "%TEMP_PS%"
+echo $bestLen = 0 >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ >> "%TEMP_PS%"
+echo   $pp = $prop.Name.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo   if($d -eq $pp -or $d.StartsWith($pp + '\\')){ >> "%TEMP_PS%"
+echo     if($pp.Length -gt $bestLen){ $best = $prop.Value; $bestLen = $pp.Length } >> "%TEMP_PS%"
+echo   } >> "%TEMP_PS%"
+echo } >> "%TEMP_PS%"
+echo if($best -and $best.nodejsVersion){ $best.nodejsVersion } >> "%TEMP_PS%"
 
 set "NODE_VERSION="
 for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (
@@ -1466,8 +1498,16 @@ set "CURRENT_DIR=%CD%"
 REM Create temp PowerShell script to find project PHP version
 set "TEMP_PS=%TEMP%\\devbox_composer_lookup.ps1"
 echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
-echo $d = '%CURRENT_DIR%'.ToLower() >> "%TEMP_PS%"
-echo foreach($prop in $p.PSObject.Properties){ $pp = $prop.Name.ToLower(); if($d.StartsWith($pp)){ $prop.Value.phpVersion; exit } } >> "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo $best = $null >> "%TEMP_PS%"
+echo $bestLen = 0 >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ >> "%TEMP_PS%"
+echo   $pp = $prop.Name.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo   if($d -eq $pp -or $d.StartsWith($pp + '\\')){ >> "%TEMP_PS%"
+echo     if($pp.Length -gt $bestLen){ $best = $prop.Value; $bestLen = $pp.Length } >> "%TEMP_PS%"
+echo   } >> "%TEMP_PS%"
+echo } >> "%TEMP_PS%"
+echo if($best -and $best.phpVersion){ $best.phpVersion } >> "%TEMP_PS%"
 
 set "PHP_VERSION="
 for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (

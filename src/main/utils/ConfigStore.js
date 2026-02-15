@@ -43,6 +43,7 @@ class ConfigStore {
         sslEnabled: true,
         defaultPhpVersion: null,
         defaultEditor: 'vscode',
+        customEditorCommand: '',
         theme: 'system',
         phpMyAdminPort: 8080,
         mailpitPort: 8025,

@@ -92,11 +92,13 @@ class ProjectManager {
   async syncCliProjectsFile() {
     const cli = this.managers.cli;
     if (!cli) {
+      this.managers.log?.systemWarn('CLI Manager not initialized, skipping CLI sync');
       return;
     }
 
     try {
-      await cli.syncProjectsFile();
+      const syncedPath = await cli.syncProjectsFile();
+      this.managers.log?.systemInfo(`CLI projects file synced: ${syncedPath}`);
 
       // Auto-initialize terminal commands if enabled and not yet set up
       if (cli.getDirectShimsEnabled()) {
@@ -110,7 +112,8 @@ class ProjectManager {
         }
       }
     } catch (error) {
-      this.managers.log?.systemWarn('Could not sync CLI projects file', { error: error.message });
+      // Log but don't throw - CLI sync is not critical to project operation
+      this.managers.log?.systemError('Failed to sync CLI projects file', { error: error.message, stack: error.stack });
     }
   }
 
