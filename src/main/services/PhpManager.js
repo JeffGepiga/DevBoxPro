@@ -12,7 +12,7 @@ class PhpManager {
   }
 
   async initialize() {
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const phpBasePath = path.join(this.resourcePath, 'php');
 
     // Discover available PHP versions

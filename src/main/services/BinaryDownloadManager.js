@@ -386,7 +386,9 @@ class BinaryDownloadManager {
   }
 
   getPlatform() {
-    return process.platform === 'win32' ? 'win' : 'mac';
+    if (process.platform === 'win32') return 'win';
+    if (process.platform === 'darwin') return 'mac';
+    return 'linux';
   }
 
   // Fetch remote config from GitHub to check for binary updates

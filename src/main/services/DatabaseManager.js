@@ -1527,7 +1527,7 @@ class DatabaseManager {
   // Get the client path based on active database type and running version
   getDbClientPath() {
     const dbType = this.getActiveDatabaseType();
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const binName = process.platform === 'win32' ? 'mysql.exe' : 'mysql';
 
     // Get the running version from ServiceManager
@@ -1576,7 +1576,7 @@ class DatabaseManager {
   // Get the dump path based on active database type and running version
   getDbDumpPath() {
     const dbType = this.getActiveDatabaseType();
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const binName = process.platform === 'win32' ? 'mysqldump.exe' : 'mysqldump';
 
     // Get the running version from ServiceManager

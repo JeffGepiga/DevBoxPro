@@ -92,6 +92,18 @@ class SslManager {
             resolve();
           });
         });
+      } else {
+        // Linux: Copy to system trust store and update
+        const sudo = require('sudo-prompt');
+        const options = { name: 'DevBox Pro' };
+        const certDest = `/usr/local/share/ca-certificates/devbox-pro-ca.crt`;
+        const command = `cp "${caCertPath}" "${certDest}" && update-ca-certificates`;
+
+        return new Promise((resolve) => {
+          sudo.exec(command, options, () => {
+            resolve();
+          });
+        });
       }
     } catch (error) {
       // Could not automatically trust Root CA - user will need to do it manually
@@ -344,6 +356,25 @@ class SslManager {
             }
           });
         });
+      } else {
+        // Linux: Copy to system trust store and update
+        const sudo = require('sudo-prompt');
+        const certDest = `/usr/local/share/ca-certificates/devbox-pro-ca.crt`;
+        const command = `cp "${caCertPath}" "${certDest}" && update-ca-certificates`;
+
+        return new Promise((resolve) => {
+          sudo.exec(command, { name: 'DevBox Pro' }, (error) => {
+            if (error) {
+              resolve({
+                success: false,
+                error: error.message,
+                manual: this.getTrustInstructions(),
+              });
+            } else {
+              resolve({ success: true, message: 'Certificate trusted successfully' });
+            }
+          });
+        });
       }
 
       return { success: true, message: 'Certificate trusted successfully' };
@@ -374,9 +405,14 @@ class SslManager {
 4. Choose "Place all certificates in the following store"
 5. Browse and select "Trusted Root Certification Authorities"
 6. Click "Finish"`;
+    } else {
+      return `To trust the DevBox Pro certificate manually (Linux):
+1. Copy the certificate to the system trust store:
+   sudo cp "${caCertPath}" /usr/local/share/ca-certificates/devbox-pro-ca.crt
+2. Update the CA store:
+   sudo update-ca-certificates
+3. For Firefox, you may need to import it manually via Settings > Privacy & Security > Certificates > Import`;
     }
-
-    return 'Please consult your OS documentation for trusting SSL certificates.';
   }
 
   listCertificates() {

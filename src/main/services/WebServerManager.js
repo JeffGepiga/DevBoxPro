@@ -26,7 +26,7 @@ class WebServerManager {
 
 
   getPlatform() {
-    return process.platform === 'win32' ? 'win' : 'mac';
+    return process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
   }
 
   setServerType(type) {

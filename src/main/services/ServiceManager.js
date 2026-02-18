@@ -815,7 +815,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
   // Nginx
   async startNginx(version = '1.28') {
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const nginxPath = this.getNginxPath(version);
     const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'nginx');
 
@@ -1078,7 +1078,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       version = status?.version || '1.28';
     }
 
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const nginxPath = this.getNginxPath(version);
     const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'sbin/nginx');
     const dataPath = path.join(app.getPath('userData'), 'data');
@@ -1123,7 +1123,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       version = status?.version || '2.4';
     }
 
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const apachePath = this.getApachePath(version);
     const httpdExe = path.join(apachePath, 'bin', process.platform === 'win32' ? 'httpd.exe' : 'httpd');
     const dataPath = path.join(app.getPath('userData'), 'data');
@@ -1173,7 +1173,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
   async createNginxConfig(confPath, logsPath, httpPort = 80, sslPort = 443, version = '1.28') {
     const dataPath = path.join(app.getPath('userData'), 'data');
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     // Use getNginxPath to get the correct versioned path
     const nginxPath = this.getNginxPath(version);
     const mimeTypesPath = path.join(nginxPath, 'conf', 'mime.types').replace(/\\/g, '/');
@@ -1230,7 +1230,7 @@ http {
 
   // Apache
   async startApache(version = '2.4') {
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const apachePath = this.getApachePath(version);
     const httpdExe = path.join(apachePath, 'bin', process.platform === 'win32' ? 'httpd.exe' : 'httpd');
 
@@ -2130,7 +2130,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 
   // MariaDB
   async startMariaDB(version = '11.4') {
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const mariadbPath = this.getMariaDBPath(version);
     const mariadbd = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
 
@@ -2807,41 +2807,41 @@ ${servers.join('')}
   // Utility methods - Path helpers for versioned services
   getNginxPath(version) {
     const v = version || '1.28';
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     return path.join(this.resourcePath, 'nginx', v, platform);
   }
 
   getApachePath(version) {
     const v = version || '2.4';
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     return path.join(this.resourcePath, 'apache', v, platform);
   }
 
   getMySQLPath(version) {
     const v = version || '8.4';
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     return path.join(this.resourcePath, 'mysql', v, platform);
   }
 
   getMariaDBPath(version) {
     const v = version || '11.4';
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     return path.join(this.resourcePath, 'mariadb', v, platform);
   }
 
   getRedisPath(version) {
     const v = version || '7.4';
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     return path.join(this.resourcePath, 'redis', v, platform);
   }
 
   getMailpitPath() {
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     return path.join(this.resourcePath, 'mailpit', platform);
   }
 
   getPhpMyAdminPath() {
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     return path.join(this.resourcePath, 'phpmyadmin', platform);
   }
 

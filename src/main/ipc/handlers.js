@@ -1089,7 +1089,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   // PHP.ini handlers
   ipcMain.handle('binaries:getPhpIni', async (event, version) => {
     if (!managers.binaryDownload) return null;
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const phpPath = path.join(managers.binaryDownload.resourcesPath, 'php', version, platform);
     const iniPath = path.join(phpPath, 'php.ini');
 
@@ -1101,7 +1101,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('binaries:savePhpIni', async (event, version, content) => {
     if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const phpPath = path.join(managers.binaryDownload.resourcesPath, 'php', version, platform);
     const iniPath = path.join(phpPath, 'php.ini');
 
@@ -1111,7 +1111,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('binaries:resetPhpIni', async (event, version) => {
     if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const phpPath = path.join(managers.binaryDownload.resourcesPath, 'php', version, platform);
 
     await managers.binaryDownload.createPhpIni(phpPath, version);
@@ -1189,7 +1189,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
       // Parse command for PHP/Composer handling
       let cmd, args;
-      const platform = process.platform === 'win32' ? 'win' : 'mac';
+      const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
       const resourcePath = config.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
       const phpExe = platform === 'win' ? 'php.exe' : 'php';
       const phpBinary = path.join(resourcePath, 'php', phpVersion, platform, phpExe);

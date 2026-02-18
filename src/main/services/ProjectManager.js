@@ -193,7 +193,7 @@ class ProjectManager {
     const phpVersion = config.phpVersion || '8.3';
     const { app } = require('electron');
     const resourcePath = this.configStore.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
     const phpExe = platform === 'win' ? 'php.exe' : 'php';
     const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
@@ -477,7 +477,7 @@ class ProjectManager {
           sendOutput('$ php artisan optimize', 'command');
 
           const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
-          const platform = process.platform === 'win32' ? 'win' : 'mac';
+          const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
           const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
           const phpDir = path.join(resourcePath, 'php', project.phpVersion, platform);
           const phpPath = path.join(phpDir, phpExe);
@@ -661,7 +661,7 @@ class ProjectManager {
       sendOutput('$ php artisan key:generate', 'command');
 
       const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
-      const platform = process.platform === 'win32' ? 'win' : 'mac';
+      const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
       const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
       const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
       const phpPath = path.join(phpDir, phpExe);
@@ -702,7 +702,7 @@ class ProjectManager {
           sendOutput('Installing npm packages...', 'info');
           sendOutput('$ npm install', 'command');
 
-          const platform = process.platform === 'win32' ? 'win' : 'mac';
+          const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
           const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
           const nodeDir = path.join(resourcePath, 'nodejs', nodejsVersion, platform);
 
@@ -871,7 +871,7 @@ class ProjectManager {
       onOutput('$ php artisan key:generate', 'command');
 
       const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
-      const platform = process.platform === 'win32' ? 'win' : 'mac';
+      const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
       const resourcePath = this.configStore.get('resourcePath') || require('path').join(require('electron').app.getPath('userData'), 'resources');
       const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
       const phpPath = path.join(phpDir, phpExe);
@@ -921,7 +921,7 @@ class ProjectManager {
           onOutput('$ npm install', 'command');
 
           // Use selected Node.js version
-          const platform = process.platform === 'win32' ? 'win' : 'mac';
+          const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
           const resourcePath = this.configStore.get('resourcePath') || require('path').join(require('electron').app.getPath('userData'), 'resources');
           const nodeDir = path.join(resourcePath, 'nodejs', nodejsVersion, platform);
 
@@ -1705,7 +1705,7 @@ class ProjectManager {
     const missing = [];
     const { app } = require('electron');
     const resourcePath = this.configStore.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
 
     // Check PHP version - check filesystem directly for both php and php-cgi
     const phpVersion = project.phpVersion || '8.3';
@@ -1790,7 +1790,7 @@ class ProjectManager {
     const phpVersion = project.phpVersion || '8.3';
     const { app } = require('electron');
     const resourcePath = this.configStore.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
 
     // Check if PHP version is available - check filesystem directly
     const phpExe = platform === 'win' ? 'php.exe' : 'php';
@@ -2526,7 +2526,7 @@ class ProjectManager {
     const resourcesPath = path.join(app.getPath('userData'), 'resources');
     const sitesDir = path.join(dataPath, 'nginx', 'sites');
     const sslDir = path.join(dataPath, 'ssl', project.domain);
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     let nginxVersion = project.webServerVersion || '1.28';
 
     // Validate that the nginx version exists, fall back to available version if not
@@ -2835,7 +2835,7 @@ server {
 
     // Get PHP-CGI path for this PHP version
     const phpVersion = project.phpVersion || '8.4';
-    const platform = process.platform === 'win32' ? 'win' : 'mac';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const resourcesPath = path.join(app.getPath('userData'), 'resources');
     const phpCgiPath = path.join(resourcesPath, 'php', phpVersion, platform, 'php-cgi.exe').replace(/\\/g, '/');
 

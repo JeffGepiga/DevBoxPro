@@ -20,6 +20,10 @@
           "url": "https://github.com/shivammathur/php-builder/releases/download/8.4.16/php-8.4.16-darwin-arm64.tar.gz",
           "filename": "php-8.4.16-darwin-arm64.tar.gz"
         },
+        "linux": {
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.4.16/php-8.4.16-linux-x86_64.tar.gz",
+          "filename": "php-8.4.16-linux-x86_64.tar.gz"
+        },
         "label": "Latest"
       },
       "8.3": {
@@ -31,6 +35,10 @@
           "url": "https://github.com/shivammathur/php-builder/releases/download/8.3.29/php-8.3.29-darwin-arm64.tar.gz",
           "filename": "php-8.3.29-darwin-arm64.tar.gz"
         },
+        "linux": {
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.3.29/php-8.3.29-linux-x86_64.tar.gz",
+          "filename": "php-8.3.29-linux-x86_64.tar.gz"
+        },
         "label": "LTS"
       },
       "8.2": {
@@ -41,6 +49,10 @@
         "mac": {
           "url": "https://github.com/shivammathur/php-builder/releases/download/8.2.30/php-8.2.30-darwin-arm64.tar.gz",
           "filename": "php-8.2.30-darwin-arm64.tar.gz"
+        },
+        "linux": {
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.2.30/php-8.2.30-linux-x86_64.tar.gz",
+          "filename": "php-8.2.30-linux-x86_64.tar.gz"
         }
       },
       "8.1": {
@@ -51,6 +63,10 @@
         "mac": {
           "url": "https://github.com/shivammathur/php-builder/releases/download/8.1.34/php-8.1.34-darwin-arm64.tar.gz",
           "filename": "php-8.1.34-darwin-arm64.tar.gz"
+        },
+        "linux": {
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.1.34/php-8.1.34-linux-x86_64.tar.gz",
+          "filename": "php-8.1.34-linux-x86_64.tar.gz"
         }
       },
       "8.0": {
@@ -62,6 +78,10 @@
           "url": "https://github.com/shivammathur/php-builder/releases/download/8.0.30/php-8.0.30-darwin-arm64.tar.gz",
           "filename": "php-8.0.30-darwin-arm64.tar.gz"
         },
+        "linux": {
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.0.30/php-8.0.30-linux-x86_64.tar.gz",
+          "filename": "php-8.0.30-linux-x86_64.tar.gz"
+        },
         "label": "Legacy"
       },
       "7.4": {
@@ -72,6 +92,10 @@
         "mac": {
           "url": "https://github.com/shivammathur/php-builder/releases/download/7.4.33/php-7.4.33-darwin-arm64.tar.gz",
           "filename": "php-7.4.33-darwin-arm64.tar.gz"
+        },
+        "linux": {
+          "url": "https://github.com/shivammathur/php-builder/releases/download/7.4.33/php-7.4.33-linux-x86_64.tar.gz",
+          "filename": "php-7.4.33-linux-x86_64.tar.gz"
         },
         "label": "Legacy"
       }
@@ -93,6 +117,10 @@
           "url": "https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.7-macos14-arm64.tar.gz",
           "filename": "mysql-8.4.7-macos14-arm64.tar.gz"
         },
+        "linux": {
+          "url": "https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.7-linux-glibc2.28-x86_64.tar.xz",
+          "filename": "mysql-8.4.7-linux-glibc2.28-x86_64.tar.xz"
+        },
         "label": "Latest"
       },
       "8.0": {
@@ -104,6 +132,10 @@
           "url": "https://cdn.mysql.com/Downloads/MySQL-8.0/mysql-8.0.42-macos14-arm64.tar.gz",
           "filename": "mysql-8.0.42-macos14-arm64.tar.gz"
         },
+        "linux": {
+          "url": "https://cdn.mysql.com/Downloads/MySQL-8.0/mysql-8.0.42-linux-glibc2.28-x86_64.tar.xz",
+          "filename": "mysql-8.0.42-linux-glibc2.28-x86_64.tar.xz"
+        },
         "label": "LTS"
       },
       "5.7": {
@@ -114,6 +146,10 @@
         "mac": {
           "url": "https://cdn.mysql.com/Downloads/MySQL-5.7/mysql-5.7.44-macos10.14-x86_64.tar.gz",
           "filename": "mysql-5.7.44-macos10.14-x86_64.tar.gz"
+        },
+        "linux": {
+          "url": "https://cdn.mysql.com/Downloads/MySQL-5.7/mysql-5.7.44-linux-glibc2.12-x86_64.tar.gz",
+          "filename": "mysql-5.7.44-linux-glibc2.12-x86_64.tar.gz"
         },
         "label": "Legacy"
       }
@@ -135,6 +171,10 @@
           "url": "https://archive.mariadb.org/mariadb-11.4.5/bintar-darwin-arm64/mariadb-11.4.5-macos-arm64.tar.gz",
           "filename": "mariadb-11.4.5-macos-arm64.tar.gz"
         },
+        "linux": {
+          "url": "https://archive.mariadb.org/mariadb-11.4.5/bintar-linux-systemd-x86_64/mariadb-11.4.5-linux-systemd-x86_64.tar.gz",
+          "filename": "mariadb-11.4.5-linux-systemd-x86_64.tar.gz"
+        },
         "label": "Latest"
       },
       "10.11": {
@@ -146,6 +186,10 @@
           "url": "https://archive.mariadb.org/mariadb-10.11.11/bintar-darwin-arm64/mariadb-10.11.11-macos-arm64.tar.gz",
           "filename": "mariadb-10.11.11-macos-arm64.tar.gz"
         },
+        "linux": {
+          "url": "https://archive.mariadb.org/mariadb-10.11.11/bintar-linux-systemd-x86_64/mariadb-10.11.11-linux-systemd-x86_64.tar.gz",
+          "filename": "mariadb-10.11.11-linux-systemd-x86_64.tar.gz"
+        },
         "label": "LTS"
       },
       "10.6": {
@@ -156,6 +200,10 @@
         "mac": {
           "url": "https://archive.mariadb.org/mariadb-10.6.22/bintar-darwin-arm64/mariadb-10.6.22-macos-arm64.tar.gz",
           "filename": "mariadb-10.6.22-macos-arm64.tar.gz"
+        },
+        "linux": {
+          "url": "https://archive.mariadb.org/mariadb-10.6.22/bintar-linux-systemd-x86_64/mariadb-10.6.22-linux-systemd-x86_64.tar.gz",
+          "filename": "mariadb-10.6.22-linux-systemd-x86_64.tar.gz"
         },
         "label": "LTS"
       }
@@ -178,6 +226,11 @@
           "filename": "redis-7.4.7.tar.gz",
           "requiresBuild": true
         },
+        "linux": {
+          "url": "https://github.com/redis/redis/archive/refs/tags/7.4.7.tar.gz",
+          "filename": "redis-7.4.7.tar.gz",
+          "requiresBuild": true
+        },
         "label": "Latest"
       },
       "7.2": {
@@ -190,6 +243,11 @@
           "filename": "redis-7.2.12.tar.gz",
           "requiresBuild": true
         },
+        "linux": {
+          "url": "https://github.com/redis/redis/archive/refs/tags/7.2.12.tar.gz",
+          "filename": "redis-7.2.12.tar.gz",
+          "requiresBuild": true
+        },
         "label": "LTS"
       },
       "6.2": {
@@ -198,6 +256,11 @@
           "filename": "Redis-6.2.21-Windows-x64-msys2.zip"
         },
         "mac": {
+          "url": "https://github.com/redis/redis/archive/refs/tags/6.2.21.tar.gz",
+          "filename": "redis-6.2.21.tar.gz",
+          "requiresBuild": true
+        },
+        "linux": {
           "url": "https://github.com/redis/redis/archive/refs/tags/6.2.21.tar.gz",
           "filename": "redis-6.2.21.tar.gz",
           "requiresBuild": true
@@ -223,6 +286,11 @@
           "filename": "nginx-1.28.0.tar.gz",
           "requiresBuild": true
         },
+        "linux": {
+          "url": "https://nginx.org/download/nginx-1.28.0.tar.gz",
+          "filename": "nginx-1.28.0.tar.gz",
+          "requiresBuild": true
+        },
         "label": "Mainline"
       },
       "1.26": {
@@ -235,6 +303,11 @@
           "filename": "nginx-1.26.3.tar.gz",
           "requiresBuild": true
         },
+        "linux": {
+          "url": "https://nginx.org/download/nginx-1.26.3.tar.gz",
+          "filename": "nginx-1.26.3.tar.gz",
+          "requiresBuild": true
+        },
         "label": "Stable"
       },
       "1.24": {
@@ -243,6 +316,11 @@
           "filename": "nginx-1.24.0.zip"
         },
         "mac": {
+          "url": "https://nginx.org/download/nginx-1.24.0.tar.gz",
+          "filename": "nginx-1.24.0.tar.gz",
+          "requiresBuild": true
+        },
+        "linux": {
           "url": "https://nginx.org/download/nginx-1.24.0.tar.gz",
           "filename": "nginx-1.24.0.tar.gz",
           "requiresBuild": true
@@ -265,6 +343,10 @@
         "mac": {
           "url": "builtin",
           "note": "Apache is pre-installed on macOS"
+        },
+        "linux": {
+          "url": "builtin",
+          "note": "Install via package manager: sudo apt install apache2 or sudo dnf install httpd"
         }
       }
     }
@@ -286,6 +368,10 @@
           "url": "https://nodejs.org/dist/v22.16.0/node-v22.16.0-darwin-arm64.tar.gz",
           "filename": "node-v22.16.0-darwin-arm64.tar.gz"
         },
+        "linux": {
+          "url": "https://nodejs.org/dist/v22.16.0/node-v22.16.0-linux-x64.tar.gz",
+          "filename": "node-v22.16.0-linux-x64.tar.gz"
+        },
         "label": "Current"
       },
       "20": {
@@ -296,6 +382,10 @@
         "mac": {
           "url": "https://nodejs.org/dist/v20.19.2/node-v20.19.2-darwin-arm64.tar.gz",
           "filename": "node-v20.19.2-darwin-arm64.tar.gz"
+        },
+        "linux": {
+          "url": "https://nodejs.org/dist/v20.19.2/node-v20.19.2-linux-x64.tar.gz",
+          "filename": "node-v20.19.2-linux-x64.tar.gz"
         },
         "label": "LTS"
       },
@@ -308,6 +398,10 @@
           "url": "https://nodejs.org/dist/v18.20.8/node-v18.20.8-darwin-arm64.tar.gz",
           "filename": "node-v18.20.8-darwin-arm64.tar.gz"
         },
+        "linux": {
+          "url": "https://nodejs.org/dist/v18.20.8/node-v18.20.8-linux-x64.tar.gz",
+          "filename": "node-v18.20.8-linux-x64.tar.gz"
+        },
         "label": "Maintenance LTS"
       },
       "16": {
@@ -318,6 +412,10 @@
         "mac": {
           "url": "https://nodejs.org/dist/v16.20.2/node-v16.20.2-darwin-arm64.tar.gz",
           "filename": "node-v16.20.2-darwin-arm64.tar.gz"
+        },
+        "linux": {
+          "url": "https://nodejs.org/dist/v16.20.2/node-v16.20.2-linux-x64.tar.gz",
+          "filename": "node-v16.20.2-linux-x64.tar.gz"
         },
         "label": "Legacy"
       }
@@ -336,6 +434,10 @@
         "mac": {
           "url": "https://github.com/axllent/mailpit/releases/latest/download/mailpit-darwin-arm64.tar.gz",
           "filename": "mailpit-darwin-arm64.tar.gz"
+        },
+        "linux": {
+          "url": "https://github.com/axllent/mailpit/releases/latest/download/mailpit-linux-amd64.tar.gz",
+          "filename": "mailpit-linux-amd64.tar.gz"
         }
       }
     }
@@ -379,6 +481,10 @@
         "mac": {
           "url": "builtin",
           "note": "Install via: xcode-select --install or brew install git"
+        },
+        "linux": {
+          "url": "builtin",
+          "note": "Install via package manager: sudo apt install git or sudo dnf install git"
         },
         "label": "Portable"
       }
