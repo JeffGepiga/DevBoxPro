@@ -757,6 +757,20 @@ function OverviewTab({ project, processes, refreshProjects }) {
     return Object.values(serviceStatus).some(v => v?.installed === true);
   };
 
+  // Port config mirrored from shared/serviceConfig.js
+  const SERVICE_DEFAULT_PORTS = { mysql: 3306, mariadb: 3310, redis: 6379 };
+  const SERVICE_VERSION_PORT_OFFSETS = {
+    mysql: { '8.4': 0, '8.0': 1, '5.7': 2 },
+    mariadb: { '11.4': 0, '10.11': 1, '10.6': 2 },
+    redis: { '7.4': 0, '7.2': 1, '6.2': 2 },
+  };
+  const getServicePort = (serviceId, version) => {
+    const base = SERVICE_DEFAULT_PORTS[serviceId];
+    if (!base) return null;
+    const offset = SERVICE_VERSION_PORT_OFFSETS[serviceId]?.[version] ?? 0;
+    return base + offset;
+  };
+
   // Service definitions - databases first (mutually exclusive), then others
   const serviceDefinitions = [
     { id: 'mysql', name: 'MySQL', icon: '🗄️', installed: isAnyVersionInstalled(binariesStatus?.mysql), isDatabase: true, hasVersions: true },
@@ -1095,6 +1109,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
               const currentVersion = effectiveServices[`${service.id}Version`] || versionOptions[service.id]?.[0];
               const versionChanged = pendingChanges.services?.[`${service.id}Version`] !== undefined &&
                 pendingChanges.services[`${service.id}Version`] !== project.services?.[`${service.id}Version`];
+              const servicePort = isEnabled ? getServicePort(service.id, currentVersion) : null;
 
               return (
                 <div
@@ -1121,17 +1136,22 @@ function OverviewTab({ project, processes, refreshProjects }) {
                         )}>
                           {service.name}
                         </span>
-                        {!isInstalled && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400 block">
-                            Not installed
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          {isEnabled && servicePort && (
+                            <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800">
+                              :{servicePort}
+                            </span>
+                          )}
+                          {(isChanged || versionChanged) && (
+                            <span className="text-xs text-yellow-600 dark:text-yellow-400">Modified</span>
+                          )}
+                          {!isInstalled && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">Not installed</span>
+                          )}
+                        </div>
                       </div>
                     </button>
                     <div className="flex items-center gap-3">
-                      {(isChanged || versionChanged) && (
-                        <span className="text-xs text-yellow-600 dark:text-yellow-400">Modified</span>
-                      )}
 
                       {/* phpMyAdmin Button for active database */}
                       {isEnabled && service.isDatabase && (
@@ -1148,7 +1168,6 @@ function OverviewTab({ project, processes, refreshProjects }) {
                         </button>
                       )}
 
-                      {/* Version selector for services that support it */}
                       {/* Version selector for services that support it */}
                       {service.hasVersions && isEnabled && (
                         <select
