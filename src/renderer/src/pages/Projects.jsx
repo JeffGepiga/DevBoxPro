@@ -22,9 +22,126 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronRight,
+  LayoutGrid,
+  List,
+  Database,
+  Server,
+  Mail,
+  Cpu,
+  Globe,
 } from 'lucide-react';
 import clsx from 'clsx';
 import ImportProjectModal from '../components/ImportProjectModal';
+
+const VIEW_MODE_KEY = 'devbox_projects_view_mode';
+
+function ServiceBadges({ project, compact = false }) {
+  const badges = [];
+
+  // Web server
+  const wsLabel = project.webServer === 'apache' ? 'Apache' : 'Nginx';
+  badges.push(
+    <span
+      key="ws"
+      className={clsx(
+        'inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium',
+        compact ? 'text-[10px]' : 'text-xs',
+        'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
+      )}
+      title={`${wsLabel} ${project.webServerVersion || ''}`}
+    >
+      <Globe className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
+      {wsLabel}
+    </span>
+  );
+
+  if (project.services?.mysql) {
+    badges.push(
+      <span
+        key="mysql"
+        className={clsx(
+          'inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium',
+          compact ? 'text-[10px]' : 'text-xs',
+          'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+        )}
+        title={`MySQL ${project.services.mysqlVersion || ''}`}
+      >
+        <Database className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
+        MySQL
+      </span>
+    );
+  }
+
+  if (project.services?.mariadb) {
+    badges.push(
+      <span
+        key="mariadb"
+        className={clsx(
+          'inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium',
+          compact ? 'text-[10px]' : 'text-xs',
+          'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300'
+        )}
+        title={`MariaDB ${project.services.mariadbVersion || ''}`}
+      >
+        <Database className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
+        MariaDB
+      </span>
+    );
+  }
+
+  if (project.services?.redis) {
+    badges.push(
+      <span
+        key="redis"
+        className={clsx(
+          'inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium',
+          compact ? 'text-[10px]' : 'text-xs',
+          'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+        )}
+        title={`Redis ${project.services.redisVersion || ''}`}
+      >
+        <Server className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
+        Redis
+      </span>
+    );
+  }
+
+  if (project.services?.mailpit) {
+    badges.push(
+      <span
+        key="mailpit"
+        className={clsx(
+          'inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium',
+          compact ? 'text-[10px]' : 'text-xs',
+          'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
+        )}
+        title="Mailpit"
+      >
+        <Mail className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
+        Mailpit
+      </span>
+    );
+  }
+
+  if (project.services?.nodejs) {
+    badges.push(
+      <span
+        key="nodejs"
+        className={clsx(
+          'inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium',
+          compact ? 'text-[10px]' : 'text-xs',
+          'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+        )}
+        title={`Node.js ${project.services.nodejsVersion || ''}`}
+      >
+        <Cpu className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
+        Node.js
+      </span>
+    );
+  }
+
+  return <div className="flex flex-wrap gap-1">{badges}</div>;
+}
 
 function Projects() {
   const { projects, loading, startProject, stopProject, deleteProject, refreshProjects, settings } = useApp();
@@ -32,6 +149,7 @@ function Projects() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem(VIEW_MODE_KEY) || 'card');
   const [discoveredProjects, setDiscoveredProjects] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
   const [showDiscovered, setShowDiscovered] = useState(true);
@@ -42,6 +160,11 @@ function Projects() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [moveModal, setMoveModal] = useState({ open: false, project: null });
   const [isMoving, setIsMoving] = useState(false);
+
+  const handleSetViewMode = (mode) => {
+    setViewMode(mode);
+    localStorage.setItem(VIEW_MODE_KEY, mode);
+  };
 
   const filteredProjects = projects.filter((project) => {
     const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -227,6 +350,33 @@ function Projects() {
             )}
             {isScanning ? 'Scanning...' : 'Scan for Projects'}
           </button>
+          {/* View toggle */}
+          <div className="flex items-center border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            <button
+              onClick={() => handleSetViewMode('card')}
+              className={clsx(
+                'p-2 transition-colors',
+                viewMode === 'card'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+              )}
+              title="Card view"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleSetViewMode('table')}
+              className={clsx(
+                'p-2 transition-colors',
+                viewMode === 'table'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+              )}
+              title="Table view"
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
           <Link to="/projects/new" className="btn-primary">
             <Plus className="w-4 h-4" />
             New Project
@@ -318,21 +468,52 @@ function Projects() {
         </div>
       </div>
 
-      {/* Projects Grid */}
+      {/* Projects Grid / Table */}
       {filteredProjects.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredProjects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              onStart={() => startProject(project.id)}
-              onStop={() => stopProject(project.id)}
-              onDelete={() => handleDeleteClick(project)}
-              onMove={() => handleMoveClick(project)}
-              defaultEditor={settings?.settings?.defaultEditor}
-            />
-          ))}
-        </div>
+        viewMode === 'card' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredProjects.map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                onStart={() => startProject(project.id)}
+                onStop={() => stopProject(project.id)}
+                onDelete={() => handleDeleteClick(project)}
+                onMove={() => handleMoveClick(project)}
+                defaultEditor={settings?.settings?.defaultEditor}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400 w-4"></th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Name</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Type</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">PHP</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Services</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Domain</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Actions</th>                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60">
+                {filteredProjects.map((project) => (
+                  <ProjectTableRow
+                    key={project.id}
+                    project={project}
+                    onStart={() => startProject(project.id)}
+                    onStop={() => stopProject(project.id)}
+                    onDelete={() => handleDeleteClick(project)}
+                    onMove={() => handleMoveClick(project)}
+                    defaultEditor={settings?.settings?.defaultEditor}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
       ) : (
         <div className="card p-12 text-center">
           <Folder className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
@@ -730,6 +911,7 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
               {project.domains[0]}
             </p>
           )}
+          <ServiceBadges project={project} compact />
         </div>
 
         {/* Port & URL */}
@@ -795,6 +977,190 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
         )}
       </div>
     </Link>
+  );
+}
+
+function ProjectTableRow({ project, onStart, onStop, onDelete, onMove, defaultEditor }) {
+  const { projectLoadingStates, setProjectLoading } = useApp();
+  const loadingState = projectLoadingStates[project.id];
+  const isStarting = loadingState === 'starting';
+  const isStopping = loadingState === 'stopping';
+  const [showMenu, setShowMenu] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleStart = async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setProjectLoading(project.id, 'starting');
+    setError(null);
+    try {
+      const result = await onStart();
+      if (result && !result.success) setError(result.error || 'Failed to start project');
+    } catch (err) {
+      setError(err.message || 'Failed to start project');
+    } finally {
+      setProjectLoading(project.id, null);
+    }
+  };
+
+  const handleStop = async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setProjectLoading(project.id, 'stopping');
+    setError(null);
+    try {
+      const result = await onStop();
+      if (result && !result.success) setError(result.error || 'Failed to stop project');
+    } catch (err) {
+      setError(err.message || 'Failed to stop project');
+    } finally {
+      setProjectLoading(project.id, null);
+    }
+  };
+
+  const typeColors = {
+    laravel: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    symfony: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+    wordpress: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    custom: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+  };
+
+  return (
+    <tr className="group hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+      {/* Status dot */}
+      <td className="px-4 py-3">
+        <div className={project.isRunning ? 'status-running' : 'status-stopped'} />
+      </td>
+
+      {/* Name */}
+      <td className="px-4 py-3">
+        <Link
+          to={`/projects/${project.id}`}
+          className="font-medium text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 flex items-center gap-1 group/link"
+        >
+          {project.name}
+          <ChevronRight className="w-3 h-3 opacity-0 group-hover/link:opacity-100 transition-opacity" />
+        </Link>
+        {error && <p className="text-xs text-red-500 mt-0.5">{error}</p>}
+      </td>
+
+      {/* Type */}
+      <td className="px-4 py-3">
+        <span className={clsx('badge text-xs', typeColors[project.type])}>{project.type}</span>
+      </td>
+
+      {/* PHP */}
+      <td className="px-4 py-3">
+        <span className="badge badge-neutral text-xs">PHP {project.phpVersion}</span>
+      </td>
+
+      {/* Services */}
+      <td className="px-4 py-3">
+        <ServiceBadges project={project} compact />
+      </td>
+
+      {/* Domain */}
+      <td className="px-4 py-3">
+        {project.domains?.[0] ? (
+          <span className="text-gray-600 dark:text-gray-300 text-xs font-mono">{project.domains[0]}</span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-600 text-xs">—</span>
+        )}
+      </td>
+
+      {/* Status */}
+      <td className="px-4 py-3">
+        {project.isRunning ? (
+          <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+            Running {project.port ? `(${project.port})` : ''}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+            Stopped
+          </span>
+        )}
+      </td>
+
+      {/* Actions */}
+      <td className="px-4 py-3">
+        <div className="flex items-center justify-end gap-1">
+          {project.isRunning ? (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); window.devbox?.projects.openInBrowser(project.id); }}
+                className="btn-ghost btn-icon btn-sm"
+                title="Open in browser"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={handleStop}
+                disabled={isStopping}
+                className="btn-secondary btn-sm"
+                title="Stop"
+              >
+                {isStopping ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Square className="w-3.5 h-3.5" />}
+                {isStopping ? 'Stopping…' : 'Stop'}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={handleStart}
+              disabled={isStarting}
+              className="btn-success btn-sm"
+              title="Start"
+            >
+              {isStarting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+              {isStarting ? 'Starting…' : 'Start'}
+            </button>
+          )}
+
+          {/* More menu */}
+          <div className="relative">
+            <button
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); setShowMenu(!showMenu); }}
+              className="btn-ghost btn-icon btn-sm"
+            >
+              <MoreVertical className="w-3.5 h-3.5" />
+            </button>
+            {showMenu && (
+              <div
+                className="absolute right-0 mt-1 w-44 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-10"
+                onMouseLeave={() => setShowMenu(false)}
+              >
+                <button
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); window.devbox?.projects.openFolder(project.id); setShowMenu(false); }}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                >
+                  <Folder className="w-4 h-4" /> Open Folder
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); setShowMenu(false); onMove(); }}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                >
+                  <FolderOutput className="w-4 h-4" /> Move Project
+                </button>
+                <button
+                  onClick={async (e) => { e.stopPropagation(); e.preventDefault(); setError(null); try { await window.devbox?.projects.openInEditor(project.id, defaultEditor || 'vscode'); } catch (err) { setError(err.message || 'Failed to open in editor'); } setShowMenu(false); }}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                >
+                  <Code className="w-4 h-4" /> Open in Editor
+                </button>
+                <hr className="my-1 border-gray-200 dark:border-gray-700" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); onDelete(); setShowMenu(false); }}
+                  className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" /> Delete
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </td>
+    </tr>
   );
 }
 
