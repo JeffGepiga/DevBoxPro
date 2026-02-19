@@ -22,6 +22,32 @@ class WebServerManager {
 
     // Load preferred server type from config
     this.serverType = this.configStore.get('settings.webServer', 'nginx');
+
+    // Remove stale vhost/site configs from previous sessions or deleted projects
+    await this.cleanupOrphanedConfigs();
+  }
+
+  // Remove vhost/site .conf files that don't correspond to any known project
+  async cleanupOrphanedConfigs() {
+    const projects = this.configStore.get('projects', []);
+    const validIds = new Set(projects.map(p => p.id));
+
+    const dirs = [
+      path.join(this.dataPath, 'apache', 'vhosts'),
+      path.join(this.dataPath, 'nginx', 'sites'),
+    ];
+
+    for (const dir of dirs) {
+      if (!await fs.pathExists(dir)) continue;
+      const files = await fs.readdir(dir);
+      for (const file of files) {
+        if (!file.endsWith('.conf')) continue;
+        const projectId = file.replace('.conf', '');
+        if (!validIds.has(projectId)) {
+          await fs.remove(path.join(dir, file));
+        }
+      }
+    }
   }
 
 
@@ -155,6 +181,13 @@ class WebServerManager {
         docRoot = projectPath;
       }
     }
+
+    // Validate that docRoot exists and is a directory; fall back to project root if not
+    const docRootStat = await fs.stat(docRoot).catch(() => null);
+    if (!docRootStat || !docRootStat.isDirectory()) {
+      docRoot = projectPath;
+    }
+
     const docRootNginx = docRoot.replace(/\\/g, '/');
 
     // Network Access Logic
@@ -308,6 +341,13 @@ server {
         docRoot = projectPath;
       }
     }
+
+    // Validate that docRoot exists and is a directory; fall back to project root if not
+    const docRootStat = await fs.stat(docRoot).catch(() => null);
+    if (!docRootStat || !docRootStat.isDirectory()) {
+      docRoot = projectPath;
+    }
+
     const docRootApache = docRoot.replace(/\\/g, '/');
 
     // Add ServerAlias * when network access is enabled to accept any hostname
