@@ -133,6 +133,59 @@ class ProjectManager {
     return project;
   }
 
+  async exportProjectConfig(id, mainWindow = null) {
+    const project = this.getProject(id);
+    if (!project) throw new Error('Project not found');
+
+    try {
+      let phpExtensions = [];
+      if (this.managers.php) {
+        try {
+          const exts = await this.managers.php.getExtensions(project.phpVersion);
+          if (exts) {
+            phpExtensions = Object.keys(exts).filter((ext) => exts[ext] === true);
+          }
+        } catch (e) {
+          // Ignore if PHP version is not installed or extensions fail to load
+        }
+      }
+
+      const { app } = require('electron');
+      const exportData = {
+        name: project.name,
+        type: project.type,
+        phpVersion: project.phpVersion,
+        nodeVersion: project.nodeVersion,
+        webServer: project.webServer,
+        webServerVersion: project.webServerVersion,
+        services: project.services || {},
+        supervisor: project.supervisor || { processes: [] },
+        phpExtensions: phpExtensions,
+        exportedAt: new Date().toISOString(),
+        devboxVersion: app.getVersion()
+      };
+
+      const devboxJsonPath = path.join(project.path, 'devbox.json');
+      await fs.writeJson(devboxJsonPath, exportData, { spaces: 2 });
+
+      this.managers.log?.project(id, `Successfully exported project configuration to devbox.json`);
+      if (mainWindow) {
+        // Optional: show native dialog or toast
+        const { dialog } = require('electron');
+        dialog.showMessageBox(mainWindow, {
+          type: 'info',
+          title: 'Export Successful',
+          message: `Project configuration exported successfully to:\n${devboxJsonPath}`,
+          buttons: ['OK']
+        });
+      }
+      return { success: true, path: devboxJsonPath };
+    } catch (error) {
+      this.managers.log?.project(id, `Failed to export configuration: ${error.message}`, 'error');
+      throw new Error(`Failed to export configuration: ${error.message}`);
+    }
+  }
+
   async createProject(config, mainWindow = null) {
     const settings = this.configStore.get('settings', {});
     const existingProjects = this.configStore.get('projects', []);
@@ -1556,18 +1609,18 @@ class ProjectManager {
     // Move the directory
     try {
       this.managers.log?.project(id, `Moving project from ${oldPath} to ${newPath}`);
-      
+
       // Ensure parent directory exists
       await fs.ensureDir(path.dirname(newPath));
-      
+
       // Move the entire directory
       await fs.move(oldPath, newPath, { overwrite: false });
     } catch (error) {
-      this.managers.log?.systemError('Error moving project files', { 
-        project: project.name, 
-        from: oldPath, 
-        to: newPath, 
-        error: error.message 
+      this.managers.log?.systemError('Error moving project files', {
+        project: project.name,
+        from: oldPath,
+        to: newPath,
+        error: error.message
       });
       throw new Error(`Failed to move project files: ${error.message}`);
     }
@@ -2382,13 +2435,30 @@ class ProjectManager {
    * @returns {Object} Project info with name, path, and detected type
    */
   async detectProjectTypeFromPath(folderPath) {
-    const type = await this.detectProjectType(folderPath);
-    const name = path.basename(folderPath);
+    let type = await this.detectProjectType(folderPath);
+    let name = path.basename(folderPath);
+    let configOverrides = {};
+
+    const devboxJsonPath = path.join(folderPath, 'devbox.json');
+    if (await fs.pathExists(devboxJsonPath)) {
+      try {
+        const parsedNode = await fs.readJson(devboxJsonPath);
+        if (parsedNode) {
+          configOverrides = parsedNode;
+          if (configOverrides.type) type = configOverrides.type;
+          if (configOverrides.name) name = configOverrides.name;
+        }
+      } catch (e) {
+        this.managers.log?.systemWarn('Could not parse devbox.json during project detection', { error: e.message });
+      }
+    }
 
     return {
       name,
       path: folderPath,
-      type
+      type,
+      ...configOverrides,
+      isConfigImport: Object.keys(configOverrides).length > 0
     };
   }
 

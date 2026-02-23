@@ -108,7 +108,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     };
 
     let editorConfig;
-    
+
     // Handle custom editor
     if (editor === 'custom') {
       const customCommand = config.get('settings.customEditorCommand');
@@ -119,7 +119,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     } else {
       editorConfig = editorConfigs[editor] || editorConfigs.vscode;
     }
-    
+
     const { spawn } = require('child_process');
     const { commandExists } = require('../utils/SpawnUtils');
 
@@ -188,6 +188,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     if (!projectData) throw new Error('Project not found');
     await shell.openPath(projectData.path);
     return true;
+  });
+
+  ipcMain.handle('projects:exportConfig', async (event, id) => {
+    return project.exportProjectConfig(id, mainWindow);
   });
 
   ipcMain.handle('projects:move', async (event, id, newPath) => {

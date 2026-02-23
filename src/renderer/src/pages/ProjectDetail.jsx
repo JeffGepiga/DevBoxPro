@@ -27,6 +27,7 @@ import {
   X,
   Pencil,
   Check,
+  Share2,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -154,6 +155,18 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
       await window.devbox?.projects.openInEditor(id, settings?.settings?.defaultEditor || 'vscode');
     } catch (err) {
       setActionError(err.message || 'Failed to open in editor');
+    }
+  };
+
+  const handleExportConfig = async () => {
+    setActionError(null);
+    try {
+      const result = await window.devbox?.projects.exportConfig(id);
+      if (result && result.success) {
+        // Optional: show a success toast or alert
+      }
+    } catch (err) {
+      setActionError(err.message || 'Failed to export configuration');
     }
   };
   const handleDeleteConfirm = async () => {
@@ -344,6 +357,14 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
             >
               <Code className="w-4 h-4" />
               Open in Editor
+            </button>
+            <button
+              onClick={handleExportConfig}
+              className="btn-secondary"
+              title="Export Project Configuration"
+            >
+              <Share2 className="w-4 h-4" />
+              Export
             </button>
           </div>
         </div>

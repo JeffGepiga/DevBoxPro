@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Download, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 
 /**
@@ -35,6 +35,43 @@ function ImportProjectModal({ project, onClose, onImport }) {
     const [installedNodejs, setInstalledNodejs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showServices, setShowServices] = useState(false);
+
+    const missingBinaries = useMemo(() => {
+        if (!project.isConfigImport || loading) return [];
+        const missing = [];
+
+        // Check PHP
+        if (project.phpVersion && !installedPhpVersions.includes(project.phpVersion)) {
+            missing.push(`PHP ${project.phpVersion}`);
+        }
+
+        // Check Web Server
+        if (project.webServer === 'nginx' && project.webServerVersion && !installedWebServers.nginx.includes(project.webServerVersion)) {
+            missing.push(`Nginx ${project.webServerVersion}`);
+        } else if (project.webServer === 'apache' && project.webServerVersion && !installedWebServers.apache.includes(project.webServerVersion)) {
+            missing.push(`Apache ${project.webServerVersion}`);
+        }
+
+        // Check Database
+        if (project.services?.mysql && project.services?.mysqlVersion && !installedDatabases.mysql.includes(project.services.mysqlVersion)) {
+            missing.push(`MySQL ${project.services.mysqlVersion}`);
+        }
+        if (project.services?.mariadb && project.services?.mariadbVersion && !installedDatabases.mariadb.includes(project.services.mariadbVersion)) {
+            missing.push(`MariaDB ${project.services.mariadbVersion}`);
+        }
+
+        // Check Redis
+        if (project.services?.redis && project.services?.redisVersion && !installedRedis.includes(project.services.redisVersion)) {
+            missing.push(`Redis ${project.services.redisVersion}`);
+        }
+
+        // Check Node.js
+        if (project.nodeVersion && !installedNodejs.includes(project.nodeVersion)) {
+            missing.push(`Node.js ${project.nodeVersion}`);
+        }
+
+        return missing;
+    }, [project, loading, installedPhpVersions, installedWebServers, installedDatabases, installedRedis, installedNodejs]);
 
     // Generate suggested domain from name
     const suggestedDomain = config.name
@@ -209,6 +246,19 @@ function ImportProjectModal({ project, onClose, onImport }) {
                         </div>
                     ) : (
                         <>
+                            {/* Missing Binaries Warning */}
+                            {missingBinaries.length > 0 && (
+                                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                                    <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                                        Missing Required Binaries
+                                    </p>
+                                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                                        This project configuration requires: <strong>{missingBinaries.join(', ')}</strong>.
+                                        You can still import it, but please install these versions via the Binary Manager before starting the project.
+                                    </p>
+                                </div>
+                            )}
+
                             {/* Basic Info Section */}
                             <div className="grid grid-cols-2 gap-4">
                                 {/* Project Name */}

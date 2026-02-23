@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('devbox', {
     scanUnregistered: () => ipcRenderer.invoke('projects:scanUnregistered'),
     registerExisting: (config) => ipcRenderer.invoke('projects:registerExisting', config),
     detectType: (folderPath) => ipcRenderer.invoke('projects:detectType', folderPath),
+    exportConfig: (id) => ipcRenderer.invoke('projects:exportConfig', id),
     // Service version operations
     getServiceVersions: (id) => ipcRenderer.invoke('projects:getServiceVersions', id),
     updateServiceVersions: (id, versions) => ipcRenderer.invoke('projects:updateServiceVersions', id, versions),
