@@ -24,10 +24,10 @@ A comprehensive, incremental plan to add automated tests across the entire DevBo
 
 ### Checklist
 
-- [ ] Install **Vitest** + **@testing-library/react** + **@testing-library/jest-dom** + **jsdom**
+- [x] Install **Vitest** + **@testing-library/react** + **@testing-library/jest-dom** + **jsdom**
   - Vitest is Vite-native, works for both CJS (main) and ESM (renderer)
-- [ ] Create root `vitest.config.js` with two workspaces: `main` and `renderer`
-- [ ] Create [tests/](file:///c:/Users/Jeffrey/Documents/devboxpro/node_modules/ajv/scripts/prepare-tests) directory structure:
+- [x] Create root `vitest.config.js` with two workspaces: `main` and `renderer`
+- [x] Create [tests/](file:///c:/Users/Jeffrey/Documents/devboxpro/node_modules/ajv/scripts/prepare-tests) directory structure:
   ```
   tests/
   ├── main/
@@ -44,10 +44,10 @@ A comprehensive, incremental plan to add automated tests across the entire DevBo
       ├── mockFs.js            ← mock fs-extra
       └── setup.js             ← global test setup
   ```
-- [ ] Create `tests/helpers/mockElectron.js` – reusable Electron API mocks ([app](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/AppContext.jsx#18-99), `ipcMain`, `dialog`, `BrowserWindow`, `shell`, `nativeImage`, `nativeTheme`)
-- [ ] Create `tests/helpers/mockFs.js` – reusable fs-extra mock factory
-- [ ] Create `tests/helpers/setup.js` – global setup (browser env for renderer tests)
-- [ ] Add [package.json](file:///c:/Users/Jeffrey/Documents/devboxpro/package.json) scripts:
+- [x] Create `tests/helpers/mockElectron.js` – reusable Electron API mocks ([app](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/AppContext.jsx#18-99), `ipcMain`, `dialog`, `BrowserWindow`, `shell`, `nativeImage`, `nativeTheme`)
+- [x] Create `tests/helpers/mockFs.js` – reusable fs-extra mock factory
+- [x] Create `tests/helpers/setup.js` – global setup (browser env for renderer tests)
+- [x] Add [package.json](file:///c:/Users/Jeffrey/Documents/devboxpro/package.json) scripts:
   ```json
   "test": "vitest run",
   "test:watch": "vitest",
@@ -55,7 +55,7 @@ A comprehensive, incremental plan to add automated tests across the entire DevBo
   "test:main": "vitest run --project main",
   "test:renderer": "vitest run --project renderer"
   ```
-- [ ] Verify a trivial "hello world" test passes in each workspace
+- [x] Verify a trivial "hello world" test passes in each workspace
 
 #### [NEW] [vitest.config.js](file:///c:/Users/Jeffrey/Documents/devboxpro/vitest.config.js)
 #### [NEW] [tests/helpers/mockElectron.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/helpers/mockElectron.js)
@@ -84,10 +84,10 @@ A comprehensive, incremental plan to add automated tests across the entire DevBo
 | [getDefaultVersion()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#84-99) – unknown service | Returns `null` |
 
 **Edge Cases:**
-- [ ] [getServicePort('mysql', '5.7')](file:///c:/Users/Jeffrey/Documents/devboxpro/src/shared/serviceConfig.js#109-117) → `3306 + 2 = 3308`
-- [ ] [getServicePort('apache', '2.4')](file:///c:/Users/Jeffrey/Documents/devboxpro/src/shared/serviceConfig.js#109-117) → `8081 + 0 = 8081`
-- [ ] [getServicePort(null, null)](file:///c:/Users/Jeffrey/Documents/devboxpro/src/shared/serviceConfig.js#109-117) → `null`
-- [ ] [getServicePort('redis', 'nonexistent')](file:///c:/Users/Jeffrey/Documents/devboxpro/src/shared/serviceConfig.js#109-117) → `6379 + 0`
+- [x] [getServicePort('mysql', '5.7')](file:///c:/Users/Jeffrey/Documents/devboxpro/src/shared/serviceConfig.js#109-117) → `3306 + 2 = 3308`
+- [x] [getServicePort('apache', '2.4')](file:///c:/Users/Jeffrey/Documents/devboxpro/src/shared/serviceConfig.js#109-117) → `8081 + 0 = 8081`
+- [x] [getServicePort(null, null)](file:///c:/Users/Jeffrey/Documents/devboxpro/src/shared/serviceConfig.js#109-117) → `null`
+- [x] [getServicePort('redis', 'nonexistent')](file:///c:/Users/Jeffrey/Documents/devboxpro/src/shared/serviceConfig.js#109-117) → `6379 + 0`
 
 #### [NEW] [tests/shared/serviceConfig.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/shared/serviceConfig.test.js)
 
@@ -95,9 +95,9 @@ A comprehensive, incremental plan to add automated tests across the entire DevBo
 
 > This file exports build-time injected constants. Tests will verify the module exports the expected shape.
 
-- [ ] Exports `APP_VERSION` (string)
-- [ ] Exports `APP_NAME` = `'DevBox Pro'`
-- [ ] Default export has `version` and `name` keys
+- [x] Exports `APP_VERSION` (string)
+- [x] Exports `APP_NAME` = `'DevBox Pro'`
+- [x] Default export has `version` and `name` keys
 
 #### [NEW] [tests/shared/appConfig.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/shared/appConfig.test.js)
 
@@ -134,9 +134,9 @@ A comprehensive, incremental plan to add automated tests across the entire DevBo
 | [getDataPath()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/utils/ConfigStore.js#183-187), [getLogsPath()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/utils/ConfigStore.js#188-191), [getMysqlDataPath()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/utils/ConfigStore.js#192-195), [getRedisDataPath()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/utils/ConfigStore.js#196-199), [getSslPath()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/utils/ConfigStore.js#200-203) | Unit |
 
 **Edge Cases:**
-- [ ] [addRecentProject()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/utils/ConfigStore.js#122-129) with 12 projects → only 10 kept
-- [ ] [get('deeply.nested.key')](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/utils/ConfigStore.js#66-83) in fallback mode
-- [ ] [importConfig()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/utils/ConfigStore.js#158-182) with extra unknown keys (should not crash)
+- [x] [addRecentProject()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/utils/ConfigStore.js#122-129) with 12 projects → only 10 kept
+- [x] [get('deeply.nested.key')](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/utils/ConfigStore.js#66-83) in fallback mode
+- [x] [importConfig()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/utils/ConfigStore.js#158-182) with extra unknown keys (should not crash)
 
 #### [NEW] [tests/main/utils/ConfigStore.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/utils/ConfigStore.test.js)
 
@@ -188,150 +188,150 @@ A comprehensive, incremental plan to add automated tests across the entire DevBo
 
 ### 3.1 [LogManager.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js) (328 lines)
 
-- [ ] [initialize()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#35-42) – creates log directories
-- [ ] [info()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#26-30), [warn()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#31-34), [error()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#35-38), [debug()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#39-42) – delegates to [writeLog](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#69-85)
-- [ ] [systemError()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#43-48), [systemWarn()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#49-52), [systemInfo()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#53-56) – uses `SYSTEM` category
-- [ ] [project()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#57-62) – uses per-project log file
-- [ ] [service()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#63-68) – uses per-service log file
-- [ ] [writeLog()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#69-85) – emits event, calls [appendToLog](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#101-117)
-- [ ] [formatLogEntry()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#86-100) – timestamp format, JSON data serialization
-- [ ] [appendToLog()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#101-117) – file write, calls [rotateLogIfNeeded](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#118-141)
-- [ ] [rotateLogIfNeeded()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#118-141) – renames when > 10MB, deletes excess rotations
-- [ ] [readLastLines()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#164-178) – returns correct number of lines from end
-- [ ] [getProjectLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#142-147), [getServiceLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#148-152), [getAppLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#153-157), [getSystemLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#158-163)
-- [ ] [clearProjectLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#179-189), [clearServiceLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#190-199), [clearSystemLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#200-210)
-- [ ] [streamLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#211-233) – watcher setup, callback invocation
-- [ ] [stopStreaming()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#234-241) – watcher cleanup
-- [ ] [parseLogEntry()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#242-260) – valid and malformed log lines
-- [ ] [getAllLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#261-325) – filter by level, category, search term
+- [x] [initialize()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#35-42) – creates log directories
+- [x] [info()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#26-30), [warn()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#31-34), [error()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#35-38), [debug()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#39-42) – delegates to [writeLog](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#69-85)
+- [x] [systemError()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#43-48), [systemWarn()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#49-52), [systemInfo()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#53-56) – uses `SYSTEM` category
+- [x] [project()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#57-62) – uses per-project log file
+- [x] [service()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#63-68) – uses per-service log file
+- [x] [writeLog()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#69-85) – emits event, calls [appendToLog](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#101-117)
+- [x] [formatLogEntry()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#86-100) – timestamp format, JSON data serialization
+- [x] [appendToLog()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#101-117) – file write, calls [rotateLogIfNeeded](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#118-141)
+- [x] [rotateLogIfNeeded()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#118-141) – renames when > 10MB, deletes excess rotations
+- [x] [readLastLines()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#164-178) – returns correct number of lines from end
+- [x] [getProjectLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#142-147), [getServiceLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#148-152), [getAppLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#153-157), [getSystemLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#158-163)
+- [x] [clearProjectLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#179-189), [clearServiceLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#190-199), [clearSystemLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#200-210)
+- [x] [streamLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#211-233) – watcher setup, callback invocation
+- [x] [stopStreaming()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#234-241) – watcher cleanup
+- [x] [parseLogEntry()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#242-260) – valid and malformed log lines
+- [x] [getAllLogs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#261-325) – filter by level, category, search term
 
 **Edge Cases:**
-- [ ] Log file doesn't exist yet
-- [ ] Log rotation with exactly 5 existing rotated files
-- [ ] [parseLogEntry()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#242-260) with empty string, null, special characters
+- [x] Log file doesn't exist yet
+- [x] Log rotation with exactly 5 existing rotated files
+- [x] [parseLogEntry()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#242-260) with empty string, null, special characters
 
 #### [NEW] [tests/main/services/LogManager.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/LogManager.test.js)
 
 ### 3.2 [UpdateManager.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js) (233 lines)
 
-- [ ] [constructor()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#6-13) – sets up autoUpdater event handlers
-- [ ] [setMainWindow()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#28-34) – stores reference
-- [ ] [initialize()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#35-42) – logs init message
-- [ ] [_setupEventHandlers()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#43-108) – all 6 event handlers update state correctly
-- [ ] [_sendEvent()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#109-117) – sends to window, no-ops when window destroyed
-- [ ] [checkForUpdates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#280-315) – dev mode returns disabled message
-- [ ] [checkForUpdates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#280-315) – update available
-- [ ] [checkForUpdates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#280-315) – no update available
-- [ ] [checkForUpdates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#280-315) – error handling
-- [ ] [downloadUpdate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#164-199) – no update info → error
-- [ ] [downloadUpdate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#164-199) – dev mode → error
-- [ ] [downloadUpdate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#164-199) – successful download
-- [ ] [quitAndInstall()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#200-210) – calls autoUpdater when downloaded
-- [ ] [quitAndInstall()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#200-210) – no-op when not downloaded
-- [ ] [getStatus()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/preload.js#55-56) – returns correct shape in all states
+- [x] [constructor()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#6-13) – sets up autoUpdater event handlers
+- [x] [setMainWindow()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#28-34) – stores reference
+- [x] [initialize()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#35-42) – logs init message
+- [x] [_setupEventHandlers()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#43-108) – all 6 event handlers update state correctly
+- [x] [_sendEvent()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#109-117) – sends to window, no-ops when window destroyed
+- [x] [checkForUpdates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#280-315) – dev mode returns disabled message
+- [x] [checkForUpdates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#280-315) – update available
+- [x] [checkForUpdates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#280-315) – no update available
+- [x] [checkForUpdates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#280-315) – error handling
+- [x] [downloadUpdate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#164-199) – no update info → error
+- [x] [downloadUpdate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#164-199) – dev mode → error
+- [x] [downloadUpdate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#164-199) – successful download
+- [x] [quitAndInstall()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#200-210) – calls autoUpdater when downloaded
+- [x] [quitAndInstall()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#200-210) – no-op when not downloaded
+- [x] [getStatus()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/preload.js#55-56) – returns correct shape in all states
 
 #### [NEW] [tests/main/services/UpdateManager.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/UpdateManager.test.js)
 
 ### 3.3 [SslManager.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js) (453 lines)
 
-- [ ] [constructor()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#6-13) – sets initial state
-- [ ] [initialize()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#35-42) – creates directories, generates root CA if needed
-- [ ] [createRootCA()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#113-175) – generates keypair, creates self-signed CA cert
-- [ ] [createCertificate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#176-289) – generates domain cert signed by CA
-- [ ] [createCertificate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#176-289) – handles multiple domain SANs
-- [ ] [deleteCertificate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#290-310) – removes cert files
-- [ ] [trustCertificate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#311-389) – platform-specific trust (Windows certutil)
-- [ ] [getTrustInstructions()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#390-417) – returns platform-matched instructions
-- [ ] [listCertificates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#418-421) – reads certificate store
-- [ ] [getCertificate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#422-426) / [getCertificatePaths()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#427-436) – correct paths
-- [ ] [getStatus()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/preload.js#55-56) – SSL available/unavailable shape
-- [ ] [isAvailable()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#446-450) – checks CA existence
+- [x] [constructor()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#6-13) – sets initial state
+- [x] [initialize()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#35-42) – creates directories, generates root CA if needed
+- [x] [createRootCA()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#113-175) – generates keypair, creates self-signed CA cert
+- [x] [createCertificate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#176-289) – generates domain cert signed by CA
+- [x] [createCertificate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#176-289) – handles multiple domain SANs
+- [x] [deleteCertificate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#290-310) – removes cert files
+- [x] [trustCertificate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#311-389) – platform-specific trust (Windows certutil)
+- [x] [getTrustInstructions()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#390-417) – returns platform-matched instructions
+- [x] [listCertificates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#418-421) – reads certificate store
+- [x] [getCertificate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#422-426) / [getCertificatePaths()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#427-436) – correct paths
+- [x] [getStatus()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/preload.js#55-56) – SSL available/unavailable shape
+- [x] [isAvailable()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#446-450) – checks CA existence
 
 **Edge Cases:**
-- [ ] CA cert files missing on init (first run)
-- [ ] Domain with special characters
-- [ ] [createCertificate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#176-289) when CA doesn't exist
+- [x] CA cert files missing on init (first run)
+- [x] Domain with special characters
+- [x] [createCertificate()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SslManager.js#176-289) when CA doesn't exist
 
 #### [NEW] [tests/main/services/SslManager.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/SslManager.test.js)
 
 ### 3.4 [PhpManager.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js) (529 lines)
 
-- [ ] [initialize()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#35-42) – discovers PHP binaries, creates default INI
-- [ ] [getPhpBinaryPath()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#66-73) – correct path construction
-- [ ] [getAvailableVersions()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#74-83) – returns discovered versions
-- [ ] [getDefaultVersion()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#84-99) – config lookup with fallback
-- [ ] [setDefaultVersion()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#100-109) – validates version exists
-- [ ] [discoverExtensions()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#110-144) – parses `php -m` output
-- [ ] [getExtensions()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#145-152) / [toggleExtension()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/preload.js#47-49) – INI manipulation
-- [ ] [createDefaultIni()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#195-272) – generates correct INI content
-- [ ] [validatePhpCommand()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#273-307) – allows safe commands, blocks injection
-- [ ] [validateArtisanCommand()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#308-330) – allows safe commands, blocks injection
-- [ ] [runCommand()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#331-384) – spawns PHP with correct args
-- [ ] [runArtisan()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#385-445) – prepends `artisan` to command
-- [ ] [runComposer()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#446-490) – uses composer path
-- [ ] [getComposerPath()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#491-494) – returns expected path
-- [ ] [getPhpInfo()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#495-526) – parses `php -i` output
+- [x] [initialize()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#35-42) – discovers PHP binaries, creates default INI
+- [x] [getPhpBinaryPath()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#66-73) – correct path construction
+- [x] [getAvailableVersions()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#74-83) – returns discovered versions
+- [x] [getDefaultVersion()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#84-99) – config lookup with fallback
+- [x] [setDefaultVersion()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#100-109) – validates version exists
+- [x] [discoverExtensions()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#110-144) – parses `php -m` output
+- [x] [getExtensions()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#145-152) / [toggleExtension()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/preload.js#47-49) – INI manipulation
+- [x] [createDefaultIni()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#195-272) – generates correct INI content
+- [x] [validatePhpCommand()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#273-307) – allows safe commands, blocks injection
+- [x] [validateArtisanCommand()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#308-330) – allows safe commands, blocks injection
+- [x] [runCommand()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#331-384) – spawns PHP with correct args
+- [x] [runArtisan()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#385-445) – prepends `artisan` to command
+- [x] [runComposer()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#446-490) – uses composer path
+- [x] [getComposerPath()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#491-494) – returns expected path
+- [x] [getPhpInfo()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#495-526) – parses `php -i` output
 
 **Edge Cases:**
-- [ ] [validatePhpCommand()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#273-307) with shell metacharacters (`; && | \``)
-- [ ] [validateArtisanCommand()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#308-330) with path traversal (`../`)
-- [ ] No PHP versions installed
-- [ ] Invalid version string passed
+- [x] [validatePhpCommand()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#273-307) with shell metacharacters (`; && | \``)
+- [x] [validateArtisanCommand()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#308-330) with path traversal (`../`)
+- [x] No PHP versions installed
+- [x] Invalid version string passed
 
 #### [NEW] [tests/main/services/PhpManager.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/PhpManager.test.js)
 
 ### 3.5 [GitManager.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js) (652 lines)
 
-- [ ] [initialize()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#35-42) – finds Git executable
-- [ ] [findGitExecutable()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#37-68) – system vs portable fallback
-- [ ] [checkSystemGit()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#69-103) – `where git` / `which git`
-- [ ] [isGitAvailable()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#104-130) – returns correct shape
-- [ ] [getGitVersion()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#131-163) – parses `git --version` output
-- [ ] [validateRepositoryUrl()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#164-194) – HTTPS URLs
-- [ ] [validateRepositoryUrl()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#164-194) – SSH URLs
-- [ ] [validateRepositoryUrl()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#164-194) – invalid URLs
-- [ ] [cloneRepository()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#195-365) – public repo
-- [ ] [cloneRepository()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#195-365) – token auth (injects token into URL)
-- [ ] [cloneRepository()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#195-365) – SSH auth
-- [ ] [cloneRepository()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#195-365) – branch option
-- [ ] [cloneRepository()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#195-365) – progress callback
-- [ ] [cloneRepository()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#195-365) – clone failure
-- [ ] [generateSshKey()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#366-514) – creates key pair
-- [ ] [getSshPublicKey()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#515-533) – key exists / doesn't exist
-- [ ] [regenerateSshKey()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#534-557) – deletes + regenerates
-- [ ] [testAuthentication()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#558-625) – success / failure scenarios
-- [ ] [onProgress()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/ipc/handlers.js#1426-1430) / [emitProgress()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#636-649) – listener pattern
+- [x] [initialize()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#35-42) – finds Git executable
+- [x] [findGitExecutable()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#37-68) – system vs portable fallback
+- [x] [checkSystemGit()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#69-103) – `where git` / `which git`
+- [x] [isGitAvailable()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#104-130) – returns correct shape
+- [x] [getGitVersion()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#131-163) – parses `git --version` output
+- [x] [validateRepositoryUrl()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#164-194) – HTTPS URLs
+- [x] [validateRepositoryUrl()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#164-194) – SSH URLs
+- [x] [validateRepositoryUrl()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#164-194) – invalid URLs
+- [x] [cloneRepository()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#195-365) – public repo
+- [x] [cloneRepository()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#195-365) – token auth (injects token into URL)
+- [x] [cloneRepository()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#195-365) – SSH auth
+- [x] [cloneRepository()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#195-365) – branch option
+- [x] [cloneRepository()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#195-365) – progress callback
+- [x] [cloneRepository()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#195-365) – clone failure
+- [x] [generateSshKey()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#366-514) – creates key pair
+- [x] [getSshPublicKey()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#515-533) – key exists / doesn't exist
+- [x] [regenerateSshKey()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#534-557) – deletes + regenerates
+- [x] [testAuthentication()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#558-625) – success / failure scenarios
+- [x] [onProgress()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/ipc/handlers.js#1426-1430) / [emitProgress()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/GitManager.js#636-649) – listener pattern
 
 **Edge Cases:**
-- [ ] URL with special characters or spaces
-- [ ] SSH key generation when `.ssh` dir doesn't exist
-- [ ] Clone to path with spaces
+- [x] URL with special characters or spaces
+- [x] SSH key generation when `.ssh` dir doesn't exist
+- [x] Clone to path with spaces
 
 #### [NEW] [tests/main/services/GitManager.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/GitManager.test.js)
 
 ### 3.6 [CompatibilityManager.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js) (788 lines)
 
-- [ ] [constructor()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#6-13) – initializes built-in rules
-- [ ] Built-in rules – each embedded [check()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#224-239) function tested with matching/non-matching config
-- [ ] [initialize()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#35-42) – loads cached config
-- [ ] [checkForUpdates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#280-315) – fetches remote, compares, notifies
-- [ ] [isVersionNewer()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#316-334) – semver comparisons
-- [ ] [fetchRemoteConfig()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#335-361) – HTTPS fetch success/timeout/error
-- [ ] [compareConfigs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#362-401) – detects new/updated/removed rules
-- [ ] [applyUpdates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#402-433) – saves and applies remote rules
-- [ ] [applyRemoteRules()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#434-462) – converts JSON rules to functions
-- [ ] [createRuleChecker()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#463-492) – implements condition operators (`<`, `>`, `=`, [in](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#26-30), etc.)
-- [ ] [getConfigValue()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#493-523) – key lookup in config objects
-- [ ] [evaluateCondition()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#524-559) – all condition operators
-- [ ] [interpolateMessage()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#560-579) – placeholder replacement
-- [ ] [loadCachedConfig()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#580-607) / [saveCachedConfig()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#608-625) – file I/O
-- [ ] [getDeprecationInfo()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#626-632) / [getFrameworkRequirements()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#633-639) / [getConfigInfo()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#640-651)
+- [x] [constructor()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/PhpManager.js#6-13) – initializes built-in rules
+- [x] Built-in rules – each embedded [check()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#224-239) function tested with matching/non-matching config
+- [x] [initialize()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/UpdateManager.js#35-42) – loads cached config
+- [x] [checkForUpdates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#280-315) – fetches remote, compares, notifies
+- [x] [isVersionNewer()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#316-334) – semver comparisons
+- [x] [fetchRemoteConfig()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#335-361) – HTTPS fetch success/timeout/error
+- [x] [compareConfigs()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#362-401) – detects new/updated/removed rules
+- [x] [applyUpdates()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#402-433) – saves and applies remote rules
+- [x] [applyRemoteRules()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#434-462) – converts JSON rules to functions
+- [x] [createRuleChecker()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#463-492) – implements condition operators (`<`, `>`, `=`, [in](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/LogManager.js#26-30), etc.)
+- [x] [getConfigValue()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#493-523) – key lookup in config objects
+- [x] [evaluateCondition()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#524-559) – all condition operators
+- [x] [interpolateMessage()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#560-579) – placeholder replacement
+- [x] [loadCachedConfig()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#580-607) / [saveCachedConfig()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#608-625) – file I/O
+- [x] [getDeprecationInfo()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#626-632) / [getFrameworkRequirements()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#633-639) / [getConfigInfo()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#640-651)
 
 **Edge Cases:**
-- [ ] Remote fetch timeout
-- [ ] Corrupted cached config file
-- [ ] Rule with unknown condition operator (graceful handling)
-- [ ] [evaluateCondition()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#524-559) with non-numeric values for `<` / `>`
+- [x] Remote fetch timeout
+- [x] Corrupted cached config file
+- [x] Rule with unknown condition operator (graceful handling)
+- [x] [evaluateCondition()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CompatibilityManager.js#524-559) with non-numeric values for `<` / `>`
 
 #### [NEW] [tests/main/services/CompatibilityManager.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/CompatibilityManager.test.js)
 
@@ -452,21 +452,21 @@ A comprehensive, incremental plan to add automated tests across the entire DevBo
 
 The [setupIpcHandlers](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/ipc/handlers.js#19-1461) function registers ~100 IPC handlers. Tests should verify:
 
-- [ ] **Project handlers** – `project:getAll`, `project:getById`, `project:create`, `project:update`, `project:delete`, `project:start`, `project:stop`, `project:restart`, `project:getStatus`, `project:openInEditor`, `project:openInBrowser`, `project:openFolder`, `project:move`, `project:switchWebServer`, `project:regenerateVhost`, `project:scanUnregistered`, `project:registerExisting`, `project:detectType`, `project:exportConfig`, `project:getServiceVersions`, `project:updateServiceVersions`, `project:checkCompatibility`, `project:getCompatibilityRules`, `project:readEnv`
-- [ ] **Compatibility handlers** – `compatibility:checkForUpdates`, `compatibility:applyUpdates`, `compatibility:getConfigInfo`
-- [ ] **PHP handlers** – `php:getVersions`, `php:getExtensions`, `php:toggleExtension`, `php:runCommand`, `php:runArtisan`
-- [ ] **Service handlers** – `services:getStatus`, `services:start`, `services:stop`, `services:restart`, `services:startAll`, `services:stopAll`, `services:getResourceUsage`, `services:getRunningVersions`, `services:isVersionRunning`, `services:getWebServerPorts`, `services:getProjectNetworkPort`
-- [ ] **Database handlers** – `database:getConnections`, `database:getDatabases`, `database:createDatabase`, `database:deleteDatabase`, `database:importDatabase`, `database:exportDatabase`, `database:runQuery`
-- [ ] **Binary handlers** – all download/install/uninstall channels
-- [ ] **Settings handlers** – `settings:getAll`, `settings:update`, etc.
-- [ ] **Log handlers** – `logs:get`, `logs:clear`, etc.
-- [ ] **SSH/Git handlers** – clone, SSH key management
-- [ ] **Update handlers** – check/download/install updates
-- [ ] **Error handling** – each handler returns `{ error }` on failure
+- [x] **Project handlers** – `project:getAll`, `project:getById`, `project:create`, `project:update`, `project:delete`, `project:start`, `project:stop`, `project:restart`, `project:getStatus`, `project:openInEditor`, `project:openInBrowser`, `project:openFolder`, `project:move`, `project:switchWebServer`, `project:regenerateVhost`, `project:scanUnregistered`, `project:registerExisting`, `project:detectType`, `project:exportConfig`, `project:getServiceVersions`, `project:updateServiceVersions`, `project:checkCompatibility`, `project:getCompatibilityRules`, `project:readEnv`
+- [x] **Compatibility handlers** – `compatibility:checkForUpdates`, `compatibility:applyUpdates`, `compatibility:getConfigInfo`
+- [x] **PHP handlers** – `php:getVersions`, `php:getExtensions`, `php:toggleExtension`, `php:runCommand`, `php:runArtisan`
+- [x] **Service handlers** – `services:getStatus`, `services:start`, `services:stop`, `services:restart`, `services:startAll`, `services:stopAll`, `services:getResourceUsage`, `services:getRunningVersions`, `services:isVersionRunning`, `services:getWebServerPorts`, `services:getProjectNetworkPort`
+- [x] **Database handlers** – `database:getConnections`, `database:getDatabases`, `database:createDatabase`, `database:deleteDatabase`, `database:importDatabase`, `database:exportDatabase`, `database:runQuery`
+- [x] **Binary handlers** – all download/install/uninstall channels
+- [x] **Settings handlers** – `settings:getAll`, `settings:update`, etc.
+- [x] **Log handlers** – `logs:get`, `logs:clear`, etc.
+- [x] **SSH/Git handlers** – clone, SSH key management
+- [x] **Update handlers** – check/download/install updates
+- [x] **Error handling** – each handler returns `{ error }` on failure
 
 **Edge Cases:**
-- [ ] Handler called before manager is initialized
-- [ ] Handler receives `undefined` / `null` arguments
+- [x] Handler called before manager is initialized
+- [x] Handler receives `undefined` / `null` arguments
 
 #### [NEW] [tests/main/ipc/handlers.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/ipc/handlers.test.js)
 
@@ -480,23 +480,23 @@ The [setupIpcHandlers](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/ipc
 
 #### [AppContext.jsx](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/AppContext.jsx)
 
-- [ ] [appReducer](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/AppContext.jsx#18-99) – all action types (`SET_PROJECTS`, `SET_SERVICES`, `SET_RESOURCE_USAGE`, `SET_BINARIES`, `SET_INSTALLED`, `SET_DOWNLOADING`, `SET_DOWNLOAD_PROGRESS`, `SET_PROJECT_LOADING`)
-- [ ] [AppProvider](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/AppContext.jsx#100-376) – mounts, provides context values
-- [ ] [loadInitialData()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/AppContext.jsx#105-125) – calls `window.devbox` APIs, dispatches results
-- [ ] [syncActiveDownloads()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/AppContext.jsx#197-229) – syncs backend state
-- [ ] [useApp()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/AppContext.jsx#377-384) – throws when used outside provider
-- [ ] `databaseOperation` / `clearDatabaseOperation` state management
-- [ ] Project loading state management (`startProject`, `stopProject`)
+- [x] [appReducer](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/AppContext.jsx#18-99) – all action types (`SET_PROJECTS`, `SET_SERVICES`, `SET_RESOURCE_USAGE`, `SET_BINARIES`, `SET_INSTALLED`, `SET_DOWNLOADING`, `SET_DOWNLOAD_PROGRESS`, `SET_PROJECT_LOADING`)
+- [x] [AppProvider](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/AppContext.jsx#100-376) – mounts, provides context values
+- [x] [loadInitialData()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/AppContext.jsx#105-125) – calls `window.devbox` APIs, dispatches results
+- [x] [syncActiveDownloads()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/AppContext.jsx#197-229) – syncs backend state
+- [x] [useApp()](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/AppContext.jsx#377-384) – throws when used outside provider
+- [x] `databaseOperation` / `clearDatabaseOperation` state management
+- [x] Project loading state management (`startProject`, `stopProject`)
 
 #### [NEW] [tests/renderer/context/AppContext.test.jsx](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/renderer/context/AppContext.test.jsx)
 
 #### [ModalContext.jsx](file:///c:/Users/Jeffrey/Documents/devboxpro/src/renderer/src/context/ModalContext.jsx)
 
-- [ ] `ModalProvider` – provides open/close modal functions
-- [ ] `openModal()` with content
-- [ ] `closeModal()` clears state
-- [ ] Multiple modals (if supported)
-- [ ] `useModal()` – throws outside provider
+- [x] `ModalProvider` – provides open/close modal functions
+- [x] `openModal()` with content
+- [x] `closeModal()` clears state
+- [x] Multiple modals (if supported)
+- [x] `useModal()` – throws outside provider
 
 #### [NEW] [tests/renderer/context/ModalContext.test.jsx](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/renderer/context/ModalContext.test.jsx)
 
