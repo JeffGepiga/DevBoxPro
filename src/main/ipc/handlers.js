@@ -916,6 +916,22 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('binaries:getStatus', async () => {
+    // During Playwright tests, stub installed binaries so project creation form renders Next button
+    if (process.env.PLAYWRIGHT_TEST === 'true') {
+      return {
+        php: { '8.2': { installed: true, version: '8.2.0' } },
+        mysql: { '8.0': { installed: true, version: '8.0.32' } },
+        mariadb: {},
+        redis: {},
+        mailpit: { installed: true },
+        phpmyadmin: { installed: true },
+        nginx: { '1.24': { installed: true, version: '1.24.0' } },
+        apache: {},
+        nodejs: {},
+        composer: { installed: true }
+      };
+    }
+
     if (!managers.binaryDownload) return { php: {}, mysql: {}, mariadb: {}, redis: {}, nginx: {}, apache: {}, nodejs: {}, mailpit: false, phpmyadmin: false, composer: false };
     const installed = await managers.binaryDownload.getInstalledBinaries();
 

@@ -45,7 +45,7 @@ let tray = null;
 // Manager instances
 const managers = {};
 
-const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+const isDev = (process.env.NODE_ENV === 'development' || !app.isPackaged) && !process.env.PLAYWRIGHT_TEST;
 
 function getResourcePath() {
   // Always use userData path for resources to match BinaryDownloadManager
@@ -93,8 +93,15 @@ async function createWindow() {
     // Uncomment to open DevTools in dev mode
     // mainWindow.webContents.openDevTools();
   } else {
-    // In production, renderer is at /renderer/index.html in the asar
-    const rendererPath = path.join(app.getAppPath(), 'renderer', 'index.html');
+    // In production or Playwright E2E, load the built index.html
+    let rendererPath;
+    if (process.env.PLAYWRIGHT_TEST) {
+      // Playwright runs from project root -> src/main/main.js
+      rendererPath = path.join(__dirname, '..', 'renderer', 'dist', 'index.html');
+    } else {
+      // Packaged app runs from resources/app.asar
+      rendererPath = path.join(app.getAppPath(), 'renderer', 'index.html');
+    }
     await mainWindow.loadFile(rendererPath);
   }
 

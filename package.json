@@ -13,7 +13,13 @@
     "build:win": "npm run build:renderer && electron-builder --win",
     "build:mac": "npm run build:renderer && electron-builder --mac",
     "build:all": "npm run build:renderer && electron-builder --win --mac",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:main": "vitest run --project main",
+    "test:renderer": "vitest run --project renderer",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
@@ -32,19 +38,26 @@
     "yaml": "^2.3.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "@vitejs/plugin-react": "^4.2.1",
+    "@vitest/coverage-v8": "^4.0.18",
     "autoprefixer": "^10.4.16",
     "concurrently": "^8.2.2",
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
+    "jsdom": "^28.1.0",
     "postcss": "^8.4.32",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.1",
     "tailwindcss": "^3.4.0",
     "vite": "^5.0.10",
+    "vitest": "^4.0.18",
     "wait-on": "^7.2.0"
   },
   "build": {
