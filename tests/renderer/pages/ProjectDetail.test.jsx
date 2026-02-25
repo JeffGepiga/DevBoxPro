@@ -53,6 +53,8 @@ vi.mock('@/context/AppContext', () => ({
     useApp: () => ({
         projects: [MOCK_PROJECT],
         loading: false,
+        services: {},
+        projectLoadingStates: {},
         refreshProjects: vi.fn(),
         startProject: vi.fn(),
         stopProject: vi.fn(),

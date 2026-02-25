@@ -503,8 +503,7 @@ class DatabaseManager {
     }
 
     // Security: Block path traversal attempts
-    const normalizedPath = path.normalize(filePath);
-    if (normalizedPath.includes('..')) {
+    if (filePath.includes('..')) {
       this.managers.log?.systemWarn('Blocked path traversal attempt in database import/export', {
         path: filePath.substring(0, 100),
       });

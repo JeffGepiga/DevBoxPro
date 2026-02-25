@@ -35,6 +35,8 @@ vi.mock('@/context/AppContext', () => ({
         projects: [],
         loading: false,
         services: {},
+        resourceUsage: { total: { cpu: 0, memory: 0 }, services: {} },
+        projectLoadingStates: {},
         refreshServices: vi.fn(),
         refreshProjects: vi.fn(),
     }),

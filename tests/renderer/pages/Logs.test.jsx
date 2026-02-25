@@ -25,7 +25,13 @@ beforeEach(() => {
 });
 
 vi.mock('@/context/AppContext', () => ({
-    useApp: () => ({ projects: [], loading: false, refreshServices: vi.fn() }),
+    useApp: () => ({
+        projects: [],
+        loading: false,
+        services: {},
+        projectLoadingStates: {},
+        refreshServices: vi.fn(),
+    }),
 }));
 
 vi.mock('@/context/ModalContext', () => ({
@@ -41,7 +47,7 @@ describe('Logs', () => {
                 <Logs />
             </MemoryRouter>
         );
-        await waitFor(() => expect(screen.getByText(/Logs/i)).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByRole('heading', { name: /Logs/i })).toBeInTheDocument());
         await act(async () => { });
     });
 

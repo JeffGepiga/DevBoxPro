@@ -1,5 +1,7 @@
 const path = require('path');
 const fs = require('fs-extra');
+const os = require('os');
+const treeKill = require('tree-kill');
 const { spawn } = require('child_process');
 
 // Helper function to spawn a process hidden on Windows
@@ -270,13 +272,11 @@ class SupervisorManager {
       return { success: true, wasRunning: false };
     }
 
-    const kill = require('tree-kill');
-
     // Kill all instances
     for (const instance of processInfo.instances) {
       if (instance.process && instance.pid) {
         await new Promise((resolve) => {
-          kill(instance.pid, 'SIGTERM', (err) => {
+          treeKill(instance.pid, 'SIGTERM', (err) => {
             if (err) this.managers.log?.systemError(`Error killing process ${instance.name}`, { error: err.message });
             resolve();
           });

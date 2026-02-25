@@ -377,59 +377,59 @@ A comprehensive, incremental plan to add automated tests across the entire DevBo
 
 ### 3.10 [ServiceManager.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/ServiceManager.js) (113 KB — largest service)
 
-- [ ] Service status tracking (start/stop/restart)
-- [ ] Multi-version service management
-- [ ] Resource usage monitoring
-- [ ] Service dependency ordering
-- [ ] Port management per service version
-- [ ] Start all / stop all orchestration
-- [ ] Health checks and readiness probes
-- [ ] Process PID tracking and cleanup
+- [x] Service status tracking (start/stop/restart)
+- [x] Multi-version service management
+- [x] Resource usage monitoring
+- [x] Service dependency ordering
+- [x] Port management per service version
+- [x] Start all / stop all orchestration
+- [x] Health checks and readiness probes
+- [x] Process PID tracking and cleanup
 
 #### [NEW] [tests/main/services/ServiceManager.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/ServiceManager.test.js)
 
 ### 3.11 [ProjectManager.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/ProjectManager.js) (138 KB — most complex)
 
-- [ ] Project CRUD (create, read, update, delete)
-- [ ] Project start/stop/restart lifecycle
-- [ ] Project type detection (Laravel, WordPress, static, etc.)
-- [ ] Vhost generation per project
-- [ ] Environment file management (`.env` read/write)
-- [ ] Project move operation
-- [ ] Scan for unregistered projects
-- [ ] Register existing project
-- [ ] Service version management per project
-- [ ] Config export/import (`devbox.json`)
+- [x] Project CRUD (create, read, update, delete)
+- [x] Project start/stop/restart lifecycle
+- [x] Project type detection (Laravel, WordPress, static, etc.)
+- [x] Vhost generation per project
+- [x] Environment file management (`.env` read/write)
+- [x] Project move operation
+- [x] Scan for unregistered projects
+- [x] Register existing project
+- [x] Service version management per project
+- [x] Config export/import (`devbox.json`)
 
 **Edge Cases:**
-- [ ] Create project with duplicate name
-- [ ] Delete project with running services
-- [ ] Move project while services running
-- [ ] Project path with spaces and unicode characters
-- [ ] Import `devbox.json` with missing binaries
+- [x] Create project with duplicate name
+- [x] Delete project with running services
+- [x] Move project while services running
+- [x] Project path with spaces and unicode characters
+- [x] Import `devbox.json` with missing binaries
 
 #### [NEW] [tests/main/services/ProjectManager.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/ProjectManager.test.js)
 
 ### 3.12 [BinaryDownloadManager.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/BinaryDownloadManager.js) (106 KB)
 
-- [ ] Download queue management
-- [ ] Download progress tracking
-- [ ] Archive extraction (ZIP, TAR)
-- [ ] Binary version discovery
-- [ ] Installed binary detection
-- [ ] Download cancellation
-- [ ] Retry on failure
-- [ ] Platform-specific download URLs
+- [x] Download queue management
+- [x] Download progress tracking
+- [x] Archive extraction (ZIP, TAR)
+- [x] Binary version discovery
+- [x] Installed binary detection
+- [x] Download cancellation
+- [x] Retry on failure
+- [x] Platform-specific download URLs
 
 #### [NEW] [tests/main/services/BinaryDownloadManager.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/BinaryDownloadManager.test.js)
 
 ### 3.13 [CliManager.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/CliManager.js) (57 KB)
 
-- [ ] CLI command routing
-- [ ] Terminal session management
-- [ ] Command history
-- [ ] Environment setup per project
-- [ ] PATH management for project-specific binaries
+- [x] CLI command routing
+- [x] Terminal session management
+- [x] Command history
+- [x] Environment setup per project
+- [x] PATH management for project-specific binaries
 
 #### [NEW] [tests/main/services/CliManager.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/CliManager.test.js)
 

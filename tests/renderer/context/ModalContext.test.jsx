@@ -20,9 +20,21 @@ describe('ModalContext', () => {
 
     describe('useModal()', () => {
         it('throws when used outside ModalProvider', () => {
-            expect(() => {
-                renderHook(() => useModal());
-            }).toThrow('useModal must be used within a ModalProvider');
+            const originalError = console.error;
+            console.error = () => { };
+
+            // Prevent JSDOM from logging the unhandled error
+            const errorHandler = (e) => e.preventDefault();
+            window.addEventListener('error', errorHandler);
+
+            try {
+                expect(() => {
+                    renderHook(() => useModal());
+                }).toThrow('useModal must be used within a ModalProvider');
+            } finally {
+                console.error = originalError;
+                window.removeEventListener('error', errorHandler);
+            }
         });
 
         it('provides showAlert and showConfirm functions', () => {

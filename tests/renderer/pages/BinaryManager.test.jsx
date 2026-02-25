@@ -26,6 +26,10 @@ const mockDevbox = {
         install: vi.fn().mockResolvedValue({}),
         uninstall: vi.fn().mockResolvedValue({}),
         getInstalledBinaries: vi.fn().mockResolvedValue({ php: {}, nginx: {}, mysql: {}, mariadb: {}, redis: {} }),
+        getInstalled: vi.fn().mockResolvedValue({}),
+        getDownloadUrls: vi.fn().mockResolvedValue({}),
+        getServiceConfig: vi.fn().mockResolvedValue({}),
+        onProgress: vi.fn().mockImplementation(() => vi.fn()),
     },
 };
 
@@ -36,7 +40,15 @@ beforeEach(() => {
 });
 
 vi.mock('@/context/AppContext', () => ({
-    useApp: () => ({ projects: [], loading: false, refreshServices: vi.fn() }),
+    useApp: () => ({
+        projects: [],
+        loading: false,
+        services: {},
+        downloading: {},
+        downloadProgress: {},
+        projectLoadingStates: {},
+        refreshServices: vi.fn(),
+    }),
 }));
 
 vi.mock('@/context/ModalContext', () => ({

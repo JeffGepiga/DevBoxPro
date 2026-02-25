@@ -51,6 +51,7 @@ vi.mock('@/context/AppContext', () => ({
     useApp: () => ({
         projects: [],
         loading: false,
+        projectLoadingStates: {},
         refreshProjects: vi.fn(),
     }),
 }));
@@ -79,6 +80,10 @@ describe('CreateProject', () => {
 
         it('renders project name input', async () => {
             renderCreate();
+            // Wait for loading to finish and Go to step 2 (Details)
+            const nextButton = await screen.findByText(/Next/i);
+            fireEvent.click(nextButton);
+
             await waitFor(() => {
                 const nameInput = document.querySelector('input[type="text"], input[placeholder*="name" i], input[placeholder*="project" i]');
                 expect(nameInput).toBeTruthy();
@@ -89,11 +94,10 @@ describe('CreateProject', () => {
     describe('Form fields', () => {
         it('renders project type selector', async () => {
             renderCreate();
-            await act(async () => { });
-            // Page should have a select or radio group for project type
-            const selects = document.querySelectorAll('select');
-            const radios = document.querySelectorAll('input[type="radio"]');
-            expect(selects.length + radios.length).toBeGreaterThan(0);
+            await waitFor(() => {
+                const laravelButton = screen.getByText('Laravel');
+                expect(laravelButton).toBeInTheDocument();
+            });
         });
     });
 });

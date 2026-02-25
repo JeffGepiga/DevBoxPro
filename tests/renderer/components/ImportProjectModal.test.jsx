@@ -156,11 +156,11 @@ describe('ImportProjectModal', () => {
             fireEvent.click(screen.getByText(/Optional Services/i));
             await waitFor(() => screen.getByText('MySQL'));
 
-            const mysqlCheckbox = screen.getByRole('checkbox', { name: /mysql/i });
+            const mysqlCheckbox = screen.getByRole('checkbox', { name: /^MySQL/i });
             fireEvent.click(mysqlCheckbox);
             expect(mysqlCheckbox).toBeChecked();
 
-            const mariadbCheckbox = screen.getByRole('checkbox', { name: /mariadb/i });
+            const mariadbCheckbox = screen.getByRole('checkbox', { name: /^MariaDB/i });
             expect(mariadbCheckbox).not.toBeChecked();
         });
     });

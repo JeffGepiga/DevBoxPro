@@ -7,8 +7,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
 import os from 'os';
+import os from 'os';
 
-// ── Mock child_process ────────────────────────────────────────────────────────
 vi.mock('child_process', () => {
     const stdout = { on: vi.fn() };
     const stderr = { on: vi.fn() };
@@ -16,9 +16,13 @@ vi.mock('child_process', () => {
     return { spawn: vi.fn(() => mockProcess) };
 });
 
-vi.mock('tree-kill', () => ({
-    default: vi.fn((_pid, _signal, cb) => cb && cb()),
-}));
+const mockTreeKill = vi.fn((_pid, _signal, cb) => cb && cb());
+require('module')._cache[require.resolve('tree-kill')] = {
+    id: require.resolve('tree-kill'),
+    filename: require.resolve('tree-kill'),
+    loaded: true,
+    exports: mockTreeKill
+};
 
 const fs = require('fs-extra');
 require('../../helpers/mockElectronCjs');
@@ -169,7 +173,6 @@ describe('SupervisorManager', () => {
         });
 
         it('kills process instances and removes from map', async () => {
-            const treeKill = require('tree-kill').default;
             const proj = makeProject('p1', [{ name: 'worker', command: 'cmd', status: 'running', pid: 999, startedAt: null }]);
             mgr = createMgr([proj]);
             configStore.get.mockReturnValue([proj]);
@@ -184,7 +187,7 @@ describe('SupervisorManager', () => {
 
             const result = await mgr.stopProcess('p1', 'worker');
             expect(result.wasRunning).toBe(true);
-            expect(treeKill).toHaveBeenCalledWith(999, 'SIGTERM', expect.any(Function));
+            expect(mockTreeKill).toHaveBeenCalledWith(999, 'SIGTERM', expect.any(Function));
         });
     });
 

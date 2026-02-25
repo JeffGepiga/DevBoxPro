@@ -31,7 +31,14 @@ beforeEach(() => {
 });
 
 vi.mock('@/context/AppContext', () => ({
-    useApp: () => ({ projects: [], loading: false, services: {}, refreshServices: vi.fn() }),
+    useApp: () => ({
+        projects: [],
+        loading: false,
+        services: {},
+        databaseOperations: {},
+        projectLoadingStates: {},
+        refreshServices: vi.fn(),
+    }),
 }));
 
 vi.mock('@/context/ModalContext', () => ({
@@ -47,7 +54,10 @@ describe('Databases', () => {
                 <Databases />
             </MemoryRouter>
         );
-        await waitFor(() => expect(screen.getByText(/Databases/i)).toBeInTheDocument());
+        await waitFor(() => {
+            const headings = screen.getAllByRole('heading', { name: /Databases/i });
+            expect(headings.length).toBeGreaterThan(0);
+        });
         await act(async () => { });
     });
 
