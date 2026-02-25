@@ -217,6 +217,26 @@ npm run build
 npm run dist
 ```
 
+### Testing
+
+DevBox Pro includes a comprehensive test suite covering Unit, Integration, and End-to-End (E2E) scenarios.
+
+```bash
+# Run all tests
+npm test
+
+# Run only main process tests
+npm run test:main
+
+# Run only renderer process tests
+npm run test:renderer
+
+# Run End-to-End (E2E) tests
+npm run test:e2e
+```
+
+The E2E tests are built using Playwright and cover the full project lifecycle, database workflows, binary downloads, SSL configuration, and settings persistence.
+
 ### Project Structure
 
 ```

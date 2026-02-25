@@ -642,12 +642,12 @@ Each page test verifies: renders without crash, shows correct data, tabs switch 
 
 > **Goal:** Test full flows that span multiple layers (renderer → IPC → service → filesystem).
 
-- [ ] **Full project lifecycle** – create → start → stop → delete
-- [ ] **Binary download → service start** – download PHP → start PHP-FPM
-- [ ] **Database workflow** – create DB → import SQL → export → delete DB
-- [ ] **SSL workflow** – generate CA → create cert → configure project with SSL
-- [ ] **Settings persistence** – change settings → restart app → settings retained
-- [ ] **Config export/import** – export `devbox.json` → import on fresh install
+- [x] **Full project lifecycle** – create → start → stop → delete
+- [x] **Binary download → service start** – download PHP → start PHP-FPM
+- [x] **Database workflow** – create DB → import SQL → export → delete DB
+- [x] **SSL workflow** – generate CA → create cert → configure project with SSL
+- [x] **Settings persistence** – change settings → restart app → settings retained
+- [x] **Config export/import** – export `devbox.json` → import on fresh install
 
 > [!NOTE]
 > Phase 6 tests are more complex and may require a real or emulated Electron environment. Consider using `@electron/test` or Playwright for Electron. These can be deferred until Phases 0-5 are complete.
@@ -676,7 +676,7 @@ npm run test:coverage
 
 ### CI Integration
 
-- [ ] Add GitHub Actions workflow `.github/workflows/test.yml`:
+- [x] Add GitHub Actions workflow `.github/workflows/test.yml`:
   ```yaml
   name: Tests
   on: [push, pull_request]
