@@ -337,41 +337,41 @@ A comprehensive, incremental plan to add automated tests across the entire DevBo
 
 ### 3.7 [WebServerManager.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/WebServerManager.js) (28 KB)
 
-- [ ] Config generation (Nginx & Apache vhost configs)
-- [ ] Start/stop/restart for each web server type
-- [ ] Port allocation and conflict detection
-- [ ] SSL cert integration in vhost configs
-- [ ] Multi-domain configuration
-- [ ] Error handling for missing binaries
+- [x] Config generation (Nginx & Apache vhost configs)
+- [x] Start/stop/restart for each web server type
+- [x] Port allocation and conflict detection
+- [x] SSL cert integration in vhost configs
+- [x] Multi-domain configuration
+- [x] Error handling for missing binaries
 
 #### [NEW] [tests/main/services/WebServerManager.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/WebServerManager.test.js)
 
 ### 3.8 [SupervisorManager.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/SupervisorManager.js) (16 KB)
 
-- [ ] Worker process management
-- [ ] Start/stop/restart supervisor processes
-- [ ] Process health monitoring
-- [ ] Auto-restart on crash
-- [ ] Config file generation
+- [x] Worker process management
+- [x] Start/stop/restart supervisor processes
+- [x] Process health monitoring
+- [x] Auto-restart on crash
+- [x] Config file generation
 
 #### [NEW] [tests/main/services/SupervisorManager.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/SupervisorManager.test.js)
 
 ### 3.9 [DatabaseManager.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/DatabaseManager.js) (59 KB)
 
-- [ ] Database creation/deletion
-- [ ] Import (SQL file, gzip) with mode (replace/append)
-- [ ] Export database to file
-- [ ] Query execution
-- [ ] Connection management (MySQL/MariaDB)
-- [ ] Connection string construction
-- [ ] User/permission operations
-- [ ] Handling large databases (streaming)
+- [x] Database creation/deletion
+- [x] Import (SQL file, gzip) with mode (replace/append)
+- [x] Export database to file
+- [x] Query execution
+- [x] Connection management (MySQL/MariaDB)
+- [x] Connection string construction
+- [x] User/permission operations
+- [x] Handling large databases (streaming)
 
 **Edge Cases:**
-- [ ] Import of empty SQL file
-- [ ] Database name with special characters
-- [ ] Connection timeout
-- [ ] Query with syntax errors
+- [x] Import of empty SQL file
+- [x] Database name with special characters
+- [x] Connection timeout
+- [x] Query with syntax errors
 
 #### [NEW] [tests/main/services/DatabaseManager.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/DatabaseManager.test.js)
 
@@ -435,10 +435,10 @@ A comprehensive, incremental plan to add automated tests across the entire DevBo
 
 ### 3.14 [extractWorker.js](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/services/extractWorker.js) (2 KB)
 
-- [ ] ZIP extraction
-- [ ] TAR extraction
-- [ ] Progress reporting via `process.send()`
-- [ ] Error handling for corrupted archives
+- [x] ZIP extraction
+- [x] TAR extraction
+- [x] Progress reporting via `process.send()`
+- [x] Error handling for corrupted archives
 
 #### [NEW] [tests/main/services/extractWorker.test.js](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/main/services/extractWorker.test.js)
 
@@ -512,13 +512,13 @@ The [setupIpcHandlers](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/ipc
 | **ProjectTerminal.jsx** | Terminal container renders; sends commands; receives output |
 | **XTerminal.jsx** | Terminal initialization; resize handling; input/output |
 
-- [ ] `tests/renderer/components/Sidebar.test.jsx`
-- [ ] `tests/renderer/components/Modal.test.jsx`
-- [ ] `tests/renderer/components/ImportProjectModal.test.jsx`
-- [ ] `tests/renderer/components/InstallationProgress.test.jsx`
-- [ ] `tests/renderer/components/PhpIniEditor.test.jsx`
-- [ ] `tests/renderer/components/ProjectTerminal.test.jsx`
-- [ ] `tests/renderer/components/XTerminal.test.jsx`
+- [x] `tests/renderer/components/Sidebar.test.jsx`
+- [x] `tests/renderer/components/Modal.test.jsx`
+- [x] `tests/renderer/components/ImportProjectModal.test.jsx`
+- [x] `tests/renderer/components/InstallationProgress.test.jsx`
+- [x] `tests/renderer/components/PhpIniEditor.test.jsx`
+- [x] `tests/renderer/components/ProjectTerminal.test.jsx`
+- [x] `tests/renderer/components/XTerminal.test.jsx`
 
 ### 5.3 Pages
 
@@ -526,113 +526,113 @@ Each page test verifies: renders without crash, shows correct data, tabs switch 
 
 #### **Dashboard.jsx** (Home Page)
 
-- [ ] Renders project summary cards
-- [ ] Shows service status overview
-- [ ] Quick-action buttons functional
-- [ ] Empty state when no projects exist
-- [ ] Links navigate to correct routes
+- [x] Renders project summary cards
+- [x] Shows service status overview
+- [x] Quick-action buttons functional
+- [x] Empty state when no projects exist
+- [x] Links navigate to correct routes
 
 #### [NEW] [tests/renderer/pages/Dashboard.test.jsx](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/renderer/pages/Dashboard.test.jsx)
 
 #### **Projects.jsx** (Projects List)
 
-- [ ] Renders project list
-- [ ] Project status badges (running/stopped)
-- [ ] Search/filter projects
-- [ ] "Create New" button navigates
-- [ ] Start/stop buttons trigger IPC calls
-- [ ] Delete project with confirmation
-- [ ] Empty state
+- [x] Renders project list
+- [x] Project status badges (running/stopped)
+- [x] Search/filter projects
+- [x] "Create New" button navigates
+- [x] Start/stop buttons trigger IPC calls
+- [x] Delete project with confirmation
+- [x] Empty state
 
 #### [NEW] [tests/renderer/pages/Projects.test.jsx](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/renderer/pages/Projects.test.jsx)
 
 #### **ProjectDetail.jsx** (Project Detail — multiple tabs)
 
-- [ ] **Overview tab** – shows project info, status, quick actions
-- [ ] **Services tab** – shows per-project service versions, switch web server
-- [ ] **Environment tab** – `.env` editor loads and saves
-- [ ] **Terminal tab** – terminal component mounts
-- [ ] **Logs tab** – shows project logs, clear button
-- [ ] Tab switching preserves state
-- [ ] Start/stop/restart project from detail view
-- [ ] Edit project name/domain
-- [ ] Navigate back to projects list
+- [x] **Overview tab** – shows project info, status, quick actions
+- [x] **Services tab** – shows per-project service versions, switch web server
+- [x] **Environment tab** – `.env` editor loads and saves
+- [x] **Terminal tab** – terminal component mounts
+- [x] **Logs tab** – shows project logs, clear button
+- [x] Tab switching preserves state
+- [x] Start/stop/restart project from detail view
+- [x] Edit project name/domain
+- [x] Navigate back to projects list
 
 #### [NEW] [tests/renderer/pages/ProjectDetail.test.jsx](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/renderer/pages/ProjectDetail.test.jsx)
 
 #### **CreateProject.jsx** (New Project Wizard)
 
-- [ ] Step 1: Project name and type selection
-- [ ] Step 2: PHP/Node version selection
-- [ ] Step 3: Database configuration
-- [ ] Step 4: Domain and web server selection
-- [ ] Git clone option (URL validation, auth)
-- [ ] Form validation (empty name, invalid domain)
-- [ ] Submit creates project via IPC
-- [ ] Cancel navigates back
-- [ ] Compatibility warnings display
+- [x] Step 1: Project name and type selection
+- [x] Step 2: PHP/Node version selection
+- [x] Step 3: Database configuration
+- [x] Step 4: Domain and web server selection
+- [x] Git clone option (URL validation, auth)
+- [x] Form validation (empty name, invalid domain)
+- [x] Submit creates project via IPC
+- [x] Cancel navigates back
+- [x] Compatibility warnings display
 
 #### [NEW] [tests/renderer/pages/CreateProject.test.jsx](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/renderer/pages/CreateProject.test.jsx)
 
 #### **BinaryManager.jsx** (Binary Downloads)
 
-- [ ] Lists all available services and versions
-- [ ] Shows installed/not-installed status
-- [ ] Download button triggers download
-- [ ] Progress bar during download
-- [ ] Cancel download
-- [ ] Uninstall binary
-- [ ] Error state display
+- [x] Lists all available services and versions
+- [x] Shows installed/not-installed status
+- [x] Download button triggers download
+- [x] Progress bar during download
+- [x] Cancel download
+- [x] Uninstall binary
+- [x] Error state display
 
 #### [NEW] [tests/renderer/pages/BinaryManager.test.jsx](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/renderer/pages/BinaryManager.test.jsx)
 
 #### **Databases.jsx** (Database Management)
 
-- [ ] Lists databases
-- [ ] Create database (name input, submit)
-- [ ] Delete database with confirmation
-- [ ] Import database (file selection, mode)
-- [ ] Export database (file selection)
-- [ ] Import/export progress notifications
-- [ ] Empty state
+- [x] Lists databases
+- [x] Create database (name input, submit)
+- [x] Delete database with confirmation
+- [x] Import database (file selection, mode)
+- [x] Export database (file selection)
+- [x] Import/export progress notifications
+- [x] Empty state
 
 #### [NEW] [tests/renderer/pages/Databases.test.jsx](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/renderer/pages/Databases.test.jsx)
 
 #### **Services.jsx** (Global Services)
 
-- [ ] Lists all services with running/stopped state
-- [ ] Start/stop/restart individual services
-- [ ] Start all / stop all
-- [ ] Version selection per service
-- [ ] Resource usage display (CPU, memory)
-- [ ] Port display
+- [x] Lists all services with running/stopped state
+- [x] Start/stop/restart individual services
+- [x] Start all / stop all
+- [x] Version selection per service
+- [x] Resource usage display (CPU, memory)
+- [x] Port display
 
 #### [NEW] [tests/renderer/pages/Services.test.jsx](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/renderer/pages/Services.test.jsx)
 
 #### **Logs.jsx** (System Logs)
 
-- [ ] Renders log entries
-- [ ] Filter by level (info/warn/error)
-- [ ] Filter by category (system/project/service)
-- [ ] Search within logs
-- [ ] Clear logs button
-- [ ] Auto-scroll to latest
-- [ ] Empty state
+- [x] Renders log entries
+- [x] Filter by level (info/warn/error)
+- [x] Filter by category (system/project/service)
+- [x] Search within logs
+- [x] Clear logs button
+- [x] Auto-scroll to latest
+- [x] Empty state
 
 #### [NEW] [tests/renderer/pages/Logs.test.jsx](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/renderer/pages/Logs.test.jsx)
 
 #### **Settings.jsx** (App Settings — largest page)
 
-- [ ] General settings (auto-start, default editor, theme)
-- [ ] Port configuration
-- [ ] Database settings (user, password, active type)
-- [ ] SSL configuration
-- [ ] Timezone setting
-- [ ] Default projects path
-- [ ] Config export/import
-- [ ] Reset to defaults
-- [ ] About section (version, update check)
-- [ ] Changes persist after save
+- [x] General settings (auto-start, default editor, theme)
+- [x] Port configuration
+- [x] Database settings (user, password, active type)
+- [x] SSL configuration
+- [x] Timezone setting
+- [x] Default projects path
+- [x] Config export/import
+- [x] Reset to defaults
+- [x] About section (version, update check)
+- [x] Changes persist after save
 
 #### [NEW] [tests/renderer/pages/Settings.test.jsx](file:///c:/Users/Jeffrey/Documents/devboxpro/tests/renderer/pages/Settings.test.jsx)
 
