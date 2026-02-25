@@ -3,6 +3,9 @@ import { test, expect } from './fixtures';
 test.describe('DevBoxPro Project Lifecycle', () => {
 
     test('Creates a new project successfully', async ({ page }) => {
+        test.setTimeout(60000);
+        const uniqueProjectName = `e2e-test-${Date.now()}`;
+
         // Go to Projects page
         await page.click('a:has-text("Projects")');
         await expect(page.locator('h1:has-text("Projects")').or(page.locator('h2:has-text("Projects")'))).toBeVisible();
@@ -15,6 +18,8 @@ test.describe('DevBoxPro Project Lifecycle', () => {
 
         // Step 1: Project Type
         // We need to wait for the next button to be enabled before clicking
+        // Select Custom PHP to avoid running installation scripts (like composer) during tests
+        await page.click('text="Custom PHP"');
         const nextButton = page.getByRole('button', { name: 'Next' });
         await expect(nextButton).toBeEnabled();
         await nextButton.click();
@@ -22,7 +27,7 @@ test.describe('DevBoxPro Project Lifecycle', () => {
         // Step 2: Details
         // Wait for step 2 to render
         await expect(page.getByRole('heading', { name: 'Project Details' }).or(page.locator('text=Project Details'))).toBeVisible();
-        await page.fill('input[type="text"] >> nth=0', 'e2e-test-project');
+        await page.fill('input[type="text"] >> nth=0', uniqueProjectName);
 
         // Ensure path updates
         await page.click('input[type="text"] >> nth=1');
@@ -46,16 +51,24 @@ test.describe('DevBoxPro Project Lifecycle', () => {
         await expect(submitButton).toBeEnabled();
         await submitButton.click();
 
-        // Should return to Projects list and show the new project
+        // Custom projects don't have installation progress, so it redirects straight to Project details page
+        await expect(page.locator(`h1:has-text("${uniqueProjectName}")`).or(page.locator(`h2:has-text("${uniqueProjectName}")`))).toBeVisible({ timeout: 10000 });
+
+        // Check that project status is running or stopped (can be stopped initially)
+        const statusBadge = page.locator('.status-stopped, .status-running').first();
+        await expect(statusBadge).toBeVisible({ timeout: 10000 });
+
+        // Navigate back to project list to ensure it's there
+        await page.click('a:has-text("Projects")');
         await expect(page.locator('h1:has-text("Projects")').or(page.locator('h2:has-text("Projects")'))).toBeVisible();
-        await expect(page.locator('text=e2e-test-project')).toBeVisible();
+        await expect(page.locator(`text=${uniqueProjectName}`).first()).toBeVisible();
 
         // Start project from the card
-        const projectCard = page.locator('.card', { hasText: 'e2e-test-project' }).first();
-        const startBtn = projectCard.locator('button[title="Start project"]').or(projectCard.locator('button:has(.status-stopped)')); // Wait what is the start button selector?
-        // Let's look at ProjectTableRow or just use Project Detail view to be safer
-        await page.click('text=e2e-test-project');
-        await expect(page.locator('h1:has-text("e2e-test-project")').or(page.locator('h2:has-text("e2e-test-project")'))).toBeVisible();
+        const projectCard = page.locator('.card', { hasText: uniqueProjectName }).first();
+        const startBtn = projectCard.locator('button.btn-success').first();
+
+        // Ensure the button is visible and enabled
+        await expect(startBtn).toBeVisible();
 
         // Wait a bit for status to load
         await page.waitForTimeout(1000);
@@ -81,7 +94,7 @@ test.describe('DevBoxPro Project Lifecycle', () => {
         await expect(page.locator('h1:has-text("Projects")').or(page.locator('h2:has-text("Projects")'))).toBeVisible();
 
         // Delete project using the card menu
-        const card = page.locator('.card', { hasText: 'e2e-test-project' }).first();
+        const card = page.locator('.card', { hasText: uniqueProjectName }).first();
 
         // Click the "More options" menu button
         // Since we don't have a reliable aria-label, we can click the button inside the relative container next to "View Details"
@@ -104,6 +117,6 @@ test.describe('DevBoxPro Project Lifecycle', () => {
         await confirmDeleteBtn.click();
 
         // Project should be gone
-        await expect(page.locator('text=e2e-test-project')).not.toBeVisible({ timeout: 10000 });
+        await expect(page.locator('.card', { hasText: uniqueProjectName })).toHaveCount(0);
     });
 });

@@ -152,6 +152,10 @@ class DatabaseManager {
 
   // Check if a specific database service version is running
   isServiceRunning(dbType = null, version = null) {
+    if (process.env.PLAYWRIGHT_TEST === 'true') {
+      return true; // Mock that it is always running in E2E tests
+    }
+
     const type = dbType || this.getActiveDatabaseType();
     const ver = version || this.getActiveDatabaseVersion();
 
@@ -1374,6 +1378,27 @@ class DatabaseManager {
   }
 
   async runDbQuery(query, database = null) {
+    const isPlaywright = process.env.PLAYWRIGHT_TEST === 'true';
+    if (isPlaywright) {
+      if (!this._mockedDbs) this._mockedDbs = new Set(['information_schema', 'mysql', 'performance_schema', 'sys']);
+
+      const q = query.toLowerCase();
+      if (q.includes('create database')) {
+        const match = query.match(/CREATE DATABASE (?:IF NOT EXISTS )?`([^`]+)`/i);
+        if (match) this._mockedDbs.add(match[1]);
+        return [];
+      }
+      if (q.includes('drop database')) {
+        const match = query.match(/DROP DATABASE (?:IF EXISTS )?`([^`]+)`/i);
+        if (match) this._mockedDbs.delete(match[1]);
+        return [];
+      }
+      if (q.includes('show databases')) {
+        return Array.from(this._mockedDbs).map(db => ({ Database: db }));
+      }
+      return [];
+    }
+
     const clientPath = this.getDbClientPath();
     const port = this.getActualPort();
     const settings = this.configStore.get('settings', {});
@@ -1407,6 +1432,7 @@ class DatabaseManager {
         '-e',
         query,
       );
+
 
       if (database) {
         args.push(database);

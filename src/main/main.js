@@ -16,7 +16,11 @@ const { ConfigStore } = require('./utils/ConfigStore');
 const { setupIpcHandlers } = require('./ipc/handlers');
 
 // Single instance lock - prevent multiple instances of the app
-const gotTheLock = app.requestSingleInstanceLock();
+const isPlaywright = process.env.PLAYWRIGHT_TEST === 'true';
+let gotTheLock = true;
+if (!isPlaywright) {
+  gotTheLock = app.requestSingleInstanceLock();
+}
 
 if (!gotTheLock) {
   // Another instance is already running, quit this one

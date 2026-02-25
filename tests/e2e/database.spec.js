@@ -8,7 +8,8 @@ test.describe('DevBoxPro Database Workflow', () => {
 
         // Navigate to Databases
         await page.click('a:has-text("Databases")');
-        await expect(page.locator('h1:has-text("Databases")').or(page.locator('h2:has-text("Databases")'))).toBeVisible();
+        // Check for the main page header
+        await expect(page.locator('h1', { hasText: /^Databases$/ })).toBeVisible();
 
         // Verify that the "New Database" button is present and click it
         const newDbBtn = page.getByRole('button', { name: /New Database/i }).first();
