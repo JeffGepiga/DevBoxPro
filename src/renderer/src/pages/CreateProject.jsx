@@ -169,6 +169,7 @@ function CreateProject() {
     documentRoot: '', // Custom document root (relative to project path or absolute)
     wordpressVersion: 'latest', // WordPress version selection
     // Node.js project options
+    nodeFramework: '',
     nodePort: 3000,
     nodeStartCommand: 'npm start',
   });
@@ -486,12 +487,22 @@ function CreateProject() {
   };
 
   const handleCreate = async () => {
+    // Guard: path must be set before we hit the backend
+    if (!formData.path || !formData.path.trim()) {
+      setInstallOutput([{ text: 'Error: Project path is required. Please go back to the Details step and set a project path.', type: 'error' }]);
+      setShowInstallProgress(true);
+      setInstallComplete(true);
+      setInstallError(true);
+      return;
+    }
+
     setIsCreating(true);
 
-    // Reset and show installation progress if installing fresh OR cloning from repository
+    // Reset and show installation progress if installing fresh OR cloning from repository OR nodejs project
     const shouldShowProgress =
       (formData.installFresh && (formData.type === 'laravel' || formData.type === 'wordpress' || formData.type === 'symfony')) ||
-      (formData.projectSource === 'clone' && formData.repositoryUrl);
+      (formData.projectSource === 'clone' && formData.repositoryUrl) ||
+      formData.type === 'nodejs';
 
     if (shouldShowProgress) {
       setInstallOutput([]); // Clear previous output
@@ -607,11 +618,24 @@ function CreateProject() {
                 Before creating a project, you need to download the required binaries. Please install the following:
               </p>
               <ul className="list-disc list-inside text-yellow-700 dark:text-yellow-300 mb-4 space-y-1">
-                {binariesStatus.php.length === 0 && (
-                  <li><strong>PHP</strong> - At least one PHP version is required</li>
-                )}
-                {!binariesStatus.nginx && !binariesStatus.apache && (
-                  <li><strong>Web Server</strong> - Nginx or Apache is required</li>
+                {formData.type === 'nodejs' ? (
+                  <>
+                    {binariesStatus.nodejs.length === 0 && (
+                      <li><strong>Node.js</strong> — At least one Node.js version is required</li>
+                    )}
+                    {binariesStatus.nginx.length === 0 && binariesStatus.apache.length === 0 && (
+                      <li><strong>Web Server</strong> — Nginx or Apache is required to proxy requests</li>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {binariesStatus.php.length === 0 && (
+                      <li><strong>PHP</strong> — At least one PHP version is required</li>
+                    )}
+                    {binariesStatus.nginx.length === 0 && binariesStatus.apache.length === 0 && (
+                      <li><strong>Web Server</strong> — Nginx or Apache is required</li>
+                    )}
+                  </>
                 )}
               </ul>
               <Link
@@ -693,6 +717,7 @@ function CreateProject() {
                 setPathManuallySet={setPathManuallySet}
                 defaultProjectsPath={defaultProjectsPath}
                 serviceConfig={serviceConfig}
+                binariesStatus={binariesStatus}
                 gitStatus={gitStatus}
                 sshKeyInfo={sshKeyInfo}
                 setSshKeyInfo={setSshKeyInfo}
@@ -818,81 +843,87 @@ function StepProjectType({ formData, updateFormData, onImportProject }) {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">
         Select Project Type
       </h2>
-      <p className="text-gray-500 dark:text-gray-400 mb-6">
-        Choose the framework or type of PHP application
+      <p className="text-gray-500 dark:text-gray-400 mb-5">
+        Choose the framework or runtime for your new project
       </p>
 
-      <div className="grid grid-cols-2 gap-4">
+      {/* Project type cards — 3 columns, compact horizontal layout */}
+      <div className="grid grid-cols-3 gap-3">
         {PROJECT_TYPES.map((type) => {
           const IconComponent = type.icon;
+          const isSelected = formData.type === type.id && formData.projectSource !== 'import';
           return (
             <button
               key={type.id}
               onClick={() => updateFormData({ type: type.id, projectSource: 'new' })}
               className={clsx(
-                'p-6 rounded-xl border-2 text-left transition-all',
-                formData.type === type.id && formData.projectSource !== 'import'
-                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                'flex items-start gap-3 p-4 rounded-xl border-2 text-left transition-all',
+                isSelected
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 shadow-sm'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800/40'
               )}
             >
-              <div className="mb-3">
-                <IconComponent className={clsx('w-10 h-10', type.iconColor)} />
+              {/* Icon pill */}
+              <div className={clsx(
+                'flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center',
+                isSelected ? 'bg-primary-100 dark:bg-primary-900/40' : 'bg-gray-100 dark:bg-gray-700/60'
+              )}>
+                <IconComponent className={clsx('w-5 h-5', type.iconColor)} />
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-                {type.name}
-              </h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-                {type.description}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {type.features.map((feature) => (
-                  <span key={feature} className="badge badge-neutral">
-                    {feature}
-                  </span>
-                ))}
+
+              {/* Text */}
+              <div className="min-w-0">
+                <p className={clsx(
+                  'text-sm font-semibold leading-tight',
+                  isSelected ? 'text-primary-700 dark:text-primary-300' : 'text-gray-900 dark:text-white'
+                )}>
+                  {type.name}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-snug line-clamp-2">
+                  {type.description}
+                </p>
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {type.features.map((feature) => (
+                    <span key={feature} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                      {feature}
+                    </span>
+                  ))}
+                </div>
               </div>
             </button>
           );
         })}
-      </div>
 
-      {/* Import Existing Project */}
-      <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-        <h3 className="text-md font-medium text-gray-900 dark:text-white mb-3">
-          Or import an existing project
-        </h3>
+        {/* Import button as the 6th grid cell — fits naturally in the 3-col grid */}
         <button
           onClick={handleImportFolder}
           className={clsx(
-            'w-full p-6 rounded-xl border-2 border-dashed text-left transition-all',
+            'flex items-start gap-3 p-4 rounded-xl border-2 border-dashed text-left transition-all',
             formData.projectSource === 'import'
               ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-              : 'border-gray-300 dark:border-gray-600 hover:border-primary-400 dark:hover:border-primary-500 hover:bg-gray-50 dark:hover:bg-gray-800'
+              : 'border-gray-300 dark:border-gray-600 hover:border-primary-400 dark:hover:border-primary-500 hover:bg-gray-50 dark:hover:bg-gray-800/40'
           )}
         >
-          <div className="flex items-center gap-4">
-            <div className="p-3 rounded-lg bg-gray-100 dark:bg-gray-700">
-              <FolderOpen className="w-8 h-8 text-gray-600 dark:text-gray-400" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Import Existing Project
-              </h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Select a folder containing an existing PHP project
-              </p>
-            </div>
+          <div className="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-gray-100 dark:bg-gray-700/60">
+            <FolderOpen className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-700 dark:text-gray-200 leading-tight">
+              Import Project
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">
+              Open an existing project folder
+            </p>
           </div>
         </button>
       </div>
 
       {/* WordPress Version Selection */}
       {formData.type === 'wordpress' && (
-        <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+        <div className="mt-5 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             WordPress Version
           </label>
@@ -931,6 +962,7 @@ function StepDetails({
   setPathManuallySet,
   defaultProjectsPath,
   serviceConfig,
+  binariesStatus,
   gitStatus,
   sshKeyInfo,
   setSshKeyInfo,
@@ -1371,6 +1403,76 @@ function StepDetails({
               Node.js Configuration
             </h4>
 
+            {/* Framework selector */}
+            <div>
+              <label className="label text-green-700 dark:text-green-300">Framework (Optional)</label>
+              <select
+                value={formData.nodeFramework}
+                onChange={(e) => {
+                  const framework = e.target.value;
+                  const defaultCommands = {
+                    '': 'npm start',
+                    express: 'node index.js',
+                    fastify: 'node index.js',
+                    nestjs: 'npm run start:dev',
+                    nextjs: 'npm run dev',
+                    nuxtjs: 'npm run dev',
+                    koa: 'node index.js',
+                    hapi: 'node index.js',
+                    adonisjs: 'node ace serve --watch',
+                    remix: 'npm run dev',
+                    sveltekit: 'npm run dev',
+                    strapi: 'npm run develop',
+                    elysia: 'bun run dev',
+                  };
+                  const defaultPorts = {
+                    '': 3000,
+                    express: 3000,
+                    fastify: 3000,
+                    nestjs: 3000,
+                    nextjs: 3000,
+                    nuxtjs: 3000,
+                    koa: 3000,
+                    hapi: 3000,
+                    adonisjs: 3333,
+                    remix: 3000,
+                    sveltekit: 5173,
+                    strapi: 1337,
+                    elysia: 3000,
+                  };
+                  updateFormData({
+                    nodeFramework: framework,
+                    nodeStartCommand: defaultCommands[framework] || 'npm start',
+                    nodePort: defaultPorts[framework] || 3000,
+                  });
+                }}
+                className="input w-full max-w-xs"
+              >
+                <option value="">None (vanilla Node.js)</option>
+                <optgroup label="Backend Frameworks">
+                  <option value="express">Express</option>
+                  <option value="fastify">Fastify</option>
+                  <option value="nestjs">NestJS</option>
+                  <option value="koa">Koa</option>
+                  <option value="hapi">Hapi</option>
+                  <option value="adonisjs">AdonisJS</option>
+                  <option value="elysia">Elysia (Bun)</option>
+                </optgroup>
+                <optgroup label="Full-Stack Frameworks">
+                  <option value="nextjs">Next.js</option>
+                  <option value="nuxtjs">Nuxt.js</option>
+                  <option value="remix">Remix</option>
+                  <option value="sveltekit">SvelteKit</option>
+                </optgroup>
+                <optgroup label="Headless CMS">
+                  <option value="strapi">Strapi</option>
+                </optgroup>
+              </select>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Select a framework to pre-configure start command and port. Leave empty for a plain Node.js project.
+              </p>
+            </div>
+
             {/* Node.js Version selector */}
             <div>
               <label className="label text-green-700 dark:text-green-300">Node.js Version</label>
@@ -1548,6 +1650,8 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
   const services = allServices.filter(service => {
     // Queue worker is always available for Laravel projects
     if (service.id === 'queue') return true;
+    // Hide Node.js from services when project type IS nodejs (already configured in Details step)
+    if (service.id === 'nodejs' && formData.type === 'nodejs') return false;
     // Show service if any versions installed
     return service.versions && service.versions.length > 0;
   });
@@ -2002,14 +2106,58 @@ function StepReview({ formData }) {
               {formData.type}
             </p>
           </div>
-          <div>
-            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-              PHP Version
-            </h3>
-            <p className="text-lg font-semibold text-gray-900 dark:text-white">
-              PHP {formData.phpVersion}
-            </p>
-          </div>
+          {formData.type === 'nodejs' ? (
+            <>
+              {formData.nodeFramework && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                    Framework
+                  </h3>
+                  <p className="text-lg font-semibold text-gray-900 dark:text-white capitalize">
+                    {{
+                      express: 'Express',
+                      fastify: 'Fastify',
+                      nestjs: 'NestJS',
+                      nextjs: 'Next.js',
+                      nuxtjs: 'Nuxt.js',
+                      koa: 'Koa',
+                      hapi: 'Hapi',
+                      adonisjs: 'AdonisJS',
+                      remix: 'Remix',
+                      sveltekit: 'SvelteKit',
+                      strapi: 'Strapi',
+                      elysia: 'Elysia',
+                    }[formData.nodeFramework] || formData.nodeFramework}
+                  </p>
+                </div>
+              )}
+              <div>
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  Node.js Version
+                </h3>
+                <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                  v{formData.services.nodejsVersion || '20'}
+                </p>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  App Port
+                </h3>
+                <p className="text-lg font-semibold text-gray-900 dark:text-white font-mono">
+                  {formData.nodePort}
+                </p>
+              </div>
+            </>
+          ) : (
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                PHP Version
+              </h3>
+              <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                PHP {formData.phpVersion}
+              </p>
+            </div>
+          )}
           <div>
             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
               Domain

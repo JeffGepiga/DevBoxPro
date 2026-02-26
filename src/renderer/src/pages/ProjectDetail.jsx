@@ -888,6 +888,18 @@ function OverviewTab({ project, processes, refreshProjects }) {
             {/* Node.js Version + App Port - only for Node.js projects */}
             {project.type === 'nodejs' && (
               <>
+                {project.nodeFramework && (
+                  <div className="flex justify-between items-center">
+                    <dt className="text-gray-500 dark:text-gray-400">Framework</dt>
+                    <dd className="font-medium text-gray-900 dark:text-white">
+                      {{
+                        express: 'Express', fastify: 'Fastify', nestjs: 'NestJS', nextjs: 'Next.js',
+                        nuxtjs: 'Nuxt.js', koa: 'Koa', hapi: 'Hapi', adonisjs: 'AdonisJS',
+                        remix: 'Remix', sveltekit: 'SvelteKit', strapi: 'Strapi', elysia: 'Elysia',
+                      }[project.nodeFramework] || project.nodeFramework}
+                    </dd>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
                   <dt className="text-gray-500 dark:text-gray-400">Node.js Version</dt>
                   <dd className="font-medium text-gray-900 dark:text-white">

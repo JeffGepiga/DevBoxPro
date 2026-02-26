@@ -357,7 +357,16 @@ function ProjectRow({ project, onStart, onStop }) {
             {project.name}
           </Link>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            PHP {project.phpVersion} • {project.type}
+            {project.type === 'nodejs'
+              ? `Node.js v${project.services?.nodejsVersion || project.nodeVersion || '?'}${project.nodeFramework ? ` • ${{
+                express: 'Express', fastify: 'Fastify', nestjs: 'NestJS', nextjs: 'Next.js',
+                nuxtjs: 'Nuxt.js', koa: 'Koa', hapi: 'Hapi', adonisjs: 'AdonisJS',
+                remix: 'Remix', sveltekit: 'SvelteKit', strapi: 'Strapi', elysia: 'Elysia',
+              }[project.nodeFramework] || project.nodeFramework}` : ''}`
+              : [
+                project.phpVersion ? `PHP ${project.phpVersion}` : null,
+                project.type || null,
+              ].filter(Boolean).join(' • ') || 'No runtime info'}
           </p>
         </div>
       </div>

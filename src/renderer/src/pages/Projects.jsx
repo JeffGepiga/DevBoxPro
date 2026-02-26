@@ -225,22 +225,22 @@ function Projects() {
       const newPath = `${newFolderPath}${newFolderPath.endsWith('\\') || newFolderPath.endsWith('/') ? '' : '\\'}${projectFolderName}`;
 
       setIsMoving(true);
-      
+
       await window.devbox?.projects.move(moveModal.project.id, newPath);
-      
+
       setMoveModal({ open: false, project: null });
       refreshProjects?.();
-      
-      await showAlert({ 
-        title: 'Project Moved', 
-        message: `Project "${moveModal.project.name}" has been moved to:\n${newPath}`, 
-        type: 'success' 
+
+      await showAlert({
+        title: 'Project Moved',
+        message: `Project "${moveModal.project.name}" has been moved to:\n${newPath}`,
+        type: 'success'
       });
     } catch (error) {
-      await showAlert({ 
-        title: 'Error', 
-        message: 'Failed to move project: ' + error.message, 
-        type: 'error' 
+      await showAlert({
+        title: 'Error',
+        message: 'Failed to move project: ' + error.message,
+        type: 'error'
       });
     } finally {
       setIsMoving(false);
@@ -452,6 +452,7 @@ function Projects() {
             <option value="laravel">Laravel</option>
             <option value="symfony">Symfony</option>
             <option value="wordpress">WordPress</option>
+            <option value="nodejs">Node.js</option>
             <option value="custom">Custom PHP</option>
           </select>
 
@@ -485,14 +486,14 @@ function Projects() {
             ))}
           </div>
         ) : (
-          <div className="card overflow-hidden">
+          <div className="card overflow-visible">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400 w-4"></th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Name</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Type</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">PHP</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Runtime</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Services</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Domain</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
@@ -708,6 +709,7 @@ function DiscoveredProjectCard({ project, onImport }) {
     laravel: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
     symfony: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
     wordpress: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    nodejs: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
     custom: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
   };
 
@@ -790,6 +792,7 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
     laravel: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
     symfony: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
     wordpress: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    nodejs: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
     custom: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
   };
 
@@ -901,7 +904,15 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
             <span className={clsx('badge', typeColors[project.type])}>
               {project.type}
             </span>
-            <span className="badge badge-neutral">PHP {project.phpVersion}</span>
+            <span className="badge badge-neutral">
+              {project.type === 'nodejs'
+                ? `Node.js v${project.services?.nodejsVersion || project.nodeVersion || '?'}${project.nodeFramework ? ` (${{
+                  express: 'Express', fastify: 'Fastify', nestjs: 'NestJS', nextjs: 'Next.js',
+                  nuxtjs: 'Nuxt.js', koa: 'Koa', hapi: 'Hapi', adonisjs: 'AdonisJS',
+                  remix: 'Remix', sveltekit: 'SvelteKit', strapi: 'Strapi', elysia: 'Elysia',
+                }[project.nodeFramework] || project.nodeFramework})` : ''}`
+                : project.phpVersion ? `PHP ${project.phpVersion}` : 'No runtime'}
+            </span>
           </div>
           <p className="text-sm text-gray-500 dark:text-gray-400 truncate" title={project.path}>
             {project.path}
@@ -1022,6 +1033,7 @@ function ProjectTableRow({ project, onStart, onStop, onDelete, onMove, defaultEd
     laravel: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
     symfony: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
     wordpress: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    nodejs: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
     custom: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
   };
 
@@ -1049,9 +1061,17 @@ function ProjectTableRow({ project, onStart, onStop, onDelete, onMove, defaultEd
         <span className={clsx('badge text-xs', typeColors[project.type])}>{project.type}</span>
       </td>
 
-      {/* PHP */}
+      {/* Runtime version */}
       <td className="px-4 py-3">
-        <span className="badge badge-neutral text-xs">PHP {project.phpVersion}</span>
+        <span className="badge badge-neutral text-xs">
+          {project.type === 'nodejs'
+            ? `Node.js v${project.services?.nodejsVersion || project.nodeVersion || '?'}${project.nodeFramework ? ` (${{
+              express: 'Express', fastify: 'Fastify', nestjs: 'NestJS', nextjs: 'Next.js',
+              nuxtjs: 'Nuxt.js', koa: 'Koa', hapi: 'Hapi', adonisjs: 'AdonisJS',
+              remix: 'Remix', sveltekit: 'SvelteKit', strapi: 'Strapi', elysia: 'Elysia',
+            }[project.nodeFramework] || project.nodeFramework})` : ''}`
+            : project.phpVersion ? `PHP ${project.phpVersion}` : '—'}
+        </span>
       </td>
 
       {/* Services */}
@@ -1127,7 +1147,7 @@ function ProjectTableRow({ project, onStart, onStop, onDelete, onMove, defaultEd
             </button>
             {showMenu && (
               <div
-                className="absolute right-0 mt-1 w-44 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-10"
+                className="absolute right-0 mt-1 w-44 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50"
                 onMouseLeave={() => setShowMenu(false)}
               >
                 <button

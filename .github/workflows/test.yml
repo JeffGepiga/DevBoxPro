@@ -1,5 +1,7 @@
 name: Tests
-on: [push, pull_request]
+# Temporarily disabled to save GitHub Actions credits
+# on: [push, pull_request]
+on: workflow_dispatch
 jobs:
   test:
     runs-on: windows-latest

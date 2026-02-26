@@ -190,6 +190,14 @@ class ProjectManager {
     const settings = this.configStore.get('settings', {});
     const existingProjects = this.configStore.get('projects', []);
 
+    // Validate required fields early to give clear error messages
+    if (!config.path || typeof config.path !== 'string' || !config.path.trim()) {
+      throw new Error('Project path is required. Please go back to the Details step and enter a valid project path.');
+    }
+    if (!config.name || !config.name.trim()) {
+      throw new Error('Project name is required.');
+    }
+
     // Check if a project already exists at this path
     const normalizedPath = path.normalize(config.path).toLowerCase();
     const existingProject = existingProjects.find(p =>
@@ -343,6 +351,8 @@ class ProjectManager {
       nodePort: projectType === 'nodejs' ? nodePort : undefined,
       // Node.js start command for supervisor (only for nodejs-type projects)
       nodeStartCommand: projectType === 'nodejs' ? (config.nodeStartCommand || 'npm start') : undefined,
+      // Node.js framework (e.g. express, fastify, nestjs, nextjs, etc.)
+      nodeFramework: projectType === 'nodejs' ? (config.nodeFramework || '') : undefined,
       createdAt: new Date().toISOString(),
       lastStarted: null,
       // Compatibility warnings acknowledged by user
@@ -449,8 +459,11 @@ class ProjectManager {
       });
     }
 
+    // Node.js projects always do a fresh scaffold (npm init or framework CLI)
+    const shouldInstall = config.installFresh || config.projectSource === 'clone' || projectType === 'nodejs';
+
     // Install fresh framework OR clone from repository - run async without blocking
-    if (config.installFresh || config.projectSource === 'clone') {
+    if (shouldInstall) {
       // Mark project as installing BEFORE saving to store.
       // This way, if the app crashes during installation, the project is saved
       // with installing:true and can be retried on restart or re-creation.
@@ -474,7 +487,7 @@ class ProjectManager {
     await this.ensureCliInstalled();
 
     // Start the installation in background (don't await)
-    if (config.installFresh || config.projectSource === 'clone') {
+    if (shouldInstall) {
       this.runInstallation(project, mainWindow).catch(error => {
         this.managers.log?.systemError('Background installation failed', { project: project.name, error: error.message });
       });
@@ -575,6 +588,8 @@ class ProjectManager {
         await this.installWordPress(project, mainWindow);
       } else if (project.type === 'symfony') {
         await this.installSymfony(project, mainWindow);
+      } else if (project.type === 'nodejs') {
+        await this.installNodeFramework(project, mainWindow);
       }
 
       // Create virtual host now that the project files exist
@@ -870,6 +885,195 @@ class ProjectManager {
     if (idx !== -1) {
       projects[idx] = project;
       this.configStore.set('projects', projects);
+    }
+  }
+
+  /**
+   * Install/scaffold a Node.js project using the selected framework CLI.
+   * Modeled after installLaravel() — runs in background with live output.
+   */
+  async installNodeFramework(project, mainWindow = null) {
+    const projectPath = project.path;
+    const nodejsVersion = project.services?.nodejsVersion || '20';
+    const framework = project.nodeFramework || '';
+
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+    const nodeDir = path.join(resourcePath, 'nodejs', nodejsVersion, platform);
+
+    // Resolve npm/npx paths from managed Node.js binary
+    const npmCmd = process.platform === 'win32'
+      ? path.join(nodeDir, 'npm.cmd')
+      : path.join(nodeDir, 'bin', 'npm');
+    const npxCmd = process.platform === 'win32'
+      ? path.join(nodeDir, 'npx.cmd')
+      : path.join(nodeDir, 'bin', 'npx');
+    const nodeExe = process.platform === 'win32'
+      ? path.join(nodeDir, 'node.exe')
+      : path.join(nodeDir, 'bin', 'node');
+
+    const envWithNode = {
+      ...process.env,
+      PATH: process.platform === 'win32'
+        ? `${nodeDir};${process.env.PATH || ''}`
+        : `${path.join(nodeDir, 'bin')}:${process.env.PATH || ''}`,
+    };
+
+    const onOutput = (text, type) => {
+      const cleanText = text.toString().replace(/\r\n/g, '\n').trim();
+      if (!cleanText) return;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try {
+          mainWindow.webContents.send('terminal:output', {
+            projectId: 'installation',
+            text: cleanText,
+            type,
+          });
+        } catch (err) { /* ignore */ }
+      }
+    };
+
+    // Helper to run a command and stream output
+    const runCmd = (cmd, args, cwd, label) => {
+      return new Promise((resolve, reject) => {
+        onOutput(`$ ${label || [cmd, ...args].join(' ')}`, 'command');
+        const proc = spawn(cmd, args, {
+          cwd,
+          shell: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+          env: envWithNode,
+        });
+        proc.stdout.on('data', (data) => onOutput(data.toString(), 'stdout'));
+        proc.stderr.on('data', (data) => onOutput(data.toString(), 'stderr'));
+        proc.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Command exited with code ${code}`));
+          }
+        });
+        proc.on('error', (err) => reject(err));
+      });
+    };
+
+    // Ensure project directory exists
+    await fs.ensureDir(projectPath);
+
+    const frameworkNames = {
+      express: 'Express', fastify: 'Fastify', nestjs: 'NestJS',
+      nextjs: 'Next.js', nuxtjs: 'Nuxt.js', koa: 'Koa', hapi: 'Hapi',
+      adonisjs: 'AdonisJS', remix: 'Remix', sveltekit: 'SvelteKit',
+      strapi: 'Strapi', elysia: 'Elysia',
+    };
+
+    const displayName = frameworkNames[framework] || 'Node.js';
+
+    onOutput('═══════════════════════════════════════════════════════════════', 'info');
+    onOutput(`📦 Setting up ${displayName} project...`, 'info');
+    onOutput('═══════════════════════════════════════════════════════════════', 'info');
+
+    try {
+      switch (framework) {
+        case 'express':
+          // Use express-generator to scaffold
+          await runCmd(npxCmd, ['-y', 'express-generator', '.', '--force', '--no-view'], projectPath, 'npx express-generator . --force --no-view');
+          await runCmd(npmCmd, ['install'], projectPath, 'npm install');
+          break;
+
+        case 'fastify':
+          // Use fastify-cli to generate
+          await runCmd(npxCmd, ['-y', 'fastify-cli', 'generate', '.', '--lang=js'], projectPath, 'npx fastify-cli generate . --lang=js');
+          await runCmd(npmCmd, ['install'], projectPath, 'npm install');
+          break;
+
+        case 'nestjs':
+          // NestJS CLI
+          await runCmd(npxCmd, ['-y', '@nestjs/cli', 'new', '.', '--skip-git', '--package-manager', 'npm'], projectPath, 'npx @nestjs/cli new . --skip-git --package-manager npm');
+          break;
+
+        case 'nextjs':
+          // Create Next App (fully non-interactive)
+          await runCmd(npxCmd, ['-y', 'create-next-app@latest', '.', '--use-npm', '--eslint', '--no-tailwind', '--no-src-dir', '--no-app', '--no-import-alias', '--turbopack'], projectPath, 'npx create-next-app@latest . --use-npm');
+          break;
+
+        case 'nuxtjs':
+          // Nuxt init
+          await runCmd(npxCmd, ['-y', 'nuxi@latest', 'init', '.', '--force', '--packageManager', 'npm'], projectPath, 'npx nuxi init . --force');
+          await runCmd(npmCmd, ['install'], projectPath, 'npm install');
+          break;
+
+        case 'koa':
+          // No official CLI — init + install
+          await runCmd(npmCmd, ['init', '-y'], projectPath, 'npm init -y');
+          await runCmd(npmCmd, ['install', 'koa'], projectPath, 'npm install koa');
+          // Create starter file
+          await fs.writeFile(path.join(projectPath, 'index.js'),
+            `const Koa = require('koa');\nconst app = new Koa();\n\napp.use(async ctx => {\n  ctx.body = 'Hello from Koa!';\n});\n\nconst PORT = process.env.PORT || 3000;\napp.listen(PORT, () => {\n  console.log(\`Server running on port \${PORT}\`);\n});\n`
+          );
+          onOutput('✓ Created index.js with Koa starter', 'success');
+          break;
+
+        case 'hapi':
+          // No official CLI — init + install
+          await runCmd(npmCmd, ['init', '-y'], projectPath, 'npm init -y');
+          await runCmd(npmCmd, ['install', '@hapi/hapi'], projectPath, 'npm install @hapi/hapi');
+          // Create starter file
+          await fs.writeFile(path.join(projectPath, 'index.js'),
+            `'use strict';\nconst Hapi = require('@hapi/hapi');\n\nconst init = async () => {\n  const server = Hapi.server({\n    port: process.env.PORT || 3000,\n    host: '0.0.0.0'\n  });\n\n  server.route({\n    method: 'GET',\n    path: '/',\n    handler: (request, h) => {\n      return 'Hello from Hapi!';\n    }\n  });\n\n  await server.start();\n  console.log('Server running on %s', server.info.uri);\n};\n\ninit();\n`
+          );
+          onOutput('✓ Created index.js with Hapi starter', 'success');
+          break;
+
+        case 'adonisjs':
+          // AdonisJS init
+          await runCmd(npmCmd, ['init', 'adonis-ts-app@latest', '.', '--', '--boilerplate=web'], projectPath, 'npm init adonis-ts-app . --boilerplate=web');
+          break;
+
+        case 'remix':
+          // Remix scaffolding
+          await runCmd(npxCmd, ['-y', 'create-remix@latest', '.', '--no-install', '--no-git-init'], projectPath, 'npx create-remix . --no-install --no-git-init');
+          await runCmd(npmCmd, ['install'], projectPath, 'npm install');
+          break;
+
+        case 'sveltekit':
+          // SvelteKit scaffolding
+          await runCmd(npxCmd, ['-y', 'sv', 'create', '.', '--template', 'minimal', '--no-add-ons', '--no-install'], projectPath, 'npx sv create . --template minimal');
+          await runCmd(npmCmd, ['install'], projectPath, 'npm install');
+          break;
+
+        case 'strapi':
+          // Strapi quickstart
+          await runCmd(npxCmd, ['-y', 'create-strapi-app@latest', '.', '--quickstart', '--no-run'], projectPath, 'npx create-strapi-app . --quickstart --no-run');
+          break;
+
+        case 'elysia':
+          // Elysia — simple init + install
+          await runCmd(npmCmd, ['init', '-y'], projectPath, 'npm init -y');
+          await runCmd(npmCmd, ['install', 'elysia'], projectPath, 'npm install elysia');
+          // Create starter file
+          await fs.writeFile(path.join(projectPath, 'index.js'),
+            `const { Elysia } = require('elysia');\n\nconst app = new Elysia()\n  .get('/', () => 'Hello from Elysia!')\n  .listen(process.env.PORT || 3000);\n\nconsole.log(\`Server running on port \${app.server?.port}\`);\n`
+          );
+          onOutput('✓ Created index.js with Elysia starter', 'success');
+          break;
+
+        default:
+          // Vanilla Node.js — just npm init
+          await runCmd(npmCmd, ['init', '-y'], projectPath, 'npm init -y');
+          // Create a minimal starter
+          await fs.writeFile(path.join(projectPath, 'index.js'),
+            `const http = require('http');\n\nconst PORT = process.env.PORT || 3000;\n\nconst server = http.createServer((req, res) => {\n  res.writeHead(200, { 'Content-Type': 'text/plain' });\n  res.end('Hello from Node.js!');\n});\n\nserver.listen(PORT, () => {\n  console.log(\`Server running on port \${PORT}\`);\n});\n`
+          );
+          onOutput('✓ Created index.js with Node.js starter', 'success');
+          break;
+      }
+
+      onOutput(`✓ ${displayName} project scaffolded successfully!`, 'success');
+    } catch (error) {
+      this.managers.log?.systemError('[installNodeFramework] Framework scaffolding error', { framework, error: error.message });
+      onOutput(`✗ Framework scaffolding error: ${error.message}`, 'error');
+      throw error;
     }
   }
 
@@ -1734,7 +1938,12 @@ class ProjectManager {
     }
 
     this.managers.log?.project(id, `Starting project: ${project.name}`);
-    this.managers.log?.project(id, `Type: ${project.type}, PHP: ${project.phpVersion}, Web Server: ${project.webServer}`);
+    if (project.type === 'nodejs') {
+      const frameworkNames = { express: 'Express', fastify: 'Fastify', nestjs: 'NestJS', nextjs: 'Next.js', nuxtjs: 'Nuxt.js', koa: 'Koa', hapi: 'Hapi', adonisjs: 'AdonisJS', remix: 'Remix', sveltekit: 'SvelteKit', strapi: 'Strapi', elysia: 'Elysia' };
+      this.managers.log?.project(id, `Type: nodejs, Node.js: v${project.services?.nodejsVersion || '20'}${project.nodeFramework ? `, Framework: ${frameworkNames[project.nodeFramework] || project.nodeFramework}` : ''}, Web Server: ${project.webServer}`);
+    } else {
+      this.managers.log?.project(id, `Type: ${project.type}, PHP: ${project.phpVersion}, Web Server: ${project.webServer}`);
+    }
     this.managers.log?.project(id, `Domain: ${project.domain}, Path: ${project.path}`);
 
     try {
@@ -1747,11 +1956,14 @@ class ProjectManager {
       }
 
       // Calculate PHP-CGI port (unique per project) - needed for vhost config
-      const phpFpmPort = 9000 + (parseInt(project.id.slice(-4), 16) % 1000);
+      // Only needed for non-nodejs projects
+      const phpFpmPort = project.type !== 'nodejs'
+        ? 9000 + (parseInt(project.id.slice(-4), 16) % 1000)
+        : 0;
 
       // Regenerate virtual host config BEFORE starting services
       // This ensures the vhost config has correct paths for the current web server version
-      await this.createVirtualHost(project, phpFpmPort);
+      await this.createVirtualHost(project, phpFpmPort || undefined);
 
       // Start required services (nginx/apache, mysql, redis, etc.)
       const serviceResult = await this.startProjectServices(project);
@@ -1769,8 +1981,9 @@ class ProjectManager {
 
       // Only start PHP-CGI process for Nginx (uses FastCGI)
       // Apache uses Action/AddHandler CGI approach - invokes PHP-CGI directly per request
+      // Node.js projects don't need PHP-CGI at all
       const webServer = project.webServer || 'nginx';
-      if (webServer === 'nginx') {
+      if (webServer === 'nginx' && project.type !== 'nodejs') {
         const phpCgiResult = await this.startPhpCgi(project, phpFpmPort);
         phpCgiProcess = phpCgiResult.process;
         actualPhpFpmPort = phpCgiResult.port;
@@ -1804,7 +2017,11 @@ class ProjectManager {
       }
 
       this.managers.log?.project(id, `Project ${project.name} started successfully`);
-      this.managers.log?.project(id, `PHP-CGI running on port ${actualPhpFpmPort}`);
+      if (project.type === 'nodejs') {
+        this.managers.log?.project(id, `Node.js app proxied via port ${project.nodePort || 3000}`);
+      } else if (actualPhpFpmPort) {
+        this.managers.log?.project(id, `PHP-CGI running on port ${actualPhpFpmPort}`);
+      }
       return { success: true, port: project.port, phpFpmPort: actualPhpFpmPort };
     } catch (error) {
       this.managers.log?.systemError(`Failed to start project ${project.name}`, { error: error.message });

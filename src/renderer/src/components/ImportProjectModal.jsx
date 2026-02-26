@@ -15,6 +15,9 @@ function ImportProjectModal({ project, onClose, onImport }) {
         documentRoot: '', // Custom document root
         ssl: true,
         domain: '',
+        nodePort: 3000,
+        nodeStartCommand: 'npm start',
+        nodeFramework: '',
         services: {
             mysql: false,
             mysqlVersion: '',
@@ -214,6 +217,7 @@ function ImportProjectModal({ project, onClose, onImport }) {
 
     const hasNoPhpInstalled = installedPhpVersions.length === 0;
     const hasNoWebServer = installedWebServers.nginx.length === 0 && installedWebServers.apache.length === 0;
+    const isNodejs = config.type === 'nodejs';
 
     // Count available optional services
     const hasMysql = installedDatabases.mysql.length > 0;
@@ -221,7 +225,7 @@ function ImportProjectModal({ project, onClose, onImport }) {
     const hasRedis = installedRedis.length > 0;
     const hasNodejs = installedNodejs.length > 0;
     const isLaravel = config.type === 'laravel';
-    const hasAnyOptionalService = hasMysql || hasMariadb || hasRedis || hasNodejs || isLaravel;
+    const hasAnyOptionalService = hasMysql || hasMariadb || hasRedis || (!isNodejs && hasNodejs) || isLaravel;
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -288,6 +292,7 @@ function ImportProjectModal({ project, onClose, onImport }) {
                                         <option value="laravel">Laravel</option>
                                         <option value="symfony">Symfony</option>
                                         <option value="wordpress">WordPress</option>
+                                        <option value="nodejs">Node.js</option>
                                         <option value="custom">Custom PHP</option>
                                     </select>
                                 </div>
@@ -320,72 +325,191 @@ function ImportProjectModal({ project, onClose, onImport }) {
                                 />
                             </div>
 
-                            {/* Document Root */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                    Document Root (Optional)
-                                </label>
-                                <input
-                                    type="text"
-                                    value={config.documentRoot}
-                                    onChange={(e) => setConfig({ ...config, documentRoot: e.target.value })}
-                                    placeholder={
-                                        config.type === 'wordpress' ? 'Default: project root' :
-                                            config.type === 'laravel' || config.type === 'symfony' ? 'Default: public' :
-                                                'Default: auto-detect'
-                                    }
-                                    className="input"
-                                />
-                                <p className="text-xs text-gray-500 mt-1">
-                                    The folder the web server points to. Leave empty for auto-detection.
-                                </p>
-                            </div>
+                            {/* PHP & Web Server Row — hidden for Node.js */}
+                            {!isNodejs && (
+                                <>
+                                    {/* Document Root */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                            Document Root (Optional)
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={config.documentRoot}
+                                            onChange={(e) => setConfig({ ...config, documentRoot: e.target.value })}
+                                            placeholder={
+                                                config.type === 'wordpress' ? 'Default: project root' :
+                                                    config.type === 'laravel' || config.type === 'symfony' ? 'Default: public' :
+                                                        'Default: auto-detect'
+                                            }
+                                            className="input"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            The folder the web server points to. Leave empty for auto-detection.
+                                        </p>
+                                    </div>
 
-                            {/* PHP & Web Server Row */}
-                            <div className="grid grid-cols-2 gap-4">
-                                {/* PHP Version */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                        PHP Version
-                                    </label>
-                                    {hasNoPhpInstalled ? (
-                                        <div className="p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                                            <p className="text-xs text-amber-700 dark:text-amber-300">No PHP installed</p>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {/* PHP Version */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                                PHP Version
+                                            </label>
+                                            {hasNoPhpInstalled ? (
+                                                <div className="p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                                                    <p className="text-xs text-amber-700 dark:text-amber-300">No PHP installed</p>
+                                                </div>
+                                            ) : (
+                                                <select
+                                                    value={config.phpVersion}
+                                                    onChange={(e) => setConfig({ ...config, phpVersion: e.target.value })}
+                                                    className="select"
+                                                >
+                                                    {installedPhpVersions.map((version) => (
+                                                        <option key={version} value={version}>PHP {version}</option>
+                                                    ))}
+                                                </select>
+                                            )}
                                         </div>
-                                    ) : (
+
+                                        {/* Web Server */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                                Web Server
+                                            </label>
+                                            {hasNoWebServer ? (
+                                                <div className="p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                                                    <p className="text-xs text-amber-700 dark:text-amber-300">No web server</p>
+                                                </div>
+                                            ) : (
+                                                <select
+                                                    value={config.webServer}
+                                                    onChange={(e) => setConfig({ ...config, webServer: e.target.value })}
+                                                    className="select"
+                                                >
+                                                    {installedWebServers.nginx.length > 0 && <option value="nginx">Nginx</option>}
+                                                    {installedWebServers.apache.length > 0 && <option value="apache">Apache</option>}
+                                                </select>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Node.js-specific fields */}
+                            {isNodejs && (
+                                <div className="space-y-4">
+                                    {/* Framework selector */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                            Framework (Optional)
+                                        </label>
                                         <select
-                                            value={config.phpVersion}
-                                            onChange={(e) => setConfig({ ...config, phpVersion: e.target.value })}
+                                            value={config.nodeFramework}
+                                            onChange={(e) => {
+                                                const framework = e.target.value;
+                                                const defaultCommands = {
+                                                    '': 'npm start', express: 'node index.js', fastify: 'node index.js',
+                                                    nestjs: 'npm run start:dev', nextjs: 'npm run dev', nuxtjs: 'npm run dev',
+                                                    koa: 'node index.js', hapi: 'node index.js', adonisjs: 'node ace serve --watch',
+                                                    remix: 'npm run dev', sveltekit: 'npm run dev', strapi: 'npm run develop',
+                                                    elysia: 'bun run dev',
+                                                };
+                                                const defaultPorts = {
+                                                    '': 3000, express: 3000, fastify: 3000, nestjs: 3000, nextjs: 3000,
+                                                    nuxtjs: 3000, koa: 3000, hapi: 3000, adonisjs: 3333, remix: 3000,
+                                                    sveltekit: 5173, strapi: 1337, elysia: 3000,
+                                                };
+                                                setConfig(prev => ({
+                                                    ...prev,
+                                                    nodeFramework: framework,
+                                                    nodeStartCommand: defaultCommands[framework] || 'npm start',
+                                                    nodePort: defaultPorts[framework] || 3000,
+                                                }));
+                                            }}
                                             className="select"
                                         >
-                                            {installedPhpVersions.map((version) => (
-                                                <option key={version} value={version}>PHP {version}</option>
-                                            ))}
+                                            <option value="">None (vanilla Node.js)</option>
+                                            <optgroup label="Backend Frameworks">
+                                                <option value="express">Express</option>
+                                                <option value="fastify">Fastify</option>
+                                                <option value="nestjs">NestJS</option>
+                                                <option value="koa">Koa</option>
+                                                <option value="hapi">Hapi</option>
+                                                <option value="adonisjs">AdonisJS</option>
+                                                <option value="elysia">Elysia (Bun)</option>
+                                            </optgroup>
+                                            <optgroup label="Full-Stack Frameworks">
+                                                <option value="nextjs">Next.js</option>
+                                                <option value="nuxtjs">Nuxt.js</option>
+                                                <option value="remix">Remix</option>
+                                                <option value="sveltekit">SvelteKit</option>
+                                            </optgroup>
+                                            <optgroup label="Headless CMS">
+                                                <option value="strapi">Strapi</option>
+                                            </optgroup>
                                         </select>
-                                    )}
-                                </div>
+                                    </div>
 
-                                {/* Web Server */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                        Web Server
-                                    </label>
-                                    {hasNoWebServer ? (
-                                        <div className="p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                                            <p className="text-xs text-amber-700 dark:text-amber-300">No web server</p>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {/* Node.js Version */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                                Node.js Version
+                                            </label>
+                                            {installedNodejs.length === 0 ? (
+                                                <div className="p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                                                    <p className="text-xs text-amber-700 dark:text-amber-300">No Node.js installed</p>
+                                                </div>
+                                            ) : (
+                                                <select
+                                                    value={config.services.nodejsVersion}
+                                                    onChange={(e) => setConfig(prev => ({
+                                                        ...prev,
+                                                        services: { ...prev.services, nodejsVersion: e.target.value }
+                                                    }))}
+                                                    className="select"
+                                                >
+                                                    {installedNodejs.map((version) => (
+                                                        <option key={version} value={version}>Node {version}</option>
+                                                    ))}
+                                                </select>
+                                            )}
                                         </div>
-                                    ) : (
-                                        <select
-                                            value={config.webServer}
-                                            onChange={(e) => setConfig({ ...config, webServer: e.target.value })}
-                                            className="select"
-                                        >
-                                            {installedWebServers.nginx.length > 0 && <option value="nginx">Nginx</option>}
-                                            {installedWebServers.apache.length > 0 && <option value="apache">Apache</option>}
-                                        </select>
-                                    )}
+
+                                        {/* App Port */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                                App Port
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={config.nodePort}
+                                                onChange={(e) => setConfig({ ...config, nodePort: parseInt(e.target.value) || 3000 })}
+                                                className="input"
+                                                min="1024"
+                                                max="65535"
+                                                placeholder="3000"
+                                            />
+                                            <p className="text-xs text-gray-500 mt-1">Port your Node.js app listens on</p>
+                                        </div>
+
+                                        {/* Start Command */}
+                                        <div className="col-span-2">
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                                Start Command
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={config.nodeStartCommand}
+                                                onChange={(e) => setConfig({ ...config, nodeStartCommand: e.target.value })}
+                                                className="input"
+                                                placeholder="npm start"
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
 
                             {/* Optional Services Section */}
                             {hasAnyOptionalService && (
@@ -575,7 +699,7 @@ function ImportProjectModal({ project, onClose, onImport }) {
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={isImporting || hasNoPhpInstalled || hasNoWebServer || !config.name}
+                                    disabled={isImporting || (!isNodejs && (hasNoPhpInstalled || hasNoWebServer)) || (isNodejs && installedNodejs.length === 0) || !config.name}
                                     className="btn-primary"
                                 >
                                     {isImporting ? (
