@@ -800,7 +800,7 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
     <Link
       to={`/projects/${project.id}`}
       className={clsx(
-        'card overflow-hidden block transition-all duration-200 cursor-pointer',
+        'card overflow-hidden flex flex-col transition-all duration-200 cursor-pointer',
         'hover:shadow-lg hover:border-primary-300 dark:hover:border-primary-600',
         'hover:scale-[1.02] active:scale-[0.99]',
         isHovered && 'ring-2 ring-primary-200 dark:ring-primary-700'
@@ -811,7 +811,7 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
         setShowMenu(false);
       }}
     >
-      <div className="p-6">
+      <div className="p-6 flex-1">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
