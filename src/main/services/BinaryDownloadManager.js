@@ -558,7 +558,11 @@ class BinaryDownloadManager {
     await fs.ensureDir(path.join(this.resourcesPath, 'git'));
     await fs.ensureDir(path.join(this.resourcesPath, 'downloads'));
 
-    // Load cached config from previous updates
+    // Load bundled config/binaries.json first as the baseline
+    // This ensures versions always come from the config file, not hardcoded values
+    await this.loadBundledConfig();
+
+    // Then load cached remote config (overrides bundled if newer)
     await this.loadCachedConfig();
 
     // Enable extensions in existing PHP installations (run in background, don't block startup)
@@ -567,6 +571,27 @@ class BinaryDownloadManager {
         this.managers?.log?.systemWarn('Error enabling PHP extensions', { error: err.message });
       });
     });
+  }
+
+  // Load bundled config/binaries.json from the app directory
+  // This is the single source of truth for default versions and download URLs
+  async loadBundledConfig() {
+    try {
+      // In development: config/ is at project root
+      // In production: config/ is bundled inside app.asar
+      const appPath = app.getAppPath();
+      const bundledConfigPath = path.join(appPath, 'config', 'binaries.json');
+
+      if (await fs.pathExists(bundledConfigPath)) {
+        const bundledConfig = await fs.readJson(bundledConfigPath);
+        await this.applyConfigToDownloads(bundledConfig);
+        this.configVersion = bundledConfig.version || 'bundled';
+        return true;
+      }
+    } catch (error) {
+      this.managers?.log?.systemWarn('Failed to load bundled binary config', { error: error.message });
+    }
+    return false;
   }
 
   // Load cached binary config from local storage

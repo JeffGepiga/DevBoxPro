@@ -994,9 +994,12 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   // Get full service configuration (versions, ports, offsets)
+  // Use dynamic versionMeta from BinaryDownloadManager when available (updated by remote config),
+  // falling back to static SERVICE_VERSIONS as defaults
   ipcMain.handle('binaries:getServiceConfig', async () => {
+    const dynamicVersions = managers.binaryDownload?.versionMeta;
     return {
-      versions: SERVICE_VERSIONS,
+      versions: dynamicVersions || SERVICE_VERSIONS,
       portOffsets: VERSION_PORT_OFFSETS,
       defaultPorts: DEFAULT_PORTS,
       serviceInfo: SERVICE_INFO,

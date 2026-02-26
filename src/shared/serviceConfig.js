@@ -8,13 +8,13 @@
 
 // Service version definitions - these are the versions we support downloading
 const SERVICE_VERSIONS = {
-  php: ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'],
+  php: ['8.5', '8.4', '8.3', '8.2', '8.1', '8.0', '7.4'],
   mysql: ['8.4', '8.0', '5.7'],
   mariadb: ['11.4', '10.11', '10.6'],
   redis: ['7.4', '7.2', '6.2'],
   nginx: ['1.28', '1.26', '1.24'],
   apache: ['2.4'],
-  nodejs: ['22', '20', '18', '16'],
+  nodejs: ['24', '22', '20', '18', '16'],
 };
 
 // Port offsets per version (relative to default port)

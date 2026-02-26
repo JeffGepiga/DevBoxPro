@@ -66,13 +66,13 @@ function BinaryManager() {
 
   // Service versions from backend config (with defaults)
   const [serviceVersions, setServiceVersions] = useState({
-    php: ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4'],
+    php: ['8.5', '8.4', '8.3', '8.2', '8.1', '8.0', '7.4'],
     mysql: ['8.4', '8.0'],
     mariadb: ['11.4', '10.11', '10.6'],
     redis: ['7.4', '7.2'],
     nginx: ['1.28', '1.26'],
     apache: ['2.4'],
-    nodejs: ['22', '20', '18'],
+    nodejs: ['24', '22', '20', '18'],
   });
 
   // Helper to merge predefined versions with any custom installed versions
@@ -1711,14 +1711,14 @@ function BinaryManager() {
                             Custom
                           </span>
                         )}
-                        {!isCustom && version === '22' && (
-                          <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
-                            Current
-                          </span>
-                        )}
-                        {!isCustom && version === '20' && (
+                        {!isCustom && version === '24' && (
                           <span className="ml-2 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
                             LTS
+                          </span>
+                        )}
+                        {!isCustom && version === '22' && (
+                          <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
+                            Maintenance LTS
                           </span>
                         )}
                         <span className="ml-2 text-xs text-gray-500">~35 MB</span>
@@ -1858,7 +1858,7 @@ function BinaryManager() {
           <button
             onClick={async () => {
               // Download essentials with latest versions
-              if (!installed.php?.['8.4']) handleDownloadPhp('8.4');
+              if (!installed.php?.['8.5']) handleDownloadPhp('8.5');
               // Download Nginx (default web server)
               if (!installed.nginx?.['1.28']) handleDownloadService('nginx', '1.28');
               // Download MySQL latest (8.4)
@@ -1868,7 +1868,7 @@ function BinaryManager() {
               // Download single-version services
               if (!installed.mailpit) handleDownloadService('mailpit');
               if (!installed.phpmyadmin) handleDownloadService('phpmyadmin');
-              if (!installed.nodejs?.['20']) handleDownloadNodejs('20');
+              if (!installed.nodejs?.['24']) handleDownloadNodejs('24');
               if (!installed.composer) handleDownloadService('composer');
             }}
             className="btn-primary bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"

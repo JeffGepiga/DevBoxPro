@@ -39,6 +39,7 @@ describe('SERVICE_VERSIONS', () => {
     });
 
     it('PHP versions include historically important entries', () => {
+        expect(SERVICE_VERSIONS.php).toContain('8.5');
         expect(SERVICE_VERSIONS.php).toContain('8.4');
         expect(SERVICE_VERSIONS.php).toContain('7.4');
     });
@@ -241,13 +242,13 @@ describe('getServicePort()', () => {
 
 describe('getDefaultVersion()', () => {
     it('returns the first version for known services', () => {
-        expect(getDefaultVersion('php')).toBe('8.4');
+        expect(getDefaultVersion('php')).toBe('8.5');
         expect(getDefaultVersion('mysql')).toBe('8.4');
         expect(getDefaultVersion('mariadb')).toBe('11.4');
         expect(getDefaultVersion('redis')).toBe('7.4');
         expect(getDefaultVersion('nginx')).toBe('1.28');
         expect(getDefaultVersion('apache')).toBe('2.4');
-        expect(getDefaultVersion('nodejs')).toBe('22');
+        expect(getDefaultVersion('nodejs')).toBe('24');
     });
 
     it('returns null for unknown service', () => {
