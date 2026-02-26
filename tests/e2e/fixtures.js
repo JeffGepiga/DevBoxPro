@@ -13,14 +13,18 @@ export const test = base.extend({
         // Create a temporary, random user data directory for true isolation
         const tempUserDataDir = path.join(os.tmpdir(), `devbox-e2e-${crypto.randomUUID()}`);
 
+        const envArgs = {
+            ...process.env,
+            NODE_ENV: 'production',
+            PLAYWRIGHT_TEST: 'true', // Optional flag for internal mocking if needed
+            TEST_USER_DATA_DIR: tempUserDataDir, // Explicitly pass to app
+        };
+        delete envArgs.ELECTRON_RUN_AS_NODE;
+
         // Launch Electron via Playwright
         const electronApp = await electron.launch({
             args: [mainEntry, '--user-data-dir', tempUserDataDir],
-            env: {
-                ...process.env,
-                NODE_ENV: 'production',
-                PLAYWRIGHT_TEST: 'true', // Optional flag for internal mocking if needed
-            }
+            env: envArgs
         });
 
         // Pass control back to the test

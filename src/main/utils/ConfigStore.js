@@ -6,9 +6,11 @@ const fs = require('fs-extra');
 class ConfigStore {
   constructor() {
     try {
+      const defaultData = this.getDefaults();
       this.store = new Store({
         name: 'devbox-pro-config',
-        defaults: this.getDefaults(),
+        defaults: defaultData,
+        cwd: defaultData.dataPath
       });
 
       // Ensure data directory exists
@@ -27,12 +29,19 @@ class ConfigStore {
   }
 
   getDefaults() {
-    const dataPath = path.join(os.homedir(), '.devbox-pro');
+    let dataPath;
+    let defaultProjectsPath;
 
-    // Platform-specific default projects path
-    const defaultProjectsPath = process.platform === 'win32'
-      ? 'C:/Projects'
-      : path.join(os.homedir(), 'Projects');
+    if (process.env.PLAYWRIGHT_TEST === 'true') {
+      const baseDir = process.env.TEST_USER_DATA_DIR || os.tmpdir();
+      dataPath = path.join(baseDir, '.devbox-pro-test');
+      defaultProjectsPath = path.join(dataPath, 'Projects');
+    } else {
+      dataPath = path.join(os.homedir(), '.devbox-pro');
+      defaultProjectsPath = process.platform === 'win32'
+        ? 'C:/Projects'
+        : path.join(os.homedir(), 'Projects');
+    }
 
     return {
       dataPath,

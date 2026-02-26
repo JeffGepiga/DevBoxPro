@@ -2544,6 +2544,7 @@ class ProjectManager {
   }
 
   async updateHostsFile(project) {
+    if (process.env.PLAYWRIGHT_TEST === 'true') return;
     // Add all project domains to hosts file
     const domainsToAdd = [];
 
@@ -3088,6 +3089,7 @@ server {
 
   // Add domain to hosts file (requires admin privileges)
   async addToHostsFile(domain) {
+    if (process.env.PLAYWRIGHT_TEST === 'true') return;
     if (!domain) return;
 
     // Security: Validate domain before using in any commands
@@ -3186,6 +3188,7 @@ server {
 
   // Remove domain from hosts file
   async removeFromHostsFile(domain) {
+    if (process.env.PLAYWRIGHT_TEST === 'true') return;
     if (!domain) return;
 
     const hostsPath = process.platform === 'win32'
