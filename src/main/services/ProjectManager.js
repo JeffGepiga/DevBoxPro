@@ -201,7 +201,7 @@ class ProjectManager {
     // Check if a project already exists at this path
     const normalizedPath = path.normalize(config.path).toLowerCase();
     const existingProject = existingProjects.find(p =>
-      path.normalize(p.path).toLowerCase() === normalizedPath
+      p.path && path.normalize(p.path).toLowerCase() === normalizedPath
     );
 
     if (existingProject) {
