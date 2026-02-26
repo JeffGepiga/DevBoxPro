@@ -81,7 +81,7 @@ describe('CreateProject', () => {
         it('renders project name input', async () => {
             renderCreate();
             // Wait for loading to finish and Go to step 2 (Details)
-            const nextButton = await screen.findByText(/Next/i);
+            const nextButton = await screen.findByRole('button', { name: /^Next$/i });
             fireEvent.click(nextButton);
 
             await waitFor(() => {

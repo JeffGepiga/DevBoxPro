@@ -242,25 +242,32 @@ class ProjectManager {
 
     const id = uuidv4();
 
-    // Validate that required PHP version is installed before creating project
-    const phpVersion = config.phpVersion || '8.3';
+    // Detect project type early (needed for conditional PHP check)
+    const projectType = config.type || (await this.detectProjectType(config.path));
+
     const { app } = require('electron');
     const resourcePath = this.configStore.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-    const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
-    const phpExe = platform === 'win' ? 'php.exe' : 'php';
-    const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
 
-    const isPlaywright = process.env.PLAYWRIGHT_TEST === 'true';
+    // Validate that required PHP version is installed before creating project.
+    // Node.js projects do not require PHP.
+    if (projectType !== 'nodejs') {
+      const phpVersion = config.phpVersion || '8.3';
+      const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
+      const phpExe = platform === 'win' ? 'php.exe' : 'php';
+      const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
 
-    if (!isPlaywright && (!await fs.pathExists(path.join(phpDir, phpExe)) || !await fs.pathExists(path.join(phpDir, phpCgiExe)))) {
-      throw new Error(`PHP ${phpVersion} is not installed. Please download it from the Binary Manager before creating a project.`);
+      const isPlaywright = process.env.PLAYWRIGHT_TEST === 'true';
+
+      if (!isPlaywright && (!await fs.pathExists(path.join(phpDir, phpExe)) || !await fs.pathExists(path.join(phpDir, phpCgiExe)))) {
+        throw new Error(`PHP ${phpVersion} is not installed. Please download it from the Binary Manager before creating a project.`);
+      }
     }
 
     // Re-fetch projects list (it may have changed after removing failed project)
     const currentProjects = this.configStore.get('projects', []);
 
-    // Find available port
+    // Find available port (for the web-server proxy)
     const usedPorts = currentProjects.map((p) => p.port);
     let port = settings.portRangeStart || 8000;
     while (usedPorts.includes(port)) {
@@ -274,8 +281,15 @@ class ProjectManager {
       sslPort++;
     }
 
-    // Detect project type if not specified
-    const projectType = config.type || (await this.detectProjectType(config.path));
+    // Node.js app internal port (used as upstream for the reverse proxy).
+    // Reserve a separate block starting at 3000 so it doesn't clash with web-server ports.
+    let nodePort = config.nodePort || 3000;
+    if (projectType === 'nodejs') {
+      const usedNodePorts = currentProjects.map((p) => p.nodePort).filter(Boolean);
+      while (usedNodePorts.includes(nodePort)) {
+        nodePort++;
+      }
+    }
 
     // Determine default web server version from installed versions
     let defaultWebServerVersion = '1.28';
@@ -316,8 +330,8 @@ class ProjectManager {
         redis: config.services?.redis || false,
         redisVersion: config.services?.redisVersion || '7.4',
         queue: config.services?.queue || false,
-        // Node.js for projects that need it
-        nodejs: config.services?.nodejs || false,
+        // Node.js is always enabled for nodejs-type projects
+        nodejs: projectType === 'nodejs' ? true : (config.services?.nodejs || false),
         nodejsVersion: config.services?.nodejsVersion || '20',
       },
       environment: this.getDefaultEnvironment(projectType, config.name, port),
@@ -325,6 +339,10 @@ class ProjectManager {
         workers: config.supervisor?.workers || 1,
         processes: [],
       },
+      // Node.js reverse-proxy port (only meaningful for nodejs-type projects)
+      nodePort: projectType === 'nodejs' ? nodePort : undefined,
+      // Node.js start command for supervisor (only for nodejs-type projects)
+      nodeStartCommand: projectType === 'nodejs' ? (config.nodeStartCommand || 'npm start') : undefined,
       createdAt: new Date().toISOString(),
       lastStarted: null,
       // Compatibility warnings acknowledged by user
@@ -409,6 +427,43 @@ class ProjectManager {
       });
     }
 
+    // Set up Node.js start process for nodejs-type projects
+    if (project.type === 'nodejs') {
+      const nodejsVersion = project.services?.nodejsVersion || '20';
+      const nodeResourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+      const nodePlatform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+      const nodeDir = path.join(nodeResourcePath, 'nodejs', nodejsVersion, nodePlatform);
+      const nodeExe = process.platform === 'win32'
+        ? path.join(nodeDir, 'node.exe')
+        : path.join(nodeDir, 'bin', 'node');
+      project.supervisor.processes.push({
+        name: 'nodejs-app',
+        command: project.nodeStartCommand || 'npm start',
+        autostart: true,
+        autorestart: true,
+        numprocs: 1,
+        environment: {
+          PORT: String(project.nodePort || 3000),
+          NODE_PATH: nodeDir,
+        },
+      });
+    }
+
+    // Install fresh framework OR clone from repository - run async without blocking
+    if (config.installFresh || config.projectSource === 'clone') {
+      // Mark project as installing BEFORE saving to store.
+      // This way, if the app crashes during installation, the project is saved
+      // with installing:true and can be retried on restart or re-creation.
+      project.installing = true;
+
+      // Store clone config for runInstallation
+      project.cloneConfig = config.projectSource === 'clone' ? {
+        repositoryUrl: config.repositoryUrl,
+        authType: config.authType || 'public',
+        accessToken: config.accessToken,
+      } : null;
+    }
+
     // Save project first (before installation which might take time)
     // Re-fetch to ensure we have latest list
     const projectsToSave = this.configStore.get('projects', []);
@@ -418,19 +473,8 @@ class ProjectManager {
     // Auto-install CLI if not already installed
     await this.ensureCliInstalled();
 
-    // Install fresh framework OR clone from repository - run async without blocking
+    // Start the installation in background (don't await)
     if (config.installFresh || config.projectSource === 'clone') {
-      // Mark project as installing
-      project.installing = true;
-
-      // Store clone config for runInstallation
-      project.cloneConfig = config.projectSource === 'clone' ? {
-        repositoryUrl: config.repositoryUrl,
-        authType: config.authType || 'public',
-        accessToken: config.accessToken,
-      } : null;
-
-      // Run installation in background (don't await)
       this.runInstallation(project, mainWindow).catch(error => {
         this.managers.log?.systemError('Background installation failed', { project: project.name, error: error.message });
       });
@@ -499,13 +543,29 @@ class ProjectManager {
         if (await fs.pathExists(project.path)) {
           const files = await fs.readdir(project.path);
           if (files.length > 0) {
-            sendOutput(`Warning: Directory ${project.path} is not empty. Skipping Laravel installation.`, 'warning');
-            sendOutput('If you want a fresh installation, please choose an empty directory.', 'info');
-            project.installError = 'Directory not empty';
-            project.installing = false;
-            this.updateProjectInStore(project);
-            sendOutput('', 'complete'); // Signal completion
-            return;
+            // Allow retrying if it looks like a partial/failed Laravel install:
+            // A real Laravel project has artisan, composer.json, app/, etc.
+            // A partial install might only have a public/ folder or similar stubs.
+            const laravelIndicators = ['artisan', 'composer.json', 'app', 'bootstrap', 'config'];
+            const hasLaravelFiles = files.some(f => laravelIndicators.includes(f.toLowerCase()));
+
+            if (hasLaravelFiles) {
+              sendOutput(`Warning: Directory ${project.path} already contains a Laravel project. Skipping installation.`, 'warning');
+              sendOutput('If you want a fresh installation, please choose an empty directory.', 'info');
+              project.installError = 'Directory not empty';
+              project.installing = false;
+              this.updateProjectInStore(project);
+              sendOutput('', 'complete'); // Signal completion
+              return;
+            } else {
+              // Partial/failed installation (e.g. only public/ was created). Clean it up.
+              sendOutput(`Cleaning up partial installation at ${project.path}...`, 'info');
+              try {
+                await fs.remove(project.path);
+              } catch (cleanErr) {
+                sendOutput(`Warning: Could not clean up partial files: ${cleanErr.message}`, 'warning');
+              }
+            }
           }
         }
 

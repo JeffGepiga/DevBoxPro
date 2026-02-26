@@ -290,4 +290,73 @@ describe('ProjectManager', () => {
         });
     });
 
+    // ═══════════════════════════════════════════════════════════════
+    // Node.js project creation
+    // ═══════════════════════════════════════════════════════════════
+
+    describe('Node.js project creation', () => {
+        beforeEach(() => {
+            vi.clearAllMocks();
+
+            // Simulate PHP binary NOT present (would normally throw for PHP projects)
+            vi.spyOn(fs, 'pathExists').mockResolvedValue(false);
+            vi.spyOn(fs, 'pathExistsSync').mockReturnValue(false);
+            vi.spyOn(fs, 'ensureDir').mockResolvedValue();
+            vi.spyOn(fs, 'readdir').mockResolvedValue([]);
+            vi.spyOn(fs, 'readFile').mockResolvedValue('APP_NAME=Test\n');
+            vi.spyOn(fs, 'writeFile').mockResolvedValue();
+            vi.spyOn(fs, 'readJson').mockResolvedValue({});
+
+            mgr.createVirtualHost = vi.fn().mockResolvedValue();
+            mgr.addToHostsFile = vi.fn().mockResolvedValue();
+            mgr.validateProjectBinaries = vi.fn().mockResolvedValue({ isCompatible: true, missing: [] });
+        });
+
+        it('does NOT throw a PHP-missing error for nodejs type', async () => {
+            // PHP binary check would throw if it ran – but nodejs projects should skip it
+            await expect(
+                mgr.createProject({ name: 'NodeProj', path: '/path/to/nodeproj', type: 'nodejs' })
+            ).resolves.not.toThrow();
+        });
+
+        it('assigns a nodePort to nodejs projects', async () => {
+            const created = await mgr.createProject({
+                name: 'NodeProj2',
+                path: '/path/to/nodeproj2',
+                type: 'nodejs',
+            });
+            expect(typeof created.nodePort).toBe('number');
+        });
+
+        it('forces services.nodejs = true for nodejs projects', async () => {
+            const created = await mgr.createProject({
+                name: 'NodeProj3',
+                path: '/path/to/nodeproj3',
+                type: 'nodejs',
+            });
+            expect(created.services.nodejs).toBe(true);
+        });
+
+        it('adds a nodejs-app supervisor process for nodejs projects', async () => {
+            const created = await mgr.createProject({
+                name: 'NodeProj4',
+                path: '/path/to/nodeproj4',
+                type: 'nodejs',
+                nodeStartCommand: 'node server.js',
+            });
+            const nodeProcess = created.supervisor.processes.find(p => p.name === 'nodejs-app');
+            expect(nodeProcess).toBeDefined();
+            expect(nodeProcess.command).toBe('node server.js');
+        });
+
+        it('uses default start command "npm start" when none provided', async () => {
+            const created = await mgr.createProject({
+                name: 'NodeProj5',
+                path: '/path/to/nodeproj5',
+                type: 'nodejs',
+            });
+            expect(created.nodeStartCommand).toBe('npm start');
+        });
+    });
+
 });

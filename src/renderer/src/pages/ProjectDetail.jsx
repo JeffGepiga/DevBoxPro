@@ -843,44 +843,73 @@ function OverviewTab({ project, processes, refreshProjects }) {
                 {project.type}
               </dd>
             </div>
-            <div className="flex justify-between items-center">
-              <dt className="text-gray-500 dark:text-gray-400">PHP Version</dt>
-              <dd className="flex items-center gap-2">
-                {(() => {
-                  const currentVersion = getEffectiveValue('phpVersion');
-                  const isCurrentInstalled = phpVersions.some(v => v.version === currentVersion);
-                  const displayVersions = isCurrentInstalled
-                    ? phpVersions
-                    : [{ version: currentVersion, notInstalled: true }, ...phpVersions];
+            {/* PHP Version - only for PHP-based projects */}
+            {project.type !== 'nodejs' && (
+              <div className="flex justify-between items-center">
+                <dt className="text-gray-500 dark:text-gray-400">PHP Version</dt>
+                <dd className="flex items-center gap-2">
+                  {(() => {
+                    const currentVersion = getEffectiveValue('phpVersion');
+                    const isCurrentInstalled = phpVersions.some(v => v.version === currentVersion);
+                    const displayVersions = isCurrentInstalled
+                      ? phpVersions
+                      : [{ version: currentVersion, notInstalled: true }, ...phpVersions];
 
-                  return (
-                    <>
-                      <select
-                        value={currentVersion}
-                        onChange={(e) => handlePhpVersionChange(e.target.value)}
-                        className={clsx(
-                          "input py-1 px-2 text-sm w-24",
-                          !isCurrentInstalled && "border-red-500 dark:border-red-500"
+                    return (
+                      <>
+                        <select
+                          value={currentVersion}
+                          onChange={(e) => handlePhpVersionChange(e.target.value)}
+                          className={clsx(
+                            "input py-1 px-2 text-sm w-24",
+                            !isCurrentInstalled && "border-red-500 dark:border-red-500"
+                          )}
+                        >
+                          {displayVersions.map((v) => (
+                            <option
+                              key={v.version}
+                              value={v.version}
+                              className={v.notInstalled ? 'text-red-500' : ''}
+                            >
+                              {v.version}{v.notInstalled ? ' (not installed)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        {!isCurrentInstalled && (
+                          <AlertTriangle className="w-4 h-4 text-red-500" title="PHP version not installed" />
                         )}
-                      >
-                        {displayVersions.map((v) => (
-                          <option
-                            key={v.version}
-                            value={v.version}
-                            className={v.notInstalled ? 'text-red-500' : ''}
-                          >
-                            {v.version}{v.notInstalled ? ' (not installed)' : ''}
-                          </option>
-                        ))}
-                      </select>
-                      {!isCurrentInstalled && (
-                        <AlertTriangle className="w-4 h-4 text-red-500" title="PHP version not installed" />
-                      )}
-                    </>
-                  );
-                })()}
-              </dd>
-            </div>
+                      </>
+                    );
+                  })()}
+                </dd>
+              </div>
+            )}
+
+            {/* Node.js Version + App Port - only for Node.js projects */}
+            {project.type === 'nodejs' && (
+              <>
+                <div className="flex justify-between items-center">
+                  <dt className="text-gray-500 dark:text-gray-400">Node.js Version</dt>
+                  <dd className="font-medium text-gray-900 dark:text-white">
+                    v{project.services?.nodejsVersion || '20'}
+                  </dd>
+                </div>
+                <div className="flex justify-between items-center">
+                  <dt className="text-gray-500 dark:text-gray-400">App Port</dt>
+                  <dd className="font-medium text-gray-900 dark:text-white font-mono">
+                    {project.nodePort || 3000}
+                  </dd>
+                </div>
+                {project.nodeStartCommand && (
+                  <div className="flex justify-between items-center">
+                    <dt className="text-gray-500 dark:text-gray-400">Start Command</dt>
+                    <dd className="font-medium text-gray-900 dark:text-white font-mono text-sm">
+                      {project.nodeStartCommand}
+                    </dd>
+                  </div>
+                )}
+              </>
+            )}
             <div className="flex justify-between">
               <dt className="text-gray-500 dark:text-gray-400">Port</dt>
               <dd className="font-medium text-gray-900 dark:text-white">

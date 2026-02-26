@@ -206,7 +206,67 @@ class WebServerManager {
       ? `${domain || 'localhost'} _`  // _ is a catch-all server name
       : (domain || 'localhost');
 
-    let serverConfig = `
+    const isNodeJs = project.type === 'nodejs';
+    const nodePort = project.nodePort || 3000;
+
+    let serverConfig;
+
+    if (isNodeJs) {
+      // Node.js reverse-proxy configuration
+      serverConfig = `
+# DevBox Pro - ${name} (Node.js)
+# Auto-generated configuration${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}
+${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
+
+server {
+    listen ${listenDirective}${usePort80 ? ' default_server' : ''};
+    server_name ${serverName};
+
+    charset utf-8;
+
+    location / {
+        proxy_pass http://127.0.0.1:${nodePort};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    access_log "${this.dataPath.replace(/\\/g, '/')}/nginx/logs/${id}-access.log";
+    error_log "${this.dataPath.replace(/\\/g, '/')}/nginx/logs/${id}-error.log";
+}
+`;
+      // Add SSL block for Node.js if enabled
+      if (ssl) {
+        const certPath = path.join(this.dataPath, 'ssl', domain || id);
+        serverConfig += `
+
+server {
+    listen ${listenDirectiveSsl};
+    server_name ${serverName};
+
+    ssl_certificate "${certPath.replace(/\\/g, '/')}/cert.pem";
+    ssl_certificate_key "${certPath.replace(/\\/g, '/')}/key.pem";
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    charset utf-8;
+
+    location / {
+        proxy_pass http://127.0.0.1:${nodePort};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+`;
+      }
+    } else {
+      // Standard PHP FastCGI configuration
+      serverConfig = `
 # DevBox Pro - ${name}
 # Auto-generated configuration${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}
 ${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
@@ -250,10 +310,10 @@ server {
 }
 `;
 
-    // Add SSL server block if SSL is enabled
-    if (ssl) {
-      const certPath = path.join(this.dataPath, 'ssl', domain || id);
-      serverConfig += `
+      // Add SSL server block if SSL is enabled
+      if (ssl) {
+        const certPath = path.join(this.dataPath, 'ssl', domain || id);
+        serverConfig += `
 
 server {
     listen ${listenDirectiveSsl};
@@ -295,6 +355,7 @@ server {
     }
 }
 `;
+      }
     }
 
     // Save config
@@ -302,7 +363,7 @@ server {
     await fs.ensureDir(path.dirname(configPath));
     await fs.writeFile(configPath, serverConfig);
 
-    return { configPath, phpFpmPort };
+    return { configPath, phpFpmPort: isNodeJs ? null : phpFpmPort };
   }
 
   // Generate Apache config for a project
@@ -353,7 +414,52 @@ server {
     // Add ServerAlias * when network access is enabled to accept any hostname
     const serverAliasDirective = networkAccess ? '\n    ServerAlias *' : '';
 
-    let vhostConfig = `
+    const isNodeJs = project.type === 'nodejs';
+    const nodePort = project.nodePort || 3000;
+
+    let vhostConfig;
+
+    if (isNodeJs) {
+      // Node.js reverse-proxy configuration
+      vhostConfig = `
+# DevBox Pro - ${name} (Node.js)
+# Auto-generated configuration${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}
+${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
+
+<VirtualHost *:${finalPort}>
+    ServerName ${domain || 'localhost'}${serverAliasDirective}
+
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:${nodePort}/
+    ProxyPassReverse / http://127.0.0.1:${nodePort}/
+
+    ErrorLog "${this.dataPath}/apache/logs/${id}-error.log"
+    CustomLog "${this.dataPath}/apache/logs/${id}-access.log" combined
+</VirtualHost>
+`;
+      if (ssl) {
+        const certPath = path.join(this.dataPath, 'ssl', domain || id);
+        vhostConfig += `
+
+<VirtualHost *:${sslPort}>
+    ServerName ${domain || 'localhost'}${serverAliasDirective}
+
+    SSLEngine on
+    SSLCertificateFile "${certPath}/cert.pem"
+    SSLCertificateKeyFile "${certPath}/key.pem"
+
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:${nodePort}/
+    ProxyPassReverse / http://127.0.0.1:${nodePort}/
+
+    ErrorLog "${this.dataPath}/apache/logs/${id}-ssl-error.log"
+    CustomLog "${this.dataPath}/apache/logs/${id}-ssl-access.log" combined
+</VirtualHost>
+`;
+      }
+    } else {
+      // Standard PHP FastCGI configuration
+      vhostConfig = `
 # DevBox Pro - ${name}
 # Auto-generated configuration${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}
 ${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
@@ -375,7 +481,7 @@ ${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
 
     # PHP-FPM/CGI proxy with timeout for long-running processes (0 = unlimited)
     ProxyTimeout 0
-    <FilesMatch \\.php$>
+    <FilesMatch \.php$>
         SetHandler "proxy:fcgi://127.0.0.1:${phpFpmPort}"
     </FilesMatch>
 
@@ -386,10 +492,10 @@ ${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
 </VirtualHost>
 `;
 
-    // Add SSL virtual host if enabled
-    if (ssl) {
-      const certPath = path.join(this.dataPath, 'ssl', domain || id);
-      vhostConfig += `
+      // Add SSL virtual host if enabled
+      if (ssl) {
+        const certPath = path.join(this.dataPath, 'ssl', domain || id);
+        vhostConfig += `
 
 <VirtualHost *:${sslPort}>
     ServerName ${domain || 'localhost'}${serverAliasDirective}
@@ -412,7 +518,7 @@ ${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
 
     # PHP-FPM/CGI proxy with timeout for long-running processes (0 = unlimited)
     ProxyTimeout 0
-    <FilesMatch \\.php$>
+    <FilesMatch \.php$>
         SetHandler "proxy:fcgi://127.0.0.1:${phpFpmPort}"
     </FilesMatch>
 
@@ -422,6 +528,7 @@ ${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
     CustomLog "${this.dataPath}/apache/logs/${id}-ssl-access.log" combined
 </VirtualHost>
 `;
+      }
     }
 
     // Save config
@@ -429,7 +536,7 @@ ${usePort80 ? '# Port 80 enabled (Sole network access project)' : ''}
     await fs.ensureDir(path.dirname(configPath));
     await fs.writeFile(configPath, vhostConfig);
 
-    return { configPath, phpFpmPort };
+    return { configPath, phpFpmPort: isNodeJs ? null : phpFpmPort };
   }
 
   // Start PHP-FPM/CGI for a project

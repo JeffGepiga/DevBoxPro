@@ -534,4 +534,116 @@ describe('WebServerManager', () => {
             vi.restoreAllMocks();
         });
     });
+
+    // ═══════════════════════════════════════════════════════════════
+    // Node.js project support
+    // ═══════════════════════════════════════════════════════════════
+
+    describe('Node.js project support', () => {
+        const nodeProject = {
+            id: 'node-proj-abcd1234',
+            name: 'My Node App',
+            domain: 'nodeapp.test',
+            path: '/home/user/projects/nodeapp',
+            type: 'nodejs',
+            nodePort: 3000,
+            port: 8085,
+            sslPort: 443,
+            ssl: false,
+            networkAccess: false,
+        };
+
+        beforeEach(() => {
+            vi.spyOn(fs, 'pathExists').mockResolvedValue(false);
+            vi.spyOn(fs, 'stat').mockRejectedValue(new Error('not found'));
+            vi.spyOn(fs, 'ensureDir').mockResolvedValue(undefined);
+            vi.spyOn(fs, 'writeFile').mockResolvedValue(undefined);
+            vi.spyOn(fs, 'readdir').mockResolvedValue([]);
+            configStore.get.mockImplementation((key, def) => {
+                if (key === 'projects') return [nodeProject];
+                return def;
+            });
+        });
+
+        afterEach(() => vi.restoreAllMocks());
+
+        // ── Nginx ──────────────────────────────────────────────────
+
+        it('generateNginxConfig() produces proxy_pass block for nodejs project', async () => {
+            let capturedConfig = '';
+            fs.writeFile.mockImplementation(async (_p, content) => { capturedConfig = content; });
+
+            await mgr.generateNginxConfig(nodeProject);
+
+            expect(capturedConfig).toContain('proxy_pass http://127.0.0.1:3000');
+            expect(capturedConfig).toContain('proxy_http_version 1.1');
+        });
+
+        it('generateNginxConfig() omits FastCGI (PHP) block for nodejs project', async () => {
+            let capturedConfig = '';
+            fs.writeFile.mockImplementation(async (_p, content) => { capturedConfig = content; });
+
+            await mgr.generateNginxConfig(nodeProject);
+
+            expect(capturedConfig).not.toContain('fastcgi_pass');
+            expect(capturedConfig).not.toContain('location ~ \\.php$');
+        });
+
+        it('generateNginxConfig() returns phpFpmPort null for nodejs project', async () => {
+            const result = await mgr.generateNginxConfig(nodeProject);
+            expect(result.phpFpmPort).toBeNull();
+        });
+
+        it('generateNginxConfig() adds SSL proxy_pass block when ssl=true (nodejs)', async () => {
+            let capturedConfig = '';
+            fs.writeFile.mockImplementation(async (_p, content) => { capturedConfig = content; });
+
+            await mgr.generateNginxConfig({ ...nodeProject, ssl: true });
+
+            // Two proxy_pass occurrences: one for HTTP, one for HTTPS
+            const matches = capturedConfig.match(/proxy_pass http:\/\/127\.0\.0\.1:3000/g);
+            expect(matches).not.toBeNull();
+            expect(matches.length).toBeGreaterThanOrEqual(2);
+        });
+
+        // ── Apache ─────────────────────────────────────────────────
+
+        it('generateApacheConfig() produces ProxyPass block for nodejs project', async () => {
+            let capturedConfig = '';
+            fs.writeFile.mockImplementation(async (_p, content) => { capturedConfig = content; });
+
+            await mgr.generateApacheConfig(nodeProject);
+
+            expect(capturedConfig).toContain('ProxyPass / http://127.0.0.1:3000/');
+            expect(capturedConfig).toContain('ProxyPassReverse / http://127.0.0.1:3000/');
+        });
+
+        it('generateApacheConfig() omits FilesMatch PHP handler for nodejs project', async () => {
+            let capturedConfig = '';
+            fs.writeFile.mockImplementation(async (_p, content) => { capturedConfig = content; });
+
+            await mgr.generateApacheConfig(nodeProject);
+
+            expect(capturedConfig).not.toContain('FilesMatch');
+            expect(capturedConfig).not.toContain('proxy:fcgi://');
+        });
+
+        it('generateApacheConfig() returns phpFpmPort null for nodejs project', async () => {
+            const result = await mgr.generateApacheConfig(nodeProject);
+            expect(result.phpFpmPort).toBeNull();
+        });
+
+        it('generateApacheConfig() adds SSL VirtualHost with ProxyPass when ssl=true (nodejs)', async () => {
+            let capturedConfig = '';
+            fs.writeFile.mockImplementation(async (_p, content) => { capturedConfig = content; });
+
+            await mgr.generateApacheConfig({ ...nodeProject, ssl: true });
+
+            expect(capturedConfig).toContain('SSLEngine on');
+            // Two ProxyPass occurrences: one for plain HTTP vhost, one for SSL vhost
+            const matches = capturedConfig.match(/ProxyPass \/ http:\/\/127\.0\.0\.1:3000\//g);
+            expect(matches).not.toBeNull();
+            expect(matches.length).toBeGreaterThanOrEqual(2);
+        });
+    });
 });
