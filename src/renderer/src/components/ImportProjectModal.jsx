@@ -228,7 +228,7 @@ function ImportProjectModal({ project, onClose, onImport }) {
     const hasAnyOptionalService = hasMysql || hasMariadb || hasRedis || (!isNodejs && hasNodejs) || isLaravel;
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -530,7 +530,7 @@ function ImportProjectModal({ project, onClose, onImport }) {
                                     </button>
 
                                     {showServices && (
-                                        <div className="p-4 space-y-4">
+                                        <div className="p-4 space-y-4 overflow-hidden">
                                             {/* Database Section */}
                                             {(hasMysql || hasMariadb) && (
                                                 <div className="pb-4 border-b border-gray-200 dark:border-gray-700">
@@ -552,18 +552,20 @@ function ImportProjectModal({ project, onClose, onImport }) {
                                                                     </div>
                                                                 </label>
                                                                 {config.services.mysql && (
-                                                                    <select
-                                                                        value={config.services.mysqlVersion}
-                                                                        onChange={(e) => setConfig(prev => ({
-                                                                            ...prev,
-                                                                            services: { ...prev.services, mysqlVersion: e.target.value }
-                                                                        }))}
-                                                                        className="select text-sm ml-7"
-                                                                    >
-                                                                        {installedDatabases.mysql.map((version) => (
-                                                                            <option key={version} value={version}>MySQL {version}</option>
-                                                                        ))}
-                                                                    </select>
+                                                                    <div className="pl-7">
+                                                                        <select
+                                                                            value={config.services.mysqlVersion}
+                                                                            onChange={(e) => setConfig(prev => ({
+                                                                                ...prev,
+                                                                                services: { ...prev.services, mysqlVersion: e.target.value }
+                                                                            }))}
+                                                                            className="select text-sm"
+                                                                        >
+                                                                            {installedDatabases.mysql.map((version) => (
+                                                                                <option key={version} value={version}>MySQL {version}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </div>
                                                                 )}
                                                             </div>
                                                         )}
@@ -584,18 +586,20 @@ function ImportProjectModal({ project, onClose, onImport }) {
                                                                     </div>
                                                                 </label>
                                                                 {config.services.mariadb && (
-                                                                    <select
-                                                                        value={config.services.mariadbVersion}
-                                                                        onChange={(e) => setConfig(prev => ({
-                                                                            ...prev,
-                                                                            services: { ...prev.services, mariadbVersion: e.target.value }
-                                                                        }))}
-                                                                        className="select text-sm ml-7"
-                                                                    >
-                                                                        {installedDatabases.mariadb.map((version) => (
-                                                                            <option key={version} value={version}>MariaDB {version}</option>
-                                                                        ))}
-                                                                    </select>
+                                                                    <div className="pl-7">
+                                                                        <select
+                                                                            value={config.services.mariadbVersion}
+                                                                            onChange={(e) => setConfig(prev => ({
+                                                                                ...prev,
+                                                                                services: { ...prev.services, mariadbVersion: e.target.value }
+                                                                            }))}
+                                                                            className="select text-sm"
+                                                                        >
+                                                                            {installedDatabases.mariadb.map((version) => (
+                                                                                <option key={version} value={version}>MariaDB {version}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </div>
                                                                 )}
                                                             </div>
                                                         )}
@@ -619,24 +623,26 @@ function ImportProjectModal({ project, onClose, onImport }) {
                                                         </div>
                                                     </label>
                                                     {config.services.redis && (
-                                                        <select
-                                                            value={config.services.redisVersion}
-                                                            onChange={(e) => setConfig(prev => ({
-                                                                ...prev,
-                                                                services: { ...prev.services, redisVersion: e.target.value }
-                                                            }))}
-                                                            className="select text-sm ml-7"
-                                                        >
-                                                            {installedRedis.map((version) => (
-                                                                <option key={version} value={version}>Redis {version}</option>
-                                                            ))}
-                                                        </select>
+                                                        <div className="pl-7">
+                                                            <select
+                                                                value={config.services.redisVersion}
+                                                                onChange={(e) => setConfig(prev => ({
+                                                                    ...prev,
+                                                                    services: { ...prev.services, redisVersion: e.target.value }
+                                                                }))}
+                                                                className="select text-sm"
+                                                            >
+                                                                {installedRedis.map((version) => (
+                                                                    <option key={version} value={version}>Redis {version}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
                                                     )}
                                                 </div>
                                             )}
 
-                                            {/* Node.js */}
-                                            {hasNodejs && (
+                                            {/* Node.js — hidden when project type IS nodejs */}
+                                            {hasNodejs && !isNodejs && (
                                                 <div className="space-y-2">
                                                     <label className="flex items-center gap-3 cursor-pointer">
                                                         <input
@@ -651,18 +657,20 @@ function ImportProjectModal({ project, onClose, onImport }) {
                                                         </div>
                                                     </label>
                                                     {config.services.nodejs && (
-                                                        <select
-                                                            value={config.services.nodejsVersion}
-                                                            onChange={(e) => setConfig(prev => ({
-                                                                ...prev,
-                                                                services: { ...prev.services, nodejsVersion: e.target.value }
-                                                            }))}
-                                                            className="select text-sm ml-7"
-                                                        >
-                                                            {installedNodejs.map((version) => (
-                                                                <option key={version} value={version}>Node {version}</option>
-                                                            ))}
-                                                        </select>
+                                                        <div className="pl-7">
+                                                            <select
+                                                                value={config.services.nodejsVersion}
+                                                                onChange={(e) => setConfig(prev => ({
+                                                                    ...prev,
+                                                                    services: { ...prev.services, nodejsVersion: e.target.value }
+                                                                }))}
+                                                                className="select text-sm"
+                                                            >
+                                                                {installedNodejs.map((version) => (
+                                                                    <option key={version} value={version}>Node {version}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
                                                     )}
                                                 </div>
                                             )}
