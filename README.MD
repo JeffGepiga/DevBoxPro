@@ -7,21 +7,27 @@
 
 # 🚀 DevBox Pro
 
-**Run legacy and modern PHP apps side by side — no conflicts, no headaches**
+**Run legacy and modern PHP & Node.js apps side by side — no conflicts, no headaches**
 
-Maintaining an old PHP 7.4 project while building a new Laravel 11 app on PHP 8.3? DevBox Pro makes it effortless. Unlike traditional setups, you can **run multiple PHP versions simultaneously** — giving you the freedom to work on legacy applications alongside cutting-edge projects without switching environments or breaking dependencies.
+Maintaining an old PHP 7.4 project while building a new Laravel 11 app on PHP 8.5? Running a Next.js frontend alongside a PHP backend? DevBox Pro makes it effortless. Unlike traditional setups, you can **run multiple PHP and Node.js versions simultaneously** — giving you the freedom to work on legacy applications alongside cutting-edge projects without switching environments or breaking dependencies.
 
-DevBox Pro bundles everything you need: PHP 7.4 through 8.4, MySQL, MariaDB, Redis, Nginx, Apache, and more — all in one standalone desktop app. No Docker, no complex configurations, just instant multi-version development.
+DevBox Pro bundles everything you need: PHP 7.4 through 8.5, Node.js 16 through 24, MySQL, MariaDB, Redis, Nginx, Apache, and more — all in one standalone desktop app. No Docker, no complex configurations, just instant multi-version development.
 
 ---
 
 ## ✨ Features
 
 ### 🐘 Multi-PHP Version Support
-- **PHP 7.4, 8.0, 8.1, 8.2, 8.3, 8.4** - Run any version side by side
+- **PHP 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5** - Run any version side by side
 - Per-project PHP version selection with compatibility validation
 - Easy extension management per version with php.ini editor
 - Pre-configured for optimal performance
+
+### 🟢 Node.js Project Support
+- **Node.js 16, 18, 20, 22, 24** - Run pure Node.js applications
+- Per-project Node.js version selection
+- Automatic proxy through Nginx/Apache for `.test` domains
+- Run Express, Next.js, Nuxt, or any Node.js framework
 
 ### 🌐 Web Server Options
 - **Nginx 1.26, 1.28** - High-performance, low memory footprint (recommended)
@@ -38,7 +44,7 @@ DevBox Pro bundles everything you need: PHP 7.4 through 8.4, MySQL, MariaDB, Red
 | **Redis** | 7.2, 7.4 | In-memory cache & session storage |
 | **Mailpit** | Latest | Email testing with SMTP server |
 | **phpMyAdmin** | Latest | Web-based database management |
-| **Node.js** | 18, 20 (LTS), 22 | JavaScript runtime |
+| **Node.js** | 16, 18, 20, 22, 24 (LTS) | JavaScript runtime for projects & tooling |
 | **Composer** | Latest | PHP dependency manager |
 
 ### 💾 Database Management
@@ -60,6 +66,7 @@ DevBox Pro bundles everything you need: PHP 7.4 through 8.4, MySQL, MariaDB, Red
 - **Symfony** - Console commands, Doctrine integration
 - **WordPress** - WP-CLI ready, Multisite support
 - **Custom PHP** - Works with any PHP application
+- **Node.js** - Express, Next.js, Nuxt, Fastify, or any Node.js app
 
 ### 🔧 Binary Manager
 - **Download individual components** - Only install what you need
@@ -152,8 +159,8 @@ DevBox Pro bundles everything you need: PHP 7.4 through 8.4, MySQL, MariaDB, Red
 ### Creating Your First Project
 
 1. Click **"+ New Project"** on the Dashboard
-2. Select your **project type** (Laravel, Symfony, WordPress, or Custom)
-3. Choose **project folder** and **PHP version**
+2. Select your **project type** (Laravel, Symfony, WordPress, Custom PHP, or Node.js)
+3. Choose **project folder** and **PHP/Node.js version**
 4. Configure **services** (MySQL, Redis, etc.)
 5. Set your **domain** (e.g., `myproject.test`)
 6. Click **Create** and you're ready!
@@ -357,13 +364,14 @@ MAIL_PORT=1025
 
 ## 📋 Roadmap
 
-- [x] Multi-PHP version support (7.4 - 8.4)
+- [x] Multi-PHP version support (7.4 - 8.5)
 - [x] MySQL & MariaDB multi-version support
 - [x] Redis multi-version integration  
 - [x] Nginx & Apache multi-version web servers
 - [x] Automatic SSL certificates
 - [x] Virtual host management
 - [x] Node.js & npm multi-version support
+- [x] Pure Node.js project support (Express, Next.js, etc.)
 - [x] Composer integration
 - [x] Database import/export with compression
 - [x] Per-project service version selection
@@ -407,5 +415,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 <p align="center">
-  Made with ❤️ for PHP developers
+  Made with ❤️ for PHP & Node.js developers
 </p>
