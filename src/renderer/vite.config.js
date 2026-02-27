@@ -21,6 +21,17 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Core React runtime
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          // Icon library (large)
+          'vendor-icons': ['lucide-react'],
+        },
+      },
+    },
   },
   resolve: {
     alias: {

@@ -12,6 +12,7 @@ function ImportProjectModal({ project, onClose, onImport }) {
         type: project.type || 'custom',
         phpVersion: '',
         webServer: 'nginx',
+        webServerVersion: '',
         documentRoot: '', // Custom document root
         ssl: true,
         domain: '',
@@ -132,7 +133,9 @@ function ImportProjectModal({ project, onClose, onImport }) {
 
                     // Set default web server based on what's installed
                     if (nginxVersions.length === 0 && apacheVersions.length > 0) {
-                        setConfig(prev => ({ ...prev, webServer: 'apache' }));
+                        setConfig(prev => ({ ...prev, webServer: 'apache', webServerVersion: apacheVersions[0] || '' }));
+                    } else if (nginxVersions.length > 0) {
+                        setConfig(prev => ({ ...prev, webServerVersion: nginxVersions[0] || '' }));
                     }
 
                     // Set default versions for optional services
@@ -384,7 +387,11 @@ function ImportProjectModal({ project, onClose, onImport }) {
                                             ) : (
                                                 <select
                                                     value={config.webServer}
-                                                    onChange={(e) => setConfig({ ...config, webServer: e.target.value })}
+                                                    onChange={(e) => {
+                                                        const ws = e.target.value;
+                                                        const versions = ws === 'nginx' ? installedWebServers.nginx : installedWebServers.apache;
+                                                        setConfig({ ...config, webServer: ws, webServerVersion: versions[0] || '' });
+                                                    }}
                                                     className="select"
                                                 >
                                                     {installedWebServers.nginx.length > 0 && <option value="nginx">Nginx</option>}
@@ -393,6 +400,29 @@ function ImportProjectModal({ project, onClose, onImport }) {
                                             )}
                                         </div>
                                     </div>
+
+                                    {/* Web Server Version */}
+                                    {!hasNoWebServer && (() => {
+                                        const versions = config.webServer === 'nginx'
+                                            ? installedWebServers.nginx
+                                            : installedWebServers.apache;
+                                        return versions.length >= 1 ? (
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                                    {config.webServer === 'nginx' ? 'Nginx' : 'Apache'} Version
+                                                </label>
+                                                <select
+                                                    value={config.webServerVersion}
+                                                    onChange={(e) => setConfig({ ...config, webServerVersion: e.target.value })}
+                                                    className="select"
+                                                >
+                                                    {versions.map((v) => (
+                                                        <option key={v} value={v}>{v}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        ) : null;
+                                    })()}
                                 </>
                             )}
 

@@ -7,6 +7,9 @@ module.exports = {
   productName: 'DevBox Pro',
   copyright: 'Copyright © 2024 DevBox Pro',
   asar: true,
+  // Use the Electron binary already downloaded by `npm install` (node_modules/electron/dist)
+  // This avoids re-downloading 138MB from GitHub during every build.
+  electronDist: './node_modules/electron/dist',
   directories: {
     output: 'dist',
     buildResources: 'resources',

@@ -1,19 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { RefreshCw, CheckCircle, AlertCircle, X, Database } from 'lucide-react';
 import clsx from 'clsx';
 import Sidebar from './components/Sidebar';
-import Dashboard from './pages/Dashboard';
-import Projects from './pages/Projects';
-import ProjectDetail from './pages/ProjectDetail';
-import Services from './pages/Services';
-import Databases from './pages/Databases';
-import Logs from './pages/Logs';
-import Settings from './pages/Settings';
-import CreateProject from './pages/CreateProject';
-import BinaryManager from './pages/BinaryManager';
+
+// Lazy-load pages so each gets its own chunk and the initial bundle stays small
+const Dashboard     = lazy(() => import('./pages/Dashboard'));
+const Projects      = lazy(() => import('./pages/Projects'));
+const ProjectDetail = lazy(() => import('./pages/ProjectDetail'));
+const Services      = lazy(() => import('./pages/Services'));
+const Databases     = lazy(() => import('./pages/Databases'));
+const Logs          = lazy(() => import('./pages/Logs'));
+const Settings      = lazy(() => import('./pages/Settings'));
+const CreateProject = lazy(() => import('./pages/CreateProject'));
+const BinaryManager = lazy(() => import('./pages/BinaryManager'));
 import { AppProvider, useApp } from './context/AppContext';
 import { ModalProvider } from './context/ModalContext';
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
+    </div>
+  );
+}
 
 // Global database operation notification component
 function GlobalDatabaseNotification() {
@@ -111,29 +121,33 @@ function AppContent({ darkMode, setDarkMode }) {
       <main className="flex-1 overflow-auto relative">
         {/* Regular routes - hidden when on project detail */}
         <div style={{ display: isOnProjectDetail ? 'none' : 'block' }}>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/projects/new" element={<CreateProject />} />
-            <Route path="/projects/:id" element={null} /> {/* Placeholder - actual ProjectDetail rendered separately for persistence */}
-            <Route path="/services" element={<Services />} />
-            <Route path="/databases" element={<Databases />} />
-            <Route path="/logs" element={<Logs />} />
-            <Route path="/binaries" element={<BinaryManager />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/projects" element={<Projects />} />
+              <Route path="/projects/new" element={<CreateProject />} />
+              <Route path="/projects/:id" element={null} /> {/* Placeholder - actual ProjectDetail rendered separately for persistence */}
+              <Route path="/services" element={<Services />} />
+              <Route path="/databases" element={<Databases />} />
+              <Route path="/logs" element={<Logs />} />
+              <Route path="/binaries" element={<BinaryManager />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
         </div>
 
         {/* All visited ProjectDetails - kept mounted to preserve terminal state */}
-        {Array.from(visitedProjectIds).map(projectId => (
-          <div key={projectId} style={{ display: currentProjectId === projectId ? 'block' : 'none' }}>
-            <ProjectDetail
-              projectId={projectId}
-              onCloseTerminal={() => handleCloseProject(projectId)}
-            />
-          </div>
-        ))}
+        <Suspense fallback={<PageLoader />}>
+          {Array.from(visitedProjectIds).map(projectId => (
+            <div key={projectId} style={{ display: currentProjectId === projectId ? 'block' : 'none' }}>
+              <ProjectDetail
+                projectId={projectId}
+                onCloseTerminal={() => handleCloseProject(projectId)}
+              />
+            </div>
+          ))}
+        </Suspense>
       </main>
       <GlobalDatabaseNotification />
     </div>
