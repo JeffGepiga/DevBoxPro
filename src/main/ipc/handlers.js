@@ -1301,12 +1301,18 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       });
 
       proc.on('error', (error) => {
-        runningProcesses.delete(projectId);
+        // Only clean up if this process is still the active one for this projectId
+        if (runningProcesses.get(projectId) === proc) {
+          runningProcesses.delete(projectId);
+        }
         reject(error);
       });
 
       proc.on('close', (code) => {
-        runningProcesses.delete(projectId);
+        // Only clean up if this process is still the active one for this projectId
+        if (runningProcesses.get(projectId) === proc) {
+          runningProcesses.delete(projectId);
+        }
         resolve({
           stdout,
           stderr,
@@ -1321,7 +1327,9 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     const proc = runningProcesses.get(projectId);
     if (proc) {
       const kill = require('tree-kill');
-      kill(proc.pid, 'SIGTERM');
+      // Use SIGKILL on Windows since SIGTERM is not reliably handled
+      const signal = process.platform === 'win32' ? 'SIGKILL' : 'SIGTERM';
+      kill(proc.pid, signal);
       runningProcesses.delete(projectId);
       return { success: true };
     }

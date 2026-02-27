@@ -82,6 +82,22 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
   const inputRef = useRef(null);
   const lastActivityRef = useRef(Date.now());
   const inactivityTimerRef = useRef(null);
+  // Track running state via ref to avoid stale closures in cleanup
+  const isRunningRef = useRef(false);
+
+  // Keep isRunningRef in sync with isRunning state
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
+
+  // Cancel any running process when component unmounts
+  useEffect(() => {
+    return () => {
+      if (isRunningRef.current) {
+        window.devbox?.terminal?.cancelCommand(projectId);
+      }
+    };
+  }, [projectId]);
 
   // Auto-scroll to bottom when output changes
   useEffect(() => {
@@ -175,13 +191,32 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
     inputRef.current?.focus();
   };
 
+  const cancelRunning = useCallback(async () => {
+    if (isRunningRef.current) {
+      await window.devbox?.terminal?.cancelCommand(projectId);
+      setIsRunning(false);
+      setWaitingForInput(false);
+    }
+  }, [projectId]);
+
   const runCommand = async (cmd) => {
     if (!cmd.trim()) return;
 
     // If a command is running and waiting for input, send input instead
     if (isRunning) {
-      await sendInputToProcess(cmd);
-      return;
+      if (waitingForInput) {
+        await sendInputToProcess(cmd);
+      } else {
+        // Not waiting for input - cancel the running process first, then run the new command
+        addOutput('Cancelling previous command...', 'info');
+        await window.devbox?.terminal?.cancelCommand(projectId);
+        // Brief pause to let the process clean up before running new command
+        await new Promise((res) => setTimeout(res, 300));
+        setIsRunning(false);
+        setWaitingForInput(false);
+        // Fall through to run the new command below
+      }
+      if (waitingForInput) return;
     }
 
     // Add to history
@@ -244,10 +279,8 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
     } else if (e.key === 'c' && e.ctrlKey) {
       // Cancel running command
       if (isRunning) {
-        window.devbox?.terminal?.cancelCommand(projectId);
+        cancelRunning();
         addOutput('^C', 'error');
-        setIsRunning(false);
-        setWaitingForInput(false);
       }
     }
   };
@@ -299,7 +332,9 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
           </button>
           {onClose && (
             <button
-              onClick={() => {
+              onClick={async () => {
+                // Cancel any running process to free resources
+                await cancelRunning();
                 // Clear output to free memory
                 setOutput([]);
                 setCommandHistory([]);
