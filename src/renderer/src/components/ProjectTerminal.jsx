@@ -114,6 +114,7 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
   }, [autoFocus]);
 
   // Listen for terminal output events
+  const outputCleanupRef = useRef(null);
   useEffect(() => {
     const handleOutput = (data) => {
       // Add null check for data since different terminal events have different structures
@@ -129,10 +130,15 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
       }
     };
 
-    window.devbox?.terminal?.onOutput?.(handleOutput);
+    // Store the returned cleanup function — avoids contextBridge proxy mismatch in offOutput
+    const cleanup = window.devbox?.terminal?.onOutput?.(handleOutput);
+    outputCleanupRef.current = typeof cleanup === 'function' ? cleanup : null;
 
     return () => {
-      window.devbox?.terminal?.offOutput?.(handleOutput);
+      if (outputCleanupRef.current) {
+        outputCleanupRef.current();
+        outputCleanupRef.current = null;
+      }
     };
   }, [projectId]);
 
@@ -235,13 +241,9 @@ function ProjectTerminal({ projectId, projectPath, phpVersion = '8.4', autoFocus
         phpVersion,
       });
 
-      if (result?.stdout) {
-        addOutput(result.stdout, 'stdout');
-      }
-      if (result?.stderr) {
-        addOutput(result.stderr, 'stderr');
-      }
-      if (result?.error) {
+      // Output is already streamed in real-time via terminal:output events.
+      // Only show error if nothing was streamed (e.g. spawn failure).
+      if (result?.error && !result?.stdout && !result?.stderr) {
         addOutput(result.error, 'error');
       }
     } catch (error) {

@@ -203,14 +203,20 @@ contextBridge.exposeInMainWorld('devbox', {
     runCommand: (projectId, command, options) => ipcRenderer.invoke('terminal:runCommand', projectId, command, options),
     cancelCommand: (projectId) => ipcRenderer.invoke('terminal:cancelCommand', projectId),
     sendInput: (projectId, input) => ipcRenderer.invoke('terminal:sendInput', projectId, input),
-    onOutput: (callback) => {
-      const handler = (event, data) => callback(data);
-      ipcRenderer.on('terminal:output', handler);
-      return () => ipcRenderer.removeListener('terminal:output', handler);
-    },
-    offOutput: (callback) => {
-      ipcRenderer.removeListener('terminal:output', callback);
-    },
+    ...(() => {
+      return {
+        onOutput: (callback) => {
+          const handler = (event, data) => callback(data);
+          ipcRenderer.on('terminal:output', handler);
+          // Return cleanup so caller can remove the exact handler reference
+          return () => ipcRenderer.removeListener('terminal:output', handler);
+        },
+        offOutput: (callback) => {
+          // Legacy: best-effort removal (may not work across contextBridge boundary)
+          ipcRenderer.removeListener('terminal:output', callback);
+        },
+      };
+    })(),
     onInstallComplete: (callback) => {
       const handler = (event, data) => callback(event, data);
       ipcRenderer.on('installation:complete', handler);
