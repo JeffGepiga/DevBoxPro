@@ -77,7 +77,7 @@
 - Built-in SSH Key Management
 
 ### 💻 Terminal Commands
-Use `php`, `npm`, `node`, and `composer` directly from any terminal:
+Use `php`, `npm`, `node`, `composer`, `mysql`, and `mysqldump` directly from any terminal:
 
 ```bash
 cd C:\Projects\my-laravel-app
@@ -85,6 +85,8 @@ cd C:\Projects\my-laravel-app
 php artisan migrate      # Uses project's PHP version automatically
 composer install         # Uses correct PHP for Composer
 npm install              # Uses project's Node.js version
+mysql -u root            # Connects using the active MySQL/MariaDB version
+mysqldump -u root mydb > backup.sql  # Dump with the active DB version
 ```
 
 ---

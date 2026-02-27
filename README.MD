@@ -167,7 +167,7 @@ DevBox Pro bundles everything you need: PHP 7.4 through 8.5, Node.js 16 through 
 
 ### Using Terminal Commands
 
-DevBox Pro lets you use `php`, `npm`, `node`, and `composer` directly from any terminal with automatic project version detection:
+DevBox Pro lets you use `php`, `npm`, `node`, `composer`, `mysql`, and `mysqldump` directly from any terminal with automatic project version detection:
 
 1. Go to **Settings > CLI Tool** in DevBox Pro
 2. Enable **"Terminal commands"**
@@ -190,9 +190,14 @@ composer update
 npm install
 npm run dev
 npx vite build
+
+# Connect to MySQL/MariaDB using the active database version
+mysql -u root
+mysql -u root -p mydb < migration.sql
+mysqldump -u root mydb > backup.sql
 ```
 
-> **How it works:** When you run `php` or `npm` from a project directory, DevBox Pro automatically uses that project's configured version. Outside a project, it uses your default version set in Settings.
+> **How it works:** When you run `php`, `mysql`, or `npm` from a project directory, DevBox Pro automatically uses that project's configured version. Outside a project, it uses your default version set in Settings.
 
 ---
 

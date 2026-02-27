@@ -155,6 +155,8 @@ contextBridge.exposeInMainWorld('devbox', {
     setDefaultPhpVersion: (version) => ipcRenderer.invoke('cli:setDefaultPhpVersion', version),
     getDefaultNodeVersion: () => ipcRenderer.invoke('cli:getDefaultNodeVersion'),
     setDefaultNodeVersion: (version) => ipcRenderer.invoke('cli:setDefaultNodeVersion', version),
+    getDefaultMysqlType: () => ipcRenderer.invoke('cli:getDefaultMysqlType'),
+    getDefaultMysqlVersion: () => ipcRenderer.invoke('cli:getDefaultMysqlVersion'),
   },
 
   // Settings operations

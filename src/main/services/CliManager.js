@@ -1,7 +1,7 @@
 /**
  * CliManager - Manages CLI functionality for terminal commands
  * 
- * Provides a way for users to run PHP/Node commands using project-specific versions
+ * Provides a way for users to run PHP/Node/MySQL commands using project-specific versions
  * directly from their external terminal/editor.
  * 
  * Example usage (after enabling in Settings):
@@ -9,6 +9,8 @@
  *   npm install
  *   composer install
  *   node script.js
+ *   mysql -u root
+ *   mysqldump -u root mydb > backup.sql
  */
 
 const path = require('path');
@@ -103,6 +105,9 @@ class CliManager {
     // Get default Node.js version (first installed, or '20' fallback)
     const defaultNodeVersion = this.getFirstInstalledNodeVersion();
 
+    // Get active database info
+    const dbInfo = this.getActiveMysqlInfo();
+
     for (const project of projects) {
       const normalizedPath = path.normalize(project.path);
       projectMappings[normalizedPath] = {
@@ -110,6 +115,8 @@ class CliManager {
         name: project.name,
         phpVersion: project.phpVersion || '8.3',
         nodejsVersion: project.services?.nodejs ? (project.services.nodejsVersion || defaultNodeVersion) : null,
+        mysqlType: dbInfo.dbType,
+        mysqlVersion: dbInfo.version,
       };
     }
 
@@ -166,7 +173,30 @@ class CliManager {
       env.PATH = `${path.dirname(composerPath)}${path.delimiter}${env.PATH}`;
     }
 
+    // MySQL/MariaDB client path
+    const dbInfo = this.getActiveMysqlInfo();
+    const mysqlClient = this.getMysqlClientPath(dbInfo.dbType, dbInfo.version);
+    if (mysqlClient) {
+      env.PATH = `${path.dirname(mysqlClient)}${path.delimiter}${env.PATH}`;
+    }
+
     return env;
+  }
+
+  /**
+   * Get the active database type and version from settings
+   * Uses the global activeDatabaseType/activeDatabaseVersion settings
+   * @returns {{ dbType: string, version: string }}
+   */
+  getActiveMysqlInfo() {
+    const dbType = this.configStore.getSetting
+      ? this.configStore.getSetting('activeDatabaseType', 'mysql')
+      : this.configStore.get('settings.activeDatabaseType', 'mysql');
+    const defaultVersion = dbType === 'mariadb' ? '11.4' : '8.4';
+    const version = this.configStore.getSetting
+      ? this.configStore.getSetting('activeDatabaseVersion', defaultVersion)
+      : this.configStore.get('settings.activeDatabaseVersion', defaultVersion);
+    return { dbType, version };
   }
 
   /**
@@ -200,6 +230,63 @@ class CliManager {
     if (!this.resourcesPath) return null;
     const composerPath = path.join(this.resourcesPath, 'composer', 'composer.phar');
     return fs.existsSync(composerPath) ? composerPath : null;
+  }
+
+  /**
+   * Get MySQL/MariaDB client executable path for a given type and version
+   * Binary location: resources/<dbType>/<version>/<platform>/bin/mysql[.exe]
+   * @param {string} dbType - 'mysql' or 'mariadb'
+   * @param {string} version - e.g. '8.4', '11.4'
+   */
+  getMysqlClientPath(dbType, version) {
+    if (!this.resourcesPath) return null;
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const binName = process.platform === 'win32' ? 'mysql.exe' : 'mysql';
+    const clientPath = path.join(this.resourcesPath, dbType, version, platform, 'bin', binName);
+    return fs.existsSync(clientPath) ? clientPath : null;
+  }
+
+  /**
+   * Get mysqldump executable path for a given type and version
+   * @param {string} dbType - 'mysql' or 'mariadb'
+   * @param {string} version - e.g. '8.4', '11.4'
+   */
+  getMysqldumpPath(dbType, version) {
+    if (!this.resourcesPath) return null;
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const binName = process.platform === 'win32' ? 'mysqldump.exe' : 'mysqldump';
+    const dumpPath = path.join(this.resourcesPath, dbType, version, platform, 'bin', binName);
+    return fs.existsSync(dumpPath) ? dumpPath : null;
+  }
+
+  /**
+   * Get the first available installed MySQL version
+   * Checks mysql first, then mariadb
+   * @returns {{ dbType: string, version: string }}
+   */
+  getFirstInstalledMysqlVersion() {
+    if (!this.resourcesPath) return { dbType: 'mysql', version: '8.4' };
+
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const binName = process.platform === 'win32' ? 'mysql.exe' : 'mysql';
+
+    for (const dbType of ['mysql', 'mariadb']) {
+      const dbDir = path.join(this.resourcesPath, dbType);
+      try {
+        if (!fs.existsSync(dbDir)) continue;
+        const versions = fs.readdirSync(dbDir)
+          .filter(v => v !== 'downloads' && v !== 'win' && v !== 'mac' && v !== 'backups')
+          .filter(v => fs.existsSync(path.join(dbDir, v, platform, 'bin', binName)))
+          .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+        if (versions.length > 0) {
+          return { dbType, version: versions[0] };
+        }
+      } catch (e) {
+        // continue to next type
+      }
+    }
+
+    return { dbType: 'mysql', version: '8.4' };
   }
 
   /**
@@ -252,6 +339,18 @@ class CliManager {
           }
         }
         break;
+
+      case 'mysql':
+      case 'mysqldump': {
+        const dbInfo = this.getActiveMysqlInfo();
+        const binPath = command.toLowerCase() === 'mysql'
+          ? this.getMysqlClientPath(dbInfo.dbType, dbInfo.version)
+          : this.getMysqldumpPath(dbInfo.dbType, dbInfo.version);
+        if (binPath) {
+          executable = binPath;
+        }
+        break;
+      }
     }
 
     return new Promise((resolve, reject) => {
@@ -314,13 +413,15 @@ try {
         if ($currentDirLower.StartsWith($projPath) -or $currentDirLower -eq $projPath) {
             $php = if ($prop.Value.phpVersion) { $prop.Value.phpVersion } else { "8.3" }
             $node = if ($prop.Value.nodejsVersion) { $prop.Value.nodejsVersion } else { "" }
-            Write-Output "FOUND|$php|$node"
+            $mt = if ($prop.Value.mysqlType) { $prop.Value.mysqlType } else { "mysql" }
+            $mv = if ($prop.Value.mysqlVersion) { $prop.Value.mysqlVersion } else { "8.4" }
+            Write-Output "FOUND|$php|$node|$mt|$mv"
             exit 0
         }
     }
-    Write-Output "NOTFOUND||"
+    Write-Output "NOTFOUND||||"
 } catch {
-    Write-Output "NOTFOUND||"
+    Write-Output "NOTFOUND||||"
 }
 `;
 
@@ -353,11 +454,14 @@ if "%~1"=="" (
     echo   node        - Run Node.js with project-specific version
     echo   npm         - Run npm with project's Node.js version
     echo   npx         - Run npx with project's Node.js version
+    echo   mysql       - Run MySQL client with active database version
+    echo   mysqldump   - Run mysqldump with active database version
     echo.
     echo Example:
     echo   ${alias} php artisan migrate
     echo   ${alias} npm install
     echo   ${alias} composer install
+    echo   ${alias} mysql -u root
     exit /b 0
 )
 
@@ -374,11 +478,15 @@ REM Find matching project using PowerShell helper script
 set "PROJECT_STATUS="
 set "PHP_VERSION=8.3"
 set "NODE_VERSION="
+set "MYSQL_TYPE=mysql"
+set "MYSQL_VERSION=8.4"
 
-for /f "tokens=1,2,3 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%DEVBOX_CLI%\\find-project.ps1" "%DEVBOX_PROJECTS%" "%CURRENT_DIR%"') do (
+for /f "tokens=1,2,3,4,5 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%DEVBOX_CLI%\\find-project.ps1" "%DEVBOX_PROJECTS%" "%CURRENT_DIR%"') do (
     set "PROJECT_STATUS=%%a"
     set "PHP_VERSION=%%b"
     set "NODE_VERSION=%%c"
+    if not "%%d"=="" set "MYSQL_TYPE=%%d"
+    if not "%%e"=="" set "MYSQL_VERSION=%%e"
 )
 
 if "%PROJECT_STATUS%"=="NOTFOUND" (
@@ -395,9 +503,10 @@ REM Set up paths based on detected versions
 set "PHP_PATH=%DEVBOX_RESOURCES%\\php\\%PHP_VERSION%\\win"
 set "NODE_PATH=%DEVBOX_RESOURCES%\\nodejs\\%NODE_VERSION%\\win"
 set "COMPOSER_PATH=%DEVBOX_RESOURCES%\\composer"
+set "MYSQL_BIN_PATH=%DEVBOX_RESOURCES%\\%MYSQL_TYPE%\\%MYSQL_VERSION%\\win\\bin"
 
 REM Prepend to PATH
-set "PATH=%PHP_PATH%;%NODE_PATH%;%COMPOSER_PATH%;%PATH%"
+set "PATH=%PHP_PATH%;%NODE_PATH%;%COMPOSER_PATH%;%MYSQL_BIN_PATH%;%PATH%"
 
 REM Handle special commands
 set "CMD=%~1"
@@ -470,6 +579,26 @@ if /i "%CMD%"=="npx" (
     exit /b %ERRORLEVEL%
 )
 
+if /i "%CMD%"=="mysql" (
+    if exist "%MYSQL_BIN_PATH%\\mysql.exe" (
+        "%MYSQL_BIN_PATH%\\mysql.exe" %1 %2 %3 %4 %5 %6 %7 %8 %9
+    ) else (
+        echo MySQL client not found for %MYSQL_TYPE% %MYSQL_VERSION%. Install it from DevBox Pro Binaries page.
+        exit /b 1
+    )
+    exit /b %ERRORLEVEL%
+)
+
+if /i "%CMD%"=="mysqldump" (
+    if exist "%MYSQL_BIN_PATH%\\mysqldump.exe" (
+        "%MYSQL_BIN_PATH%\\mysqldump.exe" %1 %2 %3 %4 %5 %6 %7 %8 %9
+    ) else (
+        echo mysqldump not found for %MYSQL_TYPE% %MYSQL_VERSION%. Install it from DevBox Pro Binaries page.
+        exit /b 1
+    )
+    exit /b %ERRORLEVEL%
+)
+
 REM Unknown command - try to run it directly
 %CMD% %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
@@ -511,11 +640,14 @@ if [ $# -eq 0 ]; then
     echo "  node        - Run Node.js with project-specific version"
     echo "  npm         - Run npm with project's Node.js version"
     echo "  npx         - Run npx with project's Node.js version"
+    echo "  mysql       - Run MySQL client with active database version"
+    echo "  mysqldump   - Run mysqldump with active database version"
     echo ""
     echo "Example:"
     echo "  ${alias} php artisan migrate"
     echo "  ${alias} npm install"
     echo "  ${alias} composer install"
+    echo "  ${alias} mysql -u root"
     exit 0
 fi
 
@@ -532,7 +664,7 @@ CURRENT_DIR_LOWER=$(echo "$CURRENT_DIR" | tr '[:upper:]' '[:lower:]')
 
 # Use python/node/jq to parse JSON and find matching project
 if command -v python3 &> /dev/null; then
-    read PHP_VERSION NODE_VERSION < <(python3 -c "
+    read PHP_VERSION NODE_VERSION MYSQL_TYPE MYSQL_VERSION < <(python3 -c "
 import json
 import os
 current_dir = '$CURRENT_DIR_LOWER'
@@ -543,15 +675,19 @@ for proj_path, config in projects.items():
     if current_dir.startswith(proj_path_lower) or current_dir == proj_path_lower:
         php = config.get('phpVersion', '8.3')
         node = config.get('nodejsVersion') or ''
-        print(f'{php} {node}')
+        mt = config.get('mysqlType') or 'mysql'
+        mv = config.get('mysqlVersion') or '8.4'
+        print(f'{php} {node} {mt} {mv}')
         break
 else:
-    print('8.3 ')
+    print('8.3  mysql 8.4')
 " 2>/dev/null)
 elif command -v jq &> /dev/null; then
     # Fallback to jq if available
     PHP_VERSION=$(jq -r 'to_entries[] | select(.key | ascii_downcase | startswith("'"$CURRENT_DIR_LOWER"'")) | .value.phpVersion // "8.3"' "$DEVBOX_PROJECTS" 2>/dev/null | head -1)
     NODE_VERSION=$(jq -r 'to_entries[] | select(.key | ascii_downcase | startswith("'"$CURRENT_DIR_LOWER"'")) | .value.nodejsVersion // ""' "$DEVBOX_PROJECTS" 2>/dev/null | head -1)
+    MYSQL_TYPE=$(jq -r 'to_entries[] | select(.key | ascii_downcase | startswith("'"$CURRENT_DIR_LOWER"'")) | .value.mysqlType // "mysql"' "$DEVBOX_PROJECTS" 2>/dev/null | head -1)
+    MYSQL_VERSION=$(jq -r 'to_entries[] | select(.key | ascii_downcase | startswith("'"$CURRENT_DIR_LOWER"'")) | .value.mysqlVersion // "8.4"' "$DEVBOX_PROJECTS" 2>/dev/null | head -1)
 else
     echo "Warning: python3 or jq required to parse project config."
     echo "Running command with system defaults..."
@@ -559,11 +695,14 @@ else
 fi
 
 PHP_VERSION=\${PHP_VERSION:-8.3}
+MYSQL_TYPE=\${MYSQL_TYPE:-mysql}
+MYSQL_VERSION=\${MYSQL_VERSION:-8.4}
 
 # Set up paths
 PHP_PATH="$DEVBOX_RESOURCES/php/$PHP_VERSION/${platform}"
 NODE_PATH="$DEVBOX_RESOURCES/nodejs/$NODE_VERSION/${platform}"
 COMPOSER_PATH="$DEVBOX_RESOURCES/composer"
+MYSQL_BIN_PATH="$DEVBOX_RESOURCES/$MYSQL_TYPE/$MYSQL_VERSION/${platform}/bin"
 
 # Get the command
 CMD="$1"
@@ -624,9 +763,25 @@ case "$CMD" in
             exit 1
         fi
         ;;
+    mysql)
+        if [ -x "$MYSQL_BIN_PATH/mysql" ]; then
+            exec "$MYSQL_BIN_PATH/mysql" "$@"
+        else
+            echo "MySQL client not found for $MYSQL_TYPE $MYSQL_VERSION. Install from DevBox Pro Binaries page."
+            exit 1
+        fi
+        ;;
+    mysqldump)
+        if [ -x "$MYSQL_BIN_PATH/mysqldump" ]; then
+            exec "$MYSQL_BIN_PATH/mysqldump" "$@"
+        else
+            echo "mysqldump not found for $MYSQL_TYPE $MYSQL_VERSION. Install from DevBox Pro Binaries page."
+            exit 1
+        fi
+        ;;
     *)
         # Unknown command - try to run it directly with modified PATH
-        export PATH="$PHP_PATH:$NODE_PATH:$PATH"
+        export PATH="$PHP_PATH:$NODE_PATH:$MYSQL_BIN_PATH:$PATH"
         exec "$CMD" "$@"
         ;;
 esac
@@ -1259,6 +1414,22 @@ if ($newArray.Count -lt $pathArray.Count) {
   }
 
   /**
+   * Get default MySQL type for non-project directories
+   * Returns the active database type from settings
+   */
+  getDefaultMysqlType() {
+    return this.getActiveMysqlInfo().dbType;
+  }
+
+  /**
+   * Get default MySQL version for non-project directories
+   * Returns the active database version from settings
+   */
+  getDefaultMysqlVersion() {
+    return this.getActiveMysqlInfo().version;
+  }
+
+  /**
    * Install direct command shims (php, npm, node, composer)
    */
   async installDirectShims() {
@@ -1282,7 +1453,7 @@ if ($newArray.Count -lt $pathArray.Count) {
    */
   async removeDirectShims() {
     const cliPath = this.getCliPath();
-    const commands = ['php', 'node', 'npm', 'npx', 'composer'];
+    const commands = ['php', 'node', 'npm', 'npx', 'composer', 'mysql', 'mysqldump'];
     const ext = process.platform === 'win32' ? '.cmd' : '';
 
     for (const cmd of commands) {
@@ -1307,6 +1478,9 @@ if ($newArray.Count -lt $pathArray.Count) {
     const projectsFilePath = this.getProjectsFilePath();
     const defaultPhpVersion = this.getDefaultPhpVersion() || this.getFirstInstalledPhpVersion();
     const defaultNodeVersion = this.getDefaultNodeVersion() || this.getFirstInstalledNodeVersion();
+    const defaultMysqlInfo = this.getActiveMysqlInfo();
+    const defaultMysqlType = defaultMysqlInfo.dbType;
+    const defaultMysqlVersion = defaultMysqlInfo.version;
 
     // PHP shim - Use ^| to escape pipe in batch
     const phpShim = `@echo off
@@ -1535,12 +1709,118 @@ if exist "%PHP_PATH%\\php.exe" (
 )
 `;
 
+    // MySQL client shim
+    const mysqlShim = `@echo off
+setlocal enabledelayedexpansion
+
+REM DevBox Pro MySQL Client Shim - Uses active database type and version
+set "DEVBOX_RESOURCES=${resourcesPath}"
+set "DEVBOX_PROJECTS=${projectsFilePath}"
+set "DEFAULT_MYSQL_TYPE=${defaultMysqlType}"
+set "DEFAULT_MYSQL_VERSION=${defaultMysqlVersion}"
+set "CURRENT_DIR=%CD%"
+
+REM Create temp PowerShell script to find project MySQL info
+set "TEMP_PS=%TEMP%\\devbox_mysql_lookup.ps1"
+echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo $best = $null >> "%TEMP_PS%"
+echo $bestLen = 0 >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ >> "%TEMP_PS%"
+echo   $pp = $prop.Name.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo   if($d -eq $pp -or $d.StartsWith($pp + '\\')){ >> "%TEMP_PS%"
+echo     if($pp.Length -gt $bestLen){ $best = $prop.Value; $bestLen = $pp.Length } >> "%TEMP_PS%"
+echo   } >> "%TEMP_PS%"
+echo } >> "%TEMP_PS%"
+echo if($best){ >> "%TEMP_PS%"
+echo   $t = if($best.mysqlType){ $best.mysqlType } else { '${defaultMysqlType}' } >> "%TEMP_PS%"
+echo   $v = if($best.mysqlVersion){ $best.mysqlVersion } else { '${defaultMysqlVersion}' } >> "%TEMP_PS%"
+echo   Write-Output "$t|$v" >> "%TEMP_PS%"
+echo } >> "%TEMP_PS%"
+
+set "MYSQL_TYPE="
+set "MYSQL_VERSION="
+for /f "tokens=1,2 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (
+    if not "%%a"=="" set "MYSQL_TYPE=%%a"
+    if not "%%b"=="" set "MYSQL_VERSION=%%b"
+)
+del "%TEMP_PS%" 2>nul
+
+REM Use project version or default
+if "%MYSQL_TYPE%"=="" set "MYSQL_TYPE=%DEFAULT_MYSQL_TYPE%"
+if "%MYSQL_VERSION%"=="" set "MYSQL_VERSION=%DEFAULT_MYSQL_VERSION%"
+
+set "MYSQL_BIN_PATH=%DEVBOX_RESOURCES%\\%MYSQL_TYPE%\\%MYSQL_VERSION%\\win\\bin"
+
+if exist "%MYSQL_BIN_PATH%\\mysql.exe" (
+    "%MYSQL_BIN_PATH%\\mysql.exe" %*
+    exit /b %ERRORLEVEL%
+) else (
+    echo [DevBox Pro] MySQL client not found for %MYSQL_TYPE% %MYSQL_VERSION%.
+    exit /b 1
+)
+`;
+
+    // mysqldump shim
+    const mysqldumpShim = `@echo off
+setlocal enabledelayedexpansion
+
+REM DevBox Pro mysqldump Shim - Uses active database type and version
+set "DEVBOX_RESOURCES=${resourcesPath}"
+set "DEVBOX_PROJECTS=${projectsFilePath}"
+set "DEFAULT_MYSQL_TYPE=${defaultMysqlType}"
+set "DEFAULT_MYSQL_VERSION=${defaultMysqlVersion}"
+set "CURRENT_DIR=%CD%"
+
+REM Create temp PowerShell script to find project MySQL info
+set "TEMP_PS=%TEMP%\\devbox_mysqldump_lookup.ps1"
+echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo $best = $null >> "%TEMP_PS%"
+echo $bestLen = 0 >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ >> "%TEMP_PS%"
+echo   $pp = $prop.Name.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo   if($d -eq $pp -or $d.StartsWith($pp + '\\')){ >> "%TEMP_PS%"
+echo     if($pp.Length -gt $bestLen){ $best = $prop.Value; $bestLen = $pp.Length } >> "%TEMP_PS%"
+echo   } >> "%TEMP_PS%"
+echo } >> "%TEMP_PS%"
+echo if($best){ >> "%TEMP_PS%"
+echo   $t = if($best.mysqlType){ $best.mysqlType } else { '${defaultMysqlType}' } >> "%TEMP_PS%"
+echo   $v = if($best.mysqlVersion){ $best.mysqlVersion } else { '${defaultMysqlVersion}' } >> "%TEMP_PS%"
+echo   Write-Output "$t|$v" >> "%TEMP_PS%"
+echo } >> "%TEMP_PS%"
+
+set "MYSQL_TYPE="
+set "MYSQL_VERSION="
+for /f "tokens=1,2 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (
+    if not "%%a"=="" set "MYSQL_TYPE=%%a"
+    if not "%%b"=="" set "MYSQL_VERSION=%%b"
+)
+del "%TEMP_PS%" 2>nul
+
+REM Use project version or default
+if "%MYSQL_TYPE%"=="" set "MYSQL_TYPE=%DEFAULT_MYSQL_TYPE%"
+if "%MYSQL_VERSION%"=="" set "MYSQL_VERSION=%DEFAULT_MYSQL_VERSION%"
+
+set "MYSQL_BIN_PATH=%DEVBOX_RESOURCES%\\%MYSQL_TYPE%\\%MYSQL_VERSION%\\win\\bin"
+
+if exist "%MYSQL_BIN_PATH%\\mysqldump.exe" (
+    "%MYSQL_BIN_PATH%\\mysqldump.exe" %*
+    exit /b %ERRORLEVEL%
+) else (
+    echo [DevBox Pro] mysqldump not found for %MYSQL_TYPE% %MYSQL_VERSION%.
+    exit /b 1
+)
+`;
+
     // Write all shims
     await fs.writeFile(path.join(cliPath, 'php.cmd'), phpShim, 'utf8');
     await fs.writeFile(path.join(cliPath, 'node.cmd'), nodeShim, 'utf8');
     await fs.writeFile(path.join(cliPath, 'npm.cmd'), npmShim, 'utf8');
     await fs.writeFile(path.join(cliPath, 'npx.cmd'), npxShim, 'utf8');
     await fs.writeFile(path.join(cliPath, 'composer.cmd'), composerShim, 'utf8');
+    await fs.writeFile(path.join(cliPath, 'mysql.cmd'), mysqlShim, 'utf8');
+    await fs.writeFile(path.join(cliPath, 'mysqldump.cmd'), mysqldumpShim, 'utf8');
 
     return true;
   }
@@ -1554,6 +1834,9 @@ if exist "%PHP_PATH%\\php.exe" (
     const platform = process.platform === 'darwin' ? 'mac' : 'linux';
     const defaultPhpVersion = this.getDefaultPhpVersion() || this.getFirstInstalledPhpVersion();
     const defaultNodeVersion = this.getDefaultNodeVersion() || this.getFirstInstalledNodeVersion();
+    const defaultMysqlInfo = this.getActiveMysqlInfo();
+    const defaultMysqlType = defaultMysqlInfo.dbType;
+    const defaultMysqlVersion = defaultMysqlInfo.version;
 
     // PHP shim
     const phpShim = `#!/bin/bash
@@ -1714,6 +1997,114 @@ fi
 
     await fs.writeFile(path.join(cliPath, 'composer'), composerShim, 'utf8');
     await fs.chmod(path.join(cliPath, 'composer'), 0o755);
+
+    // MySQL client shim
+    const mysqlShim = `#!/bin/bash
+# DevBox Pro MySQL Client Shim - Uses active database type and version
+
+DEVBOX_RESOURCES="${resourcesPath}"
+DEVBOX_PROJECTS="${projectsFilePath}"
+DEFAULT_MYSQL_TYPE="${defaultMysqlType}"
+DEFAULT_MYSQL_VERSION="${defaultMysqlVersion}"
+CURRENT_DIR="$(pwd)"
+
+MYSQL_TYPE=""
+MYSQL_VERSION=""
+if [ -f "$DEVBOX_PROJECTS" ]; then
+    RESULT=$(python3 -c "
+import json, sys
+try:
+    with open('$DEVBOX_PROJECTS') as f:
+        projects = json.load(f)
+    current = '$CURRENT_DIR'.lower()
+    for path, config in projects.items():
+        if current.startswith(path.lower()) or current == path.lower():
+            mt = config.get('mysqlType') or '$DEFAULT_MYSQL_TYPE'
+            mv = config.get('mysqlVersion') or '$DEFAULT_MYSQL_VERSION'
+            print(f'FOUND|{mt}|{mv}')
+            sys.exit(0)
+except:
+    pass
+print('NOTFOUND||')
+" 2>/dev/null)
+
+    if [[ "$RESULT" == FOUND* ]]; then
+        MYSQL_TYPE=$(echo "$RESULT" | cut -d'|' -f2)
+        MYSQL_VERSION=$(echo "$RESULT" | cut -d'|' -f3)
+    fi
+fi
+
+[ -z "$MYSQL_TYPE" ] && MYSQL_TYPE="$DEFAULT_MYSQL_TYPE"
+[ -z "$MYSQL_VERSION" ] && MYSQL_VERSION="$DEFAULT_MYSQL_VERSION"
+
+MYSQL_BIN="$DEVBOX_RESOURCES/$MYSQL_TYPE/$MYSQL_VERSION/${platform}/bin/mysql"
+
+if [ -x "$MYSQL_BIN" ]; then
+    exec "$MYSQL_BIN" "$@"
+elif command -v mysql &> /dev/null; then
+    exec mysql "$@"
+else
+    echo "[DevBox Pro] MySQL client not found for $MYSQL_TYPE $MYSQL_VERSION."
+    exit 1
+fi
+`;
+
+    await fs.writeFile(path.join(cliPath, 'mysql'), mysqlShim, 'utf8');
+    await fs.chmod(path.join(cliPath, 'mysql'), 0o755);
+
+    // mysqldump shim
+    const mysqldumpShim = `#!/bin/bash
+# DevBox Pro mysqldump Shim - Uses active database type and version
+
+DEVBOX_RESOURCES="${resourcesPath}"
+DEVBOX_PROJECTS="${projectsFilePath}"
+DEFAULT_MYSQL_TYPE="${defaultMysqlType}"
+DEFAULT_MYSQL_VERSION="${defaultMysqlVersion}"
+CURRENT_DIR="$(pwd)"
+
+MYSQL_TYPE=""
+MYSQL_VERSION=""
+if [ -f "$DEVBOX_PROJECTS" ]; then
+    RESULT=$(python3 -c "
+import json, sys
+try:
+    with open('$DEVBOX_PROJECTS') as f:
+        projects = json.load(f)
+    current = '$CURRENT_DIR'.lower()
+    for path, config in projects.items():
+        if current.startswith(path.lower()) or current == path.lower():
+            mt = config.get('mysqlType') or '$DEFAULT_MYSQL_TYPE'
+            mv = config.get('mysqlVersion') or '$DEFAULT_MYSQL_VERSION'
+            print(f'FOUND|{mt}|{mv}')
+            sys.exit(0)
+except:
+    pass
+print('NOTFOUND||')
+" 2>/dev/null)
+
+    if [[ "$RESULT" == FOUND* ]]; then
+        MYSQL_TYPE=$(echo "$RESULT" | cut -d'|' -f2)
+        MYSQL_VERSION=$(echo "$RESULT" | cut -d'|' -f3)
+    fi
+fi
+
+[ -z "$MYSQL_TYPE" ] && MYSQL_TYPE="$DEFAULT_MYSQL_TYPE"
+[ -z "$MYSQL_VERSION" ] && MYSQL_VERSION="$DEFAULT_MYSQL_VERSION"
+
+MYSQLDUMP_BIN="$DEVBOX_RESOURCES/$MYSQL_TYPE/$MYSQL_VERSION/${platform}/bin/mysqldump"
+
+if [ -x "$MYSQLDUMP_BIN" ]; then
+    exec "$MYSQLDUMP_BIN" "$@"
+elif command -v mysqldump &> /dev/null; then
+    exec mysqldump "$@"
+else
+    echo "[DevBox Pro] mysqldump not found for $MYSQL_TYPE $MYSQL_VERSION."
+    exit 1
+fi
+`;
+
+    await fs.writeFile(path.join(cliPath, 'mysqldump'), mysqldumpShim, 'utf8');
+    await fs.chmod(path.join(cliPath, 'mysqldump'), 0o755);
 
     return true;
   }

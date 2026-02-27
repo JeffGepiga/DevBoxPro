@@ -404,7 +404,7 @@ function CliSettings() {
 
         setMessage({
           type: 'success',
-          text: 'Terminal commands enabled! Restart your terminal or VS Code to use php, npm, node, and composer directly.'
+          text: 'Terminal commands enabled! Restart your terminal or VS Code to use php, npm, node, composer, and mysql directly.'
         });
       } else {
         setMessage({ type: 'success', text: 'Terminal commands disabled.' });
@@ -485,7 +485,7 @@ function CliSettings() {
           Terminal Commands
         </h3>
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-          Use <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">php</code>, <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">npm</code>, <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">node</code>, and <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">composer</code> commands
+          Use <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">php</code>, <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">npm</code>, <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">node</code>, <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">composer</code>, and <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">mysql</code> commands
           directly from any terminal. DevBox Pro automatically uses the correct version based on your project.
         </p>
 
@@ -508,7 +508,7 @@ function CliSettings() {
               Enable terminal commands
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Allows using php, npm, node, composer from any terminal
+              Allows using php, npm, node, composer, and mysql from any terminal
             </p>
           </div>
           <input
@@ -600,6 +600,8 @@ function CliSettings() {
               { cmd: 'composer install', desc: 'Install PHP dependencies' },
               { cmd: 'npm install', desc: 'Install Node.js packages' },
               { cmd: 'npm run dev', desc: 'Start development server' },
+              { cmd: 'mysql -u root', desc: 'Connect to database (uses active DB version)' },
+              { cmd: 'mysqldump -u root mydb > backup.sql', desc: 'Dump a database' },
             ].map(({ cmd, desc }) => (
               <div key={cmd} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                 <div>

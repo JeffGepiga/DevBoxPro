@@ -1430,6 +1430,16 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return version;
   });
 
+  ipcMain.handle('cli:getDefaultMysqlType', async () => {
+    if (!managers.cli) return 'mysql';
+    return managers.cli.getDefaultMysqlType();
+  });
+
+  ipcMain.handle('cli:getDefaultMysqlVersion', async () => {
+    if (!managers.cli) return '8.4';
+    return managers.cli.getDefaultMysqlVersion();
+  });
+
   // Resource monitoring interval
   const resourceInterval = setInterval(async () => {
     try {
