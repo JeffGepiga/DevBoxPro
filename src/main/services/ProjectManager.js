@@ -1947,12 +1947,29 @@ class ProjectManager {
     this.managers.log?.project(id, `Domain: ${project.domain}, Path: ${project.path}`);
 
     try {
+      // Get expected ports for this project's web server directly from ServiceManager
+      const webServer = project.webServer || 'nginx';
+      const webServerPorts = this.managers.service?.getServicePorts(webServer);
+      const httpPort = webServerPorts?.httpPort || 80;
+      const httpsPort = webServerPorts?.sslPort || 443;
+
+      const isHttpAvailable = await isPortAvailable(httpPort);
+      const isHttpsAvailable = await isPortAvailable(httpsPort);
+      const isWebServerRunning = this.managers.service?.serviceStatus?.get(webServer)?.status === 'running';
+
+      // If either port is occupied and DevBoxPro's web server IS NOT running, it means an external program is blocking it
+      if ((!isHttpAvailable || !isHttpsAvailable) && !isWebServerRunning) {
+        const errorMsg = `Port ${httpPort} or ${httpsPort} is already in use by an external program (e.g., XAMPP, Laragon, or another Web Server). Please close it to prevent project conflicts before starting your project.`;
+        this.managers.log?.project(id, `ERROR: ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+
       // Validate required binaries before starting
       const missingBinaries = await this.validateProjectBinaries(project);
       if (missingBinaries.length > 0) {
-        const errorMsg = `Missing required binaries: ${missingBinaries.join(', ')}. Please install them from the Binary Manager.`;
-        this.managers.log?.project(id, `ERROR: ${errorMsg}`);
-        throw new Error(errorMsg);
+        const missingErrorMsg = `Missing required binaries: ${missingBinaries.join(', ')}. Please install them from the Binary Manager.`;
+        this.managers.log?.project(id, `ERROR: ${missingErrorMsg}`);
+        throw new Error(missingErrorMsg);
       }
 
       // Calculate PHP-CGI port (unique per project) - needed for vhost config
@@ -1963,6 +1980,9 @@ class ProjectManager {
 
       // Regenerate virtual host config BEFORE starting services
       // This ensures the vhost config has correct paths for the current web server version
+      // Note: ports are predicted at this point; they will be verified after the web server starts
+      const predictedPorts = this.managers.service?.getServicePorts(webServer);
+      const predictedHttpPort = predictedPorts?.httpPort || 80;
       await this.createVirtualHost(project, phpFpmPort || undefined);
 
       // Start required services (nginx/apache, mysql, redis, etc.)
@@ -1976,13 +1996,32 @@ class ProjectManager {
         throw new Error(errorMsg);
       }
 
+      // After services have started, verify the actual web server ports match what was predicted.
+      // If the web server fell back to different ports (e.g., due to port conflicts),
+      // regenerate the vhost config with the correct actual ports.
+      const actualPorts = this.managers.service?.getServicePorts(webServer);
+      const actualHttpPort = actualPorts?.httpPort || 80;
+      if (actualHttpPort !== predictedHttpPort) {
+        this.managers.log?.project(id, `Web server ports changed (predicted: ${predictedHttpPort}, actual: ${actualHttpPort}). Regenerating vhost config.`);
+        await this.createVirtualHost(project, phpFpmPort || undefined);
+        // Reload the web server to pick up the regenerated vhost config
+        try {
+          if (webServer === 'nginx') {
+            await this.managers.service?.reloadNginx();
+          } else if (webServer === 'apache') {
+            await this.managers.service?.reloadApache();
+          }
+        } catch (reloadError) {
+          this.managers.log?.systemWarn(`Could not reload ${webServer} after port change`, { error: reloadError.message });
+        }
+      }
+
       let phpCgiProcess = null;
       let actualPhpFpmPort = phpFpmPort;
 
       // Only start PHP-CGI process for Nginx (uses FastCGI)
       // Apache uses Action/AddHandler CGI approach - invokes PHP-CGI directly per request
       // Node.js projects don't need PHP-CGI at all
-      const webServer = project.webServer || 'nginx';
       if (webServer === 'nginx' && project.type !== 'nodejs') {
         const phpCgiResult = await this.startPhpCgi(project, phpFpmPort);
         phpCgiProcess = phpCgiResult.process;
@@ -2527,7 +2566,7 @@ class ProjectManager {
           status && status.status === 'running' && !needsDifferentVersion) {
           // Check if this web server is on alternate ports but could use standard ports
           const ports = serviceManager.getServicePorts(service.name);
-          const isOnAlternatePorts = ports?.httpPort === 8081;
+          const isOnAlternatePorts = ports?.httpPort !== 80 && ports?.httpPort !== 443;
           const standardPortsAvailable = serviceManager.standardPortOwner === null;
 
           if (isOnAlternatePorts && standardPortsAvailable) {

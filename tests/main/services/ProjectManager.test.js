@@ -30,11 +30,20 @@ require('module')._cache[require.resolve('tree-kill')] = {
     exports: Object.assign(mockKillFn, { default: mockKillFn })
 };
 
-// 4. Mock PortUtils
-vi.mock('../../../src/main/utils/PortUtils', () => ({
-    isPortAvailable: vi.fn().mockResolvedValue(true),
-    findAvailablePort: vi.fn().mockResolvedValue(8000)
-}));
+// 4. Mock PortUtils using Node's require.cache BEFORE ProjectManager is imported
+const mockPortUtils = {
+    isPortAvailable: vi.fn(async (port) => {
+        if (port == 9998) return false;
+        return true;
+    }),
+    findAvailablePort: vi.fn(async () => 8000)
+};
+require('module')._cache[require.resolve('../../../src/main/utils/PortUtils')] = {
+    id: require.resolve('../../../src/main/utils/PortUtils'),
+    filename: require.resolve('../../../src/main/utils/PortUtils'),
+    loaded: true,
+    exports: Object.assign(mockPortUtils, { default: mockPortUtils })
+};
 
 // 5. Mock CompatibilityManager
 vi.mock('../../../src/main/services/CompatibilityManager', () => {
@@ -251,6 +260,32 @@ describe('ProjectManager', () => {
 
             expect(mockKillFn).toHaveBeenCalledWith(999, 'SIGTERM', expect.any(Function));
             expect(mgr.runningProjects.has('proj1')).toBe(false);
+        });
+
+        it('throws an error if configured port is in use by an external server', async () => {
+            const project = {
+                id: 'proj1',
+                name: 'Proj1',
+                type: 'static',
+                path: '/foo/proj',
+                domain: 'proj1.test',
+                services: {},
+                supervisor: { processes: [] }
+            };
+            configStore.set('projects', [project]);
+
+            configStore.get.mockImplementation((key, def) => {
+                if (key === 'projects' || key === 'devbox.projects') return [project];
+                return def;
+            });
+
+            // Make getServicePorts return the magical port 9998
+            mgr.managers.service.getServicePorts.mockReturnValue({ httpPort: 9998, sslPort: 9998 });
+
+            // Mock serviceStatus to indicate Nginx is NOT running (so it's an external process using the port)
+            mgr.managers.service.serviceStatus.set('nginx', { status: 'stopped' });
+
+            await expect(mgr.startProject('proj1')).rejects.toThrow(/Port 9998 or 9998 is already in use by an external program/);
         });
     });
 

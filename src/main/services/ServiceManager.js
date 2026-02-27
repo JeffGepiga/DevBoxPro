@@ -965,7 +965,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         sslPort = altSslPort;
 
         // Clear all existing vhost files - they have the old ports hardcoded
-        // They will be regenerated when projects start
         const sitesDir = path.join(dataPath, 'nginx', 'sites');
         try {
           const files = await fs.readdir(sitesDir);
@@ -989,6 +988,22 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         // Update actual ports
         this.serviceConfigs.nginx.actualHttpPort = httpPort;
         this.serviceConfigs.nginx.actualSslPort = sslPort;
+
+        // Regenerate vhost configs for all running Nginx projects with the new ports
+        // Without this, vhosts created before the port fallback would have stale ports
+        if (this.managers.project) {
+          const runningProjects = this.managers.project.runningProjects;
+          const allProjects = this.configStore?.get('projects', []) || [];
+          for (const proj of allProjects) {
+            if ((proj.webServer === 'nginx' || !proj.webServer) && runningProjects?.has(proj.id)) {
+              try {
+                await this.managers.project.createVirtualHost(proj);
+              } catch (e) {
+                this.managers.log?.systemWarn(`Could not regenerate vhost for ${proj.name} after port fallback`, { error: e.message });
+              }
+            }
+          }
+        }
 
         testResult = await testConfig();
       }
@@ -1386,7 +1401,6 @@ http {
         httpsPort = altHttpsPort;
 
         // Clear all existing vhost files - they have the old ports hardcoded
-        // They will be regenerated when projects start
         const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
         try {
           const files = await fs.readdir(vhostsDir);
@@ -1410,6 +1424,22 @@ http {
         // Update actual ports
         this.serviceConfigs.apache.actualHttpPort = httpPort;
         this.serviceConfigs.apache.actualSslPort = httpsPort;
+
+        // Regenerate vhost configs for all running Apache projects with the new ports
+        // Without this, vhosts created before the port fallback would have stale ports
+        if (this.managers.project) {
+          const runningProjects = this.managers.project.runningProjects;
+          const allProjects = this.configStore?.get('projects', []) || [];
+          for (const proj of allProjects) {
+            if (proj.webServer === 'apache' && runningProjects?.has(proj.id)) {
+              try {
+                await this.managers.project.createVirtualHost(proj);
+              } catch (e) {
+                this.managers.log?.systemWarn(`Could not regenerate vhost for ${proj.name} after port fallback`, { error: e.message });
+              }
+            }
+          }
+        }
 
         testResult = await testConfig();
       }
