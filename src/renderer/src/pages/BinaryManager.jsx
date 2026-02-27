@@ -28,6 +28,197 @@ import PhpIniEditor from '../components/PhpIniEditor';
 import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
 
+// ── Module-level sub-components (must NOT be defined inside BinaryManager) ──
+
+const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLatest, isCustom, requiresManual, onDownload, onRemove, onManualOpen, onImport, isPhp, getProgressDisplay, setPhpIniEditor }) => (
+  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/40 border-b last:border-b-0 border-gray-100 dark:border-gray-700/50">
+    <div className="flex items-center gap-2.5 min-w-0">
+      <span className={clsx(
+        'shrink-0 px-2 py-0.5 rounded font-mono text-xs font-semibold',
+        isInstalled
+          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+          : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+      )}>
+        {version}
+      </span>
+      <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{name} {version}</span>
+      {isCustom && <span className="shrink-0 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-1.5 py-0.5 rounded">Custom</span>}
+      {!isCustom && isLatest && <span className="shrink-0 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded">Latest</span>}
+      {size && <span className="shrink-0 text-xs text-gray-400">{size}</span>}
+    </div>
+    <div className="flex items-center gap-1.5 ml-3 shrink-0">
+      {isDownloading ? (
+        getProgressDisplay(id)
+      ) : isInstalled ? (
+        <>
+          <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium">
+            <Check className="w-3 h-3" /> Installed
+          </span>
+          {isPhp && (
+            <button onClick={() => setPhpIniEditor({ open: true, version })} className="btn-icon text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20" title="Edit php.ini">
+              <Settings className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button onClick={onRemove} className="btn-icon text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" title="Remove">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </>
+      ) : requiresManual ? (
+        <>
+          <button onClick={onManualOpen} className="btn-secondary text-xs px-2 py-1 flex items-center gap-1" title="Open download page">
+            <ExternalLink className="w-3 h-3" /> Get
+          </button>
+          <button onClick={onImport} className="btn-primary text-xs px-2 py-1 flex items-center gap-1" title="Import ZIP">
+            <Upload className="w-3 h-3" /> Import
+          </button>
+        </>
+      ) : (
+        <div className="flex items-center gap-1">
+          <button onClick={onDownload} className="btn-primary text-xs px-2.5 py-1 flex items-center gap-1">
+            <Download className="w-3 h-3" /> Download
+          </button>
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, isPhp, isNodejs, installed, downloading, expandedSections, toggleSection, downloadSources, getProgressDisplay, setPhpIniEditor, handleImportApache, getInstalledVersionsCount }) => {
+  const installedCount = getInstalledVersionsCount(service.id);
+  const hasInstalled = installedCount > 0;
+  const isExpanded = expandedSections[service.id];
+  const hasSource = !!downloadSources[service.id]?.url;
+  const hasImport = !service.noImport;
+
+  return (
+    <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-800/50">
+      {/* Card header — click to expand */}
+      <div
+        className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60 select-none"
+        onClick={() => toggleSection(service.id)}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={clsx(
+            'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold',
+            hasInstalled
+              ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+          )}>
+            {service.emoji ? service.emoji : <service.icon className="w-4 h-4" />}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-medium text-sm text-gray-900 dark:text-white">{service.name}</span>
+              {hasInstalled && (
+                <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded-full">
+                  {installedCount} installed
+                </span>
+              )}
+              {/* Show version pills inline when collapsed */}
+              {!isExpanded && service.versions && (
+                <div className="flex gap-1 flex-wrap">
+                  {service.versions.slice(0, 6).map(v => {
+                    const inst = installed[service.id]?.[v];
+                    return inst ? (
+                      <span key={v} className="text-xs bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded border border-green-200 dark:border-green-800">{v}</span>
+                    ) : null;
+                  })}
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{service.description}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 ml-2 shrink-0" onClick={e => e.stopPropagation()}>
+          {hasSource && (
+            <button onClick={() => window.devbox?.system.openExternal(downloadSources[service.id]?.url)} className="btn-icon text-gray-400 hover:text-gray-600" title={downloadSources[service.id]?.note}>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {hasImport && (
+            <button onClick={() => onImport(service.id)} className="btn-secondary text-xs px-2 py-1 flex items-center gap-1" title={`Import ${service.name} from a local ZIP file`}>
+              <Upload className="w-3 h-3" /> Import ZIP
+            </button>
+          )}
+          {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400 ml-1" /> : <ChevronDown className="w-4 h-4 text-gray-400 ml-1" />}
+        </div>
+      </div>
+
+      {/* Version rows */}
+      {isExpanded && (
+        <div className="border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+          {(service.versions || []).map((version) => {
+            const id = `${service.id}-${version}`;
+            const isInstalled = installed[service.id]?.[version];
+            const isDownloading = downloading[id];
+            const isCustom = service.predefinedVersions && !service.predefinedVersions.includes(version);
+
+            return (
+              <VersionRow
+                key={version}
+                id={id}
+                name={service.name}
+                version={version}
+                isInstalled={isInstalled}
+                isDownloading={isDownloading}
+                size={service.sizes?.[version]}
+                isLatest={!isCustom && version === service.defaultVersion}
+                isCustom={isCustom}
+                requiresManual={service.requiresManualDownload}
+                onDownload={() => onDownload(service.id, version)}
+                onRemove={() => onRemove(service.id, version)}
+                onManualOpen={() => onManualOpen?.(service.id, version)}
+                onImport={() => handleImportApache(version)}
+                isPhp={isPhp}
+                getProgressDisplay={getProgressDisplay}
+                setPhpIniEditor={setPhpIniEditor}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst, size, onDownload, onRemove, onImport, sourceKey, importLabel, downloading, downloadSources, getProgressDisplay }) => {
+  const isDownloading = downloading[id];
+  const hasSource = !!downloadSources[sourceKey]?.url;
+
+  return (
+    <div className="flex items-center justify-between px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800/50">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className={clsx(
+          'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold',
+          inst
+            ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+            : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+        )}>
+          {emoji ? emoji : <Icon className="w-4 h-4" />}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-gray-900 dark:text-white">{name}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{description}{size ? ` · ${size}` : ''}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 ml-3 shrink-0">
+        {isDownloading ? getProgressDisplay(id) : inst ? (
+          <>
+            <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium"><Check className="w-3 h-3" /> Installed</span>
+            <button onClick={onRemove} className="btn-icon text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>
+          </>
+        ) : (
+          <>
+            {hasSource && <button onClick={() => window.devbox?.system.openExternal(downloadSources[sourceKey]?.url)} className="btn-icon text-gray-400 hover:text-gray-600" title={downloadSources[sourceKey]?.note}><ExternalLink className="w-3.5 h-3.5" /></button>}
+            {onImport && <button onClick={onImport} className="btn-secondary text-xs px-2 py-1 flex items-center gap-1" title={`Import ${name}`}><Upload className="w-3 h-3" />{importLabel || 'Import'}</button>}
+            {onDownload && <button onClick={onDownload} className="btn-primary text-xs px-2.5 py-1 flex items-center gap-1"><Download className="w-3 h-3" /> Download</button>}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 function BinaryManager() {
   // Use global state for download progress (persists across navigation)
   const {
@@ -50,6 +241,12 @@ function BinaryManager() {
     apache: {},
     nodejs: {},
     composer: false,
+    postgresql: {},
+    python: {},
+    mongodb: {},
+    sqlite: false,
+    minio: false,
+    memcached: {},
   });
   const [downloadUrls, setDownloadUrls] = useState({});
   const [loading, setLoading] = useState(true);
@@ -62,6 +259,10 @@ function BinaryManager() {
     nginx: false,
     apache: false,
     nodejs: false,
+    postgresql: false,
+    python: false,
+    mongodb: false,
+    memcached: false,
   });
 
   // Service versions from backend config (with defaults)
@@ -73,6 +274,10 @@ function BinaryManager() {
     nginx: ['1.28', '1.26'],
     apache: ['2.4'],
     nodejs: ['24', '22', '20', '18'],
+    postgresql: ['17', '16', '15', '14'],
+    python: ['3.13', '3.12', '3.11', '3.10'],
+    mongodb: ['8.0', '7.0', '6.0'],
+    memcached: ['1.6', '1.5'],
   });
 
   // Helper to merge predefined versions with any custom installed versions
@@ -217,15 +422,23 @@ function BinaryManager() {
     };
     init();
 
-    // Download progress is now handled by AppContext - just refresh installed list on complete
+    // Download progress is now handled by AppContext - just refresh installed list on complete, and alert on error
     const unsubscribe = window.devbox?.binaries.onProgress((id, progressData) => {
       if (progressData.status === 'completed') {
         forceRefreshInstalled();
+      } else if (progressData.status === 'error') {
+        const label = id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        showAlert({
+          title: 'Download Failed',
+          message: `Failed to download ${label}`,
+          detail: progressData.error || 'An unknown error occurred. Please check your internet connection and try again.',
+          type: 'error',
+        });
       }
     });
 
     return () => unsubscribe?.();
-  }, [forceRefreshInstalled, loadDownloadUrls, loadServiceConfig]);
+  }, [forceRefreshInstalled, loadDownloadUrls, loadServiceConfig]); // showAlert is intentionally omitted — it's a stable context function
 
   const handleDownloadPhp = async (version) => {
     const id = `php-${version}`;
@@ -279,6 +492,24 @@ function BinaryManager() {
         break;
       case 'composer':
         downloadPromise = window.devbox?.binaries.downloadComposer();
+        break;
+      case 'postgresql':
+        downloadPromise = window.devbox?.binaries.downloadPostgresql(version);
+        break;
+      case 'python':
+        downloadPromise = window.devbox?.binaries.downloadPython(version);
+        break;
+      case 'mongodb':
+        downloadPromise = window.devbox?.binaries.downloadMongodb(version);
+        break;
+      case 'sqlite':
+        downloadPromise = window.devbox?.binaries.downloadSqlite(version);
+        break;
+      case 'minio':
+        downloadPromise = window.devbox?.binaries.downloadMinio();
+        break;
+      case 'memcached':
+        downloadPromise = window.devbox?.binaries.downloadMemcached(version);
         break;
     }
 
@@ -681,6 +912,9 @@ function BinaryManager() {
     }
   };
 
+  // ── Tab state (must be before any early return) ────────
+  const [activeTab, setActiveTab] = useState('language');
+
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center">
@@ -703,6 +937,7 @@ function BinaryManager() {
     return Object.values(versions || {}).filter(Boolean).length;
   };
 
+  // ── Data definitions ───────────────────────────────────
   const versionedServices = [
     {
       id: 'mysql',
@@ -737,6 +972,50 @@ function BinaryManager() {
       sizes: { '7.4': '~5 MB', '7.2': '~5 MB', '6.2': '~4 MB' },
       category: 'cache',
     },
+    {
+      id: 'postgresql',
+      name: 'PostgreSQL',
+      description: 'Advanced open-source relational database',
+      icon: Database,
+      versions: getMergedVersions('postgresql'),
+      predefinedVersions: serviceVersions.postgresql,
+      defaultVersion: serviceVersions.postgresql[0] || '17',
+      sizes: { '17': '~250 MB', '16': '~240 MB', '15': '~230 MB', '14': '~225 MB' },
+      category: 'database',
+    },
+    {
+      id: 'mongodb',
+      name: 'MongoDB',
+      description: 'NoSQL document database',
+      icon: Database,
+      versions: getMergedVersions('mongodb'),
+      predefinedVersions: serviceVersions.mongodb,
+      defaultVersion: serviceVersions.mongodb[0] || '8.0',
+      sizes: { '8.0': '~130 MB', '7.0': '~120 MB', '6.0': '~110 MB' },
+      category: 'database',
+    },
+    {
+      id: 'python',
+      name: 'Python',
+      description: 'General-purpose programming language runtime',
+      icon: Server,
+      versions: getMergedVersions('python'),
+      predefinedVersions: serviceVersions.python,
+      defaultVersion: serviceVersions.python[0] || '3.13',
+      sizes: { '3.13': '~15 MB', '3.12': '~14 MB', '3.11': '~14 MB', '3.10': '~13 MB' },
+      category: 'runtime',
+    },
+    {
+      id: 'memcached',
+      name: 'Memcached',
+      description: 'Distributed memory caching system',
+      icon: Server,
+      versions: getMergedVersions('memcached'),
+      predefinedVersions: serviceVersions.memcached,
+      defaultVersion: serviceVersions.memcached[0] || '1.6',
+      sizes: { '1.6': '~2 MB', '1.5': '~2 MB' },
+      category: 'cache',
+    },
   ];
 
   const simpleServices = [
@@ -759,6 +1038,24 @@ function BinaryManager() {
       url: downloadUrls.phpmyadmin?.url,
       size: '~15 MB',
       category: 'tool',
+    },
+    {
+      id: 'sqlite',
+      name: 'SQLite',
+      description: 'Embedded SQL database engine (CLI tools)',
+      icon: Database,
+      installed: !!installed.sqlite,
+      size: '~2 MB',
+      category: 'database',
+    },
+    {
+      id: 'minio',
+      name: 'MinIO',
+      description: 'S3-compatible object storage server',
+      icon: HardDrive,
+      installed: !!installed.minio,
+      size: '~100 MB',
+      category: 'storage',
     },
   ];
 
@@ -786,9 +1083,32 @@ function BinaryManager() {
     },
   ];
 
+  // ── Tabs definition ────────────────────────────────────
+  const tabs = [
+    { id: 'language', label: 'Language', icon: '{ }' },
+    { id: 'webserver', label: 'Web Servers', icon: '⬡' },
+    { id: 'database', label: 'Databases', icon: '🗄' },
+    { id: 'cache', label: 'Cache', icon: '⚡' },
+    { id: 'tools', label: 'Tools', icon: '🔧' },
+  ];
+
   // Count active downloads
   const activeDownloads = Object.entries(downloading).filter(([_, isDownloading]) => isDownloading);
   const activeDownloadCount = activeDownloads.length;
+
+  // Shared props for module-level sub-components
+  const sharedCardProps = {
+    installed,
+    downloading,
+    expandedSections,
+    toggleSection,
+    downloadSources,
+    getProgressDisplay,
+    setPhpIniEditor,
+    handleImportApache,
+    getInstalledVersionsCount,
+  };
+  const sharedSimpleProps = { downloading, downloadSources, getProgressDisplay };
 
   return (
     <div className="p-8">
@@ -970,86 +1290,54 @@ function BinaryManager() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="mb-8 flex items-start justify-between">
+      {/* ── Header ────────────────────────────────────────── */}
+      <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Binary Manager</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            Download and manage required binaries for DevBox Pro
+            Download and manage service binaries for DevBox Pro
           </p>
         </div>
         <button
           onClick={handleCheckForUpdates}
           disabled={checkingUpdates}
-          className={clsx(
-            "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
-            checkingUpdates
-              ? "bg-gray-100 dark:bg-gray-700 text-gray-400 cursor-not-allowed"
-              : "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50"
-          )}
+          className="btn-secondary"
         >
-          {checkingUpdates ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Checking...
-            </>
-          ) : (
-            <>
-              <CloudCog className="w-4 h-4" />
-              Check for Updates
-            </>
-          )}
+          {checkingUpdates ? <><Loader2 className="w-4 h-4 animate-spin" />Checking...</> : <><CloudCog className="w-4 h-4" />Check Updates</>}
         </button>
       </div>
 
-      {/* Update Check Error */}
+      {/* ── Update Check Error ─────────────────────────────── */}
       {updateResult && !updateResult.success && (
-        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
-          <div className="flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
-            <span className="text-red-800 dark:text-red-200">
-              Failed to check for updates: {updateResult.error}
-            </span>
-          </div>
+        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-2 text-sm">
+          <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+          <span className="text-red-800 dark:text-red-200">Failed to check for updates: {updateResult.error}</span>
         </div>
       )}
 
-      {/* Active Downloads Banner */}
+      {/* ── Active Downloads Banner ────────────────────────── */}
       {activeDownloadCount > 0 && (
-        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-blue-600 dark:text-blue-400" />
-            <span className="font-medium text-blue-800 dark:text-blue-200">
-              {activeDownloadCount} download{activeDownloadCount > 1 ? 's' : ''} in progress
-            </span>
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <div className="flex items-center gap-2 text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            {activeDownloadCount} download{activeDownloadCount > 1 ? 's' : ''} in progress
           </div>
-          <div className="mt-3 space-y-2">
+          <div className="flex flex-col gap-1.5">
             {activeDownloads.map(([id]) => {
               const p = progress[id];
               return (
-                <div key={id} className="flex items-center gap-3 text-sm">
-                  <span className="text-gray-600 dark:text-gray-400 w-24 truncate capitalize">
-                    {id.replace('-', ' ')}
-                  </span>
+                <div key={id} className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-600 dark:text-gray-400 w-28 truncate capitalize">{id.replace('-', ' ')}</span>
                   {p?.status === 'downloading' && (
                     <>
-                      <div className="flex-1 h-2 bg-blue-200 dark:bg-blue-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-blue-600 dark:bg-blue-400 transition-all duration-300"
-                          style={{ width: `${p.progress || 0}%` }}
-                        />
+                      <div className="flex-1 h-1.5 bg-blue-200 dark:bg-blue-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-600 dark:bg-blue-400 transition-all duration-300" style={{ width: `${p.progress || 0}%` }} />
                       </div>
-                      <span className="text-gray-500 dark:text-gray-400 w-12 text-right">
-                        {Math.round(p.progress || 0)}%
-                      </span>
+                      <span className="text-gray-500 dark:text-gray-400 w-10 text-right">{Math.round(p.progress || 0)}%</span>
                     </>
                   )}
-                  {p?.status === 'extracting' && (
-                    <span className="text-amber-600 dark:text-amber-400">Extracting...</span>
-                  )}
-                  {p?.status === 'starting' && (
-                    <span className="text-gray-500 dark:text-gray-400">Starting...</span>
-                  )}
+                  {p?.status === 'extracting' && <span className="text-amber-600 dark:text-amber-400">Extracting…</span>}
+                  {p?.status === 'starting' && <span className="text-gray-500 dark:text-gray-400">Starting…</span>}
                 </div>
               );
             })}
@@ -1057,826 +1345,289 @@ function BinaryManager() {
         </div>
       )}
 
-      {/* PHP Versions */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <span className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-            <span className="text-purple-600 dark:text-purple-400 font-bold text-sm">PHP</span>
-          </span>
-          PHP Versions
-        </h2>
-        <div className="card overflow-hidden">
-          {/* PHP Header */}
-          <div
-            className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
-            onClick={() => toggleSection('php')}
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className={clsx(
-                  'w-12 h-12 rounded-lg flex items-center justify-center',
-                  getInstalledVersionsCount('php') > 0
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
-                )}
-              >
-                <span className="font-bold text-lg">PHP</span>
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                  PHP
-                  {getInstalledVersionsCount('php') > 0 && (
-                    <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
-                      {getInstalledVersionsCount('php')} version{getInstalledVersionsCount('php') > 1 ? 's' : ''}
-                    </span>
-                  )}
-                </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  PHP scripting language for web development
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={(e) => { e.stopPropagation(); window.devbox?.system.openExternal(downloadSources.php.url); }}
-                className="btn-icon text-gray-400 hover:text-gray-600"
-                title={downloadSources.php.note}
-              >
-                <ExternalLink className="w-4 h-4" />
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleImportBinary('php'); }}
-                className="btn-secondary text-sm"
-                title={`Import PHP ZIP - ${downloadSources.php.note}`}
-              >
-                <Upload className="w-4 h-4" />
-                Import
-              </button>
-              {expandedSections.php ? (
-                <ChevronUp className="w-5 h-5 text-gray-400" />
-              ) : (
-                <ChevronDown className="w-5 h-5 text-gray-400" />
-              )}
-            </div>
-          </div>
-
-          {/* PHP Version List (Expandable) */}
-          {expandedSections.php && (
-            <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30">
-              {getMergedVersions('php').map((version) => {
-                const id = `php-${version}`;
-                const isInstalled = installed.php[version];
-                const isDownloading = downloading[id];
-                const isCustom = !serviceVersions.php?.includes(version);
-                const isDefault = version === serviceVersions.php?.[0];
-
-                return (
-                  <div
-                    key={version}
-                    className="p-3 flex items-center justify-between border-b last:border-b-0 border-gray-200 dark:border-gray-700"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className={clsx(
-                        'w-10 h-8 rounded flex items-center justify-center font-mono text-sm',
-                        isInstalled
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                          : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                      )}>
-                        {version}
-                      </span>
-                      <div>
-                        <span className="text-sm text-gray-700 dark:text-gray-300">
-                          PHP {version}
-                        </span>
-                        {isCustom && (
-                          <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full">
-                            Custom
-                          </span>
-                        )}
-                        {!isCustom && isDefault && (
-                          <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
-                            Latest
-                          </span>
-                        )}
-                        <span className="ml-2 text-xs text-gray-500">~40 MB</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isDownloading ? (
-                        getProgressDisplay(id)
-                      ) : isInstalled ? (
-                        <>
-                          <span className="badge-success flex items-center gap-1 text-xs">
-                            <Check className="w-3 h-3" />
-                            Installed
-                          </span>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setPhpIniEditor({ open: true, version }); }}
-                            className="btn-icon text-gray-500 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20"
-                            title="Edit php.ini"
-                          >
-                            <Settings className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRemove('php', version); }}
-                            className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                            title="Remove"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDownloadPhp(version); }}
-                          className="btn-primary text-sm px-3 py-1"
-                        >
-                          <Download className="w-3 h-3" />
-                          Download
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Web Servers */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <span className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-            <Globe className="w-4 h-4 text-green-600 dark:text-green-400" />
-          </span>
-          Web Servers
-          <span className="text-xs font-normal text-gray-500 ml-2">
-            (Required for serving PHP projects)
-          </span>
-        </h2>
-
-        <div className="grid gap-3">
-          {webServers.map((server) => {
-            const installedCount = getInstalledVersionsCount(server.id);
-            const hasInstalled = installedCount > 0;
-            const isExpanded = expandedSections[server.id];
-
-            return (
-              <div
-                key={server.id}
-                className="card overflow-hidden"
-              >
-                {/* Server Header */}
-                <div
-                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                  onClick={() => toggleSection(server.id)}
-                >
-                  <div className="flex items-center gap-4">
-                    <div
-                      className={clsx(
-                        'w-12 h-12 rounded-lg flex items-center justify-center',
-                        hasInstalled
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
-                      )}
-                    >
-                      <server.icon className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                        {server.name}
-                        {hasInstalled && (
-                          <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
-                            {installedCount} version{installedCount > 1 ? 's' : ''}
-                          </span>
-                        )}
-                      </h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {server.description}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); window.devbox?.system.openExternal(downloadSources[server.id]?.url); }}
-                      className="btn-icon text-gray-400 hover:text-gray-600"
-                      title={downloadSources[server.id]?.note}
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleImportBinary(server.id); }}
-                      className="btn-secondary text-sm"
-                      title={`Import ${server.name} ZIP`}
-                    >
-                      <Upload className="w-4 h-4" />
-                      Import
-                    </button>
-                    {isExpanded ? (
-                      <ChevronUp className="w-5 h-5 text-gray-400" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
-                    )}
-                  </div>
-                </div>
-
-                {/* Version List (Expandable) */}
-                {isExpanded && (
-                  <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30">
-                    {server.versions.map((version) => {
-                      const id = `${server.id}-${version}`;
-                      const isInstalled = installed[server.id]?.[version];
-                      const isDownloading = downloading[id];
-                      const isDefault = version === server.defaultVersion;
-                      const isCustom = !server.predefinedVersions?.includes(version);
-
-                      return (
-                        <div
-                          key={version}
-                          className="p-3 flex items-center justify-between border-b last:border-b-0 border-gray-200 dark:border-gray-700"
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className={clsx(
-                              'w-10 h-8 rounded flex items-center justify-center font-mono text-sm',
-                              isInstalled
-                                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                                : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                            )}>
-                              {version}
-                            </span>
-                            <div>
-                              <span className="text-sm text-gray-700 dark:text-gray-300">
-                                {server.name} {version}
-                              </span>
-                              {isCustom && (
-                                <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full">
-                                  Custom
-                                </span>
-                              )}
-                              {!isCustom && isDefault && (
-                                <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
-                                  Latest
-                                </span>
-                              )}
-                              <span className="ml-2 text-xs text-gray-500">
-                                {server.sizes?.[version] || '~50 MB'}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {isDownloading ? (
-                              getProgressDisplay(id)
-                            ) : isInstalled ? (
-                              <>
-                                <span className="badge-success flex items-center gap-1 text-xs">
-                                  <Check className="w-3 h-3" />
-                                  Installed
-                                </span>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleRemove(server.id, version); }}
-                                  className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                  title="Remove"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </>
-                            ) : server.requiresManualDownload ? (
-                              <>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleOpenApacheDownloadPage(); }}
-                                  className="btn-secondary text-sm px-2 py-1 flex items-center gap-1"
-                                  title={`Manual download: ${downloadSources.apache.note}`}
-                                >
-                                  <ExternalLink className="w-3 h-3" />
-                                  Download
-                                </button>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleImportApache(version); }}
-                                  className="btn-primary text-sm px-2 py-1 flex items-center gap-1"
-                                  title="Import downloaded Apache ZIP"
-                                >
-                                  <Upload className="w-3 h-3" />
-                                  Import
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDownloadService(server.id, version); }}
-                                className="btn-primary text-sm px-3 py-1"
-                              >
-                                <Download className="w-3 h-3" />
-                                Download
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Services (Versioned) */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <span className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-            <Server className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-          </span>
-          Services
-          <span className="text-xs font-normal text-gray-500 ml-2">
-            (Multiple versions can be installed)
-          </span>
-        </h2>
-        <div className="grid gap-3">
-          {/* Versioned Services (MySQL, MariaDB, Redis) */}
-          {versionedServices.map((service) => {
-            const installedCount = getInstalledVersionsCount(service.id);
-            const hasInstalled = installedCount > 0;
-            const isExpanded = expandedSections[service.id];
-
-            return (
-              <div key={service.id} className="card overflow-hidden">
-                {/* Service Header */}
-                <div
-                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                  onClick={() => toggleSection(service.id)}
-                >
-                  <div className="flex items-center gap-4">
-                    <div
-                      className={clsx(
-                        'w-12 h-12 rounded-lg flex items-center justify-center',
-                        hasInstalled
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
-                      )}
-                    >
-                      <service.icon className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                        {service.name}
-                        {hasInstalled && (
-                          <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
-                            {installedCount} version{installedCount > 1 ? 's' : ''}
-                          </span>
-                        )}
-                      </h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {service.description}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); window.devbox?.system.openExternal(downloadSources[service.id]?.url); }}
-                      className="btn-icon text-gray-400 hover:text-gray-600"
-                      title={downloadSources[service.id]?.note}
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleImportBinary(service.id); }}
-                      className="btn-secondary text-sm"
-                      title={`Import ${service.name} ZIP`}
-                    >
-                      <Upload className="w-4 h-4" />
-                      Import
-                    </button>
-                    {isExpanded ? (
-                      <ChevronUp className="w-5 h-5 text-gray-400" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
-                    )}
-                  </div>
-                </div>
-
-                {/* Version List (Expandable) */}
-                {isExpanded && (
-                  <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30">
-                    {service.versions.map((version) => {
-                      const id = `${service.id}-${version}`;
-                      const isInstalled = installed[service.id]?.[version];
-                      const isDownloading = downloading[id];
-                      const isDefault = version === service.defaultVersion;
-                      const isCustom = !service.predefinedVersions?.includes(version);
-
-                      return (
-                        <div
-                          key={version}
-                          className="p-3 flex items-center justify-between border-b last:border-b-0 border-gray-200 dark:border-gray-700"
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className={clsx(
-                              'w-8 h-8 rounded flex items-center justify-center font-mono text-sm',
-                              isInstalled
-                                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                                : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                            )}>
-                              {version}
-                            </span>
-                            <div>
-                              <span className="text-sm text-gray-700 dark:text-gray-300">
-                                {service.name} {version}
-                              </span>
-                              {isCustom && (
-                                <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full">
-                                  Custom
-                                </span>
-                              )}
-                              {!isCustom && isDefault && (
-                                <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
-                                  Latest
-                                </span>
-                              )}
-                              <span className="ml-2 text-xs text-gray-500">
-                                {service.sizes?.[version] || '~50 MB'}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {isDownloading ? (
-                              getProgressDisplay(id)
-                            ) : isInstalled ? (
-                              <>
-                                <span className="badge-success flex items-center gap-1 text-xs">
-                                  <Check className="w-3 h-3" />
-                                  Installed
-                                </span>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleRemove(service.id, version); }}
-                                  className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                  title="Remove"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDownloadService(service.id, version); }}
-                                className="btn-primary text-sm px-3 py-1"
-                              >
-                                <Download className="w-3 h-3" />
-                                Download
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Simple Services (Mailpit, phpMyAdmin) */}
-          {simpleServices.map((service) => {
-            const isDownloading = downloading[service.id];
-
-            return (
-              <div
-                key={service.id}
-                className="card p-4 flex items-center justify-between"
-              >
-                <div className="flex items-center gap-4">
-                  <div
-                    className={clsx(
-                      'w-12 h-12 rounded-lg flex items-center justify-center',
-                      service.installed
-                        ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
-                    )}
-                  >
-                    <service.icon className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-gray-900 dark:text-white">
-                      {service.name}
-                    </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {service.description} • {service.size}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  {isDownloading ? (
-                    getProgressDisplay(service.id)
-                  ) : service.installed ? (
-                    <>
-                      <span className="badge-success flex items-center gap-1">
-                        <Check className="w-3 h-3" />
-                        Installed
-                      </span>
-                      <button
-                        onClick={() => handleRemove(service.id)}
-                        className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                        title="Remove"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => window.devbox?.system.openExternal(downloadSources[service.id]?.url)}
-                        className="btn-icon text-gray-400 hover:text-gray-600"
-                        title={`Manual download: ${downloadSources[service.id]?.note}`}
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleImportSimple(service.id)}
-                        className="btn-secondary"
-                        title={`Import ${service.name} ZIP`}
-                      >
-                        <Upload className="w-4 h-4" />
-                        Import
-                      </button>
-                      <button
-                        onClick={() => handleDownloadService(service.id)}
-                        className="btn-primary"
-                      >
-                        <Download className="w-4 h-4" />
-                        Download
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Node.js Versions */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <span className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-            <span className="text-lg">⬢</span>
-          </span>
-          Node.js
-          <span className="text-xs font-normal text-gray-500 ml-2">
-            (For npm/Vite/Frontend builds)
-          </span>
-        </h2>
-        <div className="card overflow-hidden">
-          {/* Node.js Header */}
-          <div
-            className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
-            onClick={() => toggleSection('nodejs')}
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className={clsx(
-                  'w-12 h-12 rounded-lg flex items-center justify-center text-xl',
-                  getInstalledVersionsCount('nodejs') > 0
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
-                )}
-              >
-                ⬢
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                  Node.js
-                  {getInstalledVersionsCount('nodejs') > 0 && (
-                    <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
-                      {getInstalledVersionsCount('nodejs')} version{getInstalledVersionsCount('nodejs') > 1 ? 's' : ''}
-                    </span>
-                  )}
-                </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  JavaScript runtime for frontend builds (includes npm & npx)
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={(e) => { e.stopPropagation(); window.devbox?.system.openExternal(downloadSources.nodejs.url); }}
-                className="btn-icon text-gray-400 hover:text-gray-600"
-                title={downloadSources.nodejs.note}
-              >
-                <ExternalLink className="w-4 h-4" />
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleImportBinary('nodejs'); }}
-                className="btn-secondary text-sm"
-                title={`Import Node.js ZIP - ${downloadSources.nodejs.note}`}
-              >
-                <Upload className="w-4 h-4" />
-                Import
-              </button>
-              {expandedSections.nodejs ? (
-                <ChevronUp className="w-5 h-5 text-gray-400" />
-              ) : (
-                <ChevronDown className="w-5 h-5 text-gray-400" />
-              )}
-            </div>
-          </div>
-
-          {/* Node.js Version List (Expandable) */}
-          {expandedSections.nodejs && (
-            <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30">
-              {getMergedVersions('nodejs').map((version) => {
-                const id = `nodejs-${version}`;
-                const isInstalled = installed.nodejs?.[version];
-                const isDownloading = downloading[id];
-                const isCustom = !serviceVersions.nodejs?.includes(version);
-
-                return (
-                  <div
-                    key={version}
-                    className="p-3 flex items-center justify-between border-b last:border-b-0 border-gray-200 dark:border-gray-700"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className={clsx(
-                        'w-10 h-8 rounded flex items-center justify-center font-mono text-sm',
-                        isInstalled
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                          : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                      )}>
-                        {version}
-                      </span>
-                      <div>
-                        <span className="text-sm text-gray-700 dark:text-gray-300">
-                          Node.js {version}
-                        </span>
-                        {isCustom && (
-                          <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full">
-                            Custom
-                          </span>
-                        )}
-                        {!isCustom && version === '24' && (
-                          <span className="ml-2 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
-                            LTS
-                          </span>
-                        )}
-                        {!isCustom && version === '22' && (
-                          <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">
-                            Maintenance LTS
-                          </span>
-                        )}
-                        <span className="ml-2 text-xs text-gray-500">~35 MB</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isDownloading ? (
-                        getProgressDisplay(id)
-                      ) : isInstalled ? (
-                        <>
-                          <span className="badge-success flex items-center gap-1 text-xs">
-                            <Check className="w-3 h-3" />
-                            Installed
-                          </span>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRemove('nodejs', version); }}
-                            className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                            title="Remove"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDownloadNodejs(version); }}
-                          className="btn-primary text-sm px-3 py-1"
-                        >
-                          <Download className="w-3 h-3" />
-                          Download
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Composer */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <span className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
-            <span className="text-lg">🎼</span>
-          </span>
-          Composer
-          <span className="text-xs font-normal text-gray-500 ml-2">
-            (PHP dependency manager)
-          </span>
-        </h2>
-        <div className="grid gap-3">
-          <div className="card p-4 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div
-                className={clsx(
-                  'w-12 h-12 rounded-lg flex items-center justify-center text-xl',
-                  installed.composer
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
-                )}
-              >
-                🎼
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900 dark:text-white">
-                  Composer 2.x
-                  <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full">
-                    Latest
-                  </span>
-                </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {installed.composer ? 'Installed' : 'Not installed'} • ~2.5 MB • Requires PHP to be installed
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {downloading.composer ? (
-                getProgressDisplay('composer')
-              ) : installed.composer ? (
-                <>
-                  <span className="badge-success flex items-center gap-1">
-                    <Check className="w-3 h-3" />
-                    Installed
-                  </span>
-                  <button
-                    onClick={() => handleRemove('composer')}
-                    className="btn-icon text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                    title="Remove"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => window.devbox?.system.openExternal(downloadSources.composer.url)}
-                    className="btn-icon text-gray-400 hover:text-gray-600"
-                    title={`Manual download: ${downloadSources.composer.note}`}
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleImportSimple('composer', '.phar')}
-                    className="btn-secondary"
-                    title="Import composer.phar file"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Import
-                  </button>
-                  <button
-                    onClick={() => handleDownloadService('composer')}
-                    className="btn-primary"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Download All */}
-      <div className="mt-8 p-6 card bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border-blue-200 dark:border-blue-800">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-gray-900 dark:text-white">
-              Download Full Stack Environment
-            </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Download PHP 8.4, Nginx 1.28, MySQL 8.4, Redis 7.4, Mailpit, phpMyAdmin, Node.js 20, and Composer
-            </p>
-          </div>
+      {/* ── Category Tabs ──────────────────────────────────── */}
+      <div className="flex gap-1 mb-5 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
+        {tabs.map(tab => (
           <button
-            onClick={async () => {
-              // Download essentials with latest versions
-              if (!installed.php?.['8.5']) handleDownloadPhp('8.5');
-              // Download Nginx (default web server)
-              if (!installed.nginx?.['1.28']) handleDownloadService('nginx', '1.28');
-              // Download MySQL latest (8.4)
-              if (!installed.mysql?.['8.4']) handleDownloadService('mysql', '8.4');
-              // Download Redis latest (7.4)
-              if (!installed.redis?.['7.4']) handleDownloadService('redis', '7.4');
-              // Download single-version services
-              if (!installed.mailpit) handleDownloadService('mailpit');
-              if (!installed.phpmyadmin) handleDownloadService('phpmyadmin');
-              if (!installed.nodejs?.['24']) handleDownloadNodejs('24');
-              if (!installed.composer) handleDownloadService('composer');
-            }}
-            className="btn-primary bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={clsx(
+              'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+              activeTab === tab.id
+                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+            )}
           >
-            <Download className="w-4 h-4" />
-            Download All
+            <span className="text-base leading-none">{tab.icon}</span>
+            <span className="hidden sm:inline">{tab.label}</span>
           </button>
+        ))}
+      </div>
+
+      {/* ── Tab Content ────────────────────────────────────── */}
+
+      {/* Language Tab: PHP + Node.js + Python */}
+      {activeTab === 'language' && (
+        <div className="space-y-3">
+          {/* PHP */}
+          <ServiceCard
+            service={{
+              id: 'php',
+              name: 'PHP',
+              description: 'PHP scripting language for web development · ~40 MB/version',
+              emoji: 'PHP',
+              versions: getMergedVersions('php'),
+              predefinedVersions: serviceVersions.php,
+              defaultVersion: serviceVersions.php?.[0],
+              sizes: {},
+            }}
+            {...sharedCardProps}
+            onDownload={(_, v) => handleDownloadPhp(v)}
+            onRemove={(_, v) => handleRemove('php', v)}
+            onImport={() => handleImportBinary('php')}
+            isPhp
+          />
+
+          {/* Node.js */}
+          <ServiceCard
+            service={{
+              id: 'nodejs',
+              name: 'Node.js',
+              description: 'JavaScript runtime for frontend builds (npm & npx) · ~35 MB/version',
+              emoji: '⬢',
+              versions: getMergedVersions('nodejs'),
+              predefinedVersions: serviceVersions.nodejs,
+              defaultVersion: serviceVersions.nodejs?.[0],
+              sizes: {},
+            }}
+            {...sharedCardProps}
+            onDownload={(_, v) => handleDownloadNodejs(v)}
+            onRemove={(_, v) => handleRemove('nodejs', v)}
+            onImport={() => handleImportBinary('nodejs')}
+            isNodejs
+          />
+
+          {/* Python */}
+          <ServiceCard
+            service={{
+              id: 'python',
+              name: 'Python',
+              description: 'General-purpose programming language runtime · ~15 MB/version',
+              icon: Server,
+              versions: getMergedVersions('python'),
+              predefinedVersions: serviceVersions.python,
+              defaultVersion: serviceVersions.python?.[0],
+              sizes: { '3.13': '~15 MB', '3.12': '~14 MB', '3.11': '~14 MB', '3.10': '~13 MB' },
+            }}
+            {...sharedCardProps}
+            onDownload={(s, v) => handleDownloadService(s, v)}
+            onRemove={(s, v) => handleRemove(s, v)}
+            onImport={(s) => handleImportBinary(s)}
+          />
+
+          {/* Composer */}
+          <SimpleRow
+            id="composer"
+            name="Composer 2.x"
+            description="PHP dependency manager — requires PHP to be installed"
+            icon={FileText}
+            emoji="🎼"
+            isInstalled={installed.composer}
+            size="~2.5 MB"
+            sourceKey="composer"
+            {...sharedSimpleProps}
+            onDownload={() => handleDownloadService('composer')}
+            onRemove={() => handleRemove('composer')}
+            onImport={() => handleImportSimple('composer', '.phar')}
+            importLabel=".phar"
+          />
         </div>
+      )}
+
+      {/* Web Servers Tab */}
+      {activeTab === 'webserver' && (
+        <div className="space-y-3">
+          {webServers.map(server => (
+            <ServiceCard
+              key={server.id}
+              service={server}
+              {...sharedCardProps}
+              onDownload={(s, v) => handleDownloadService(s, v)}
+              onRemove={(s, v) => handleRemove(s, v)}
+              onImport={(s) => s === 'apache' ? null : handleImportBinary(s)}
+              onManualOpen={() => handleOpenApacheDownloadPage()}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Databases Tab */}
+      {activeTab === 'database' && (
+        <div className="space-y-3">
+          {/* MySQL */}
+          <ServiceCard
+            service={{
+              id: 'mysql', name: 'MySQL', description: 'MySQL database server',
+              icon: Database, versions: getMergedVersions('mysql'), predefinedVersions: serviceVersions.mysql,
+              defaultVersion: serviceVersions.mysql?.[0], sizes: { '8.4': '~290 MB', '8.0': '~280 MB' },
+            }}
+            {...sharedCardProps}
+            onDownload={(s, v) => handleDownloadService(s, v)}
+            onRemove={(s, v) => handleRemove(s, v)}
+            onImport={(s) => handleImportBinary(s)}
+          />
+          {/* MariaDB */}
+          <ServiceCard
+            service={{
+              id: 'mariadb', name: 'MariaDB', description: 'MySQL-compatible database server',
+              icon: Database, versions: getMergedVersions('mariadb'), predefinedVersions: serviceVersions.mariadb,
+              defaultVersion: serviceVersions.mariadb?.[0], sizes: { '11.4': '~90 MB', '10.11': '~85 MB', '10.6': '~80 MB' },
+            }}
+            {...sharedCardProps}
+            onDownload={(s, v) => handleDownloadService(s, v)}
+            onRemove={(s, v) => handleRemove(s, v)}
+            onImport={(s) => handleImportBinary(s)}
+          />
+          {/* PostgreSQL */}
+          <ServiceCard
+            service={{
+              id: 'postgresql', name: 'PostgreSQL', description: 'Advanced open-source relational database',
+              icon: Database, versions: getMergedVersions('postgresql'), predefinedVersions: serviceVersions.postgresql,
+              defaultVersion: serviceVersions.postgresql?.[0], sizes: { '17': '~250 MB', '16': '~240 MB', '15': '~230 MB', '14': '~225 MB' },
+            }}
+            {...sharedCardProps}
+            onDownload={(s, v) => handleDownloadService(s, v)}
+            onRemove={(s, v) => handleRemove(s, v)}
+            onImport={(s) => handleImportBinary(s)}
+          />
+          {/* MongoDB */}
+          <ServiceCard
+            service={{
+              id: 'mongodb', name: 'MongoDB', description: 'NoSQL document database',
+              icon: Database, versions: getMergedVersions('mongodb'), predefinedVersions: serviceVersions.mongodb,
+              defaultVersion: serviceVersions.mongodb?.[0], sizes: { '8.0': '~130 MB', '7.0': '~120 MB', '6.0': '~110 MB' },
+            }}
+            {...sharedCardProps}
+            onDownload={(s, v) => handleDownloadService(s, v)}
+            onRemove={(s, v) => handleRemove(s, v)}
+            onImport={(s) => handleImportBinary(s)}
+          />
+          {/* SQLite */}
+          <SimpleRow
+            id="sqlite"
+            name="SQLite"
+            description="Embedded SQL database engine (CLI tools)"
+            icon={Database}
+            isInstalled={!!installed.sqlite}
+            size="~2 MB"
+            sourceKey="sqlite"
+            {...sharedSimpleProps}
+            onDownload={() => handleDownloadService('sqlite')}
+            onRemove={() => handleRemove('sqlite')}
+          />
+          {/* phpMyAdmin */}
+          <SimpleRow
+            id="phpmyadmin"
+            name="phpMyAdmin"
+            description="Web-based MySQL/MariaDB administration interface"
+            icon={HardDrive}
+            isInstalled={installed.phpmyadmin}
+            size="~15 MB"
+            sourceKey="phpmyadmin"
+            {...sharedSimpleProps}
+            onDownload={() => handleDownloadService('phpmyadmin')}
+            onRemove={() => handleRemove('phpmyadmin')}
+            onImport={() => handleImportSimple('phpmyadmin')}
+          />
+        </div>
+      )}
+
+      {/* Cache Tab */}
+      {activeTab === 'cache' && (
+        <div className="space-y-3">
+          {/* Redis */}
+          <ServiceCard
+            service={{
+              id: 'redis', name: 'Redis', description: 'In-memory key-value data store',
+              icon: Server, versions: getMergedVersions('redis'), predefinedVersions: serviceVersions.redis,
+              defaultVersion: serviceVersions.redis?.[0], sizes: { '7.4': '~5 MB', '7.2': '~5 MB' },
+            }}
+            {...sharedCardProps}
+            onDownload={(s, v) => handleDownloadService(s, v)}
+            onRemove={(s, v) => handleRemove(s, v)}
+            onImport={(s) => handleImportBinary(s)}
+          />
+          {/* Memcached */}
+          <ServiceCard
+            service={{
+              id: 'memcached', name: 'Memcached', description: 'Distributed memory caching system (Windows: 1.6.8 mingw build)',
+              icon: Server, versions: getMergedVersions('memcached'), predefinedVersions: serviceVersions.memcached,
+              defaultVersion: serviceVersions.memcached?.[0], sizes: { '1.6': '~6 MB' },
+            }}
+            {...sharedCardProps}
+            onDownload={(s, v) => handleDownloadService(s, v)}
+            onRemove={(s, v) => handleRemove(s, v)}
+            onImport={(s) => handleImportBinary(s)}
+          />
+        </div>
+      )}
+
+      {/* Tools Tab */}
+      {activeTab === 'tools' && (
+        <div className="space-y-3">
+          {/* Mailpit */}
+          <SimpleRow
+            id="mailpit"
+            name="Mailpit"
+            description="Email testing tool with built-in SMTP server and web UI"
+            icon={Mail}
+            isInstalled={installed.mailpit}
+            size="~15 MB"
+            sourceKey="mailpit"
+            {...sharedSimpleProps}
+            onDownload={() => handleDownloadService('mailpit')}
+            onRemove={() => handleRemove('mailpit')}
+            onImport={() => handleImportSimple('mailpit')}
+          />
+          {/* MinIO */}
+          <SimpleRow
+            id="minio"
+            name="MinIO"
+            description="S3-compatible object storage server"
+            icon={HardDrive}
+            emoji="☁️"
+            isInstalled={!!installed.minio}
+            size="~100 MB"
+            sourceKey="minio"
+            {...sharedSimpleProps}
+            onDownload={() => handleDownloadService('minio')}
+            onRemove={() => handleRemove('minio')}
+          />
+        </div>
+      )}
+
+      {/* ── Quick Download All ──────────────────────────────── */}
+      <div className="mt-6 p-4 rounded-xl border border-blue-200 dark:border-blue-800 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 flex items-center justify-between gap-4">
+        <div>
+          <h3 className="font-semibold text-sm text-gray-900 dark:text-white">Download Core Stack</h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">PHP 8.5, Nginx 1.28, MySQL 8.4, Redis 7.4, Mailpit, phpMyAdmin, Node.js 24 & Composer</p>
+        </div>
+        <button
+          onClick={() => {
+            if (!installed.php?.['8.5']) handleDownloadPhp('8.5');
+            if (!installed.nginx?.['1.28']) handleDownloadService('nginx', '1.28');
+            if (!installed.mysql?.['8.4']) handleDownloadService('mysql', '8.4');
+            if (!installed.redis?.['7.4']) handleDownloadService('redis', '7.4');
+            if (!installed.mailpit) handleDownloadService('mailpit');
+            if (!installed.phpmyadmin) handleDownloadService('phpmyadmin');
+            if (!installed.nodejs?.['24']) handleDownloadNodejs('24');
+            if (!installed.composer) handleDownloadService('composer');
+          }}
+          className="shrink-0 btn-primary bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-sm"
+        >
+          <Download className="w-4 h-4" />
+          Download All
+        </button>
       </div>
     </div>
   );

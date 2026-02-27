@@ -435,6 +435,10 @@ async function forceKillAllProcesses() {
     'mariadbd.exe',
     'redis-server.exe',
     'mailpit.exe',
+    'postgres.exe',
+    'mongod.exe',
+    'memcached.exe',
+    'minio.exe',
   ];
 
   for (const processName of processesToKill) {

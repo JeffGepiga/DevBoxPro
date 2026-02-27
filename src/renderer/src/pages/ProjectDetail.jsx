@@ -554,6 +554,10 @@ function OverviewTab({ project, processes, refreshProjects }) {
     nodejs: [],
     nginx: [],
     apache: [],
+    postgresql: [],
+    mongodb: [],
+    python: [],
+    memcached: [],
   });
 
   // Load available PHP versions, binaries status, and service config
@@ -589,6 +593,10 @@ function OverviewTab({ project, processes, refreshProjects }) {
             nodejs: getInstalledVersions('nodejs'),
             nginx: getInstalledVersions('nginx'),
             apache: getInstalledVersions('apache'),
+            postgresql: getInstalledVersions('postgresql'),
+            mongodb: getInstalledVersions('mongodb'),
+            python: getInstalledVersions('python'),
+            memcached: getInstalledVersions('memcached'),
           });
         }
       } catch (error) {
@@ -778,11 +786,14 @@ function OverviewTab({ project, processes, refreshProjects }) {
   };
 
   // Port config mirrored from shared/serviceConfig.js
-  const SERVICE_DEFAULT_PORTS = { mysql: 3306, mariadb: 3310, redis: 6379 };
+  const SERVICE_DEFAULT_PORTS = { mysql: 3306, mariadb: 3310, redis: 6379, postgresql: 5432, mongodb: 27017, memcached: 11211 };
   const SERVICE_VERSION_PORT_OFFSETS = {
     mysql: { '8.4': 0, '8.0': 1, '5.7': 2 },
     mariadb: { '11.4': 0, '10.11': 1, '10.6': 2 },
     redis: { '7.4': 0, '7.2': 1, '6.2': 2 },
+    postgresql: { '17': 0, '16': 1, '15': 2, '14': 3 },
+    mongodb: { '8.0': 0, '7.0': 1, '6.0': 2 },
+    memcached: { '1.6': 0, '1.5': 1 },
   };
   const getServicePort = (serviceId, version) => {
     const base = SERVICE_DEFAULT_PORTS[serviceId];
@@ -795,7 +806,12 @@ function OverviewTab({ project, processes, refreshProjects }) {
   const serviceDefinitions = [
     { id: 'mysql', name: 'MySQL', icon: '🗄️', installed: isAnyVersionInstalled(binariesStatus?.mysql), isDatabase: true, hasVersions: true },
     { id: 'mariadb', name: 'MariaDB', icon: '🗃️', installed: isAnyVersionInstalled(binariesStatus?.mariadb), isDatabase: true, hasVersions: true },
+    { id: 'postgresql', name: 'PostgreSQL', icon: '🐘', installed: isAnyVersionInstalled(binariesStatus?.postgresql), hasVersions: true },
+    { id: 'mongodb', name: 'MongoDB', icon: '🍃', installed: isAnyVersionInstalled(binariesStatus?.mongodb), hasVersions: true },
     { id: 'redis', name: 'Redis', icon: '⚡', installed: isAnyVersionInstalled(binariesStatus?.redis), hasVersions: true },
+    { id: 'memcached', name: 'Memcached', icon: '💾', installed: isAnyVersionInstalled(binariesStatus?.memcached), hasVersions: true },
+    { id: 'python', name: 'Python', icon: '🐍', installed: isAnyVersionInstalled(binariesStatus?.python), hasVersions: true },
+    { id: 'minio', name: 'MinIO', icon: '🪣', installed: binariesStatus?.minio?.installed === true },
     { id: 'nodejs', name: 'Node.js', icon: <NodeJsIcon className="w-5 h-5 text-green-600" />, installed: isAnyVersionInstalled(binariesStatus?.nodejs), hasVersions: true },
     { id: 'queue', name: 'Queue Worker', icon: '📋', installed: true }, // Always available for Laravel
   ];

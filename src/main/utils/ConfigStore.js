@@ -65,6 +65,11 @@ class ConfigStore {
         mailpitSmtpPort: 1025,
         redisPort: 6379,
         mysqlPort: 3306,
+        postgresqlPort: 5432,
+        mongodbPort: 27017,
+        minioPort: 9000,
+        minioConsolePort: 9001,
+        memcachedPort: 11211,
         activeDatabaseType: 'mysql',
         dbUser: 'root',
         dbPassword: '',
@@ -210,6 +215,18 @@ class ConfigStore {
 
   getRedisDataPath() {
     return path.join(this.get('dataPath'), 'redis');
+  }
+
+  getPostgresqlDataPath(version = '17') {
+    return path.join(this.get('dataPath'), 'postgresql', version, 'data');
+  }
+
+  getMongodbDataPath(version = '8.0') {
+    return path.join(this.get('dataPath'), 'mongodb', version, 'data');
+  }
+
+  getMinioDataPath() {
+    return path.join(this.get('dataPath'), 'minio', 'data');
   }
 
   getSslPath() {

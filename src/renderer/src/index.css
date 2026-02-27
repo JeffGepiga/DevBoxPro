@@ -58,6 +58,13 @@
   * {
     @apply border-gray-200 dark:border-gray-700;
   }
+
+  button, 
+  [type='button'], 
+  [type='reset'], 
+  [type='submit'] {
+    cursor: pointer;
+  }
 }
 
 @layer components {

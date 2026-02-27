@@ -88,6 +88,24 @@ describe('DatabaseManager', () => {
             });
             expect(mgr.getActiveDatabaseVersion()).toBe('11.4');
         });
+
+        it('defaults to 17 for postgresql', () => {
+            const { mgr, configStore } = makeDbManager();
+            configStore.getSetting.mockImplementation((key, def) => {
+                if (key === 'activeDatabaseType') return 'postgresql';
+                return def;
+            });
+            expect(mgr.getActiveDatabaseVersion()).toBe('17');
+        });
+
+        it('defaults to 8.0 for mongodb', () => {
+            const { mgr, configStore } = makeDbManager();
+            configStore.getSetting.mockImplementation((key, def) => {
+                if (key === 'activeDatabaseType') return 'mongodb';
+                return def;
+            });
+            expect(mgr.getActiveDatabaseVersion()).toBe('8.0');
+        });
     });
 
     // ═══════════════════════════════════════════════════════════════════
@@ -108,6 +126,22 @@ describe('DatabaseManager', () => {
             expect(result.success).toBe(true);
             expect(result.type).toBe('mariadb');
             expect(result.version).toBe('10.6');
+        });
+
+        it('sets postgresql successfully', async () => {
+            const { mgr } = makeDbManager();
+            const result = await mgr.setActiveDatabaseType('postgresql', '17');
+            expect(result.success).toBe(true);
+            expect(result.type).toBe('postgresql');
+            expect(result.version).toBe('17');
+        });
+
+        it('sets mongodb successfully', async () => {
+            const { mgr } = makeDbManager();
+            const result = await mgr.setActiveDatabaseType('mongodb', '8.0');
+            expect(result.success).toBe(true);
+            expect(result.type).toBe('mongodb');
+            expect(result.version).toBe('8.0');
         });
 
         it('throws for invalid database type', async () => {

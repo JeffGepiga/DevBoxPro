@@ -180,6 +180,33 @@ class CliManager {
       env.PATH = `${path.dirname(mysqlClient)}${path.delimiter}${env.PATH}`;
     }
 
+    // PostgreSQL psql path
+    if (project.services?.postgresql) {
+      const pgVersion = project.services.postgresqlVersion || '17';
+      const psqlPath = this.getPsqlPath(pgVersion);
+      if (psqlPath) {
+        env.PATH = `${path.dirname(psqlPath)}${path.delimiter}${env.PATH}`;
+      }
+    }
+
+    // Python path
+    if (project.services?.python) {
+      const pyVersion = project.services.pythonVersion || '3.13';
+      const pythonPath = this.getPythonPath(pyVersion);
+      if (pythonPath) {
+        env.PATH = `${path.dirname(pythonPath)}${path.delimiter}${env.PATH}`;
+      }
+    }
+
+    // MongoDB shell path
+    if (project.services?.mongodb) {
+      const mongoVersion = project.services.mongodbVersion || '8.0';
+      const mongoshPath = this.getMongoshPath(mongoVersion);
+      if (mongoshPath) {
+        env.PATH = `${path.dirname(mongoshPath)}${path.delimiter}${env.PATH}`;
+      }
+    }
+
     return env;
   }
 
@@ -257,6 +284,63 @@ class CliManager {
     const binName = process.platform === 'win32' ? 'mysqldump.exe' : 'mysqldump';
     const dumpPath = path.join(this.resourcesPath, dbType, version, platform, 'bin', binName);
     return fs.existsSync(dumpPath) ? dumpPath : null;
+  }
+
+  /**
+   * Get PostgreSQL psql client executable path for a given version
+   */
+  getPsqlPath(version = '17') {
+    if (!this.resourcesPath) return null;
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const binName = process.platform === 'win32' ? 'psql.exe' : 'psql';
+    const psqlPath = path.join(this.resourcesPath, 'postgresql', version, platform, 'bin', binName);
+    return fs.existsSync(psqlPath) ? psqlPath : null;
+  }
+
+  /**
+   * Get Python executable path for a given version
+   */
+  getPythonPath(version = '3.13') {
+    if (!this.resourcesPath) return null;
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const binName = process.platform === 'win32' ? 'python.exe' : 'bin/python3';
+    const pyPath = path.join(this.resourcesPath, 'python', version, platform, binName);
+    return fs.existsSync(pyPath) ? pyPath : null;
+  }
+
+  /**
+   * Get mongosh (MongoDB shell) executable path for a given MongoDB version
+   */
+  getMongoshPath(version = '8.0') {
+    if (!this.resourcesPath) return null;
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const binName = process.platform === 'win32' ? 'mongosh.exe' : 'mongosh';
+    const mongoshPath = path.join(this.resourcesPath, 'mongodb', version, platform, 'bin', binName);
+    return fs.existsSync(mongoshPath) ? mongoshPath : null;
+  }
+
+  /**
+   * Get SQLite3 CLI executable path
+   */
+  getSqlitePath(version = '3') {
+    if (!this.resourcesPath) return null;
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    // SQLite is built-in on macOS/Linux
+    if (platform !== 'win') return 'sqlite3';
+    const binName = 'sqlite3.exe';
+    const sqlitePath = path.join(this.resourcesPath, 'sqlite', version, platform, binName);
+    return fs.existsSync(sqlitePath) ? sqlitePath : 'sqlite3';
+  }
+
+  /**
+   * Get Memcached executable path for a given version
+   */
+  getMemcachedPath(version = '1.6') {
+    if (!this.resourcesPath) return null;
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const binName = process.platform === 'win32' ? 'memcached.exe' : 'memcached';
+    const memcachedPath = path.join(this.resourcesPath, 'memcached', version, platform, binName);
+    return fs.existsSync(memcachedPath) ? memcachedPath : null;
   }
 
   /**

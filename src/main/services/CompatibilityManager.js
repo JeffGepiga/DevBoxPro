@@ -257,6 +257,63 @@ class CompatibilityManager {
           return null;
         },
       },
+      {
+        id: 'php-postgresql-extension',
+        name: 'PHP + PostgreSQL Extension',
+        check: (config) => {
+          if (config.services?.postgresql) {
+            return {
+              level: 'info',
+              message: 'PostgreSQL requires the pgsql or pdo_pgsql PHP extension. Make sure it is enabled in your php.ini.',
+              suggestion: 'Enable extension=pgsql and extension=pdo_pgsql in your PHP configuration.',
+            };
+          }
+          return null;
+        },
+      },
+      {
+        id: 'php-mongodb-extension',
+        name: 'PHP + MongoDB Extension',
+        check: (config) => {
+          if (config.services?.mongodb) {
+            return {
+              level: 'info',
+              message: 'MongoDB requires the mongodb PHP extension (pecl). It is not included in the base PHP build.',
+              suggestion: 'Install the extension with: pecl install mongodb, then add extension=mongodb.so to php.ini.',
+            };
+          }
+          return null;
+        },
+      },
+      {
+        id: 'mongodb-avx-requirement',
+        name: 'MongoDB 5.0+ AVX requirement',
+        check: (config) => {
+          const mongoVersion = config.services?.mongodbVersion || config.services?.mongodb;
+          if (mongoVersion && parseFloat(mongoVersion) >= 5.0) {
+            return {
+              level: 'warning',
+              message: `MongoDB ${mongoVersion} requires a CPU with AVX instructions. Older hardware (pre-2011) may not support this.`,
+              suggestion: 'If MongoDB fails to start, your CPU may not support AVX. Use MongoDB 4.4 or earlier as a fallback.',
+            };
+          }
+          return null;
+        },
+      },
+      {
+        id: 'python-windows-pip',
+        name: 'Python Windows Embeddable + pip',
+        check: (config) => {
+          if (config.services?.python && process.platform === 'win32') {
+            return {
+              level: 'info',
+              message: 'The Windows embeddable Python package requires manual pip setup. DevBox Pro enables import site automatically during download.',
+              suggestion: 'pip should be available after installation. Run pip install --upgrade pip to ensure it is current.',
+            };
+          }
+          return null;
+        },
+      },
     ];
 
     // Active rules (either from remote config or built-in)

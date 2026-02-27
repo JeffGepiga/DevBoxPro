@@ -19,7 +19,7 @@ const {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('SERVICE_VERSIONS', () => {
-    const expectedServices = ['php', 'mysql', 'mariadb', 'redis', 'nginx', 'apache', 'nodejs'];
+    const expectedServices = ['php', 'mysql', 'mariadb', 'redis', 'nginx', 'apache', 'nodejs', 'postgresql', 'python', 'mongodb', 'sqlite', 'minio', 'memcached'];
 
     it('contains all expected service keys', () => {
         for (const service of expectedServices) {
@@ -47,6 +47,25 @@ describe('SERVICE_VERSIONS', () => {
     it('MySQL versions include both 8.x and 5.7', () => {
         expect(SERVICE_VERSIONS.mysql).toContain('8.0');
         expect(SERVICE_VERSIONS.mysql).toContain('5.7');
+    });
+
+    it('PostgreSQL versions include 17 and 14', () => {
+        expect(SERVICE_VERSIONS.postgresql).toContain('17');
+        expect(SERVICE_VERSIONS.postgresql).toContain('14');
+    });
+
+    it('MongoDB versions include 8.0 and 6.0', () => {
+        expect(SERVICE_VERSIONS.mongodb).toContain('8.0');
+        expect(SERVICE_VERSIONS.mongodb).toContain('6.0');
+    });
+
+    it('Python versions include 3.13 and 3.10', () => {
+        expect(SERVICE_VERSIONS.python).toContain('3.13');
+        expect(SERVICE_VERSIONS.python).toContain('3.10');
+    });
+
+    it('Memcached versions include 1.6', () => {
+        expect(SERVICE_VERSIONS.memcached).toContain('1.6');
     });
 
     it('Node.js versions are in descending order', () => {
@@ -154,9 +173,9 @@ describe('SERVICE_INFO', () => {
         }
     });
 
-    it('non-versioned services have a defaultPort and/or webUrl', () => {
+    it('non-versioned services have a defaultPort and/or webUrl (unless embedded)', () => {
         for (const [service, info] of Object.entries(SERVICE_INFO)) {
-            if (!info.versioned) {
+            if (!info.versioned && !info.embedded) {
                 expect(
                     info.defaultPort !== undefined || info.webUrl !== undefined,
                     `Non-versioned service ${service} should have defaultPort or webUrl`

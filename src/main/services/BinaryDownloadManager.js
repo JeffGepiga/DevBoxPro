@@ -8,6 +8,7 @@ const { createWriteStream } = require('fs');
 const { createGunzip } = require('zlib');
 const tar = require('tar');
 const AdmZip = require('adm-zip');
+const unzipper = require('unzipper');
 const { exec, spawn } = require('child_process');
 const { Worker } = require('worker_threads');
 const { spawnAsync } = require('../utils/SpawnUtils');
@@ -368,6 +369,117 @@ class BinaryDownloadManager {
             note: 'Install via: xcode-select --install or brew install git',
           },
           label: 'Portable',
+        },
+      },
+      // PostgreSQL - Multiple versions
+      postgresql: {
+        '17': {
+          win: { url: 'https://get.enterprisedb.com/postgresql/postgresql-17.4-1-windows-x64-binaries.zip', filename: 'postgresql-17.4-1-windows-x64-binaries.zip' },
+          mac: { url: 'https://get.enterprisedb.com/postgresql/postgresql-17.4-1-osx-binaries.zip', filename: 'postgresql-17.4-1-osx-binaries.zip' },
+          linux: { url: 'https://get.enterprisedb.com/postgresql/postgresql-17.4-1-linux-x64-binaries.tar.gz', filename: 'postgresql-17.4-1-linux-x64-binaries.tar.gz' },
+          label: 'Latest',
+        },
+        '16': {
+          win: { url: 'https://get.enterprisedb.com/postgresql/postgresql-16.8-1-windows-x64-binaries.zip', filename: 'postgresql-16.8-1-windows-x64-binaries.zip' },
+          mac: { url: 'https://get.enterprisedb.com/postgresql/postgresql-16.8-1-osx-binaries.zip', filename: 'postgresql-16.8-1-osx-binaries.zip' },
+          linux: { url: 'https://get.enterprisedb.com/postgresql/postgresql-16.8-1-linux-x64-binaries.tar.gz', filename: 'postgresql-16.8-1-linux-x64-binaries.tar.gz' },
+          label: 'LTS',
+        },
+        '15': {
+          win: { url: 'https://get.enterprisedb.com/postgresql/postgresql-15.12-1-windows-x64-binaries.zip', filename: 'postgresql-15.12-1-windows-x64-binaries.zip' },
+          mac: { url: 'https://get.enterprisedb.com/postgresql/postgresql-15.12-1-osx-binaries.zip', filename: 'postgresql-15.12-1-osx-binaries.zip' },
+          linux: { url: 'https://get.enterprisedb.com/postgresql/postgresql-15.12-1-linux-x64-binaries.tar.gz', filename: 'postgresql-15.12-1-linux-x64-binaries.tar.gz' },
+          label: 'Stable',
+        },
+        '14': {
+          win: { url: 'https://get.enterprisedb.com/postgresql/postgresql-14.17-1-windows-x64-binaries.zip', filename: 'postgresql-14.17-1-windows-x64-binaries.zip' },
+          mac: { url: 'https://get.enterprisedb.com/postgresql/postgresql-14.17-1-osx-binaries.zip', filename: 'postgresql-14.17-1-osx-binaries.zip' },
+          linux: { url: 'https://get.enterprisedb.com/postgresql/postgresql-14.17-1-linux-x64-binaries.tar.gz', filename: 'postgresql-14.17-1-linux-x64-binaries.tar.gz' },
+          label: 'Legacy',
+        },
+      },
+      // Python - Multiple versions (embeddable on Windows, source on mac/linux)
+      python: {
+        '3.13': {
+          win: { url: 'https://www.python.org/ftp/python/3.13.2/python-3.13.2-embed-amd64.zip', filename: 'python-3.13.2-embed-amd64.zip' },
+          mac: { url: 'https://www.python.org/ftp/python/3.13.2/Python-3.13.2.tgz', filename: 'Python-3.13.2.tgz' },
+          linux: { url: 'https://www.python.org/ftp/python/3.13.2/Python-3.13.2.tgz', filename: 'Python-3.13.2.tgz' },
+          label: 'Latest',
+        },
+        '3.12': {
+          win: { url: 'https://www.python.org/ftp/python/3.12.9/python-3.12.9-embed-amd64.zip', filename: 'python-3.12.9-embed-amd64.zip' },
+          mac: { url: 'https://www.python.org/ftp/python/3.12.9/Python-3.12.9.tgz', filename: 'Python-3.12.9.tgz' },
+          linux: { url: 'https://www.python.org/ftp/python/3.12.9/Python-3.12.9.tgz', filename: 'Python-3.12.9.tgz' },
+          label: 'LTS',
+        },
+        '3.11': {
+          win: { url: 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip', filename: 'python-3.11.9-embed-amd64.zip' },
+          mac: { url: 'https://www.python.org/ftp/python/3.11.12/Python-3.11.12.tgz', filename: 'Python-3.11.12.tgz' },
+          linux: { url: 'https://www.python.org/ftp/python/3.11.12/Python-3.11.12.tgz', filename: 'Python-3.11.12.tgz' },
+          label: 'Stable',
+        },
+        '3.10': {
+          win: { url: 'https://www.python.org/ftp/python/3.10.13/python-3.10.13-embed-amd64.zip', filename: 'python-3.10.13-embed-amd64.zip' },
+          mac: { url: 'https://www.python.org/ftp/python/3.10.16/Python-3.10.16.tgz', filename: 'Python-3.10.16.tgz' },
+          linux: { url: 'https://www.python.org/ftp/python/3.10.16/Python-3.10.16.tgz', filename: 'Python-3.10.16.tgz' },
+          label: 'Legacy',
+        },
+      },
+      // MongoDB - Multiple versions
+      mongodb: {
+        '8.0': {
+          win: { url: 'https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-8.0.6.zip', filename: 'mongodb-windows-x86_64-8.0.6.zip' },
+          mac: { url: 'https://fastdl.mongodb.org/osx/mongodb-macos-arm64-8.0.6.tgz', filename: 'mongodb-macos-arm64-8.0.6.tgz' },
+          linux: { url: 'https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-8.0.6.tgz', filename: 'mongodb-linux-x86_64-ubuntu2204-8.0.6.tgz' },
+          label: 'Latest',
+        },
+        '7.0': {
+          win: { url: 'https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-7.0.17.zip', filename: 'mongodb-windows-x86_64-7.0.17.zip' },
+          mac: { url: 'https://fastdl.mongodb.org/osx/mongodb-macos-arm64-7.0.17.tgz', filename: 'mongodb-macos-arm64-7.0.17.tgz' },
+          linux: { url: 'https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-7.0.17.tgz', filename: 'mongodb-linux-x86_64-ubuntu2204-7.0.17.tgz' },
+          label: 'LTS',
+        },
+        '6.0': {
+          win: { url: 'https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-6.0.21.zip', filename: 'mongodb-windows-x86_64-6.0.21.zip' },
+          mac: { url: 'https://fastdl.mongodb.org/osx/mongodb-macos-arm64-6.0.21.tgz', filename: 'mongodb-macos-arm64-6.0.21.tgz' },
+          linux: { url: 'https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-6.0.21.tgz', filename: 'mongodb-linux-x86_64-ubuntu2204-6.0.21.tgz' },
+          label: 'Legacy',
+        },
+      },
+      // mongosh - MongoDB Shell (downloaded alongside MongoDB server)
+      mongosh: {
+        latest: {
+          win: { url: 'https://downloads.mongodb.com/compass/mongosh-2.3.8-win32-x64.zip', filename: 'mongosh-2.3.8-win32-x64.zip' },
+          mac: { url: 'https://downloads.mongodb.com/compass/mongosh-2.3.8-darwin-arm64.zip', filename: 'mongosh-2.3.8-darwin-arm64.zip' },
+          linux: { url: 'https://downloads.mongodb.com/compass/mongosh-2.3.8-linux-x64.tgz', filename: 'mongosh-2.3.8-linux-x64.tgz' },
+          label: 'Latest',
+        },
+      },
+      // SQLite - CLI tools (platform-independent engine, only download CLI binaries)
+      sqlite: {
+        '3': {
+          win: { url: 'https://www.sqlite.org/2025/sqlite-tools-win-x64-3490200.zip', filename: 'sqlite-tools-win-x64-3490200.zip' },
+          mac: { url: 'builtin', note: 'SQLite is pre-installed on macOS. Install latest via: brew install sqlite' },
+          linux: { url: 'builtin', note: 'Install via package manager: sudo apt install sqlite3' },
+          label: 'Latest',
+        },
+      },
+      // MinIO - S3-compatible object storage (single executable, no versioning)
+      minio: {
+        latest: {
+          win: { url: 'https://dl.min.io/server/minio/release/windows-amd64/minio.exe', filename: 'minio.exe' },
+          mac: { url: 'https://dl.min.io/server/minio/release/darwin-arm64/minio', filename: 'minio' },
+          linux: { url: 'https://dl.min.io/server/minio/release/linux-amd64/minio', filename: 'minio' },
+          label: 'Latest',
+        },
+      },
+      // Memcached - Windows builds only available from jefyt/memcached-windows (1.6.x only)
+      memcached: {
+        '1.6': {
+          win: { url: 'https://github.com/jefyt/memcached-windows/releases/download/1.6.8_mingw/memcached-1.6.8-win64-mingw.zip', filename: 'memcached-1.6.8-win64-mingw.zip' },
+          mac: { url: 'https://www.memcached.org/files/memcached-1.6.36.tar.gz', filename: 'memcached-1.6.36.tar.gz' },
+          linux: { url: 'https://www.memcached.org/files/memcached-1.6.36.tar.gz', filename: 'memcached-1.6.36.tar.gz' },
+          label: 'Latest',
         },
       },
     };
@@ -952,6 +1064,49 @@ class BinaryDownloadManager {
     const gitPath = path.join(this.resourcesPath, 'git', platform);
     const gitExe = platform === 'win' ? 'cmd/git.exe' : 'bin/git';
     installed.git = await fs.pathExists(path.join(gitPath, gitExe));
+
+    // Check PostgreSQL versions
+    installed.postgresql = {};
+    for (const version of (this.versionMeta.postgresql || [])) {
+      const pgPath = path.join(this.resourcesPath, 'postgresql', version, platform, 'bin');
+      const pgExe = platform === 'win' ? 'postgres.exe' : 'postgres';
+      installed.postgresql[version] = await fs.pathExists(path.join(pgPath, pgExe));
+    }
+
+    // Check Python versions
+    installed.python = {};
+    for (const version of (this.versionMeta.python || [])) {
+      const pyPath = path.join(this.resourcesPath, 'python', version, platform);
+      const pyExe = platform === 'win' ? 'python.exe' : 'bin/python3';
+      installed.python[version] = await fs.pathExists(path.join(pyPath, pyExe));
+    }
+
+    // Check MongoDB versions
+    installed.mongodb = {};
+    for (const version of (this.versionMeta.mongodb || [])) {
+      const mongoPath = path.join(this.resourcesPath, 'mongodb', version, platform, 'bin');
+      const mongoExe = platform === 'win' ? 'mongod.exe' : 'mongod';
+      installed.mongodb[version] = await fs.pathExists(path.join(mongoPath, mongoExe));
+    }
+
+    // Check SQLite (single version, CLI tools)
+    const sqlitePath = path.join(this.resourcesPath, 'sqlite', '3', platform);
+    const sqliteExe = platform === 'win' ? 'sqlite3.exe' : 'sqlite3';
+    const sqliteBuiltin = platform !== 'win'; // macOS/Linux have it built in
+    installed.sqlite = sqliteBuiltin || await fs.pathExists(path.join(sqlitePath, sqliteExe));
+
+    // Check MinIO (single executable)
+    const minioPath = path.join(this.resourcesPath, 'minio', platform);
+    const minioExe = platform === 'win' ? 'minio.exe' : 'minio';
+    installed.minio = await fs.pathExists(path.join(minioPath, minioExe));
+
+    // Check Memcached versions
+    installed.memcached = {};
+    for (const version of (this.versionMeta.memcached || [])) {
+      const memcachedPath = path.join(this.resourcesPath, 'memcached', version, platform);
+      const memcachedExe = platform === 'win' ? 'memcached.exe' : 'memcached';
+      installed.memcached[version] = await fs.pathExists(path.join(memcachedPath, memcachedExe));
+    }
 
     return installed;
   }
@@ -2921,6 +3076,415 @@ exit 1
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
+  }
+
+  // ─── PostgreSQL ──────────────────────────────────────────────────────────────
+
+  async downloadPostgresql(version = '17') {
+    const id = `postgresql-${version}`;
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads.postgresql[version]?.[platform];
+
+    if (!downloadInfo) {
+      throw new Error(`PostgreSQL ${version} not available for ${platform}`);
+    }
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
+      const extractPath = path.join(this.resourcesPath, 'postgresql', version, platform);
+
+      await fs.remove(extractPath);
+      await fs.ensureDir(extractPath);
+
+      await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
+
+      // The EnterpriseDB PostgreSQL zip is 250+ MB.  AdmZip loads the entire
+      // archive into memory and silently drops entries on large zips.
+      // Use `unzipper` instead — it streams from disk entry-by-entry and handles
+      // arbitrarily large archives reliably on all platforms.
+      this.emitProgress(id, { status: 'extracting', progress: 0 });
+      const directory = await unzipper.Open.file(downloadPath);
+      const totalFiles = directory.files.length;
+      let processed = 0;
+      for (const file of directory.files) {
+        // Skip pgAdmin 4 — we only need the server binaries, and Electron's
+        // fs intercept throws on .asar files inside the pgAdmin 4 bundle.
+        if (file.path.includes('pgAdmin') || file.path.toLowerCase().endsWith('.asar')) {
+          processed++;
+          continue;
+        }
+        const targetPath = path.join(extractPath, file.path);
+        if (file.type === 'Directory') {
+          await fs.ensureDir(targetPath);
+        } else {
+          await fs.ensureDir(path.dirname(targetPath));
+          await new Promise((res, rej) => {
+            file.stream()
+              .pipe(fs.createWriteStream(targetPath))
+              .on('finish', res)
+              .on('error', rej);
+          });
+        }
+        processed++;
+        if (processed % 200 === 0) {
+          const pct = Math.round((processed / totalFiles) * 90);
+          this.emitProgress(id, { status: 'extracting', progress: pct });
+        }
+      }
+      this.emitProgress(id, { status: 'extracting', progress: 95 });
+
+      // EnterpriseDB binaries extract into a 'pgsql' subdirectory — flatten it.
+      const pgsqlDir = path.join(extractPath, 'pgsql');
+      if (await fs.pathExists(pgsqlDir)) {
+        await fs.copy(pgsqlDir, extractPath, { overwrite: true });
+        await fs.remove(pgsqlDir);
+      }
+
+      await fs.remove(downloadPath);
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true, version };
+    } catch (error) {
+      if (error.cancelled) return { success: false, cancelled: true };
+      this.managers?.log?.systemError(`Failed to download PostgreSQL ${version}`, { error: error.message });
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  }
+
+  // Get PostgreSQL bin directory
+  getPostgresqlBinPath(version = '17') {
+    const platform = this.getPlatform();
+    return path.join(this.resourcesPath, 'postgresql', version, platform, 'bin');
+  }
+
+  // ─── Python ──────────────────────────────────────────────────────────────────
+
+  async downloadPython(version = '3.13') {
+    const id = `python-${version}`;
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads.python[version]?.[platform];
+
+    if (!downloadInfo) {
+      throw new Error(`Python ${version} not available for ${platform}`);
+    }
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
+      const extractPath = path.join(this.resourcesPath, 'python', version, platform);
+
+      await fs.remove(extractPath);
+      await fs.ensureDir(extractPath);
+
+      await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
+      await this.extractArchive(downloadPath, extractPath, id);
+
+      // On Windows, the embeddable zip extracts flat — enable site-packages for pip
+      if (platform === 'win') {
+        const majorMinor = version.replace('.', '').replace('.', '');  // '3.13' → '313'
+        const pthFile = path.join(extractPath, `python${majorMinor}._pth`);
+        if (await fs.pathExists(pthFile)) {
+          let content = await fs.readFile(pthFile, 'utf8');
+          content = content.replace('#import site', 'import site');
+          await fs.writeFile(pthFile, content);
+        }
+      }
+
+      await fs.remove(downloadPath);
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true, version };
+    } catch (error) {
+      if (error.cancelled) return { success: false, cancelled: true };
+      this.managers?.log?.systemError(`Failed to download Python ${version}`, { error: error.message });
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  }
+
+  // Get Python executable path
+  getPythonPath(version = '3.13') {
+    const platform = this.getPlatform();
+    const pyDir = path.join(this.resourcesPath, 'python', version, platform);
+    const pyExe = platform === 'win' ? 'python.exe' : 'bin/python3';
+    return path.join(pyDir, pyExe);
+  }
+
+  // Run pip install for a Python version
+  async runPip(version = '3.13', args = [], onOutput = null) {
+    const platform = this.getPlatform();
+    const pyPath = this.getPythonPath(version);
+    const pipArgs = ['-m', 'pip', ...args];
+
+    if (!await fs.pathExists(pyPath)) {
+      throw new Error(`Python ${version} is not installed`);
+    }
+
+    return new Promise((resolve, reject) => {
+      const proc = require('child_process').spawn(pyPath, pipArgs, {
+        windowsHide: true,
+        shell: false,
+      });
+      let stdout = '';
+      let stderr = '';
+      proc.stdout.on('data', (d) => { stdout += d; onOutput?.(d.toString().trim(), 'stdout'); });
+      proc.stderr.on('data', (d) => { stderr += d; onOutput?.(d.toString().trim(), 'stderr'); });
+      proc.on('close', (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error(stderr || `pip exited with code ${code}`)));
+      proc.on('error', reject);
+    });
+  }
+
+  // ─── MongoDB ─────────────────────────────────────────────────────────────────
+
+  async downloadMongodb(version = '8.0') {
+    const id = `mongodb-${version}`;
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads.mongodb[version]?.[platform];
+
+    if (!downloadInfo) {
+      throw new Error(`MongoDB ${version} not available for ${platform}`);
+    }
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
+      const extractPath = path.join(this.resourcesPath, 'mongodb', version, platform);
+
+      await fs.remove(extractPath);
+      await fs.ensureDir(extractPath);
+
+      await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
+      await this.extractArchive(downloadPath, extractPath, id);
+
+      // MongoDB archives extract into a versioned subdirectory — flatten it
+      const contents = await fs.readdir(extractPath);
+      const extractedDir = contents.find((d) => d.startsWith('mongodb-'));
+      if (extractedDir) {
+        const srcPath = path.join(extractPath, extractedDir);
+        const files = await fs.readdir(srcPath);
+        for (const file of files) {
+          await fs.move(path.join(srcPath, file), path.join(extractPath, file), { overwrite: true });
+        }
+        await fs.remove(srcPath);
+      }
+
+      // Also download mongosh alongside MongoDB
+      await this.downloadMongosh(version);
+
+      await fs.remove(downloadPath);
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true, version };
+    } catch (error) {
+      if (error.cancelled) return { success: false, cancelled: true };
+      this.managers?.log?.systemError(`Failed to download MongoDB ${version}`, { error: error.message });
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  }
+
+  // Download mongosh (MongoDB shell) - co-downloaded with MongoDB server
+  async downloadMongosh(mongoVersion = '8.0') {
+    const id = `mongosh-${mongoVersion}`;
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads.mongosh?.latest?.[platform];
+
+    if (!downloadInfo) return { success: false, error: 'mongosh not available for this platform' };
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
+      const extractPath = path.join(this.resourcesPath, 'mongodb', mongoVersion, platform);
+
+      await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
+      await this.extractArchive(downloadPath, extractPath, id);
+
+      // Flatten mongosh extracted dir into mongodb bin dir
+      const mongoshContents = await fs.readdir(extractPath);
+      const mongoshDir = mongoshContents.find((d) => d.startsWith('mongosh-'));
+      if (mongoshDir) {
+        const srcBin = path.join(extractPath, mongoshDir, 'bin');
+        const destBin = path.join(extractPath, 'bin');
+        if (await fs.pathExists(srcBin)) {
+          const binFiles = await fs.readdir(srcBin);
+          for (const file of binFiles) {
+            await fs.move(path.join(srcBin, file), path.join(destBin, file), { overwrite: true });
+          }
+        }
+        await fs.remove(path.join(extractPath, mongoshDir));
+      }
+
+      await fs.remove(downloadPath);
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true };
+    } catch (error) {
+      if (error.cancelled) return { success: false, cancelled: true };
+      this.managers?.log?.systemWarn('Failed to download mongosh', { error: error.message });
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Get MongoDB bin directory
+  getMongodbBinPath(version = '8.0') {
+    const platform = this.getPlatform();
+    return path.join(this.resourcesPath, 'mongodb', version, platform, 'bin');
+  }
+
+  // ─── SQLite ───────────────────────────────────────────────────────────────────
+
+  async downloadSqlite(version = '3') {
+    version = version || '3'; // normalize null/undefined (called without version arg)
+    const id = 'sqlite';
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads.sqlite[version]?.[platform];
+
+    if (!downloadInfo || downloadInfo.url === 'builtin') {
+      // SQLite is built-in on macOS and Linux
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true, builtin: true, version };
+    }
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
+      const extractPath = path.join(this.resourcesPath, 'sqlite', version, platform);
+
+      await fs.remove(extractPath);
+      await fs.ensureDir(extractPath);
+
+      await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
+      await this.extractArchive(downloadPath, extractPath, id);
+      await fs.remove(downloadPath);
+
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true, version };
+    } catch (error) {
+      if (error.cancelled) return { success: false, cancelled: true };
+      this.managers?.log?.systemError('Failed to download SQLite', { error: error.message });
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  }
+
+  // Get SQLite CLI path
+  getSqlitePath(version = '3') {
+    const platform = this.getPlatform();
+    const sqliteDir = path.join(this.resourcesPath, 'sqlite', version, platform);
+    const sqliteExe = platform === 'win' ? 'sqlite3.exe' : 'sqlite3';
+    return path.join(sqliteDir, sqliteExe);
+  }
+
+  // ─── MinIO ────────────────────────────────────────────────────────────────────
+
+  async downloadMinio() {
+    const id = 'minio';
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads.minio?.latest?.[platform];
+
+    if (!downloadInfo) {
+      throw new Error(`MinIO not available for ${platform}`);
+    }
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const minioDir = path.join(this.resourcesPath, 'minio', platform);
+      await fs.ensureDir(minioDir);
+
+      const destPath = path.join(minioDir, downloadInfo.filename);
+
+      // MinIO is a single executable — just download it directly (no extraction needed)
+      await this.downloadFile(downloadInfo.url, destPath, id);
+      await this.checkCancelled(id, destPath);
+
+      // Make executable on non-Windows
+      if (platform !== 'win') {
+        await fs.chmod(destPath, '755');
+      }
+
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true };
+    } catch (error) {
+      if (error.cancelled) return { success: false, cancelled: true };
+      this.managers?.log?.systemError('Failed to download MinIO', { error: error.message });
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  }
+
+  // Get MinIO executable path
+  getMinioPath() {
+    const platform = this.getPlatform();
+    const minioDir = path.join(this.resourcesPath, 'minio', platform);
+    const minioExe = platform === 'win' ? 'minio.exe' : 'minio';
+    return path.join(minioDir, minioExe);
+  }
+
+  // ─── Memcached ────────────────────────────────────────────────────────────────
+
+  async downloadMemcached(version = '1.6') {
+    const id = `memcached-${version}`;
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads.memcached[version]?.[platform];
+
+    if (!downloadInfo) {
+      throw new Error(`Memcached ${version} not available for ${platform}`);
+    }
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
+      const extractPath = path.join(this.resourcesPath, 'memcached', version, platform);
+
+      await fs.remove(extractPath);
+      await fs.ensureDir(extractPath);
+
+      await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
+      await this.extractArchive(downloadPath, extractPath, id);
+
+      // Flatten if there's a versioned subdirectory
+      const contents = await fs.readdir(extractPath);
+      const extractedDir = contents.find((d) => d.startsWith('memcached-'));
+      if (extractedDir) {
+        const srcPath = path.join(extractPath, extractedDir);
+        const stat = await fs.stat(srcPath);
+        if (stat.isDirectory()) {
+          const files = await fs.readdir(srcPath);
+          for (const file of files) {
+            await fs.move(path.join(srcPath, file), path.join(extractPath, file), { overwrite: true });
+          }
+          await fs.remove(srcPath);
+        }
+      }
+
+      await fs.remove(downloadPath);
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true, version };
+    } catch (error) {
+      if (error.cancelled) return { success: false, cancelled: true };
+      this.managers?.log?.systemError(`Failed to download Memcached ${version}`, { error: error.message });
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  }
+
+  // Get Memcached executable path
+  getMemcachedPath(version = '1.6') {
+    const platform = this.getPlatform();
+    const memcachedDir = path.join(this.resourcesPath, 'memcached', version, platform);
+    const memcachedExe = platform === 'win' ? 'memcached.exe' : 'memcached';
+    return path.join(memcachedDir, memcachedExe);
   }
 }
 

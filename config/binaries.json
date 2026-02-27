@@ -521,5 +521,270 @@
         "label": "Portable"
       }
     }
+  },
+  "postgresql": {
+    "versions": ["17", "16", "15", "14"],
+    "downloads": {
+      "17": {
+        "win": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-17.4-1-windows-x64-binaries.zip",
+          "filename": "postgresql-17.4-1-windows-x64-binaries.zip"
+        },
+        "mac": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-17.4-1-osx-binaries.zip",
+          "filename": "postgresql-17.4-1-osx-binaries.zip"
+        },
+        "linux": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-17.4-1-linux-x64-binaries.tar.gz",
+          "filename": "postgresql-17.4-1-linux-x64-binaries.tar.gz"
+        },
+        "label": "Latest"
+      },
+      "16": {
+        "win": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-16.8-1-windows-x64-binaries.zip",
+          "filename": "postgresql-16.8-1-windows-x64-binaries.zip"
+        },
+        "mac": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-16.8-1-osx-binaries.zip",
+          "filename": "postgresql-16.8-1-osx-binaries.zip"
+        },
+        "linux": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-16.8-1-linux-x64-binaries.tar.gz",
+          "filename": "postgresql-16.8-1-linux-x64-binaries.tar.gz"
+        },
+        "label": "LTS"
+      },
+      "15": {
+        "win": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-15.12-1-windows-x64-binaries.zip",
+          "filename": "postgresql-15.12-1-windows-x64-binaries.zip"
+        },
+        "mac": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-15.12-1-osx-binaries.zip",
+          "filename": "postgresql-15.12-1-osx-binaries.zip"
+        },
+        "linux": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-15.12-1-linux-x64-binaries.tar.gz",
+          "filename": "postgresql-15.12-1-linux-x64-binaries.tar.gz"
+        },
+        "label": "Stable"
+      },
+      "14": {
+        "win": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-14.17-1-windows-x64-binaries.zip",
+          "filename": "postgresql-14.17-1-windows-x64-binaries.zip"
+        },
+        "mac": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-14.17-1-osx-binaries.zip",
+          "filename": "postgresql-14.17-1-osx-binaries.zip"
+        },
+        "linux": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-14.17-1-linux-x64-binaries.tar.gz",
+          "filename": "postgresql-14.17-1-linux-x64-binaries.tar.gz"
+        },
+        "label": "Legacy"
+      }
+    }
+  },
+  "python": {
+    "versions": ["3.13", "3.12", "3.11", "3.10"],
+    "downloads": {
+      "3.13": {
+        "win": {
+          "url": "https://www.python.org/ftp/python/3.13.2/python-3.13.2-embed-amd64.zip",
+          "filename": "python-3.13.2-embed-amd64.zip"
+        },
+        "mac": {
+          "url": "https://www.python.org/ftp/python/3.13.2/Python-3.13.2.tgz",
+          "filename": "Python-3.13.2.tgz",
+          "altInstall": "brew install python@3.13"
+        },
+        "linux": {
+          "url": "https://www.python.org/ftp/python/3.13.2/Python-3.13.2.tgz",
+          "filename": "Python-3.13.2.tgz"
+        },
+        "label": "Latest"
+      },
+      "3.12": {
+        "win": {
+          "url": "https://www.python.org/ftp/python/3.12.9/python-3.12.9-embed-amd64.zip",
+          "filename": "python-3.12.9-embed-amd64.zip"
+        },
+        "mac": {
+          "url": "https://www.python.org/ftp/python/3.12.9/Python-3.12.9.tgz",
+          "filename": "Python-3.12.9.tgz",
+          "altInstall": "brew install python@3.12"
+        },
+        "linux": {
+          "url": "https://www.python.org/ftp/python/3.12.9/Python-3.12.9.tgz",
+          "filename": "Python-3.12.9.tgz"
+        },
+        "label": "LTS"
+      },
+      "3.11": {
+        "win": {
+          "url": "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip",
+          "filename": "python-3.11.9-embed-amd64.zip"
+        },
+        "mac": {
+          "url": "https://www.python.org/ftp/python/3.11.12/Python-3.11.12.tgz",
+          "filename": "Python-3.11.12.tgz",
+          "altInstall": "brew install python@3.11"
+        },
+        "linux": {
+          "url": "https://www.python.org/ftp/python/3.11.12/Python-3.11.12.tgz",
+          "filename": "Python-3.11.12.tgz"
+        },
+        "label": "Stable"
+      },
+      "3.10": {
+        "win": {
+          "url": "https://www.python.org/ftp/python/3.10.13/python-3.10.13-embed-amd64.zip",
+          "filename": "python-3.10.13-embed-amd64.zip"
+        },
+        "mac": {
+          "url": "https://www.python.org/ftp/python/3.10.16/Python-3.10.16.tgz",
+          "filename": "Python-3.10.16.tgz",
+          "altInstall": "brew install python@3.10"
+        },
+        "linux": {
+          "url": "https://www.python.org/ftp/python/3.10.16/Python-3.10.16.tgz",
+          "filename": "Python-3.10.16.tgz"
+        },
+        "label": "Legacy"
+      }
+    }
+  },
+  "mongodb": {
+    "versions": ["8.0", "7.0", "6.0"],
+    "downloads": {
+      "8.0": {
+        "win": {
+          "url": "https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-8.0.6.zip",
+          "filename": "mongodb-windows-x86_64-8.0.6.zip"
+        },
+        "mac": {
+          "url": "https://fastdl.mongodb.org/osx/mongodb-macos-arm64-8.0.6.tgz",
+          "filename": "mongodb-macos-arm64-8.0.6.tgz"
+        },
+        "linux": {
+          "url": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-8.0.6.tgz",
+          "filename": "mongodb-linux-x86_64-ubuntu2204-8.0.6.tgz"
+        },
+        "label": "Latest"
+      },
+      "7.0": {
+        "win": {
+          "url": "https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-7.0.17.zip",
+          "filename": "mongodb-windows-x86_64-7.0.17.zip"
+        },
+        "mac": {
+          "url": "https://fastdl.mongodb.org/osx/mongodb-macos-arm64-7.0.17.tgz",
+          "filename": "mongodb-macos-arm64-7.0.17.tgz"
+        },
+        "linux": {
+          "url": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-7.0.17.tgz",
+          "filename": "mongodb-linux-x86_64-ubuntu2204-7.0.17.tgz"
+        },
+        "label": "LTS"
+      },
+      "6.0": {
+        "win": {
+          "url": "https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-6.0.21.zip",
+          "filename": "mongodb-windows-x86_64-6.0.21.zip"
+        },
+        "mac": {
+          "url": "https://fastdl.mongodb.org/osx/mongodb-macos-arm64-6.0.21.tgz",
+          "filename": "mongodb-macos-arm64-6.0.21.tgz"
+        },
+        "linux": {
+          "url": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-6.0.21.tgz",
+          "filename": "mongodb-linux-x86_64-ubuntu2204-6.0.21.tgz"
+        },
+        "label": "Legacy"
+      }
+    }
+  },
+  "mongosh": {
+    "versions": ["latest"],
+    "downloads": {
+      "latest": {
+        "win": {
+          "url": "https://downloads.mongodb.com/compass/mongosh-2.3.8-win32-x64.zip",
+          "filename": "mongosh-2.3.8-win32-x64.zip"
+        },
+        "mac": {
+          "url": "https://downloads.mongodb.com/compass/mongosh-2.3.8-darwin-arm64.zip",
+          "filename": "mongosh-2.3.8-darwin-arm64.zip"
+        },
+        "linux": {
+          "url": "https://downloads.mongodb.com/compass/mongosh-2.3.8-linux-x64.tgz",
+          "filename": "mongosh-2.3.8-linux-x64.tgz"
+        },
+        "label": "Latest"
+      }
+    }
+  },
+  "sqlite": {
+    "versions": ["3"],
+    "downloads": {
+      "3": {
+        "win": {
+          "url": "https://www.sqlite.org/2025/sqlite-tools-win-x64-3490200.zip",
+          "filename": "sqlite-tools-win-x64-3490200.zip"
+        },
+        "mac": {
+          "url": "builtin",
+          "note": "SQLite is pre-installed on macOS. Install latest via: brew install sqlite"
+        },
+        "linux": {
+          "url": "builtin",
+          "note": "Install via package manager: sudo apt install sqlite3"
+        },
+        "label": "Latest"
+      }
+    }
+  },
+  "minio": {
+    "versions": ["latest"],
+    "downloads": {
+      "latest": {
+        "win": {
+          "url": "https://dl.min.io/server/minio/release/windows-amd64/minio.exe",
+          "filename": "minio.exe"
+        },
+        "mac": {
+          "url": "https://dl.min.io/server/minio/release/darwin-arm64/minio",
+          "filename": "minio"
+        },
+        "linux": {
+          "url": "https://dl.min.io/server/minio/release/linux-amd64/minio",
+          "filename": "minio"
+        },
+        "label": "Latest"
+      }
+    }
+  },
+  "memcached": {
+    "versions": ["1.6"],
+    "downloads": {
+      "1.6": {
+        "win": {
+          "url": "https://github.com/jefyt/memcached-windows/releases/download/1.6.8_mingw/memcached-1.6.8-win64-mingw.zip",
+          "filename": "memcached-1.6.8-win64-mingw.zip"
+        },
+        "mac": {
+          "url": "https://www.memcached.org/files/memcached-1.6.36.tar.gz",
+          "filename": "memcached-1.6.36.tar.gz",
+          "altInstall": "brew install memcached"
+        },
+        "linux": {
+          "url": "https://www.memcached.org/files/memcached-1.6.36.tar.gz",
+          "filename": "memcached-1.6.36.tar.gz"
+        },
+        "label": "Latest"
+      }
+    }
   }
 }

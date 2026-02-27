@@ -15,6 +15,13 @@ const SERVICE_VERSIONS = {
   nginx: ['1.28', '1.26', '1.24'],
   apache: ['2.4'],
   nodejs: ['24', '22', '20', '18', '16'],
+  // New services
+  postgresql: ['17', '16', '15', '14'],
+  python: ['3.13', '3.12', '3.11', '3.10'],
+  mongodb: ['8.0', '7.0', '6.0'],
+  sqlite: ['3'],        // Single version — embedded database
+  minio: ['latest'],    // Single version — S3-compatible storage
+  memcached: ['1.6'],
 };
 
 // Port offsets per version (relative to default port)
@@ -25,6 +32,12 @@ const VERSION_PORT_OFFSETS = {
   redis: { '7.4': 0, '7.2': 1, '6.2': 2 },
   nginx: { '1.28': 0, '1.26': 1, '1.24': 2 },
   apache: { '2.4': 0 },
+  // New services
+  postgresql: { '17': 0, '16': 1, '15': 2, '14': 3 },
+  mongodb: { '8.0': 0, '7.0': 1, '6.0': 2 },
+  memcached: { '1.6': 0 },
+  minio: { 'latest': 0 },
+  // python and sqlite have no port offsets (runtime only, no daemon)
 };
 
 // Default service ports
@@ -37,6 +50,12 @@ const DEFAULT_PORTS = {
   mailpit: 8025,
   mailpitSmtp: 1025,
   phpmyadmin: 8080,
+  // New services
+  postgresql: 5432,
+  mongodb: 27017,
+  memcached: 11211,
+  minio: 9000,
+  minioConsole: 9001,
 };
 
 // Service metadata for UI display
@@ -103,6 +122,49 @@ const SERVICE_INFO = {
     versioned: false,
     defaultPort: DEFAULT_PORTS.phpmyadmin,
     webUrl: `http://localhost:${DEFAULT_PORTS.phpmyadmin}`,
+  },
+  // New services
+  postgresql: {
+    name: 'PostgreSQL',
+    description: 'Advanced open-source relational database',
+    color: 'blue',
+    versioned: true,
+    defaultPort: DEFAULT_PORTS.postgresql,
+  },
+  python: {
+    name: 'Python',
+    description: 'General-purpose programming language',
+    color: 'yellow',
+    versioned: true,
+  },
+  mongodb: {
+    name: 'MongoDB',
+    description: 'NoSQL document database',
+    color: 'green',
+    versioned: true,
+    defaultPort: DEFAULT_PORTS.mongodb,
+  },
+  sqlite: {
+    name: 'SQLite',
+    description: 'Embedded SQL database engine',
+    color: 'sky',
+    versioned: false,
+    embedded: true, // No network port — embedded/runtime only
+  },
+  minio: {
+    name: 'MinIO',
+    description: 'S3-compatible object storage',
+    color: 'pink',
+    versioned: false,
+    defaultPort: DEFAULT_PORTS.minio,
+    webUrl: `http://localhost:${DEFAULT_PORTS.minioConsole}`,
+  },
+  memcached: {
+    name: 'Memcached',
+    description: 'Distributed memory caching system',
+    color: 'emerald',
+    versioned: true,
+    defaultPort: DEFAULT_PORTS.memcached,
   },
 };
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Database,
   Plus,
@@ -30,6 +30,7 @@ function Databases() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newDbName, setNewDbName] = useState('');
+  const [creating, setCreating] = useState(false);
   const [selectedDatabase, setSelectedDatabase] = useState(null); // { type: 'mysql', version: '8.4' }
   const [dbInfo, setDbInfo] = useState(null);
   const [binariesStatus, setBinariesStatus] = useState(null);
@@ -38,6 +39,8 @@ function Databases() {
   const [stoppingVersion, setStoppingVersion] = useState(null);
   const [serviceError, setServiceError] = useState(null);
   const [showImportModal, setShowImportModal] = useState(null); // { dbName, filePath } or null
+  const loadingDatabasesRef = useRef(false); // prevents concurrent loadDatabases calls
+  const wasRunningRef = useRef(false);        // tracks previous running state to detect transitions
 
   useEffect(() => {
     loadInitialData();
@@ -46,24 +49,22 @@ function Databases() {
     return () => clearInterval(interval);
   }, []);
 
-  // Note: Don't auto-load databases on selectedDatabase change alone
-  // because the active database type/version needs to be set first (via setActiveDatabaseType)
-  // Databases are loaded explicitly after setActiveDatabaseType completes in handleSelectDatabase
+  // Reload databases only when the selected service transitions from stopped → running.
+  // Avoids calling loadDatabases on every 3-second poll tick.
   useEffect(() => {
-    // Only reload if services status changes (e.g. a service starts/stops)
-    // This handles the case where user starts a stopped database version
-    if (selectedDatabase) {
-      // Check if we need to reload due to running state change
-      const serviceStatus = servicesStatus[selectedDatabase.type];
-      const isRunning = !!serviceStatus?.runningVersions?.[selectedDatabase.version];
-      if (isRunning) {
-        // Add a small delay to ensure database has fully initialized
-        // (especially after credential changes when init-file needs to be processed)
-        const timeout = setTimeout(() => {
-          loadDatabases();
-        }, 1000);
-        return () => clearTimeout(timeout);
-      }
+    if (!selectedDatabase) {
+      wasRunningRef.current = false;
+      return;
+    }
+    const serviceStatus = servicesStatus[selectedDatabase.type];
+    const isRunning = !!serviceStatus?.runningVersions?.[selectedDatabase.version];
+    const wasRunning = wasRunningRef.current;
+    wasRunningRef.current = isRunning;
+
+    if (isRunning && !wasRunning) {
+      // Service just started — wait for it to fully initialise before listing DBs
+      const timeout = setTimeout(() => { loadDatabases(); }, 1000);
+      return () => clearTimeout(timeout);
     }
   }, [servicesStatus]);
 
@@ -92,6 +93,8 @@ function Databases() {
       // Get first running MySQL version from runningVersions
       const mysqlRunningVersions = services?.mysql?.runningVersions ? Object.keys(services.mysql.runningVersions) : [];
       const mariadbRunningVersions = services?.mariadb?.runningVersions ? Object.keys(services.mariadb.runningVersions) : [];
+      const postgresqlRunningVersions = services?.postgresql?.runningVersions ? Object.keys(services.postgresql.runningVersions) : [];
+      const mongodbRunningVersions = services?.mongodb?.runningVersions ? Object.keys(services.mongodb.runningVersions) : [];
 
       let autoSelectedType = null;
       let autoSelectedVersion = null;
@@ -102,16 +105,30 @@ function Databases() {
       } else if (mariadbRunningVersions.length > 0) {
         autoSelectedType = 'mariadb';
         autoSelectedVersion = mariadbRunningVersions[0];
+      } else if (postgresqlRunningVersions.length > 0) {
+        autoSelectedType = 'postgresql';
+        autoSelectedVersion = postgresqlRunningVersions[0];
+      } else if (mongodbRunningVersions.length > 0) {
+        autoSelectedType = 'mongodb';
+        autoSelectedVersion = mongodbRunningVersions[0];
       } else {
         // Select first installed version
         const mysqlVersions = status?.mysql ? Object.entries(status.mysql).filter(([_, v]) => v?.installed).map(([ver]) => ver) : [];
         const mariadbVersions = status?.mariadb ? Object.entries(status.mariadb).filter(([_, v]) => v?.installed).map(([ver]) => ver) : [];
+        const postgresqlVers = status?.postgresql ? Object.entries(status.postgresql).filter(([_, v]) => v?.installed).map(([ver]) => ver) : [];
+        const mongodbVers = status?.mongodb ? Object.entries(status.mongodb).filter(([_, v]) => v?.installed).map(([ver]) => ver) : [];
         if (mysqlVersions.length > 0) {
           autoSelectedType = 'mysql';
           autoSelectedVersion = mysqlVersions[0];
         } else if (mariadbVersions.length > 0) {
           autoSelectedType = 'mariadb';
           autoSelectedVersion = mariadbVersions[0];
+        } else if (postgresqlVers.length > 0) {
+          autoSelectedType = 'postgresql';
+          autoSelectedVersion = postgresqlVers[0];
+        } else if (mongodbVers.length > 0) {
+          autoSelectedType = 'mongodb';
+          autoSelectedVersion = mongodbVers[0];
         }
       }
 
@@ -146,6 +163,9 @@ function Databases() {
       return;
     }
 
+    // Prevent concurrent calls from stacking up (e.g. polling + manual refresh)
+    if (loadingDatabasesRef.current) return;
+    loadingDatabasesRef.current = true;
     setLoading(true);
     setServiceError(null);
     try {
@@ -157,6 +177,7 @@ function Databases() {
       setDatabases([]);
     } finally {
       setLoading(false);
+      loadingDatabasesRef.current = false;
     }
   };
 
@@ -215,16 +236,18 @@ function Databases() {
   };
 
   const handleCreateDatabase = async () => {
-    if (!newDbName.trim()) return;
+    if (!newDbName.trim() || creating) return;
 
+    setCreating(true);
     try {
       await window.devbox?.database.createDatabase(newDbName);
       setShowCreateModal(false);
       setNewDbName('');
-      loadDatabases();
+      await loadDatabases();
     } catch (error) {
-      // Error creating database
       await showAlert({ title: 'Error', message: 'Failed to create database: ' + error.message, type: 'error' });
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -327,11 +350,15 @@ function Databases() {
 
   const mysqlVersions = getInstalledVersions('mysql');
   const mariadbVersions = getInstalledVersions('mariadb');
+  const postgresqlVersions = getInstalledVersions('postgresql');
+  const mongodbVersions = getInstalledVersions('mongodb');
 
   // Build list of all installed database versions
   const installedDatabases = [
     ...mysqlVersions.map(v => ({ type: 'mysql', version: v, label: `MySQL ${v}` })),
     ...mariadbVersions.map(v => ({ type: 'mariadb', version: v, label: `MariaDB ${v}` })),
+    ...postgresqlVersions.map(v => ({ type: 'postgresql', version: v, label: `PostgreSQL ${v}` })),
+    ...mongodbVersions.map(v => ({ type: 'mongodb', version: v, label: `MongoDB ${v}` })),
   ];
 
   // Check if selected database version is running (using runningVersions)
@@ -339,7 +366,7 @@ function Databases() {
     !!servicesStatus[selectedDatabase.type]?.runningVersions?.[selectedDatabase.version];
 
   const selectedLabel = selectedDatabase
-    ? `${selectedDatabase.type === 'mysql' ? 'MySQL' : 'MariaDB'} ${selectedDatabase.version}`
+    ? `${{ mysql: 'MySQL', mariadb: 'MariaDB', postgresql: 'PostgreSQL', mongodb: 'MongoDB' }[selectedDatabase.type] || selectedDatabase.type} ${selectedDatabase.version}`
     : 'No database installed';
 
   if (loading && !binariesStatus) {
@@ -357,7 +384,7 @@ function Databases() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Databases</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            Manage your MySQL and MariaDB databases
+          Manage your MySQL, MariaDB, PostgreSQL and MongoDB databases
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -680,6 +707,7 @@ function Databases() {
                 type="text"
                 value={newDbName}
                 onChange={(e) => setNewDbName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreateDatabase()}
                 className="input"
                 placeholder="my_database"
                 autoFocus
@@ -700,10 +728,11 @@ function Databases() {
               </button>
               <button
                 onClick={handleCreateDatabase}
-                disabled={!newDbName.trim()}
+                disabled={!newDbName.trim() || creating}
                 className="btn-primary"
               >
-                Create
+                {creating ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
+                {creating ? 'Creating...' : 'Create'}
               </button>
             </div>
           </div>

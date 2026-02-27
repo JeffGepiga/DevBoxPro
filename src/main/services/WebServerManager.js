@@ -854,7 +854,7 @@ IncludeOptional "${vhostsDir.replace(/\\/g, '/')}/*.conf"
         const memoryMB = await this.getProcessMemory(processInfo.phpFpm.pid);
 
         if (memoryMB > this.phpMemoryLimitMB) {
-          this.managers?.log?.system(`PHP-CGI memory limit exceeded for project ${projectId}`, {
+          this.managers?.log?.systemWarn(`PHP-CGI memory limit exceeded for project ${projectId}`, {
             memoryMB: Math.round(memoryMB),
             limitMB: this.phpMemoryLimitMB
           });

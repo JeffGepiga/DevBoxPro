@@ -76,6 +76,8 @@ class DatabaseManager {
     const dataPath = path.join(app.getPath('userData'), 'data');
     await fs.ensureDir(path.join(dataPath, 'mysql', 'backups'));
     await fs.ensureDir(path.join(dataPath, 'mariadb', 'backups'));
+    await fs.ensureDir(path.join(dataPath, 'postgresql', 'backups'));
+    await fs.ensureDir(path.join(dataPath, 'mongodb', 'backups'));
   }
 
   // Get the currently active database type (mysql or mariadb)
@@ -86,14 +88,15 @@ class DatabaseManager {
   // Get the currently active database version
   getActiveDatabaseVersion() {
     const dbType = this.getActiveDatabaseType();
-    const defaultVersion = dbType === 'mariadb' ? '11.4' : '8.4';
+    const defaultVersions = { mariadb: '11.4', mysql: '8.4', postgresql: '17', mongodb: '8.0' };
+    const defaultVersion = defaultVersions[dbType] || '8.4';
     return this.configStore.getSetting('activeDatabaseVersion', defaultVersion);
   }
 
   // Set the active database type and version
   async setActiveDatabaseType(dbType, version = null) {
-    if (!['mysql', 'mariadb'].includes(dbType)) {
-      throw new Error('Invalid database type. Must be "mysql" or "mariadb"');
+    if (!['mysql', 'mariadb', 'postgresql', 'mongodb'].includes(dbType)) {
+      throw new Error('Invalid database type. Must be "mysql", "mariadb", "postgresql", or "mongodb"');
     }
     this.configStore.setSetting('activeDatabaseType', dbType);
 
@@ -110,13 +113,18 @@ class DatabaseManager {
     const dbType = this.getActiveDatabaseType();
     const version = this.getActiveDatabaseVersion();
     const settings = this.configStore.get('settings', {});
+    const isPostgres = dbType === 'postgresql';
     return {
       type: dbType,
       version: version,
       host: this.dbConfig.host,
       port: this.getActualPort(),
-      user: settings.dbUser || 'root',
-      password: settings.dbPassword || '',
+      user: isPostgres
+        ? (settings.pgUser || 'postgres')
+        : (settings.dbUser || 'root'),
+      password: isPostgres
+        ? (settings.pgPassword || '')
+        : (settings.dbPassword || ''),
     };
   }
 
@@ -146,7 +154,8 @@ class DatabaseManager {
     }
 
     // Fallback to default port
-    const defaultPort = dbType === 'mariadb' ? 3306 : (settings.mysqlPort || 3306);
+    const defaultPorts = { mariadb: 3306, mysql: 3306, postgresql: 5432, mongodb: 27017 };
+    const defaultPort = defaultPorts[dbType] || (settings.mysqlPort || 3306);
     return defaultPort;
   }
 
@@ -426,11 +435,36 @@ class DatabaseManager {
 
     // Check if service is running first - just return empty array if not
     if (!this.isServiceRunning()) {
-      // Service not running - return empty list
       return [];
     }
 
     try {
+      // ── PostgreSQL ────────────────────────────────────────────────
+      if (dbType === 'postgresql') {
+        const rows = await this._runPostgresQuery(
+          "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname"
+        );
+        const systemDbs = new Set(['postgres']);
+        return rows.map(row => ({
+          name: (row[0] || '').trim(),
+          isSystem: systemDbs.has((row[0] || '').trim()),
+        }));
+      }
+
+      // ── MongoDB ───────────────────────────────────────────────────
+      if (dbType === 'mongodb') {
+        const lines = await this._runMongoQuery(
+          "db.adminCommand({listDatabases:1}).databases.forEach(d=>print(d.name))",
+          'admin'
+        );
+        const systemDbs = new Set(['admin', 'local', 'config']);
+        return lines.map(name => ({
+          name: name.trim(),
+          isSystem: systemDbs.has(name.trim()),
+        }));
+      }
+
+      // ── MySQL / MariaDB ───────────────────────────────────────────
       const result = await this.runDbQuery('SHOW DATABASES');
       return result.map((row) => ({
         name: (row.Database || '').trim(),
@@ -454,14 +488,9 @@ class DatabaseManager {
     const safeName = this.sanitizeName(name);
     const dbType = this.getActiveDatabaseType();
 
-    // Determine which version to use
-    let dbVersion = version;
-    if (!dbVersion) {
-      const settings = this.configStore.get('settings', {});
-      dbVersion = dbType === 'mariadb'
-        ? (settings.mariadbVersion || '11.4')
-        : (settings.mysqlVersion || '8.4');
-    }
+    // Determine which version to use — prefer the explicitly-active version so we
+    // connect to the same instance the user selected in the UI.
+    let dbVersion = version || this.getActiveDatabaseVersion();
 
     // Check if the SPECIFIC version is running, if not try to start it
     if (!this.isServiceRunning(dbType, dbVersion)) {
@@ -490,6 +519,32 @@ class DatabaseManager {
       }
     }
 
+    // ── PostgreSQL ────────────────────────────────────────────────
+    if (dbType === 'postgresql') {
+      // PG doesn't reliably support CREATE DATABASE IF NOT EXISTS — check first
+      const existing = await this._runPostgresQuery(
+        `SELECT 1 FROM pg_database WHERE datname = '${safeName.replace(/'/g, "''")}'`
+      );
+      if (existing.length === 0) {
+        await this._runPostgresQuery(`CREATE DATABASE "${safeName}"`);
+      }
+      return { success: true, name: safeName };
+    }
+
+    // ── MongoDB ───────────────────────────────────────────────────
+    if (dbType === 'mongodb') {
+      // MongoDB creates databases implicitly on first write.
+      // We materialise the DB by inserting a placeholder document into a
+      // _devbox_meta collection.  Do NOT drop it — MongoDB silently deletes
+      // empty databases, so the DB would vanish immediately after creation.
+      await this._runMongoQuery(
+        `db.getSiblingDB("${safeName}").getCollection("_devbox_meta").updateOne({_id:"init"},{$set:{createdAt:new Date()}},{upsert:true})`,
+        'admin'
+      );
+      return { success: true, name: safeName };
+    }
+
+    // ── MySQL / MariaDB ───────────────────────────────────────────
     await this.runDbQuery(`CREATE DATABASE IF NOT EXISTS \`${safeName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
     // Database created successfully
     return { success: true, name: safeName };
@@ -497,12 +552,40 @@ class DatabaseManager {
 
   async deleteDatabase(name) {
     const safeName = this.sanitizeName(name);
+    const dbType = this.getActiveDatabaseType();
 
-    // Prevent deleting system databases
-    if (['information_schema', 'mysql', 'performance_schema', 'sys'].includes(safeName)) {
+    // Prevent deleting system databases for each engine
+    const mysqlSystem    = new Set(['information_schema', 'mysql', 'performance_schema', 'sys']);
+    const postgresSystem = new Set(['postgres', 'template0', 'template1']);
+    const mongoSystem    = new Set(['admin', 'local', 'config']);
+
+    if (dbType === 'postgresql' && postgresSystem.has(safeName)) {
+      throw new Error('Cannot delete system database');
+    }
+    if (dbType === 'mongodb' && mongoSystem.has(safeName)) {
+      throw new Error('Cannot delete system database');
+    }
+    if ((dbType === 'mysql' || dbType === 'mariadb') && mysqlSystem.has(safeName)) {
       throw new Error('Cannot delete system database');
     }
 
+    // ── PostgreSQL ────────────────────────────────────────────────
+    if (dbType === 'postgresql') {
+      // Terminate all active connections to the target database first
+      await this._runPostgresQuery(
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${safeName.replace(/'/g, "''")}' AND pid <> pg_backend_pid()`
+      );
+      await this._runPostgresQuery(`DROP DATABASE IF EXISTS "${safeName}"`);
+      return { success: true, name: safeName };
+    }
+
+    // ── MongoDB ───────────────────────────────────────────────────
+    if (dbType === 'mongodb') {
+      await this._runMongoQuery('db.dropDatabase()', safeName);
+      return { success: true, name: safeName };
+    }
+
+    // ── MySQL / MariaDB ───────────────────────────────────────────
     await this.runDbQuery(`DROP DATABASE IF EXISTS \`${safeName}\``);
     // Database deleted successfully
     return { success: true, name: safeName };
@@ -550,6 +633,17 @@ class DatabaseManager {
    * @returns {Promise<Object>} { success: boolean, operationId: string }
    */
   async importDatabase(databaseName, filePath, progressCallback = null, mode = 'merge') {
+    const dbType = this.getActiveDatabaseType();
+
+    // ── Route to engine-specific implementation ──────────────────
+    if (dbType === 'postgresql') {
+      return this._importPostgres(databaseName, filePath, progressCallback, mode);
+    }
+    if (dbType === 'mongodb') {
+      return this._importMongo(databaseName, filePath, progressCallback, mode);
+    }
+
+    // ── MySQL / MariaDB (original implementation) ─────────────────
     const safeName = this.sanitizeName(databaseName);
     const operationId = uuidv4();
 
@@ -755,6 +849,206 @@ class DatabaseManager {
         progressCallback?.({ operationId, status: 'error', message: `Import error: ${error.message}`, dbName: safeName });
         reject(error);
       }
+    });
+  }
+
+  /**
+   * Import a PostgreSQL database from a .sql or .sql.gz file using psql.
+   */
+  async _importPostgres(databaseName, filePath, progressCallback = null, mode = 'merge') {
+    const safeName = this.sanitizeName(databaseName);
+    const operationId = uuidv4();
+
+    const pathValidation = this.validateFilePath(filePath, true);
+    if (!pathValidation.valid) throw new Error(pathValidation.error);
+    if (!await fs.pathExists(filePath)) throw new Error('Import file not found');
+
+    this.managers.log?.systemInfo('PostgreSQL import started', { database: safeName, operationId, mode });
+
+    const databases = await this.listDatabases();
+    const dbExists = databases.some(db => db.name === safeName || db.name === databaseName);
+    if (!dbExists) {
+      throw new Error(`Database '${databaseName}' does not exist. Please create it first.`);
+    }
+
+    progressCallback?.({ operationId, status: 'starting', message: 'Starting PostgreSQL import...', dbName: safeName });
+
+    const isGzipped = filePath.toLowerCase().endsWith('.gz');
+    const clientPath = this.getDbClientPath();
+    const port = this.getActualPort();
+    const settings = this.configStore.get('settings', {});
+    const user = settings.dbUser !== undefined ? settings.dbUser : this.dbConfig.user;
+
+    if (!await fs.pathExists(clientPath)) {
+      throw new Error(`psql not found at ${clientPath}. Please ensure the PostgreSQL binary is installed.`);
+    }
+
+    return new Promise(async (resolve, reject) => {
+      try {
+        if (mode === 'clean') {
+          progressCallback?.({ operationId, status: 'cleaning', message: 'Recreating database (clean import)...', dbName: safeName });
+          await this.dropAllTables(safeName);
+        }
+
+        const fileStats = await fs.stat(filePath);
+        const totalSize = fileStats.size;
+        let processedBytes = 0;
+
+        progressCallback?.({ operationId, status: 'importing', message: 'Importing to database (streaming)...', progress: 0, dbName: safeName });
+
+        const args = [
+          '-h', this.dbConfig.host,
+          '-p', String(port),
+          '-U', user,
+          '-q', // quiet
+          safeName,
+        ];
+
+        const proc = spawn(clientPath, args, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+          env: this._buildPgEnv(),
+        });
+
+        this.runningOperations.set(operationId, { proc, type: 'import', dbName: safeName });
+
+        let stderr = '';
+        proc.stderr.on('data', (data) => { stderr += data.toString(); });
+
+        const readStream = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 });
+        readStream.on('data', (chunk) => {
+          processedBytes += chunk.length;
+          const progress = Math.round((processedBytes / totalSize) * 100);
+          if (progress % 5 === 0) {
+            const sizeMB = (processedBytes / (1024 * 1024)).toFixed(1);
+            const totalMB = (totalSize / (1024 * 1024)).toFixed(1);
+            progressCallback?.({ operationId, status: 'importing', message: `Importing... ${sizeMB}MB / ${totalMB}MB (${progress}%)`, progress, dbName: safeName });
+          }
+        });
+
+        if (isGzipped) {
+          progressCallback?.({ operationId, status: 'importing', message: 'Decompressing and importing (streaming)...', progress: 0, dbName: safeName });
+          const gunzip = zlib.createGunzip();
+          gunzip.on('error', (err) => {
+            proc.stdin.end();
+            this.runningOperations.delete(operationId);
+            reject(new Error(`Decompression error: ${err.message}`));
+          });
+          readStream.pipe(gunzip).pipe(proc.stdin);
+        } else {
+          readStream.pipe(proc.stdin);
+        }
+
+        readStream.on('error', (err) => { proc.stdin.end(); this.runningOperations.delete(operationId); reject(new Error(`Read error: ${err.message}`)); });
+
+        proc.on('close', (code) => {
+          this.runningOperations.delete(operationId);
+          if (code === 0) {
+            progressCallback?.({ operationId, status: 'complete', message: 'Import completed successfully!', dbName: safeName });
+            resolve({ success: true, operationId });
+          } else if (code === null) {
+            progressCallback?.({ operationId, status: 'cancelled', message: 'Import cancelled', dbName: safeName });
+            resolve({ success: false, cancelled: true, operationId });
+          } else {
+            const errorMsg = stderr || `Process exited with code ${code}`;
+            progressCallback?.({ operationId, status: 'error', message: `Import failed: ${errorMsg}`, dbName: safeName });
+            reject(new Error(`PostgreSQL import failed: ${errorMsg}`));
+          }
+        });
+
+        proc.on('error', (error) => {
+          this.runningOperations.delete(operationId);
+          progressCallback?.({ operationId, status: 'error', message: `Import error: ${error.message}`, dbName: safeName });
+          reject(error);
+        });
+      } catch (error) {
+        this.runningOperations.delete(operationId);
+        progressCallback?.({ operationId, status: 'error', message: `Import error: ${error.message}`, dbName: safeName });
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Import a MongoDB database from a mongodump archive (.gz) using mongorestore.
+   */
+  async _importMongo(databaseName, filePath, progressCallback = null, mode = 'merge') {
+    const safeName = this.sanitizeName(databaseName);
+    const operationId = uuidv4();
+
+    const pathValidation = this.validateFilePath(filePath, true);
+    if (!pathValidation.valid) throw new Error(pathValidation.error);
+    if (!await fs.pathExists(filePath)) throw new Error('Import file not found');
+
+    this.managers.log?.systemInfo('MongoDB import started', { database: safeName, operationId, mode });
+    progressCallback?.({ operationId, status: 'starting', message: 'Starting MongoDB import...', dbName: safeName });
+
+    const restorePath = this.getDbRestorePath();
+    const port = this.getActualPort();
+    const settings = this.configStore.get('settings', {});
+    const user = settings.dbUser !== undefined ? settings.dbUser : this.dbConfig.user;
+    const password = settings.dbPassword !== undefined ? settings.dbPassword : this.dbConfig.password;
+
+    if (!await fs.pathExists(restorePath)) {
+      throw new Error(`mongorestore not found at ${restorePath}. Please ensure the MongoDB binary is installed.`);
+    }
+
+    return new Promise((resolve, reject) => {
+      const isGzipped = filePath.toLowerCase().endsWith('.gz');
+      const args = [
+        '--host', this.dbConfig.host,
+        '--port', String(port),
+        '--db', safeName,
+        '--archive=' + filePath,
+      ];
+
+      if (isGzipped) args.push('--gzip');
+      if (mode === 'clean') args.push('--drop');
+
+      if (user) {
+        args.push('--username', user, '--authenticationDatabase', 'admin');
+      }
+      if (password) {
+        args.push('--password', String(password));
+      }
+
+      progressCallback?.({ operationId, status: 'importing', message: 'Restoring MongoDB archive...', progress: 0, dbName: safeName });
+
+      const proc = spawn(restorePath, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+
+      this.runningOperations.set(operationId, { proc, type: 'import', dbName: safeName });
+
+      let stderr = '';
+      proc.stderr.on('data', (data) => {
+        const msg = data.toString();
+        if (!msg.includes('password') && !msg.toLowerCase().includes('restoring ')) {
+          stderr += msg;
+        }
+      });
+
+      proc.on('close', (code) => {
+        this.runningOperations.delete(operationId);
+        if (code === 0) {
+          progressCallback?.({ operationId, status: 'complete', message: 'Import completed successfully!', dbName: safeName });
+          resolve({ success: true, operationId });
+        } else if (code === null) {
+          progressCallback?.({ operationId, status: 'cancelled', message: 'Import cancelled', dbName: safeName });
+          resolve({ success: false, cancelled: true, operationId });
+        } else {
+          const errorMsg = stderr || `Process exited with code ${code}`;
+          progressCallback?.({ operationId, status: 'error', message: `Import failed: ${errorMsg}`, dbName: safeName });
+          reject(new Error(`mongorestore failed: ${errorMsg}`));
+        }
+      });
+
+      proc.on('error', (error) => {
+        this.runningOperations.delete(operationId);
+        progressCallback?.({ operationId, status: 'error', message: `Import error: ${error.message}`, dbName: safeName });
+        reject(error);
+      });
     });
   }
 
@@ -1253,6 +1547,17 @@ class DatabaseManager {
   }
 
   async exportDatabase(databaseName, outputPath, progressCallback = null) {
+    const dbType = this.getActiveDatabaseType();
+
+    // ── Route to engine-specific implementation ──────────────────
+    if (dbType === 'postgresql') {
+      return this._exportPostgres(databaseName, outputPath, progressCallback);
+    }
+    if (dbType === 'mongodb') {
+      return this._exportMongo(databaseName, outputPath, progressCallback);
+    }
+
+    // ── MySQL / MariaDB (original implementation) ─────────────────
     const safeName = this.sanitizeName(databaseName);
     const operationId = uuidv4();
 
@@ -1365,6 +1670,170 @@ class DatabaseManager {
   }
 
   /**
+   * Export a PostgreSQL database using pg_dump (SQL output piped through gzip).
+   */
+  async _exportPostgres(databaseName, outputPath, progressCallback = null) {
+    const safeName = this.sanitizeName(databaseName);
+    const operationId = uuidv4();
+
+    progressCallback?.({ operationId, status: 'starting', message: 'Starting PostgreSQL export...', dbName: safeName });
+
+    const dumpPath = this.getDbDumpPath();
+    const port = this.getActualPort();
+    const settings = this.configStore.get('settings', {});
+    const user = settings.dbUser || this.dbConfig.user;
+
+    if (!await fs.pathExists(dumpPath)) {
+      throw new Error(`pg_dump not found at ${dumpPath}. Please ensure the PostgreSQL binary is installed.`);
+    }
+
+    const finalPath = outputPath.toLowerCase().endsWith('.gz') ? outputPath : `${outputPath}.gz`;
+
+    return new Promise((resolve, reject) => {
+      const args = [
+        '-h', this.dbConfig.host,
+        '-p', String(port),
+        '-U', user,
+        '--no-owner',
+        '--no-acl',
+        safeName,
+      ];
+
+      progressCallback?.({ operationId, status: 'dumping', message: 'Creating PostgreSQL dump...', dbName: safeName });
+
+      const proc = spawn(dumpPath, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+        env: this._buildPgEnv(),
+      });
+
+      this.runningOperations.set(operationId, { proc, type: 'export', dbName: safeName });
+
+      const gzip = zlib.createGzip({ level: 6 });
+      const outputStream = fs.createWriteStream(finalPath);
+      proc.stdout.pipe(gzip).pipe(outputStream);
+
+      let stderr = '';
+      let dataReceived = false;
+
+      proc.stdout.on('data', () => {
+        if (!dataReceived) {
+          dataReceived = true;
+          progressCallback?.({ operationId, status: 'compressing', message: 'Compressing and writing backup...', dbName: safeName });
+        }
+      });
+
+      proc.stderr.on('data', (data) => {
+        const msg = data.toString();
+        if (!msg.includes('password') && !msg.includes('Warning:')) {
+          stderr += msg;
+        }
+      });
+
+      outputStream.on('finish', () => {
+        this.runningOperations.delete(operationId);
+        progressCallback?.({ operationId, status: 'complete', message: 'Export completed successfully!', path: finalPath, dbName: safeName });
+        resolve({ success: true, path: finalPath, operationId });
+      });
+
+      proc.on('close', (code) => {
+        this.runningOperations.delete(operationId);
+        if (code === null) {
+          progressCallback?.({ operationId, status: 'cancelled', message: 'Export cancelled', dbName: safeName });
+          resolve({ success: false, cancelled: true, operationId });
+        } else if (code !== 0 && stderr) {
+          progressCallback?.({ operationId, status: 'error', message: `Export failed: ${stderr}`, dbName: safeName });
+          reject(new Error(`pg_dump failed: ${stderr}`));
+        }
+      });
+
+      proc.on('error', (error) => {
+        this.runningOperations.delete(operationId);
+        progressCallback?.({ operationId, status: 'error', message: `Export error: ${error.message}`, dbName: safeName });
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Export a MongoDB database using mongodump (archive format, gzip compressed).
+   */
+  async _exportMongo(databaseName, outputPath, progressCallback = null) {
+    const safeName = this.sanitizeName(databaseName);
+    const operationId = uuidv4();
+
+    progressCallback?.({ operationId, status: 'starting', message: 'Starting MongoDB export...', dbName: safeName });
+
+    const dumpPath = this.getDbDumpPath();
+    const port = this.getActualPort();
+    const settings = this.configStore.get('settings', {});
+    const user = settings.dbUser || this.dbConfig.user;
+    const password = settings.dbPassword || '';
+
+    if (!await fs.pathExists(dumpPath)) {
+      throw new Error(`mongodump not found at ${dumpPath}. Please ensure the MongoDB binary is installed.`);
+    }
+
+    // mongodump archive files are gzip-compressed by convention — keep .gz extension
+    const finalPath = outputPath.toLowerCase().endsWith('.gz') ? outputPath : `${outputPath}.gz`;
+
+    return new Promise((resolve, reject) => {
+      const args = [
+        '--host', this.dbConfig.host,
+        '--port', String(port),
+        '--db', safeName,
+        '--archive=' + finalPath,
+        '--gzip',
+      ];
+
+      if (user) {
+        args.push('--username', user, '--authenticationDatabase', 'admin');
+      }
+      if (password) {
+        args.push('--password', password);
+      }
+
+      progressCallback?.({ operationId, status: 'dumping', message: 'Creating MongoDB dump...', dbName: safeName });
+
+      const proc = spawn(dumpPath, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+
+      this.runningOperations.set(operationId, { proc, type: 'export', dbName: safeName });
+
+      let stderr = '';
+
+      proc.stderr.on('data', (data) => {
+        const msg = data.toString();
+        if (!msg.includes('password') && !msg.includes('warning:') && !msg.toLowerCase().includes('writing ')) {
+          stderr += msg;
+        }
+      });
+
+      proc.on('close', (code) => {
+        this.runningOperations.delete(operationId);
+        if (code === 0) {
+          progressCallback?.({ operationId, status: 'complete', message: 'Export completed successfully!', path: finalPath, dbName: safeName });
+          resolve({ success: true, path: finalPath, operationId });
+        } else if (code === null) {
+          progressCallback?.({ operationId, status: 'cancelled', message: 'Export cancelled', dbName: safeName });
+          resolve({ success: false, cancelled: true, operationId });
+        } else {
+          progressCallback?.({ operationId, status: 'error', message: `Export failed: ${stderr}`, dbName: safeName });
+          reject(new Error(`mongodump failed: ${stderr}`));
+        }
+      });
+
+      proc.on('error', (error) => {
+        this.runningOperations.delete(operationId);
+        progressCallback?.({ operationId, status: 'error', message: `Export error: ${error.message}`, dbName: safeName });
+        reject(error);
+      });
+    });
+  }
+
+  /**
    * Run an arbitrary SQL query on a database
    * 
    * SECURITY NOTE: This method accepts raw SQL queries from the renderer process.
@@ -1391,6 +1860,19 @@ class DatabaseManager {
   }
 
   async runDbQuery(query, database = null) {
+    const dbType = this.getActiveDatabaseType();
+
+    // ── PostgreSQL ────────────────────────────────────────────────
+    if (dbType === 'postgresql') {
+      return this._runPostgresQuery(query, database || 'postgres');
+    }
+
+    // ── MongoDB ───────────────────────────────────────────────────
+    if (dbType === 'mongodb') {
+      return this._runMongoQuery(query, database || 'admin');
+    }
+
+    // ── MySQL / MariaDB (original implementation) ─────────────────
     const isPlaywright = process.env.PLAYWRIGHT_TEST === 'true';
     if (isPlaywright) {
       if (!this._mockedDbs) this._mockedDbs = new Set(['information_schema', 'mysql', 'performance_schema', 'sys']);
@@ -1422,7 +1904,7 @@ class DatabaseManager {
 
     // Check if client exists
     if (!fs.existsSync(clientPath)) {
-      throw new Error(`MySQL client not found at ${clientPath}. Please install the database binary from the Binaries page.`);
+      throw new Error(`Database client not found at ${clientPath}. Please install the database binary from the Binaries page.`);
     }
 
     // Running database query
@@ -1508,20 +1990,31 @@ class DatabaseManager {
   // NOTE: getPhpMyAdminUrl has been moved to line 145 with multi-version support
 
   /**
-   * Drop and recreate the database for clean import
-   * This removes all objects: tables, views, procedures, functions, triggers, events
+   * Drop and recreate the database for clean import.
+   * Removes all objects: tables, views, procedures, functions, triggers, events.
    */
   async dropAllTables(databaseName) {
     const safeName = this.sanitizeName(databaseName);
+    const dbType = this.getActiveDatabaseType();
 
     try {
       this.managers.log?.systemInfo(`Dropping and recreating database '${safeName}' for clean import`);
 
-      // Drop the database entirely
-      await this.runDbQuery(`DROP DATABASE IF EXISTS \`${safeName}\``);
-
-      // Recreate the database with proper character set
-      await this.runDbQuery(`CREATE DATABASE \`${safeName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+      if (dbType === 'postgresql') {
+        // Terminate connections then drop/recreate
+        await this._runPostgresQuery(
+          `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${safeName.replace(/'/g, "''")}' AND pid <> pg_backend_pid()`
+        );
+        await this._runPostgresQuery(`DROP DATABASE IF EXISTS "${safeName}"`);
+        await this._runPostgresQuery(`CREATE DATABASE "${safeName}"`);
+      } else if (dbType === 'mongodb') {
+        await this._runMongoQuery('db.dropDatabase()', safeName);
+        // MongoDB auto-recreates on next write — no explicit CREATE needed
+      } else {
+        // MySQL / MariaDB
+        await this.runDbQuery(`DROP DATABASE IF EXISTS \`${safeName}\``);
+        await this.runDbQuery(`CREATE DATABASE \`${safeName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+      }
 
       this.managers.log?.systemInfo(`Database '${safeName}' recreated successfully`);
     } catch (error) {
@@ -1531,17 +2024,86 @@ class DatabaseManager {
   }
 
   async getTables(databaseName) {
+    const safeName = this.sanitizeName(databaseName);
+    const dbType = this.getActiveDatabaseType();
+
+    if (dbType === 'postgresql') {
+      const rows = await this._runPostgresQuery(
+        `SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`,
+        safeName
+      );
+      return rows.map(row => (row[0] || '').replace(/[\r\n]/g, '').trim()).filter(n => n.length > 0);
+    }
+
+    if (dbType === 'mongodb') {
+      const lines = await this._runMongoQuery(
+        "db.getCollectionNames().forEach(n=>print(n))",
+        safeName
+      );
+      return lines.map(n => n.trim()).filter(n => n.length > 0);
+    }
+
+    // MySQL / MariaDB
     const result = await this.runDbQuery('SHOW TABLES', databaseName);
     return result.map((row) => (row[0] || '').replace(/[\r\n]/g, '').trim()).filter(name => name.length > 0);
   }
 
   async getTableStructure(databaseName, tableName) {
+    const safeDatabaseName = this.sanitizeName(databaseName);
+    const dbType = this.getActiveDatabaseType();
+
+    if (dbType === 'postgresql') {
+      const safeTableName = tableName.replace(/'/g, "''");
+      const rows = await this._runPostgresQuery(
+        `SELECT column_name, data_type, is_nullable, column_default ` +
+        `FROM information_schema.columns ` +
+        `WHERE table_name = '${safeTableName}' AND table_schema = 'public' ` +
+        `ORDER BY ordinal_position`,
+        safeDatabaseName
+      );
+      return rows;
+    }
+
+    if (dbType === 'mongodb') {
+      // MongoDB is schema-less; return the first document's keys as a best-effort
+      const lines = await this._runMongoQuery(
+        `var doc=db.getCollection("${tableName}").findOne(); print(doc ? JSON.stringify(Object.keys(doc)) : '[]')`,
+        safeDatabaseName
+      );
+      try {
+        const keys = JSON.parse(lines.join('') || '[]');
+        return keys.map(k => [k, 'mixed', 'YES', null]);
+      } catch {
+        return [];
+      }
+    }
+
+    // MySQL / MariaDB
     const result = await this.runDbQuery(`DESCRIBE \`${tableName}\``, databaseName);
     return result;
   }
 
   async getDatabaseSize(databaseName) {
-    // Use escaped name in the query string for safety
+    const dbType = this.getActiveDatabaseType();
+
+    if (dbType === 'postgresql') {
+      const safeName = databaseName.replace(/'/g, "''");
+      const rows = await this._runPostgresQuery(
+        `SELECT pg_database_size('${safeName}')`
+      );
+      return parseInt(rows[0]?.[0] || 0, 10);
+    }
+
+    if (dbType === 'mongodb') {
+      const safeName = this.sanitizeName(databaseName);
+      const lines = await this._runMongoQuery(
+        "print(db.stats().dataSize)",
+        safeName
+      );
+      return parseInt(lines[0] || 0, 10);
+    }
+
+    // MySQL / MariaDB
     const escapedName = databaseName.replace(/'/g, "''");
     const query = `
       SELECT 
@@ -1562,13 +2124,21 @@ class DatabaseManager {
     return sanitized.replace(/_+$/, '') || 'unnamed';
   }
 
-  // Get the client path based on active database type and running version
-  getDbClientPath() {
-    const dbType = this.getActiveDatabaseType();
-    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-    const binName = process.platform === 'win32' ? 'mysql.exe' : 'mysql';
+  // ─────────────────────────────────────────────────────────────────
+  // Binary path helpers
+  // ─────────────────────────────────────────────────────────────────
 
-    // Get the running version from ServiceManager
+  /**
+   * Resolve the absolute path of a binary for the currently active db type.
+   * @param {string} binBaseName - Binary name without extension (e.g. 'psql', 'pg_dump')
+   * @param {string} [dbTypeOverride] - Force a specific db type folder instead of active type
+   */
+  _getBinaryPath(binBaseName, dbTypeOverride = null) {
+    const dbType = dbTypeOverride || this.getActiveDatabaseType();
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const binName = process.platform === 'win32' ? `${binBaseName}.exe` : binBaseName;
+
+    // Try running version first
     let version = null;
     if (this.managers.service) {
       const serviceStatus = this.managers.service.serviceStatus.get(dbType);
@@ -1577,16 +2147,12 @@ class DatabaseManager {
       }
     }
 
-    // Use version in path if available
     if (version) {
       const versionPath = path.join(this.resourcePath, dbType, version, platform, 'bin', binName);
-      if (fs.existsSync(versionPath)) {
-        return versionPath;
-      }
-      // MySQL client not found at version path - trying fallback
+      if (fs.existsSync(versionPath)) return versionPath;
     }
 
-    // Fallback: Try to find any available mysql client
+    // Fallback: scan all installed versions
     const dbTypePath = path.join(this.resourcePath, dbType);
     if (fs.existsSync(dbTypePath)) {
       try {
@@ -1594,70 +2160,44 @@ class DatabaseManager {
           const binPath = path.join(dbTypePath, v, platform, 'bin', binName);
           return fs.existsSync(binPath);
         });
-
         if (versions.length > 0) {
-          // Prefer newer versions (sort descending)
           versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-          const foundPath = path.join(dbTypePath, versions[0], platform, 'bin', binName);
-          // Using fallback MySQL client
-          return foundPath;
+          return path.join(dbTypePath, versions[0], platform, 'bin', binName);
         }
       } catch (e) {
-        this.managers.log?.systemError('Error scanning for MySQL client', { error: e.message });
+        this.managers.log?.systemError(`Error scanning for ${binName}`, { error: e.message });
       }
     }
 
-    // Last resort fallback to old path structure (without version)
+    // Last-resort legacy path (without version segment)
     return path.join(this.resourcePath, dbType, platform, 'bin', binName);
   }
 
-  // Get the dump path based on active database type and running version
+  // Get the client path based on active database type
+  getDbClientPath() {
+    const dbType = this.getActiveDatabaseType();
+    if (dbType === 'postgresql') return this._getBinaryPath('psql');
+    if (dbType === 'mongodb')    return this._getBinaryPath('mongosh');
+    // mysql / mariadb
+    return this._getBinaryPath('mysql');
+  }
+
+  // Get the dump path based on active database type
   getDbDumpPath() {
     const dbType = this.getActiveDatabaseType();
-    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-    const binName = process.platform === 'win32' ? 'mysqldump.exe' : 'mysqldump';
+    if (dbType === 'postgresql') return this._getBinaryPath('pg_dump');
+    if (dbType === 'mongodb')    return this._getBinaryPath('mongodump');
+    // mysql / mariadb
+    return this._getBinaryPath('mysqldump');
+  }
 
-    // Get the running version from ServiceManager
-    let version = null;
-    if (this.managers.service) {
-      const serviceStatus = this.managers.service.serviceStatus.get(dbType);
-      if (serviceStatus?.status === 'running') {
-        version = serviceStatus.version;
-      }
-    }
-
-    // Use version in path if available
-    if (version) {
-      const versionPath = path.join(this.resourcePath, dbType, version, platform, 'bin', binName);
-      if (fs.existsSync(versionPath)) {
-        return versionPath;
-      }
-      // mysqldump not found at version path - trying fallback
-    }
-
-    // Fallback: Try to find any available mysqldump
-    const dbTypePath = path.join(this.resourcePath, dbType);
-    if (fs.existsSync(dbTypePath)) {
-      try {
-        const versions = fs.readdirSync(dbTypePath).filter(v => {
-          const binPath = path.join(dbTypePath, v, platform, 'bin', binName);
-          return fs.existsSync(binPath);
-        });
-
-        if (versions.length > 0) {
-          // Prefer newer versions (sort descending)
-          versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-          const foundPath = path.join(dbTypePath, versions[0], platform, 'bin', binName);
-          // Using fallback mysqldump
-          return foundPath;
-        }
-      } catch (e) {
-        this.managers.log?.systemError('Error scanning for mysqldump', { error: e.message });
-      }
-    }
-
-    // Last resort fallback to old path structure (without version)
-    return path.join(this.resourcePath, dbType, platform, 'bin', binName);
+  // Get the restore tool path based on active database type
+  getDbRestorePath() {
+    const dbType = this.getActiveDatabaseType();
+    if (dbType === 'postgresql') return this._getBinaryPath('pg_restore');
+    if (dbType === 'mongodb')    return this._getBinaryPath('mongorestore');
+    // mysql / mariadb: restore uses the mysql client
+    return this.getDbClientPath();
   }
 
   // Legacy method names for backwards compatibility
@@ -1667,6 +2207,225 @@ class DatabaseManager {
 
   getMysqldumpPath() {
     return this.getDbDumpPath();
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // PostgreSQL helpers
+  // ─────────────────────────────────────────────────────────────────
+
+  /** Build process.env block with PGPASSWORD set for psql/pg_dump/pg_restore. */
+  _buildPgEnv() {
+    const settings = this.configStore.get('settings', {});
+    // PostgreSQL uses its own pgPassword setting; fall back to dbPassword only if
+    // pgPassword has never been explicitly set.
+    const password = settings.pgPassword !== undefined ? settings.pgPassword
+      : (settings.dbPassword !== undefined ? settings.dbPassword : this.dbConfig.password);
+    return password ? { ...process.env, PGPASSWORD: String(password) } : { ...process.env };
+  }
+
+  /**
+   * Execute a PostgreSQL query via psql and return rows as arrays of strings.
+   * @param {string} sql        - SQL to execute
+   * @param {string} [database] - Target database (defaults to 'postgres')
+   * @returns {Promise<string[][]>}
+   */
+  _runPostgresQuery(sql, database = 'postgres') {
+    const isPlaywright = process.env.PLAYWRIGHT_TEST === 'true';
+    if (isPlaywright) {
+      if (!this._pgMockedDbs) this._pgMockedDbs = new Set(['postgres']);
+      const q = sql.toLowerCase();
+      if (q.includes('create database')) {
+        const match = sql.match(/CREATE DATABASE "([^"]+)"/i);
+        if (match) this._pgMockedDbs.add(match[1]);
+        return Promise.resolve([]);
+      }
+      if (q.includes('drop database')) {
+        const match = sql.match(/DROP DATABASE(?:\s+IF\s+EXISTS)?\s+"([^"]+)"/i);
+        if (match) this._pgMockedDbs.delete(match[1]);
+        return Promise.resolve([]);
+      }
+      if (q.includes('pg_database')) {
+        return Promise.resolve(Array.from(this._pgMockedDbs).map(db => [db]));
+      }
+      if (q.includes('pg_tables')) {
+        return Promise.resolve([]);
+      }
+      if (q.includes('information_schema.columns')) {
+        return Promise.resolve([]);
+      }
+      if (q.includes('pg_database_size')) {
+        return Promise.resolve([['0']]);
+      }
+      if (q.includes('pg_terminate_backend')) {
+        return Promise.resolve([]);
+      }
+      return Promise.resolve([]);
+    }
+
+    const clientPath = this.getDbClientPath();
+    const port = this.getActualPort();
+    const settings = this.configStore.get('settings', {});
+    // Use pgUser for PostgreSQL; fall back to 'postgres' (NOT the MySQL 'root' default).
+    const user = (settings.pgUser !== undefined && settings.pgUser !== '') ? settings.pgUser : 'postgres';
+
+    if (!fs.existsSync(clientPath)) {
+      return Promise.reject(new Error(`psql not found at ${clientPath}. Please install the PostgreSQL binary from the Binaries page.`));
+    }
+
+    const args = [
+      '-h', this.dbConfig.host,
+      '-p', String(port),
+      '-U', user,
+      '-t',        // tuples only (no header / footer)
+      '-A',        // unaligned output
+      '-F', '\t',  // field separator = tab
+      '-c', sql,
+      database,
+    ];
+
+    return new Promise((resolve, reject) => {
+      const proc = spawn(clientPath, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+        env: this._buildPgEnv(),
+      });
+
+      let stdout = '';
+      let stderr = '';
+      proc.stdout.on('data', d => { stdout += d.toString(); });
+      proc.stderr.on('data', d => { stderr += d.toString(); });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          const rows = stdout
+            .replace(/\r\n/g, '\n').replace(/\r/g, '')
+            .trim().split('\n')
+            .filter(line => line.length > 0)
+            .map(line => line.split('\t'));
+          resolve(rows);
+        } else {
+          if (stderr.includes('authentication failed') || stderr.includes('password')) {
+            reject(new Error(`PostgreSQL access denied for user '${user}'. Check credentials in Settings > Network.`));
+          } else {
+            reject(new Error(`PostgreSQL query failed: ${stderr || `exit code ${code}`}`));
+          }
+        }
+      });
+      proc.on('error', reject);
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // MongoDB helpers
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Execute a mongosh eval expression and return output lines as an array of strings.
+   * @param {string} evalExpr  - JS expression (run inside mongosh --eval)
+   * @param {string} [database] - Target database (defaults to 'admin')
+   * @returns {Promise<string[]>}
+   */
+  _runMongoQuery(evalExpr, database = 'admin') {
+    const isPlaywright = process.env.PLAYWRIGHT_TEST === 'true';
+    if (isPlaywright) {
+      if (!this._mongoMockedDbs) this._mongoMockedDbs = new Set(['admin']);
+      if (evalExpr.includes('listDatabases') || evalExpr.includes('forEach(d=>print')) {
+        return Promise.resolve(Array.from(this._mongoMockedDbs));
+      }
+      if (evalExpr.includes('createCollection') || evalExpr.includes('updateOne')) {
+        const match = evalExpr.match(/getSiblingDB\("([^"]+)"\)/);
+        if (match) this._mongoMockedDbs.add(match[1]);
+        return Promise.resolve([]);
+      }
+      if (evalExpr.includes('dropDatabase')) {
+        if (database !== 'admin') {
+          this._mongoMockedDbs.delete(database);
+        } else {
+          const match = evalExpr.match(/getSiblingDB\("([^"]+)"\)/);
+          if (match) this._mongoMockedDbs.delete(match[1]);
+        }
+        return Promise.resolve([]);
+      }
+      if (evalExpr.includes('getCollectionNames')) {
+        return Promise.resolve([]);
+      }
+      if (evalExpr.includes('stats')) {
+        return Promise.resolve(['0']);
+      }
+      return Promise.resolve([]);
+    }
+
+    const clientPath = this.getDbClientPath();
+    const port = this.getActualPort();
+    // MongoDB is started without --auth, so we never pass MySQL/generic
+    // dbUser/dbPassword credentials to mongosh — doing so causes mongosh to
+    // attempt authentication against a server that has none configured, which
+    // makes it hang until our safety timeout fires.
+    const settings = this.configStore.get('settings', {});
+    const mongoUser     = settings.mongoUser     ?? null;
+    const mongoPassword = settings.mongoPassword ?? null;
+
+    if (!fs.existsSync(clientPath)) {
+      return Promise.reject(new Error(`mongosh not found at ${clientPath}. Please install the MongoDB binary from the Binaries page.`));
+    }
+
+    const args = [
+      '--host', this.dbConfig.host,
+      '--port', String(port),
+      '--quiet',
+      '--eval', evalExpr,
+    ];
+
+    if (mongoUser) {
+      args.push('--username', mongoUser, '--authenticationDatabase', 'admin');
+    }
+    if (mongoPassword) {
+      args.push('--password', String(mongoPassword));
+    }
+
+    args.push(database);
+
+    return new Promise((resolve, reject) => {
+      const proc = spawn(clientPath, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+
+      // Safety timeout — prevents the IPC call from hanging forever if mongosh
+      // stalls (e.g. first-run Windows Defender scan, permissions issue, etc.)
+      const timeout = setTimeout(() => {
+        try { proc.kill(); } catch (_) {}
+        reject(new Error('MongoDB query timed out after 30 s. Is mongoh running?'));
+      }, 30000);
+
+      let stdout = '';
+      let stderr = '';
+      proc.stdout.on('data', d => { stdout += d.toString(); });
+      proc.stderr.on('data', d => { stderr += d.toString(); });
+
+      proc.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(new Error(`Failed to launch mongosh: ${err.message}`));
+      });
+
+      proc.on('close', (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          const lines = stdout
+            .replace(/\r\n/g, '\n').replace(/\r/g, '')
+            .trim().split('\n')
+            .filter(line => line.length > 0);
+          resolve(lines);
+        } else {
+          if (stderr.includes('Authentication failed') || stderr.includes('Unauthorized')) {
+            reject(new Error(`MongoDB access denied for user '${user}'. Check credentials in Settings > Network.`));
+          } else {
+            reject(new Error(`MongoDB query failed: ${stderr || `exit code ${code}`}`));
+          }
+        }
+      });
+      proc.on('error', reject);
+    });
   }
 
   async checkConnection() {

@@ -653,7 +653,7 @@ function NetworkSettings({ settings, updateSetting }) {
     <div className="space-y-6">
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-          Database Credentials
+          MySQL &amp; MariaDB Credentials
         </h3>
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
           <p className="text-sm text-blue-700 dark:text-blue-300">
@@ -687,8 +687,44 @@ function NetworkSettings({ settings, updateSetting }) {
               Leave empty for no password (recommended for local development)
             </p>
           </div>
+        </div>
+      </div>
 
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          PostgreSQL Credentials
+        </h3>
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+          <p className="text-sm text-blue-700 dark:text-blue-300">
+            <AlertCircle className="w-4 h-4 inline mr-1" />
+            PostgreSQL uses a separate superuser account. The default superuser is <strong>postgres</strong> with no password.
+          </p>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="label">PostgreSQL Username</label>
+            <input
+              type="text"
+              value={settings.pgUser || 'postgres'}
+              onChange={(e) => updateSetting('pgUser', e.target.value)}
+              className="input w-64"
+              placeholder="postgres"
+            />
+          </div>
 
+          <div>
+            <label className="label">PostgreSQL Password</label>
+            <input
+              type="password"
+              value={settings.pgPassword || ''}
+              onChange={(e) => updateSetting('pgPassword', e.target.value)}
+              className="input w-64"
+              placeholder="Leave empty for no password"
+            />
+            <p className="text-sm text-gray-500 mt-1">
+              Leave empty for no password (recommended for local development)
+            </p>
+          </div>
         </div>
       </div>
 
@@ -784,63 +820,83 @@ function NetworkSettings({ settings, updateSetting }) {
       </div>
 
       <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
           Port Configuration
         </h3>
-        <div className="space-y-4">
-          <div>
-            <label className="label">Project Port Range Start</label>
-            <input
-              type="number"
-              value={settings.portRangeStart || 8000}
-              onChange={(e) => updateSetting('portRangeStart', parseInt(e.target.value))}
-              className="input w-32"
-              min="1024"
-              max="65535"
-            />
-            <p className="text-sm text-gray-500 mt-1">
-              Projects will be assigned ports starting from this number
-            </p>
-          </div>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
+          Default ports for each service. Changes take effect after restarting the service.
+        </p>
 
-          <div>
-            <label className="label">MySQL Port</label>
-            <input
-              type="number"
-              value={settings.mysqlPort || 3306}
-              onChange={(e) => updateSetting('mysqlPort', parseInt(e.target.value))}
-              className="input w-32"
-            />
+        {/* Project ports */}
+        <div className="mb-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-3">Projects</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-700 dark:text-gray-300 w-36 shrink-0">Port Range Start</label>
+              <input type="number" value={settings.portRangeStart || 8000} onChange={(e) => updateSetting('portRangeStart', parseInt(e.target.value))} className="input w-28" min="1024" max="65535" />
+            </div>
           </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5">Projects are assigned ports starting from this number</p>
+        </div>
 
-          <div>
-            <label className="label">Redis Port</label>
-            <input
-              type="number"
-              value={settings.redisPort || 6379}
-              onChange={(e) => updateSetting('redisPort', parseInt(e.target.value))}
-              className="input w-32"
-            />
+        {/* Database ports */}
+        <div className="mb-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-3">Databases</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-700 dark:text-gray-300 w-36 shrink-0">MySQL</label>
+              <input type="number" value={settings.mysqlPort || 3306} onChange={(e) => updateSetting('mysqlPort', parseInt(e.target.value))} className="input w-28" />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-700 dark:text-gray-300 w-36 shrink-0">PostgreSQL</label>
+              <input type="number" value={settings.postgresqlPort || 5432} onChange={(e) => updateSetting('postgresqlPort', parseInt(e.target.value))} className="input w-28" />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-700 dark:text-gray-300 w-36 shrink-0">MariaDB</label>
+              <input type="number" value={settings.mariadbPort || 3307} onChange={(e) => updateSetting('mariadbPort', parseInt(e.target.value))} className="input w-28" />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-700 dark:text-gray-300 w-36 shrink-0">MongoDB</label>
+              <input type="number" value={settings.mongodbPort || 27017} onChange={(e) => updateSetting('mongodbPort', parseInt(e.target.value))} className="input w-28" />
+            </div>
           </div>
+        </div>
 
-          <div>
-            <label className="label">phpMyAdmin Port</label>
-            <input
-              type="number"
-              value={settings.phpMyAdminPort || 8080}
-              onChange={(e) => updateSetting('phpMyAdminPort', parseInt(e.target.value))}
-              className="input w-32"
-            />
+        {/* Cache ports */}
+        <div className="mb-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-3">Cache</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-700 dark:text-gray-300 w-36 shrink-0">Redis</label>
+              <input type="number" value={settings.redisPort || 6379} onChange={(e) => updateSetting('redisPort', parseInt(e.target.value))} className="input w-28" />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-700 dark:text-gray-300 w-36 shrink-0">Memcached</label>
+              <input type="number" value={settings.memcachedPort || 11211} onChange={(e) => updateSetting('memcachedPort', parseInt(e.target.value))} className="input w-28" />
+            </div>
           </div>
+        </div>
 
-          <div>
-            <label className="label">Mailpit Port</label>
-            <input
-              type="number"
-              value={settings.mailpitPort || 8025}
-              onChange={(e) => updateSetting('mailpitPort', parseInt(e.target.value))}
-              className="input w-32"
-            />
+        {/* Tools ports */}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-3">Tools</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-700 dark:text-gray-300 w-36 shrink-0">phpMyAdmin</label>
+              <input type="number" value={settings.phpMyAdminPort || 8080} onChange={(e) => updateSetting('phpMyAdminPort', parseInt(e.target.value))} className="input w-28" />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-700 dark:text-gray-300 w-36 shrink-0">Mailpit</label>
+              <input type="number" value={settings.mailpitPort || 8025} onChange={(e) => updateSetting('mailpitPort', parseInt(e.target.value))} className="input w-28" />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-700 dark:text-gray-300 w-36 shrink-0">MinIO</label>
+              <input type="number" value={settings.minioPort || 9000} onChange={(e) => updateSetting('minioPort', parseInt(e.target.value))} className="input w-28" />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-700 dark:text-gray-300 w-36 shrink-0">MinIO Console</label>
+              <input type="number" value={settings.minioConsolePort || 9001} onChange={(e) => updateSetting('minioConsolePort', parseInt(e.target.value))} className="input w-28" />
+            </div>
           </div>
         </div>
       </div>

@@ -403,6 +403,97 @@
       "11.4": { "recommendedNginx": "1.26+", "recommendedApache": "2.4.58+" },
       "10.11": { "recommendedNginx": "1.24+", "recommendedApache": "2.4+" },
       "10.6": { "recommendedNginx": "1.24+", "recommendedApache": "2.4+" }
+    },
+    "postgresql": {
+      "17": { "recommendedNginx": "1.26+", "recommendedApache": "2.4.58+", "note": "Latest stable" },
+      "16": { "recommendedNginx": "1.24+", "recommendedApache": "2.4+" },
+      "15": { "recommendedNginx": "1.24+", "recommendedApache": "2.4+" },
+      "14": { "recommendedNginx": "1.24+", "recommendedApache": "2.4+", "note": "Legacy - consider upgrading" }
+    },
+    "mongodb": {
+      "8.0": { "note": "Requires AVX CPU support and 64-bit OS" },
+      "7.0": { "note": "LTS release" },
+      "6.0": { "note": "Legacy - consider upgrading" }
     }
+  },
+  "postgresqlCompatibility": {
+    "rules": [
+      {
+        "id": "php-pgsql-extension",
+        "name": "PHP PostgreSQL Extension",
+        "enabled": true,
+        "conditions": {
+          "phpVersion": { "min": "7.4" },
+          "postgresql": { "any": true }
+        },
+        "result": {
+          "level": "info",
+          "message": "Enable the pdo_pgsql and pgsql extensions in PHP {phpVersion} to connect to PostgreSQL.",
+          "suggestion": "Enable pdo_pgsql and pgsql in the PHP ini settings."
+        }
+      },
+      {
+        "id": "pgadmin-alternative",
+        "name": "PostgreSQL Management Tool",
+        "enabled": true,
+        "conditions": {
+          "postgresql": { "any": true }
+        },
+        "result": {
+          "level": "info",
+          "message": "phpMyAdmin does not support PostgreSQL. Use the Databases page in DevBox Pro or connect via psql.",
+          "suggestion": "Use psql CLI or a GUI tool like TablePlus or DBeaver for PostgreSQL management."
+        }
+      }
+    ]
+  },
+  "mongodbCompatibility": {
+    "rules": [
+      {
+        "id": "mongodb-avx-requirement",
+        "name": "MongoDB 8.0 AVX Requirement",
+        "enabled": true,
+        "conditions": {
+          "mongodbVersion": { "min": "8.0" }
+        },
+        "result": {
+          "level": "warning",
+          "message": "MongoDB {mongodbVersion} requires AVX CPU instruction support. Older CPUs (pre-2011) may not be compatible.",
+          "suggestion": "If MongoDB fails to start, your CPU may not support AVX. Try MongoDB 7.0 instead."
+        }
+      },
+      {
+        "id": "php-mongodb-extension",
+        "name": "PHP MongoDB Extension",
+        "enabled": true,
+        "conditions": {
+          "phpVersion": { "min": "7.4" },
+          "mongodb": { "any": true }
+        },
+        "result": {
+          "level": "info",
+          "message": "Install the mongodb PHP extension to connect PHP {phpVersion} to MongoDB.",
+          "suggestion": "Run: composer require mongodb/mongodb and enable the mongodb extension in PHP ini."
+        }
+      }
+    ]
+  },
+  "pythonCompatibility": {
+    "rules": [
+      {
+        "id": "python-pip-windows-embeddable",
+        "name": "Python Windows Embeddable Package",
+        "enabled": true,
+        "conditions": {
+          "python": { "any": true },
+          "platform": "win32"
+        },
+        "result": {
+          "level": "info",
+          "message": "Python {pythonVersion} on Windows uses the embeddable package. pip must be enabled manually via get-pip.py.",
+          "suggestion": "Run: python get-pip.py after download to enable pip."
+        }
+      }
+    ]
   }
 }

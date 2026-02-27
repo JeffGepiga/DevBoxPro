@@ -206,8 +206,9 @@ describe('ServiceManager', () => {
             expect(mgr.stopService).toHaveBeenCalledWith('mysql');
             expect(mgr.stopService).toHaveBeenCalledWith('nginx');
             expect(mgr.stopService).toHaveBeenCalledWith('mailpit');
-            // Wait, there are 7 services, so 7 calls total
-            expect(mgr.stopService).toHaveBeenCalledTimes(7);
+            // serviceConfigs now includes mysql, mariadb, redis, nginx, apache, mailpit, phpmyadmin,
+            // postgresql, mongodb, memcached, minio = 11 services
+            expect(mgr.stopService).toHaveBeenCalledTimes(11);
         });
     });
 

@@ -29,12 +29,16 @@ function ImportProjectModal({ project, onClose, onImport }) {
             nodejs: false,
             nodejsVersion: '',
             queue: false,
+            postgresql: false,
+            postgresqlVersion: '',
+            mongodb: false,
+            mongodbVersion: '',
         },
     });
     const [isImporting, setIsImporting] = useState(false);
     const [installedPhpVersions, setInstalledPhpVersions] = useState([]);
     const [installedWebServers, setInstalledWebServers] = useState({ nginx: [], apache: [] });
-    const [installedDatabases, setInstalledDatabases] = useState({ mysql: [], mariadb: [] });
+    const [installedDatabases, setInstalledDatabases] = useState({ mysql: [], mariadb: [], postgresql: [], mongodb: [] });
     const [installedRedis, setInstalledRedis] = useState([]);
     const [installedNodejs, setInstalledNodejs] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -62,6 +66,12 @@ function ImportProjectModal({ project, onClose, onImport }) {
         }
         if (project.services?.mariadb && project.services?.mariadbVersion && !installedDatabases.mariadb.includes(project.services.mariadbVersion)) {
             missing.push(`MariaDB ${project.services.mariadbVersion}`);
+        }
+        if (project.services?.postgresql && project.services?.postgresqlVersion && !installedDatabases.postgresql.includes(project.services.postgresqlVersion)) {
+            missing.push(`PostgreSQL ${project.services.postgresqlVersion}`);
+        }
+        if (project.services?.mongodb && project.services?.mongodbVersion && !installedDatabases.mongodb.includes(project.services.mongodbVersion)) {
+            missing.push(`MongoDB ${project.services.mongodbVersion}`);
         }
 
         // Check Redis
@@ -109,6 +119,12 @@ function ImportProjectModal({ project, onClose, onImport }) {
                     const mariadbVersions = Object.entries(status.mariadb || {})
                         .filter(([_, info]) => info.installed)
                         .map(([version]) => version);
+                    const postgresqlVersions = Object.entries(status.postgresql || {})
+                        .filter(([_, info]) => info.installed)
+                        .map(([version]) => version);
+                    const mongodbVersions = Object.entries(status.mongodb || {})
+                        .filter(([_, info]) => info.installed)
+                        .map(([version]) => version);
 
                     // Get installed Redis
                     const redisVersions = Object.entries(status.redis || {})
@@ -122,7 +138,7 @@ function ImportProjectModal({ project, onClose, onImport }) {
 
                     setInstalledPhpVersions(phpVersions);
                     setInstalledWebServers({ nginx: nginxVersions, apache: apacheVersions });
-                    setInstalledDatabases({ mysql: mysqlVersions, mariadb: mariadbVersions });
+                    setInstalledDatabases({ mysql: mysqlVersions, mariadb: mariadbVersions, postgresql: postgresqlVersions, mongodb: mongodbVersions });
                     setInstalledRedis(redisVersions);
                     setInstalledNodejs(nodejsVersions);
 
@@ -155,6 +171,18 @@ function ImportProjectModal({ project, onClose, onImport }) {
                         setConfig(prev => ({
                             ...prev,
                             services: { ...prev.services, redisVersion: redisVersions[0] }
+                        }));
+                    }
+                    if (postgresqlVersions.length > 0) {
+                        setConfig(prev => ({
+                            ...prev,
+                            services: { ...prev.services, postgresqlVersion: postgresqlVersions[0] }
+                        }));
+                    }
+                    if (mongodbVersions.length > 0) {
+                        setConfig(prev => ({
+                            ...prev,
+                            services: { ...prev.services, mongodbVersion: mongodbVersions[0] }
                         }));
                     }
                     if (nodejsVersions.length > 0) {

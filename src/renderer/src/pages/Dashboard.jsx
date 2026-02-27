@@ -16,6 +16,7 @@ import {
   Mail,
   Server,
   Box,
+  MemoryStick,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
@@ -29,6 +30,10 @@ const SERVICE_ICONS = {
   apache: Box,
   mailpit: Mail,
   phpmyadmin: Server,
+  postgresql: Database,
+  mongodb: Database,
+  memcached: MemoryStick,
+  minio: HardDrive,
 };
 
 function Dashboard() {

@@ -105,6 +105,31 @@ class ServiceManager extends EventEmitter {
         healthCheck: this.checkPhpMyAdminHealth.bind(this),
         versioned: false,
       },
+      postgresql: {
+        name: 'PostgreSQL',
+        defaultPort: DEFAULT_PORTS.postgresql || 5432,
+        healthCheck: this.checkPostgresqlHealth.bind(this),
+        versioned: true,
+      },
+      mongodb: {
+        name: 'MongoDB',
+        defaultPort: DEFAULT_PORTS.mongodb || 27017,
+        healthCheck: this.checkMongodbHealth.bind(this),
+        versioned: true,
+      },
+      memcached: {
+        name: 'Memcached',
+        defaultPort: DEFAULT_PORTS.memcached || 11211,
+        healthCheck: this.checkMemcachedHealth.bind(this),
+        versioned: true,
+      },
+      minio: {
+        name: 'MinIO',
+        defaultPort: DEFAULT_PORTS.minio || 9000,
+        consolePort: DEFAULT_PORTS.minioConsole || 9001,
+        healthCheck: this.checkMinioHealth.bind(this),
+        versioned: false,
+      },
     };
   }
 
@@ -175,6 +200,24 @@ class ServiceManager extends EventEmitter {
     await fs.ensureDir(path.join(dataPath, 'apache'));
     await fs.ensureDir(path.join(dataPath, 'logs'));
 
+    // PostgreSQL version directories
+    for (const version of (SERVICE_VERSIONS.postgresql || [])) {
+      await fs.ensureDir(path.join(dataPath, 'postgresql', version, 'data'));
+    }
+
+    // MongoDB version directories
+    for (const version of (SERVICE_VERSIONS.mongodb || [])) {
+      await fs.ensureDir(path.join(dataPath, 'mongodb', version, 'data'));
+    }
+
+    // Memcached version directories
+    for (const version of (SERVICE_VERSIONS.memcached || [])) {
+      await fs.ensureDir(path.join(dataPath, 'memcached', version));
+    }
+
+    // MinIO data directory
+    await fs.ensureDir(path.join(dataPath, 'minio', 'data'));
+
   }
 
   async startCoreServices() {
@@ -216,7 +259,7 @@ class ServiceManager extends EventEmitter {
     // For versioned services, version is required (or use default)
     if (config.versioned && !version) {
       // Use first available version as default
-      const defaults = { mysql: '8.4', mariadb: '11.4', redis: '7.4', nginx: '1.28', apache: '2.4' };
+      const defaults = { mysql: '8.4', mariadb: '11.4', redis: '7.4', nginx: '1.28', apache: '2.4', postgresql: '17', mongodb: '8.0', memcached: '1.6' };
       version = defaults[serviceName];
     }
 
@@ -244,6 +287,18 @@ class ServiceManager extends EventEmitter {
           break;
         case 'phpmyadmin':
           await this.startPhpMyAdmin();
+          break;
+        case 'postgresql':
+          await this.startPostgreSQL(version);
+          break;
+        case 'mongodb':
+          await this.startMongoDB(version);
+          break;
+        case 'memcached':
+          await this.startMemcached(version);
+          break;
+        case 'minio':
+          await this.startMinIO();
           break;
       }
 
@@ -805,6 +860,10 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       'redis-server.exe',
       'mailpit.exe',
       'php-cgi.exe',
+      'postgres.exe',
+      'mongod.exe',
+      'memcached.exe',
+      'minio.exe',
     ];
 
     for (const processName of processesToKill) {
@@ -2885,6 +2944,327 @@ ${servers.join('')}
     return path.join(this.resourcePath, 'phpmyadmin', platform);
   }
 
+  getPostgresqlPath(version) {
+    const v = version || '17';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    return path.join(this.resourcePath, 'postgresql', v, platform);
+  }
+
+  getMongodbPath(version) {
+    const v = version || '8.0';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    return path.join(this.resourcePath, 'mongodb', v, platform);
+  }
+
+  getMemcachedPath(version) {
+    const v = version || '1.6';
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    return path.join(this.resourcePath, 'memcached', v, platform);
+  }
+
+  getMinioPath() {
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    return path.join(this.resourcePath, 'minio', platform);
+  }
+
+  // ─── PostgreSQL ───────────────────────────────────────────────────────────────
+
+  async startPostgreSQL(version = '17') {
+    const pgBasePath = this.getPostgresqlPath(version);
+    const pgBin = path.join(pgBasePath, 'bin');
+    const postgresExe = path.join(pgBin, process.platform === 'win32' ? 'postgres.exe' : 'postgres');
+    const initdbExe = path.join(pgBin, process.platform === 'win32' ? 'initdb.exe' : 'initdb');
+    const pgCtlExe = path.join(pgBin, process.platform === 'win32' ? 'pg_ctl.exe' : 'pg_ctl');
+
+    if (!await fs.pathExists(postgresExe)) {
+      this.managers.log?.systemError(`PostgreSQL ${version} binary not found. Please download from Binary Manager.`);
+      const status = this.serviceStatus.get('postgresql');
+      status.status = 'not_installed';
+      status.error = `PostgreSQL ${version} binary not found. Please download from Binary Manager.`;
+      return;
+    }
+
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataDir = path.join(dataPath, 'postgresql', version, 'data');
+    await fs.ensureDir(dataDir);
+
+    // Pre-flight: verify the 'share' directory is present before attempting initdb.
+    // The EnterpriseDB zip extraction can silently skip it on Windows, resulting in
+    // a broken installation. Detect this early and surface a clear error.
+    const shareDir = path.join(pgBasePath, 'share');
+    const shareBki = path.join(shareDir, 'postgres.bki');
+    if (!await fs.pathExists(shareBki)) {
+      const errMsg = `PostgreSQL ${version} installation is incomplete (missing share/postgres.bki). Please re-download from Binary Manager.`;
+      this.managers.log?.systemError(errMsg);
+      const status = this.serviceStatus.get('postgresql');
+      status.status = 'error';
+      status.error = errMsg;
+      throw new Error(errMsg);
+    }
+
+    // Run initdb if this is a fresh data directory
+    const pgVersionFile = path.join(dataDir, 'PG_VERSION');
+    if (!await fs.pathExists(pgVersionFile)) {
+      // If the directory exists but is not properly initialized (e.g., from a
+      // previous failed run), initdb will refuse to write into it.  Remove it so
+      // we always start with a clean slate.
+      const contents = await fs.readdir(dataDir).catch(() => []);
+      if (contents.length > 0) {
+        this.managers.log?.systemInfo(`Cleaning up incomplete PostgreSQL ${version} data directory...`);
+        await fs.emptyDir(dataDir);
+      }
+
+      this.managers.log?.systemInfo(`Initializing PostgreSQL ${version} data directory...`);
+      await new Promise((resolve, reject) => {
+        const proc = spawnHidden(initdbExe, [
+          '--pgdata', dataDir,
+          '--username', 'postgres',
+          '--auth', 'trust',
+          '--encoding', 'UTF8',
+          '--locale', 'C',          // avoid locale lookup failures on Windows
+          '-L', shareDir,            // explicit share directory (prevents auto-detection failures)
+        ], { stdio: ['ignore', 'pipe', 'pipe'] });
+        let stderr = '';
+        proc.stdout?.on('data', (d) => this.managers.log?.service('postgresql', d.toString()));
+        proc.stderr?.on('data', (d) => {
+          const msg = d.toString();
+          stderr += msg;
+          this.managers.log?.service('postgresql', msg, 'error');
+        });
+        proc.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`initdb failed (code ${code})${stderr ? ': ' + stderr.trim() : ''}`));
+          }
+        });
+        proc.on('error', reject);
+      });
+    }
+
+    // Find available port
+    const defaultPort = this.getVersionPort('postgresql', version, this.serviceConfigs.postgresql.defaultPort);
+    let port = defaultPort;
+    if (!await isPortAvailable(port)) {
+      port = await findAvailablePort(defaultPort, 100);
+      if (!port) throw new Error(`No port available for PostgreSQL starting from ${defaultPort}`);
+    }
+
+    this.serviceConfigs.postgresql.actualPort = port;
+
+    const logFile = path.join(dataPath, 'logs', `postgresql-${version}.log`);
+    await fs.ensureDir(path.dirname(logFile));
+
+    const proc = spawnHidden(postgresExe, [
+      '-D', dataDir,
+      '-p', String(port),
+      '-k', dataDir, // Unix socket dir
+    ], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    proc.stdout?.on('data', (d) => this.managers.log?.service('postgresql', d.toString()));
+    proc.stderr?.on('data', (d) => this.managers.log?.service('postgresql', d.toString(), 'error'));
+
+    this.processes.set(this.getProcessKey('postgresql', version), proc);
+    const status = this.serviceStatus.get('postgresql');
+    status.port = port;
+    status.version = version;
+    this.runningVersions.get('postgresql').set(version, { port, startedAt: new Date() });
+
+    try {
+      await this.waitForService('postgresql', 30000);
+      status.status = 'running';
+      status.startedAt = Date.now();
+    } catch (error) {
+      this.managers.log?.systemError(`PostgreSQL ${version} failed to become ready`, { error: error.message });
+      status.status = 'error';
+      status.error = error.message;
+      this.runningVersions.get('postgresql').delete(version);
+      throw error;
+    }
+  }
+
+  // ─── MongoDB ──────────────────────────────────────────────────────────────────
+
+  async startMongoDB(version = '8.0') {
+    const mongoBasePath = this.getMongodbPath(version);
+    const mongodExe = path.join(mongoBasePath, 'bin', process.platform === 'win32' ? 'mongod.exe' : 'mongod');
+
+    if (!await fs.pathExists(mongodExe)) {
+      this.managers.log?.systemError(`MongoDB ${version} binary not found. Please download from Binary Manager.`);
+      const status = this.serviceStatus.get('mongodb');
+      status.status = 'not_installed';
+      status.error = `MongoDB ${version} binary not found. Please download from Binary Manager.`;
+      return;
+    }
+
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataDir = path.join(dataPath, 'mongodb', version, 'data');
+    const logFile = path.join(dataPath, 'logs', `mongodb-${version}.log`);
+    await fs.ensureDir(dataDir);
+    await fs.ensureDir(path.dirname(logFile));
+
+    const defaultPort = this.getVersionPort('mongodb', version, this.serviceConfigs.mongodb.defaultPort);
+    let port = defaultPort;
+    if (!await isPortAvailable(port)) {
+      port = await findAvailablePort(defaultPort, 100);
+      if (!port) throw new Error(`No port available for MongoDB starting from ${defaultPort}`);
+    }
+
+    this.serviceConfigs.mongodb.actualPort = port;
+
+    const proc = spawnHidden(mongodExe, [
+      '--dbpath', dataDir,
+      '--port', String(port),
+      '--logpath', logFile,
+      '--bind_ip', '127.0.0.1',
+    ], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    proc.stdout?.on('data', (d) => this.managers.log?.service('mongodb', d.toString()));
+    proc.stderr?.on('data', (d) => this.managers.log?.service('mongodb', d.toString(), 'error'));
+
+    this.processes.set(this.getProcessKey('mongodb', version), proc);
+    const status = this.serviceStatus.get('mongodb');
+    status.port = port;
+    status.version = version;
+    this.runningVersions.get('mongodb').set(version, { port, startedAt: new Date() });
+
+    try {
+      await this.waitForService('mongodb', 30000);
+      status.status = 'running';
+      status.startedAt = Date.now();
+    } catch (error) {
+      this.managers.log?.systemError(`MongoDB ${version} failed to become ready`, { error: error.message });
+      status.status = 'error';
+      status.error = error.message;
+      this.runningVersions.get('mongodb').delete(version);
+      throw error;
+    }
+  }
+
+  // ─── Memcached ────────────────────────────────────────────────────────────────
+
+  async startMemcached(version = '1.6') {
+    const memcachedDir = this.getMemcachedPath(version);
+    const memcachedExe = path.join(memcachedDir, process.platform === 'win32' ? 'memcached.exe' : 'memcached');
+
+    if (!await fs.pathExists(memcachedExe)) {
+      this.managers.log?.systemError(`Memcached ${version} binary not found. Please download from Binary Manager.`);
+      const status = this.serviceStatus.get('memcached');
+      status.status = 'not_installed';
+      status.error = `Memcached ${version} binary not found. Please download from Binary Manager.`;
+      return;
+    }
+
+    const defaultPort = this.getVersionPort('memcached', version, this.serviceConfigs.memcached.defaultPort);
+    let port = defaultPort;
+    if (!await isPortAvailable(port)) {
+      port = await findAvailablePort(defaultPort, 100);
+      if (!port) throw new Error(`No port available for Memcached starting from ${defaultPort}`);
+    }
+
+    this.serviceConfigs.memcached.actualPort = port;
+
+    const proc = spawnHidden(memcachedExe, [
+      '-p', String(port),
+      '-l', '127.0.0.1',
+    ], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    proc.stdout?.on('data', (d) => this.managers.log?.service('memcached', d.toString()));
+    proc.stderr?.on('data', (d) => this.managers.log?.service('memcached', d.toString(), 'error'));
+
+    this.processes.set(this.getProcessKey('memcached', version), proc);
+    const status = this.serviceStatus.get('memcached');
+    status.port = port;
+    status.version = version;
+    this.runningVersions.get('memcached').set(version, { port, startedAt: new Date() });
+
+    try {
+      await this.waitForService('memcached', 10000);
+      status.status = 'running';
+      status.startedAt = Date.now();
+    } catch (error) {
+      this.managers.log?.systemError(`Memcached ${version} failed to become ready`, { error: error.message });
+      status.status = 'error';
+      status.error = error.message;
+      this.runningVersions.get('memcached').delete(version);
+      throw error;
+    }
+  }
+
+  // ─── MinIO ────────────────────────────────────────────────────────────────────
+
+  async startMinIO() {
+    const minioDir = this.getMinioPath();
+    const minioExe = path.join(minioDir, process.platform === 'win32' ? 'minio.exe' : 'minio');
+
+    if (!await fs.pathExists(minioExe)) {
+      this.managers.log?.systemError('MinIO binary not found. Please download from Binary Manager.');
+      const status = this.serviceStatus.get('minio');
+      status.status = 'not_installed';
+      status.error = 'MinIO binary not found. Please download from Binary Manager.';
+      return;
+    }
+
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const minioDataDir = path.join(dataPath, 'minio', 'data');
+    await fs.ensureDir(minioDataDir);
+
+    const defaultPort = this.serviceConfigs.minio.defaultPort;
+    const defaultConsolePort = this.serviceConfigs.minio.consolePort;
+    let port = defaultPort;
+    let consolePort = defaultConsolePort;
+
+    if (!await isPortAvailable(port)) {
+      port = await findAvailablePort(defaultPort, 100);
+      if (!port) throw new Error(`No port available for MinIO starting from ${defaultPort}`);
+    }
+    if (!await isPortAvailable(consolePort)) {
+      consolePort = await findAvailablePort(defaultConsolePort, 100);
+      if (!consolePort) throw new Error(`No port available for MinIO console starting from ${defaultConsolePort}`);
+    }
+
+    this.serviceConfigs.minio.actualPort = port;
+    this.serviceConfigs.minio.actualConsolePort = consolePort;
+
+    const proc = spawnHidden(minioExe, [
+      'server', minioDataDir,
+      '--address', `127.0.0.1:${port}`,
+      '--console-address', `127.0.0.1:${consolePort}`,
+    ], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        MINIO_ROOT_USER: 'minioadmin',
+        MINIO_ROOT_PASSWORD: 'minioadmin',
+      },
+    });
+
+    proc.stdout?.on('data', (d) => this.managers.log?.service('minio', d.toString()));
+    proc.stderr?.on('data', (d) => this.managers.log?.service('minio', d.toString(), 'error'));
+
+    this.processes.set('minio', proc);
+    const status = this.serviceStatus.get('minio');
+    status.port = port;
+    status.consolePort = consolePort;
+
+    try {
+      await this.waitForService('minio', 15000);
+      status.status = 'running';
+      status.startedAt = Date.now();
+    } catch (error) {
+      this.managers.log?.systemError('MinIO failed to become ready', { error: error.message });
+      status.status = 'error';
+      status.error = error.message;
+      throw error;
+    }
+  }
+
   /**
    * Get all running versions for a service
    * @param {string} serviceName - The service name
@@ -2994,6 +3374,26 @@ ${servers.join('')}
 
   async checkPhpMyAdminHealth() {
     const port = this.serviceConfigs.phpmyadmin.actualPort || this.serviceConfigs.phpmyadmin.defaultPort;
+    return this.checkPortOpen(port);
+  }
+
+  async checkPostgresqlHealth() {
+    const port = this.serviceConfigs.postgresql.actualPort || this.serviceConfigs.postgresql.defaultPort;
+    return this.checkPortOpen(port);
+  }
+
+  async checkMongodbHealth() {
+    const port = this.serviceConfigs.mongodb.actualPort || this.serviceConfigs.mongodb.defaultPort;
+    return this.checkPortOpen(port);
+  }
+
+  async checkMemcachedHealth() {
+    const port = this.serviceConfigs.memcached.actualPort || this.serviceConfigs.memcached.defaultPort;
+    return this.checkPortOpen(port);
+  }
+
+  async checkMinioHealth() {
+    const port = this.serviceConfigs.minio.actualPort || this.serviceConfigs.minio.defaultPort;
     return this.checkPortOpen(port);
   }
 

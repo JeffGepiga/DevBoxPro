@@ -8,7 +8,8 @@ test.describe('DevBoxPro Project Lifecycle', () => {
 
         // Go to Projects page
         await page.click('a:has-text("Projects")');
-        await expect(page.locator('h1:has-text("Projects")').or(page.locator('h2:has-text("Projects")'))).toBeVisible();
+        await page.waitForSelector('.animate-spin', { state: 'detached', timeout: 10000 }).catch(() => {});
+        await expect(page.locator('h1:has-text("Projects")').or(page.locator('h2:has-text("Projects")'))).toBeVisible({ timeout: 10000 });
 
         // Click New Project button (avoid the sidebar one by selecting the one in the main content)
         await page.click('main >> a:has-text("New Project")');
@@ -67,7 +68,8 @@ test.describe('DevBoxPro Project Lifecycle', () => {
 
         // Navigate back to project list to ensure it's there
         await page.click('a:has-text("Projects")');
-        await expect(page.locator('h1:has-text("Projects")').or(page.locator('h2:has-text("Projects")'))).toBeVisible();
+        await page.waitForSelector('.animate-spin', { state: 'detached', timeout: 10000 }).catch(() => {});
+        await expect(page.locator('h1:has-text("Projects")').or(page.locator('h2:has-text("Projects")'))).toBeVisible({ timeout: 10000 });
         await expect(page.locator(`text=${uniqueProjectName}`).first()).toBeVisible();
 
         // Start project from the card

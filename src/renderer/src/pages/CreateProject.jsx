@@ -124,7 +124,7 @@ function CreateProject() {
   const [defaultProjectsPath, setDefaultProjectsPath] = useState('');
   const [pathManuallySet, setPathManuallySet] = useState(false);
   const [serviceConfig, setServiceConfig] = useState({
-    versions: { php: [], mysql: [], mariadb: [], redis: [], nginx: [], apache: [], nodejs: [] },
+    versions: { php: [], mysql: [], mariadb: [], redis: [], nginx: [], apache: [], nodejs: [], postgresql: [], mongodb: [], python: [], memcached: [] },
     portOffsets: {},
     defaultPorts: {},
   });
@@ -137,6 +137,11 @@ function CreateProject() {
     mariadb: false,
     redis: false,
     nodejs: [],
+    postgresql: [],
+    mongodb: [],
+    python: [],
+    memcached: [],
+    minio: false,
     git: false, // Track Git availability
   });
   const [gitStatus, setGitStatus] = useState({ available: false, source: null, checking: true });
@@ -156,6 +161,15 @@ function CreateProject() {
       nodejs: false,
       nodejsVersion: '20',
       queue: false,
+      postgresql: false,
+      postgresqlVersion: '17',
+      mongodb: false,
+      mongodbVersion: '8.0',
+      python: false,
+      pythonVersion: '3.13',
+      memcached: false,
+      memcachedVersion: '1.6',
+      minio: false,
     },
     domain: '',
     ssl: true,
@@ -318,6 +332,29 @@ function CreateProject() {
             .filter(([_, info]) => info.installed)
             .map(([version]) => version);
 
+          // PostgreSQL versions
+          const postgresqlVersions = Object.entries(status.postgresql || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+
+          // MongoDB versions
+          const mongodbVersions = Object.entries(status.mongodb || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+
+          // Python versions
+          const pythonVersions = Object.entries(status.python || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+
+          // Memcached versions
+          const memcachedVersions = Object.entries(status.memcached || {})
+            .filter(([_, info]) => info.installed)
+            .map(([version]) => version);
+
+          // MinIO (single version)
+          const minioInstalled = status.minio?.installed === true;
+
           // Nginx versions - sorted descending (latest first)
           const nginxVersions = Object.entries(status.nginx || {})
             .filter(([_, info]) => info.installed)
@@ -340,6 +377,11 @@ function CreateProject() {
             nginx: nginxVersions,
             apache: apacheVersions,
             git: status.git || false,
+            postgresql: postgresqlVersions,
+            mongodb: mongodbVersions,
+            python: pythonVersions,
+            memcached: memcachedVersions,
+            minio: minioInstalled,
           });
 
           // Set default versions to first available
@@ -1630,6 +1672,43 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
       versions: binariesStatus?.redis || [],
     },
     {
+      id: 'postgresql',
+      name: 'PostgreSQL',
+      description: 'Advanced open-source relational database',
+      icon: '🐘',
+      versions: binariesStatus?.postgresql || [],
+      isDatabase: true,
+    },
+    {
+      id: 'mongodb',
+      name: 'MongoDB',
+      description: 'NoSQL document database',
+      icon: '🍃',
+      versions: binariesStatus?.mongodb || [],
+      isDatabase: true,
+    },
+    {
+      id: 'python',
+      name: 'Python',
+      description: 'Python runtime for scripts and tools',
+      icon: '🐍',
+      versions: binariesStatus?.python || [],
+    },
+    {
+      id: 'memcached',
+      name: 'Memcached',
+      description: 'Distributed memory caching system',
+      icon: '💾',
+      versions: binariesStatus?.memcached || [],
+    },
+    {
+      id: 'minio',
+      name: 'MinIO',
+      description: 'S3-compatible local object storage',
+      icon: '🪣',
+      versions: binariesStatus?.minio ? ['latest'] : [],
+    },
+    {
       id: 'nodejs',
       name: 'Node.js',
       description: 'JavaScript runtime for frontend builds',
@@ -1657,7 +1736,8 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
   });
 
   // Check if any database is available
-  const hasDatabaseOptions = (binariesStatus?.mysql?.length > 0) || (binariesStatus?.mariadb?.length > 0);
+  const hasDatabaseOptions = (binariesStatus?.mysql?.length > 0) || (binariesStatus?.mariadb?.length > 0)
+    || (binariesStatus?.postgresql?.length > 0) || (binariesStatus?.mongodb?.length > 0);
 
   return (
     <div>
@@ -1792,30 +1872,8 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
                   )}
                 </div>
               </button>
-              {/* Version selector for Redis */}
-              {service.id === 'redis' && formData.services[service.id] && service.versions.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                  <label className="text-xs text-gray-500 mb-2 block">Version</label>
-                  <div className="flex gap-2 flex-wrap">
-                    {service.versions.map(version => (
-                      <button
-                        key={version}
-                        onClick={(e) => { e.stopPropagation(); updateServiceVersion(service.id, version); }}
-                        className={clsx(
-                          'px-3 py-1 rounded text-sm font-medium transition-all',
-                          formData.services[`${service.id}Version`] === version
-                            ? 'bg-green-500 text-white'
-                            : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-                        )}
-                      >
-                        {version}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {/* Version selector for Node.js */}
-              {service.id === 'nodejs' && formData.services[service.id] && service.versions.length > 0 && (
+              {/* Version selector for versioned services (redis, nodejs, postgresql, mongodb, python, memcached, etc.) */}
+              {!['queue', 'minio'].includes(service.id) && formData.services[service.id] && service.versions.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                   <label className="text-xs text-gray-500 mb-2 block">Version</label>
                   <div className="flex gap-2 flex-wrap">

@@ -598,6 +598,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('system:openExternal', async (event, url) => {
+    if (!url) return false;
     await shell.openExternal(url);
     return true;
   });
@@ -753,7 +754,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         } catch (e) {
           managers.log?.systemError('Error clearing resources directory', { error: e.message });
           // If we can't delete the whole thing, try to delete subdirectories
-          const subdirs = ['php', 'mysql', 'mariadb', 'redis', 'nginx', 'apache', 'nodejs', 'mailpit', 'phpmyadmin', 'composer', 'ssl', 'cli'];
+          const subdirs = ['php', 'mysql', 'mariadb', 'redis', 'nginx', 'apache', 'nodejs', 'mailpit', 'phpmyadmin', 'composer', 'ssl', 'cli', 'postgresql', 'python', 'mongodb', 'sqlite', 'minio', 'memcached'];
           for (const subdir of subdirs) {
             try {
               const subdirPath = path.join(resourcesPath, subdir);
@@ -788,7 +789,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         } catch (e) {
           managers.log?.systemError('Error clearing data directory', { error: e.message });
           // If we can't delete the whole thing, try to delete subdirectories
-          const subdirs = ['mysql', 'mariadb', 'nginx', 'apache', 'ssl', 'logs'];
+          const subdirs = ['mysql', 'mariadb', 'nginx', 'apache', 'ssl', 'logs', 'postgresql', 'mongodb', 'memcached', 'minio'];
           for (const subdir of subdirs) {
             try {
               const subdirPath = path.join(dataPath, subdir);
@@ -947,6 +948,12 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       apache: {},      // Now versioned
       nodejs: {},
       composer: { installed: installed.composer },
+      postgresql: {},
+      python: {},
+      mongodb: {},
+      sqlite: { installed: !!installed.sqlite },
+      minio: { installed: !!installed.minio },
+      memcached: {},
     };
 
     // Transform PHP versions
@@ -982,6 +989,26 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     // Transform Apache versions
     for (const [version, isInstalled] of Object.entries(installed.apache || {})) {
       status.apache[version] = { installed: isInstalled };
+    }
+
+    // Transform PostgreSQL versions
+    for (const [version, isInstalled] of Object.entries(installed.postgresql || {})) {
+      status.postgresql[version] = { installed: isInstalled };
+    }
+
+    // Transform Python versions
+    for (const [version, isInstalled] of Object.entries(installed.python || {})) {
+      status.python[version] = { installed: isInstalled };
+    }
+
+    // Transform MongoDB versions
+    for (const [version, isInstalled] of Object.entries(installed.mongodb || {})) {
+      status.mongodb[version] = { installed: isInstalled };
+    }
+
+    // Transform Memcached versions
+    for (const [version, isInstalled] of Object.entries(installed.memcached || {})) {
+      status.memcached[version] = { installed: isInstalled };
     }
 
     return status;
@@ -1081,6 +1108,41 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   ipcMain.handle('binaries:downloadGit', async () => {
     if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
     return managers.binaryDownload.downloadGit();
+  });
+
+  ipcMain.handle('binaries:downloadPostgresql', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadPostgresql(version);
+  });
+
+  ipcMain.handle('binaries:downloadPython', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadPython(version);
+  });
+
+  ipcMain.handle('binaries:downloadMongodb', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadMongodb(version);
+  });
+
+  ipcMain.handle('binaries:downloadSqlite', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadSqlite(version);
+  });
+
+  ipcMain.handle('binaries:downloadMinio', async () => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadMinio();
+  });
+
+  ipcMain.handle('binaries:downloadMemcached', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadMemcached(version);
+  });
+
+  ipcMain.handle('binaries:runPip', async (event, version, args) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.runPip(version, args);
   });
 
   ipcMain.handle('binaries:cancelDownload', async (event, id) => {

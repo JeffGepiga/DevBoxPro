@@ -341,6 +341,15 @@ class ProjectManager {
         // Node.js is always enabled for nodejs-type projects
         nodejs: projectType === 'nodejs' ? true : (config.services?.nodejs || false),
         nodejsVersion: config.services?.nodejsVersion || '20',
+        postgresql: config.services?.postgresql || false,
+        postgresqlVersion: config.services?.postgresqlVersion || '17',
+        mongodb: config.services?.mongodb || false,
+        mongodbVersion: config.services?.mongodbVersion || '8.0',
+        python: config.services?.python || false,
+        pythonVersion: config.services?.pythonVersion || '3.13',
+        memcached: config.services?.memcached || false,
+        memcachedVersion: config.services?.memcachedVersion || '1.6',
+        minio: config.services?.minio || false,
       },
       environment: this.getDefaultEnvironment(projectType, config.name, port),
       supervisor: {

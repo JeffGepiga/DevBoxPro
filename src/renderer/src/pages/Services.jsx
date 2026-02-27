@@ -140,6 +140,10 @@ function Services() {
       if (project.services?.mysql) required.add('mysql');
       if (project.services?.mariadb) required.add('mariadb');
       if (project.services?.redis) required.add('redis');
+      if (project.services?.postgresql) required.add('postgresql');
+      if (project.services?.mongodb) required.add('mongodb');
+      if (project.services?.memcached) required.add('memcached');
+      if (project.services?.minio) required.add('minio');
     }
 
     return required;
@@ -191,6 +195,42 @@ function Services() {
       defaultPort: serviceConfig.defaultPorts.apache || 8081,
       versioned: true,
       versions: serviceConfig.versions.apache || [],
+    },
+    postgresql: {
+      name: 'PostgreSQL',
+      description: 'Advanced open-source relational database',
+      icon: Database,
+      color: 'indigo',
+      defaultPort: serviceConfig.defaultPorts.postgresql || 5432,
+      versioned: true,
+      versions: serviceConfig.versions.postgresql || [],
+    },
+    mongodb: {
+      name: 'MongoDB',
+      description: 'NoSQL document database',
+      icon: Database,
+      color: 'green',
+      defaultPort: serviceConfig.defaultPorts.mongodb || 27017,
+      versioned: true,
+      versions: serviceConfig.versions.mongodb || [],
+    },
+    memcached: {
+      name: 'Memcached',
+      description: 'Distributed memory caching system',
+      icon: MemoryStick,
+      color: 'emerald',
+      defaultPort: serviceConfig.defaultPorts.memcached || 11211,
+      versioned: true,
+      versions: serviceConfig.versions.memcached || [],
+    },
+    minio: {
+      name: 'MinIO',
+      description: 'S3-compatible object storage',
+      icon: HardDrive,
+      color: 'pink',
+      defaultPort: serviceConfig.defaultPorts.minio || 9000,
+      webUrl: `http://localhost:${serviceConfig.defaultPorts.minioConsole || 9001}`,
+      alwaysShow: false,
     },
     mailpit: {
       name: 'Mailpit',
