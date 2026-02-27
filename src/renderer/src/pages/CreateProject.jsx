@@ -1613,18 +1613,23 @@ function StepDetails({
 }
 
 function StepServices({ formData, updateFormData, binariesStatus }) {
-  const toggleService = (service) => {
-    // For database services (mysql/mariadb), make selection mutually exclusive
-    if (service === 'mysql' || service === 'mariadb') {
-      const otherDb = service === 'mysql' ? 'mariadb' : 'mysql';
-      const isEnabling = !formData.services[service];
+  const DB_SERVICES = ['mysql', 'mariadb', 'postgresql', 'mongodb'];
 
+  const toggleService = (service) => {
+    const isDatabase = DB_SERVICES.includes(service);
+    const isEnabling = !formData.services[service];
+
+    if (isDatabase && isEnabling) {
+      // Deselect all other databases when enabling one
+      const exclusions = DB_SERVICES.reduce((acc, db) => {
+        if (db !== service) acc[db] = false;
+        return acc;
+      }, {});
       updateFormData({
         services: {
           ...formData.services,
-          [service]: isEnabling,
-          // If enabling this database, disable the other one
-          ...(isEnabling ? { [otherDb]: false } : {}),
+          ...exclusions,
+          [service]: true,
         },
       });
     } else {
@@ -2248,18 +2253,40 @@ function StepReview({ formData }) {
           <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
             Enabled Services
           </h3>
-          <div className="flex gap-2">
-            {Object.entries(formData.services)
-              .filter(([_, enabled]) => enabled)
-              .map(([service]) => (
-                <span key={service} className="badge badge-success capitalize">
-                  {service}
-                </span>
-              ))}
-            {!Object.values(formData.services).some(Boolean) && (
-              <span className="text-gray-500 dark:text-gray-400">None selected</span>
-            )}
-          </div>
+          {(() => {
+            const SERVICE_LABELS = {
+              mysql:     { label: 'MySQL',      versionKey: 'mysqlVersion' },
+              mariadb:   { label: 'MariaDB',    versionKey: 'mariadbVersion' },
+              postgresql:{ label: 'PostgreSQL', versionKey: 'postgresqlVersion' },
+              mongodb:   { label: 'MongoDB',    versionKey: 'mongodbVersion' },
+              redis:     { label: 'Redis',      versionKey: 'redisVersion' },
+              memcached: { label: 'Memcached',  versionKey: 'memcachedVersion' },
+              nodejs:    { label: 'Node.js',    versionKey: 'nodejsVersion' },
+              python:    { label: 'Python',     versionKey: 'pythonVersion' },
+              minio:     { label: 'MinIO',      versionKey: null },
+              queue:     { label: 'Queue Worker', versionKey: null },
+              mailpit:   { label: 'Mailpit',    versionKey: null },
+            };
+            const active = Object.entries(SERVICE_LABELS).filter(
+              ([key]) => formData.services[key] === true
+            );
+            if (active.length === 0) {
+              return <span className="text-gray-500 dark:text-gray-400">None selected</span>;
+            }
+            return (
+              <div className="flex flex-wrap gap-2">
+                {active.map(([key, { label, versionKey }]) => {
+                  const version = versionKey ? formData.services[versionKey] : null;
+                  return (
+                    <span key={key} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                      {label}
+                      {version && <span className="opacity-70">v{version}</span>}
+                    </span>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Document Root (if custom) */}

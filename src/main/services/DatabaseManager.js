@@ -209,16 +209,32 @@ class DatabaseManager {
       if (pmaStatus?.status !== 'running') {
         try {
           await this.managers.service.startService('phpmyadmin');
-          // Wait a moment for service to be ready
-          await new Promise(resolve => setTimeout(resolve, 1500));
         } catch (err) {
-          // Failed to start phpMyAdmin
           this.managers.log?.systemError('Failed to start phpMyAdmin', { error: err.message });
           return null;
         }
       }
 
       const pmaPort = this.managers.service.serviceConfigs.phpmyadmin.actualPort || 8080;
+
+      // Poll until phpMyAdmin HTTP server is actually ready (max 30s)
+      await (async () => {
+        const http = require('http');
+        const maxWait = 30000;
+        const start = Date.now();
+        while (Date.now() - start < maxWait) {
+          const ready = await new Promise((resolve) => {
+            const req = http.get(`http://127.0.0.1:${pmaPort}/`, (res) => {
+              res.resume();
+              resolve(true);
+            });
+            req.setTimeout(1000, () => { req.destroy(); resolve(false); });
+            req.on('error', () => resolve(false));
+          });
+          if (ready) break;
+          await new Promise(r => setTimeout(r, 500));
+        }
+      })();
       let serverId = 1; // Default to first server
 
       // If specific type/version requested, find its server ID

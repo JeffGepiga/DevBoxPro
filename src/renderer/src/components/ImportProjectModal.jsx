@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Download, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Download, RefreshCw } from 'lucide-react';
 
 /**
  * Shared Import Project Modal Component
@@ -33,6 +33,11 @@ function ImportProjectModal({ project, onClose, onImport }) {
             postgresqlVersion: '',
             mongodb: false,
             mongodbVersion: '',
+            minio: false,
+            memcached: false,
+            memcachedVersion: '',
+            python: false,
+            pythonVersion: '',
         },
     });
     const [isImporting, setIsImporting] = useState(false);
@@ -41,8 +46,10 @@ function ImportProjectModal({ project, onClose, onImport }) {
     const [installedDatabases, setInstalledDatabases] = useState({ mysql: [], mariadb: [], postgresql: [], mongodb: [] });
     const [installedRedis, setInstalledRedis] = useState([]);
     const [installedNodejs, setInstalledNodejs] = useState([]);
+    const [installedMinio, setInstalledMinio] = useState(false);
+    const [installedMemcached, setInstalledMemcached] = useState([]);
+    const [installedPython, setInstalledPython] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [showServices, setShowServices] = useState(false);
 
     const missingBinaries = useMemo(() => {
         if (!project.isConfigImport || loading) return [];
@@ -136,11 +143,27 @@ function ImportProjectModal({ project, onClose, onImport }) {
                         .filter(([_, info]) => info.installed)
                         .map(([version]) => version);
 
+                    // Get Minio (single binary)
+                    const minioInstalled = status.minio?.installed === true;
+
+                    // Get Memcached
+                    const memcachedVersions = Object.entries(status.memcached || {})
+                        .filter(([_, info]) => info.installed)
+                        .map(([version]) => version);
+
+                    // Get Python
+                    const pythonVersions = Object.entries(status.python || {})
+                        .filter(([_, info]) => info.installed)
+                        .map(([version]) => version);
+
                     setInstalledPhpVersions(phpVersions);
                     setInstalledWebServers({ nginx: nginxVersions, apache: apacheVersions });
                     setInstalledDatabases({ mysql: mysqlVersions, mariadb: mariadbVersions, postgresql: postgresqlVersions, mongodb: mongodbVersions });
                     setInstalledRedis(redisVersions);
                     setInstalledNodejs(nodejsVersions);
+                    setInstalledMinio(minioInstalled);
+                    setInstalledMemcached(memcachedVersions);
+                    setInstalledPython(pythonVersions);
 
                     // Set default PHP version to first available
                     if (phpVersions.length > 0) {
@@ -185,10 +208,22 @@ function ImportProjectModal({ project, onClose, onImport }) {
                             services: { ...prev.services, mongodbVersion: mongodbVersions[0] }
                         }));
                     }
+                    if (memcachedVersions.length > 0) {
+                        setConfig(prev => ({
+                            ...prev,
+                            services: { ...prev.services, memcachedVersion: memcachedVersions[0] }
+                        }));
+                    }
                     if (nodejsVersions.length > 0) {
                         setConfig(prev => ({
                             ...prev,
                             services: { ...prev.services, nodejsVersion: nodejsVersions[0] }
+                        }));
+                    }
+                    if (pythonVersions.length > 0) {
+                        setConfig(prev => ({
+                            ...prev,
+                            services: { ...prev.services, pythonVersion: pythonVersions[0] }
                         }));
                     }
                 }
@@ -201,33 +236,26 @@ function ImportProjectModal({ project, onClose, onImport }) {
         fetchBinaries();
     }, []);
 
+    const DB_SERVICES = ['mysql', 'mariadb', 'postgresql', 'mongodb'];
+
     const toggleService = (service) => {
-        // Handle mutually exclusive databases
-        if (service === 'mysql' && !config.services.mysql) {
+        const isDatabase = DB_SERVICES.includes(service);
+        const isEnabling = !config.services[service];
+
+        if (isDatabase && isEnabling) {
+            // Deselect all other databases when enabling one
+            const exclusions = DB_SERVICES.reduce((acc, db) => {
+                if (db !== service) acc[db] = false;
+                return acc;
+            }, {});
             setConfig(prev => ({
                 ...prev,
-                services: {
-                    ...prev.services,
-                    mysql: true,
-                    mariadb: false, // Turn off MariaDB
-                },
-            }));
-        } else if (service === 'mariadb' && !config.services.mariadb) {
-            setConfig(prev => ({
-                ...prev,
-                services: {
-                    ...prev.services,
-                    mariadb: true,
-                    mysql: false, // Turn off MySQL
-                },
+                services: { ...prev.services, ...exclusions, [service]: true },
             }));
         } else {
             setConfig(prev => ({
                 ...prev,
-                services: {
-                    ...prev.services,
-                    [service]: !prev.services[service],
-                },
+                services: { ...prev.services, [service]: !prev.services[service] },
             }));
         }
     };
@@ -253,14 +281,20 @@ function ImportProjectModal({ project, onClose, onImport }) {
     // Count available optional services
     const hasMysql = installedDatabases.mysql.length > 0;
     const hasMariadb = installedDatabases.mariadb.length > 0;
+    const hasPostgresql = installedDatabases.postgresql.length > 0;
+    const hasMongodb = installedDatabases.mongodb.length > 0;
     const hasRedis = installedRedis.length > 0;
+    const hasMemcached = installedMemcached.length > 0;
+    const hasMinio = installedMinio;
     const hasNodejs = installedNodejs.length > 0;
+    const hasPython = installedPython.length > 0;
     const isLaravel = config.type === 'laravel';
-    const hasAnyOptionalService = hasMysql || hasMariadb || hasRedis || (!isNodejs && hasNodejs) || isLaravel;
+    const hasDatabaseOptions = hasMysql || hasMariadb || hasPostgresql || hasMongodb;
+    const hasAnyOptionalService = hasDatabaseOptions || hasRedis || hasMemcached || hasMinio || hasPython || (!isNodejs && hasNodejs) || isLaravel;
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-3xl mx-4 max-h-[90vh] flex flex-col">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                         Import Project
@@ -273,9 +307,9 @@ function ImportProjectModal({ project, onClose, onImport }) {
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
+                <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
                     {loading ? (
-                        <div className="flex items-center justify-center py-8">
+                        <div className="flex items-center justify-center py-16">
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
                             <span className="ml-3 text-gray-600 dark:text-gray-400">Loading binaries...</span>
                         </div>
@@ -283,478 +317,286 @@ function ImportProjectModal({ project, onClose, onImport }) {
                         <>
                             {/* Missing Binaries Warning */}
                             {missingBinaries.length > 0 && (
-                                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                                    <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                                        Missing Required Binaries
-                                    </p>
-                                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                                        This project configuration requires: <strong>{missingBinaries.join(', ')}</strong>.
-                                        You can still import it, but please install these versions via the Binary Manager before starting the project.
-                                    </p>
-                                </div>
-                            )}
-
-                            {/* Basic Info Section */}
-                            <div className="grid grid-cols-2 gap-4">
-                                {/* Project Name */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                        Project Name
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={config.name}
-                                        onChange={(e) => setConfig({ ...config, name: e.target.value })}
-                                        className="input text-sm"
-                                        placeholder="My Project"
-                                    />
-                                </div>
-
-                                {/* Project Type */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                        Type
-                                    </label>
-                                    <select
-                                        value={config.type}
-                                        onChange={(e) => setConfig({ ...config, type: e.target.value })}
-                                        className="select"
-                                    >
-                                        <option value="laravel">Laravel</option>
-                                        <option value="symfony">Symfony</option>
-                                        <option value="wordpress">WordPress</option>
-                                        <option value="nodejs">Node.js</option>
-                                        <option value="custom">Custom PHP</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            {/* Path (read-only) */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                    Path
-                                </label>
-                                <input
-                                    type="text"
-                                    value={config.path}
-                                    disabled
-                                    className="input bg-gray-100 dark:bg-gray-700 text-xs"
-                                />
-                            </div>
-
-                            {/* Domain */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                    Domain
-                                </label>
-                                <input
-                                    type="text"
-                                    value={config.domain}
-                                    onChange={(e) => setConfig({ ...config, domain: e.target.value })}
-                                    placeholder={suggestedDomain}
-                                    className="input"
-                                />
-                            </div>
-
-                            {/* PHP & Web Server Row — hidden for Node.js */}
-                            {!isNodejs && (
-                                <>
-                                    {/* Document Root */}
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                            Document Root (Optional)
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={config.documentRoot}
-                                            onChange={(e) => setConfig({ ...config, documentRoot: e.target.value })}
-                                            placeholder={
-                                                config.type === 'wordpress' ? 'Default: project root' :
-                                                    config.type === 'laravel' || config.type === 'symfony' ? 'Default: public' :
-                                                        'Default: auto-detect'
-                                            }
-                                            className="input"
-                                        />
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            The folder the web server points to. Leave empty for auto-detection.
+                                <div className="px-6 pt-4">
+                                    <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                                        <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Missing Required Binaries</p>
+                                        <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                                            Requires: <strong>{missingBinaries.join(', ')}</strong>. Install via Binary Manager before starting.
                                         </p>
                                     </div>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        {/* PHP Version */}
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                                PHP Version
-                                            </label>
-                                            {hasNoPhpInstalled ? (
-                                                <div className="p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                                                    <p className="text-xs text-amber-700 dark:text-amber-300">No PHP installed</p>
-                                                </div>
-                                            ) : (
-                                                <select
-                                                    value={config.phpVersion}
-                                                    onChange={(e) => setConfig({ ...config, phpVersion: e.target.value })}
-                                                    className="select"
-                                                >
-                                                    {installedPhpVersions.map((version) => (
-                                                        <option key={version} value={version}>PHP {version}</option>
-                                                    ))}
-                                                </select>
-                                            )}
-                                        </div>
-
-                                        {/* Web Server */}
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                                Web Server
-                                            </label>
-                                            {hasNoWebServer ? (
-                                                <div className="p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                                                    <p className="text-xs text-amber-700 dark:text-amber-300">No web server</p>
-                                                </div>
-                                            ) : (
-                                                <select
-                                                    value={config.webServer}
-                                                    onChange={(e) => {
-                                                        const ws = e.target.value;
-                                                        const versions = ws === 'nginx' ? installedWebServers.nginx : installedWebServers.apache;
-                                                        setConfig({ ...config, webServer: ws, webServerVersion: versions[0] || '' });
-                                                    }}
-                                                    className="select"
-                                                >
-                                                    {installedWebServers.nginx.length > 0 && <option value="nginx">Nginx</option>}
-                                                    {installedWebServers.apache.length > 0 && <option value="apache">Apache</option>}
-                                                </select>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Web Server Version */}
-                                    {!hasNoWebServer && (() => {
-                                        const versions = config.webServer === 'nginx'
-                                            ? installedWebServers.nginx
-                                            : installedWebServers.apache;
-                                        return versions.length >= 1 ? (
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                                    {config.webServer === 'nginx' ? 'Nginx' : 'Apache'} Version
-                                                </label>
-                                                <select
-                                                    value={config.webServerVersion}
-                                                    onChange={(e) => setConfig({ ...config, webServerVersion: e.target.value })}
-                                                    className="select"
-                                                >
-                                                    {versions.map((v) => (
-                                                        <option key={v} value={v}>{v}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        ) : null;
-                                    })()}
-                                </>
+                                </div>
                             )}
 
-                            {/* Node.js-specific fields */}
-                            {isNodejs && (
-                                <div className="space-y-4">
-                                    {/* Framework selector */}
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                            Framework (Optional)
-                                        </label>
-                                        <select
-                                            value={config.nodeFramework}
-                                            onChange={(e) => {
-                                                const framework = e.target.value;
-                                                const defaultCommands = {
-                                                    '': 'npm start', express: 'node index.js', fastify: 'node index.js',
-                                                    nestjs: 'npm run start:dev', nextjs: 'npm run dev', nuxtjs: 'npm run dev',
-                                                    koa: 'node index.js', hapi: 'node index.js', adonisjs: 'node ace serve --watch',
-                                                    remix: 'npm run dev', sveltekit: 'npm run dev', strapi: 'npm run develop',
-                                                    elysia: 'bun run dev',
-                                                };
-                                                const defaultPorts = {
-                                                    '': 3000, express: 3000, fastify: 3000, nestjs: 3000, nextjs: 3000,
-                                                    nuxtjs: 3000, koa: 3000, hapi: 3000, adonisjs: 3333, remix: 3000,
-                                                    sveltekit: 5173, strapi: 1337, elysia: 3000,
-                                                };
-                                                setConfig(prev => ({
-                                                    ...prev,
-                                                    nodeFramework: framework,
-                                                    nodeStartCommand: defaultCommands[framework] || 'npm start',
-                                                    nodePort: defaultPorts[framework] || 3000,
-                                                }));
-                                            }}
-                                            className="select"
-                                        >
-                                            <option value="">None (vanilla Node.js)</option>
-                                            <optgroup label="Backend Frameworks">
-                                                <option value="express">Express</option>
-                                                <option value="fastify">Fastify</option>
-                                                <option value="nestjs">NestJS</option>
-                                                <option value="koa">Koa</option>
-                                                <option value="hapi">Hapi</option>
-                                                <option value="adonisjs">AdonisJS</option>
-                                                <option value="elysia">Elysia (Bun)</option>
-                                            </optgroup>
-                                            <optgroup label="Full-Stack Frameworks">
-                                                <option value="nextjs">Next.js</option>
-                                                <option value="nuxtjs">Nuxt.js</option>
-                                                <option value="remix">Remix</option>
-                                                <option value="sveltekit">SvelteKit</option>
-                                            </optgroup>
-                                            <optgroup label="Headless CMS">
-                                                <option value="strapi">Strapi</option>
-                                            </optgroup>
-                                        </select>
-                                    </div>
+                            {/* Two-column body */}
+                            <div className="flex flex-1 overflow-hidden">
+                                {/* Left: Project Config */}
+                                <div className="flex-1 overflow-y-auto p-6 space-y-3 border-r border-gray-200 dark:border-gray-700">
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Project</p>
 
-                                    <div className="grid grid-cols-2 gap-4">
-                                        {/* Node.js Version */}
+                                    <div className="grid grid-cols-2 gap-3">
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                                Node.js Version
-                                            </label>
-                                            {installedNodejs.length === 0 ? (
-                                                <div className="p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                                                    <p className="text-xs text-amber-700 dark:text-amber-300">No Node.js installed</p>
-                                                </div>
-                                            ) : (
-                                                <select
-                                                    value={config.services.nodejsVersion}
-                                                    onChange={(e) => setConfig(prev => ({
-                                                        ...prev,
-                                                        services: { ...prev.services, nodejsVersion: e.target.value }
-                                                    }))}
-                                                    className="select"
-                                                >
-                                                    {installedNodejs.map((version) => (
-                                                        <option key={version} value={version}>Node {version}</option>
-                                                    ))}
-                                                </select>
-                                            )}
-                                        </div>
-
-                                        {/* App Port */}
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                                App Port
-                                            </label>
-                                            <input
-                                                type="number"
-                                                value={config.nodePort}
-                                                onChange={(e) => setConfig({ ...config, nodePort: parseInt(e.target.value) || 3000 })}
-                                                className="input"
-                                                min="1024"
-                                                max="65535"
-                                                placeholder="3000"
-                                            />
-                                            <p className="text-xs text-gray-500 mt-1">Port your Node.js app listens on</p>
-                                        </div>
-
-                                        {/* Start Command */}
-                                        <div className="col-span-2">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                                Start Command
-                                            </label>
+                                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Name</label>
                                             <input
                                                 type="text"
-                                                value={config.nodeStartCommand}
-                                                onChange={(e) => setConfig({ ...config, nodeStartCommand: e.target.value })}
-                                                className="input"
-                                                placeholder="npm start"
+                                                value={config.name}
+                                                onChange={(e) => setConfig({ ...config, name: e.target.value })}
+                                                className="input text-sm"
+                                                placeholder="My Project"
                                             />
                                         </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Optional Services Section */}
-                            {hasAnyOptionalService && (
-                                <div className="border border-gray-200 dark:border-gray-700 rounded-lg">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowServices(!showServices)}
-                                        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                                    >
-                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                            Optional Services
-                                        </span>
-                                        {showServices ? (
-                                            <ChevronUp className="w-4 h-4 text-gray-500" />
-                                        ) : (
-                                            <ChevronDown className="w-4 h-4 text-gray-500" />
-                                        )}
-                                    </button>
-
-                                    {showServices && (
-                                        <div className="p-4 space-y-4 overflow-hidden">
-                                            {/* Database Section */}
-                                            {(hasMysql || hasMariadb) && (
-                                                <div className="pb-4 border-b border-gray-200 dark:border-gray-700">
-                                                    <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-3">Database (choose one)</p>
-                                                    <div className="space-y-3">
-                                                        {/* MySQL */}
-                                                        {hasMysql && (
-                                                            <div className="space-y-2">
-                                                                <label className="flex items-center gap-3 cursor-pointer">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={config.services.mysql}
-                                                                        onChange={() => toggleService('mysql')}
-                                                                        className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                                                                    />
-                                                                    <div className="flex-1">
-                                                                        <span className="text-sm font-medium text-gray-900 dark:text-white">MySQL</span>
-                                                                        <p className="text-xs text-gray-500">Relational database</p>
-                                                                    </div>
-                                                                </label>
-                                                                {config.services.mysql && (
-                                                                    <div className="pl-7">
-                                                                        <select
-                                                                            value={config.services.mysqlVersion}
-                                                                            onChange={(e) => setConfig(prev => ({
-                                                                                ...prev,
-                                                                                services: { ...prev.services, mysqlVersion: e.target.value }
-                                                                            }))}
-                                                                            className="select text-sm"
-                                                                        >
-                                                                            {installedDatabases.mysql.map((version) => (
-                                                                                <option key={version} value={version}>MySQL {version}</option>
-                                                                            ))}
-                                                                        </select>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
-
-                                                        {/* MariaDB */}
-                                                        {hasMariadb && (
-                                                            <div className="space-y-2">
-                                                                <label className="flex items-center gap-3 cursor-pointer">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={config.services.mariadb}
-                                                                        onChange={() => toggleService('mariadb')}
-                                                                        className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                                                                    />
-                                                                    <div className="flex-1">
-                                                                        <span className="text-sm font-medium text-gray-900 dark:text-white">MariaDB</span>
-                                                                        <p className="text-xs text-gray-500">MySQL-compatible database</p>
-                                                                    </div>
-                                                                </label>
-                                                                {config.services.mariadb && (
-                                                                    <div className="pl-7">
-                                                                        <select
-                                                                            value={config.services.mariadbVersion}
-                                                                            onChange={(e) => setConfig(prev => ({
-                                                                                ...prev,
-                                                                                services: { ...prev.services, mariadbVersion: e.target.value }
-                                                                            }))}
-                                                                            className="select text-sm"
-                                                                        >
-                                                                            {installedDatabases.mariadb.map((version) => (
-                                                                                <option key={version} value={version}>MariaDB {version}</option>
-                                                                            ))}
-                                                                        </select>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* Redis */}
-                                            {hasRedis && (
-                                                <div className="space-y-2">
-                                                    <label className="flex items-center gap-3 cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={config.services.redis}
-                                                            onChange={() => toggleService('redis')}
-                                                            className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                                                        />
-                                                        <div className="flex-1">
-                                                            <span className="text-sm font-medium text-gray-900 dark:text-white">Redis</span>
-                                                            <p className="text-xs text-gray-500">Cache & session storage</p>
-                                                        </div>
-                                                    </label>
-                                                    {config.services.redis && (
-                                                        <div className="pl-7">
-                                                            <select
-                                                                value={config.services.redisVersion}
-                                                                onChange={(e) => setConfig(prev => ({
-                                                                    ...prev,
-                                                                    services: { ...prev.services, redisVersion: e.target.value }
-                                                                }))}
-                                                                className="select text-sm"
-                                                            >
-                                                                {installedRedis.map((version) => (
-                                                                    <option key={version} value={version}>Redis {version}</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-
-                                            {/* Node.js — hidden when project type IS nodejs */}
-                                            {hasNodejs && !isNodejs && (
-                                                <div className="space-y-2">
-                                                    <label className="flex items-center gap-3 cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={config.services.nodejs}
-                                                            onChange={() => toggleService('nodejs')}
-                                                            className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                                                        />
-                                                        <div className="flex-1">
-                                                            <span className="text-sm font-medium text-gray-900 dark:text-white">Node.js</span>
-                                                            <p className="text-xs text-gray-500">For npm/frontend builds</p>
-                                                        </div>
-                                                    </label>
-                                                    {config.services.nodejs && (
-                                                        <div className="pl-7">
-                                                            <select
-                                                                value={config.services.nodejsVersion}
-                                                                onChange={(e) => setConfig(prev => ({
-                                                                    ...prev,
-                                                                    services: { ...prev.services, nodejsVersion: e.target.value }
-                                                                }))}
-                                                                className="select text-sm"
-                                                            >
-                                                                {installedNodejs.map((version) => (
-                                                                    <option key={version} value={version}>Node {version}</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-
-                                            {/* Queue Worker (Laravel only) */}
-                                            {isLaravel && (
-                                                <label className="flex items-center gap-3 cursor-pointer">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={config.services.queue}
-                                                        onChange={() => toggleService('queue')}
-                                                        className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                                                    />
-                                                    <div className="flex-1">
-                                                        <span className="text-sm font-medium text-gray-900 dark:text-white">Queue Worker</span>
-                                                        <p className="text-xs text-gray-500">Background job processing</p>
-                                                    </div>
-                                                </label>
-                                            )}
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Type</label>
+                                            <select value={config.type} onChange={(e) => setConfig({ ...config, type: e.target.value })} className="select text-sm">
+                                                <option value="laravel">Laravel</option>
+                                                <option value="symfony">Symfony</option>
+                                                <option value="wordpress">WordPress</option>
+                                                <option value="nodejs">Node.js</option>
+                                                <option value="custom">Custom PHP</option>
+                                            </select>
                                         </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Path</label>
+                                        <input type="text" value={config.path} disabled className="input bg-gray-100 dark:bg-gray-700 text-xs" />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Domain</label>
+                                        <input
+                                            type="text"
+                                            value={config.domain}
+                                            onChange={(e) => setConfig({ ...config, domain: e.target.value })}
+                                            placeholder={suggestedDomain}
+                                            className="input text-sm"
+                                        />
+                                    </div>
+
+                                    {!isNodejs && (
+                                        <>
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Document Root <span className="font-normal text-gray-400">(optional)</span></label>
+                                                <input
+                                                    type="text"
+                                                    value={config.documentRoot}
+                                                    onChange={(e) => setConfig({ ...config, documentRoot: e.target.value })}
+                                                    placeholder={
+                                                        config.type === 'wordpress' ? 'Default: project root' :
+                                                        config.type === 'laravel' || config.type === 'symfony' ? 'Default: public' :
+                                                        'Default: auto-detect'
+                                                    }
+                                                    className="input text-sm"
+                                                />
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">PHP Version</label>
+                                                    {hasNoPhpInstalled ? (
+                                                        <div className="p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 rounded-lg">
+                                                            <p className="text-xs text-amber-700 dark:text-amber-300">No PHP installed</p>
+                                                        </div>
+                                                    ) : (
+                                                        <select value={config.phpVersion} onChange={(e) => setConfig({ ...config, phpVersion: e.target.value })} className="select text-sm">
+                                                            {installedPhpVersions.map((v) => <option key={v} value={v}>PHP {v}</option>)}
+                                                        </select>
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Web Server</label>
+                                                    {hasNoWebServer ? (
+                                                        <div className="p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 rounded-lg">
+                                                            <p className="text-xs text-amber-700 dark:text-amber-300">No web server</p>
+                                                        </div>
+                                                    ) : (
+                                                        <select
+                                                            value={config.webServer}
+                                                            onChange={(e) => {
+                                                                const ws = e.target.value;
+                                                                const versions = ws === 'nginx' ? installedWebServers.nginx : installedWebServers.apache;
+                                                                setConfig({ ...config, webServer: ws, webServerVersion: versions[0] || '' });
+                                                            }}
+                                                            className="select text-sm"
+                                                        >
+                                                            {installedWebServers.nginx.length > 0 && <option value="nginx">Nginx</option>}
+                                                            {installedWebServers.apache.length > 0 && <option value="apache">Apache</option>}
+                                                        </select>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {!hasNoWebServer && (() => {
+                                                const versions = config.webServer === 'nginx' ? installedWebServers.nginx : installedWebServers.apache;
+                                                return versions.length > 1 ? (
+                                                    <div>
+                                                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">{config.webServer === 'nginx' ? 'Nginx' : 'Apache'} Version</label>
+                                                        <select value={config.webServerVersion} onChange={(e) => setConfig({ ...config, webServerVersion: e.target.value })} className="select text-sm">
+                                                            {versions.map((v) => <option key={v} value={v}>{v}</option>)}
+                                                        </select>
+                                                    </div>
+                                                ) : null;
+                                            })()}
+                                        </>
+                                    )}
+
+                                    {isNodejs && (
+                                        <>
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Framework</label>
+                                                <select
+                                                    value={config.nodeFramework}
+                                                    onChange={(e) => {
+                                                        const framework = e.target.value;
+                                                        const defaultCommands = { '': 'npm start', express: 'node index.js', fastify: 'node index.js', nestjs: 'npm run start:dev', nextjs: 'npm run dev', nuxtjs: 'npm run dev', koa: 'node index.js', hapi: 'node index.js', adonisjs: 'node ace serve --watch', remix: 'npm run dev', sveltekit: 'npm run dev', strapi: 'npm run develop', elysia: 'bun run dev' };
+                                                        const defaultPorts = { '': 3000, express: 3000, fastify: 3000, nestjs: 3000, nextjs: 3000, nuxtjs: 3000, koa: 3000, hapi: 3000, adonisjs: 3333, remix: 3000, sveltekit: 5173, strapi: 1337, elysia: 3000 };
+                                                        setConfig(prev => ({ ...prev, nodeFramework: framework, nodeStartCommand: defaultCommands[framework] || 'npm start', nodePort: defaultPorts[framework] || 3000 }));
+                                                    }}
+                                                    className="select text-sm"
+                                                >
+                                                    <option value="">None (vanilla Node.js)</option>
+                                                    <optgroup label="Backend"><option value="express">Express</option><option value="fastify">Fastify</option><option value="nestjs">NestJS</option><option value="koa">Koa</option><option value="hapi">Hapi</option><option value="adonisjs">AdonisJS</option><option value="elysia">Elysia (Bun)</option></optgroup>
+                                                    <optgroup label="Full-Stack"><option value="nextjs">Next.js</option><option value="nuxtjs">Nuxt.js</option><option value="remix">Remix</option><option value="sveltekit">SvelteKit</option></optgroup>
+                                                    <optgroup label="CMS"><option value="strapi">Strapi</option></optgroup>
+                                                </select>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Node.js Version</label>
+                                                    {installedNodejs.length === 0 ? (
+                                                        <div className="p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 rounded-lg"><p className="text-xs text-amber-700 dark:text-amber-300">No Node.js installed</p></div>
+                                                    ) : (
+                                                        <select value={config.services.nodejsVersion} onChange={(e) => setConfig(prev => ({ ...prev, services: { ...prev.services, nodejsVersion: e.target.value } }))} className="select text-sm">
+                                                            {installedNodejs.map((v) => <option key={v} value={v}>Node {v}</option>)}
+                                                        </select>
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">App Port</label>
+                                                    <input type="number" value={config.nodePort} onChange={(e) => setConfig({ ...config, nodePort: parseInt(e.target.value) || 3000 })} className="input text-sm" min="1024" max="65535" placeholder="3000" />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Start Command</label>
+                                                <input type="text" value={config.nodeStartCommand} onChange={(e) => setConfig({ ...config, nodeStartCommand: e.target.value })} className="input text-sm" placeholder="npm start" />
+                                            </div>
+                                        </>
                                     )}
                                 </div>
-                            )}
+
+                                {/* Right: Optional Services */}
+                                {hasAnyOptionalService && (
+                                    <div className="w-64 flex-shrink-0 overflow-y-auto p-6 space-y-3">
+                                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Services</p>
+
+                                        {/* Database — card grid */}
+                                        {hasDatabaseOptions && (
+                                            <div>
+                                                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Database <span className="text-gray-400">(select one)</span></p>
+                                                <div className="grid grid-cols-2 gap-1.5">
+                                                    {hasMysql && (
+                                                        <div onClick={() => toggleService('mysql')} className={`p-2 rounded-lg border-2 cursor-pointer transition-all text-center ${config.services.mysql ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
+                                                            <div className="text-lg">🗄️</div>
+                                                            <div className="text-xs font-medium text-gray-900 dark:text-white">MySQL</div>
+                                                            {config.services.mysql && installedDatabases.mysql.length > 0 && (
+                                                                <div className="text-xs text-green-600 dark:text-green-400 mt-0.5">
+                                                                    {installedDatabases.mysql.length > 1 ? (
+                                                                        <select value={config.services.mysqlVersion} onChange={(e) => { e.stopPropagation(); setConfig(prev => ({ ...prev, services: { ...prev.services, mysqlVersion: e.target.value } })); }} onClick={(e) => e.stopPropagation()} className="w-full text-xs border-0 bg-transparent text-green-600 dark:text-green-400 focus:ring-0 p-0">
+                                                                            {installedDatabases.mysql.map((v) => <option key={v} value={v}>{v}</option>)}
+                                                                        </select>
+                                                                    ) : installedDatabases.mysql[0]}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {hasMariadb && (
+                                                        <div onClick={() => toggleService('mariadb')} className={`p-2 rounded-lg border-2 cursor-pointer transition-all text-center ${config.services.mariadb ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
+                                                            <div className="text-lg">🐬</div>
+                                                            <div className="text-xs font-medium text-gray-900 dark:text-white">MariaDB</div>
+                                                            {config.services.mariadb && installedDatabases.mariadb.length > 0 && (
+                                                                <div className="text-xs text-green-600 dark:text-green-400 mt-0.5">
+                                                                    {installedDatabases.mariadb.length > 1 ? (
+                                                                        <select value={config.services.mariadbVersion} onChange={(e) => { e.stopPropagation(); setConfig(prev => ({ ...prev, services: { ...prev.services, mariadbVersion: e.target.value } })); }} onClick={(e) => e.stopPropagation()} className="w-full text-xs border-0 bg-transparent text-green-600 dark:text-green-400 focus:ring-0 p-0">
+                                                                            {installedDatabases.mariadb.map((v) => <option key={v} value={v}>{v}</option>)}
+                                                                        </select>
+                                                                    ) : installedDatabases.mariadb[0]}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {hasPostgresql && (
+                                                        <div onClick={() => toggleService('postgresql')} className={`p-2 rounded-lg border-2 cursor-pointer transition-all text-center ${config.services.postgresql ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
+                                                            <div className="text-lg">🐘</div>
+                                                            <div className="text-xs font-medium text-gray-900 dark:text-white">PostgreSQL</div>
+                                                            {config.services.postgresql && installedDatabases.postgresql.length > 0 && (
+                                                                <div className="text-xs text-green-600 dark:text-green-400 mt-0.5">
+                                                                    {installedDatabases.postgresql.length > 1 ? (
+                                                                        <select value={config.services.postgresqlVersion} onChange={(e) => { e.stopPropagation(); setConfig(prev => ({ ...prev, services: { ...prev.services, postgresqlVersion: e.target.value } })); }} onClick={(e) => e.stopPropagation()} className="w-full text-xs border-0 bg-transparent text-green-600 dark:text-green-400 focus:ring-0 p-0">
+                                                                            {installedDatabases.postgresql.map((v) => <option key={v} value={v}>{v}</option>)}
+                                                                        </select>
+                                                                    ) : installedDatabases.postgresql[0]}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {hasMongodb && (
+                                                        <div onClick={() => toggleService('mongodb')} className={`p-2 rounded-lg border-2 cursor-pointer transition-all text-center ${config.services.mongodb ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
+                                                            <div className="text-lg">🍃</div>
+                                                            <div className="text-xs font-medium text-gray-900 dark:text-white">MongoDB</div>
+                                                            {config.services.mongodb && installedDatabases.mongodb.length > 0 && (
+                                                                <div className="text-xs text-green-600 dark:text-green-400 mt-0.5">
+                                                                    {installedDatabases.mongodb.length > 1 ? (
+                                                                        <select value={config.services.mongodbVersion} onChange={(e) => { e.stopPropagation(); setConfig(prev => ({ ...prev, services: { ...prev.services, mongodbVersion: e.target.value } })); }} onClick={(e) => e.stopPropagation()} className="w-full text-xs border-0 bg-transparent text-green-600 dark:text-green-400 focus:ring-0 p-0">
+                                                                            {installedDatabases.mongodb.map((v) => <option key={v} value={v}>{v}</option>)}
+                                                                        </select>
+                                                                    ) : installedDatabases.mongodb[0]}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Other services as compact toggle rows */}
+                                        <div className="space-y-1 pt-1">
+                                            {[
+                                                hasRedis && { id: 'redis', label: 'Redis', icon: '⚡', desc: 'Cache', versions: installedRedis, versionKey: 'redisVersion' },
+                                                hasMemcached && { id: 'memcached', label: 'Memcached', icon: '💾', desc: 'Cache', versions: installedMemcached, versionKey: 'memcachedVersion' },
+                                                hasMinio && { id: 'minio', label: 'MinIO', icon: '🪣', desc: 'Object storage', versions: [], versionKey: null },
+                                                hasPython && { id: 'python', label: 'Python', icon: '🐍', desc: 'Runtime', versions: installedPython, versionKey: 'pythonVersion' },
+                                                hasNodejs && !isNodejs && { id: 'nodejs', label: 'Node.js', icon: '🟩', desc: 'npm builds', versions: installedNodejs, versionKey: 'nodejsVersion' },
+                                                isLaravel && { id: 'queue', label: 'Queue Worker', icon: '📋', desc: 'Background jobs', versions: [], versionKey: null },
+                                            ].filter(Boolean).map((svc) => (
+                                                <div key={svc.id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border cursor-pointer transition-all ${config.services[svc.id] ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`} onClick={() => toggleService(svc.id)}>
+                                                    <span className="text-base">{svc.icon}</span>
+                                                    <div className="flex-1 min-w-0">
+                                                        <span className="text-xs font-medium text-gray-900 dark:text-white">{svc.label}</span>
+                                                        {config.services[svc.id] && svc.versions.length > 1 && svc.versionKey && (
+                                                            <select
+                                                                value={config.services[svc.versionKey]}
+                                                                onChange={(e) => { e.stopPropagation(); setConfig(prev => ({ ...prev, services: { ...prev.services, [svc.versionKey]: e.target.value } })); }}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className="block w-full text-xs border-0 bg-transparent text-green-600 dark:text-green-400 focus:ring-0 p-0 mt-0.5"
+                                                            >
+                                                                {svc.versions.map((v) => <option key={v} value={v}>{v}</option>)}
+                                                            </select>
+                                                        )}
+                                                        {config.services[svc.id] && svc.versions.length === 1 && (
+                                                            <div className="text-xs text-green-600 dark:text-green-400">{svc.versions[0]}</div>
+                                                        )}
+                                                    </div>
+                                                    <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${config.services[svc.id] ? 'bg-green-500 border-green-500' : 'border-gray-300 dark:border-gray-600'}`}>
+                                                        {config.services[svc.id] && <span className="text-white text-xs leading-none">✓</span>}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
 
                             {/* Actions */}
-                            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
                                 <button
                                     type="button"
                                     onClick={onClose}

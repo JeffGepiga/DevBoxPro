@@ -28,6 +28,7 @@ import {
   Pencil,
   Check,
   Share2,
+  Download,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -240,9 +241,9 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
   ];
 
   return (
-    <div className="p-8">
+    <div className="p-6">
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-4">
         <Link
           to="/projects"
           className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 mb-4"
@@ -420,17 +421,16 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
       {activeTab === 'environment' && <EnvironmentTab project={project} onRefresh={refreshProjects} />}
 
       {/* Danger Zone */}
-      <div className="mt-12 pt-8 border-t border-gray-200 dark:border-gray-700">
-        <h3 className="text-lg font-semibold text-red-600 mb-4">Danger Zone</h3>
-        <div className="card border-red-200 dark:border-red-900/50 p-6">
+      <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+        <div className="card border-red-200 dark:border-red-900/50 p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium text-gray-900 dark:text-white">Delete Project</p>
+              <p className="font-medium text-red-600">Danger Zone</p>
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Remove the project from DevBox Pro. You can optionally delete the project files.
               </p>
             </div>
-            <button onClick={handleDeleteClick} className="btn-danger">
+            <button onClick={handleDeleteClick} className="btn-danger btn-sm">
               <Trash2 className="w-4 h-4" />
               Delete Project
             </button>
@@ -539,6 +539,7 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
 
 function OverviewTab({ project, processes, refreshProjects }) {
   const { showConfirm, showAlert } = useModal();
+  const navigate = useNavigate();
   const runningProcesses = processes.filter((p) => p.isRunning);
   const [phpVersions, setPhpVersions] = useState([]);
   const [binariesStatus, setBinariesStatus] = useState({});
@@ -547,6 +548,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
   const [localIpAddresses, setLocalIpAddresses] = useState([]);
   const [otherNetworkProjectsCount, setOtherNetworkProjectsCount] = useState(0);
   const [webServerPorts, setWebServerPorts] = useState({ httpPort: 80, sslPort: 443 });
+  const [phpMyAdminLoading, setPhpMyAdminLoading] = useState(null);
   const [versionOptions, setVersionOptions] = useState({
     mysql: [],
     mariadb: [],
@@ -727,9 +729,15 @@ function OverviewTab({ project, processes, refreshProjects }) {
   };
 
   const openPhpMyAdmin = async (dbType, version) => {
-    const url = await window.devbox?.database.getPhpMyAdminUrl(dbType, version);
-    if (url) {
-      window.devbox?.system.openExternal(url);
+    setPhpMyAdminLoading(dbType);
+    try {
+      // getPhpMyAdminUrl already polls until phpMyAdmin is ready before returning
+      const url = await window.devbox?.database.getPhpMyAdminUrl(dbType, version);
+      if (url) {
+        window.devbox?.system.openExternal(url);
+      }
+    } finally {
+      setPhpMyAdminLoading(null);
     }
   };
 
@@ -817,7 +825,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Pending Changes Banner */}
       {hasPendingChanges && (
         <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 flex items-center justify-between">
@@ -845,198 +853,149 @@ function OverviewTab({ project, processes, refreshProjects }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         {/* Project Info */}
-        <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Project Information
-          </h3>
-          <dl className="space-y-4">
-            <div className="flex justify-between">
-              <dt className="text-gray-500 dark:text-gray-400">Type</dt>
-              <dd className="font-medium text-gray-900 dark:text-white capitalize">
-                {project.type}
-              </dd>
-            </div>
-            {/* PHP Version - only for PHP-based projects */}
-            {project.type !== 'nodejs' && (
-              <div className="flex justify-between items-center">
-                <dt className="text-gray-500 dark:text-gray-400">PHP Version</dt>
-                <dd className="flex items-center gap-2">
-                  {(() => {
-                    const currentVersion = getEffectiveValue('phpVersion');
-                    const isCurrentInstalled = phpVersions.some(v => v.version === currentVersion);
-                    const displayVersions = isCurrentInstalled
-                      ? phpVersions
-                      : [{ version: currentVersion, notInstalled: true }, ...phpVersions];
+        <div className="card p-5">
+          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Project Information</h3>
 
-                    return (
-                      <>
-                        <select
-                          value={currentVersion}
-                          onChange={(e) => handlePhpVersionChange(e.target.value)}
-                          className={clsx(
-                            "input py-1 px-2 text-sm w-24",
-                            !isCurrentInstalled && "border-red-500 dark:border-red-500"
-                          )}
-                        >
-                          {displayVersions.map((v) => (
-                            <option
-                              key={v.version}
-                              value={v.version}
-                              className={v.notInstalled ? 'text-red-500' : ''}
-                            >
-                              {v.version}{v.notInstalled ? ' (not installed)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                        {!isCurrentInstalled && (
-                          <AlertTriangle className="w-4 h-4 text-red-500" title="PHP version not installed" />
-                        )}
-                      </>
-                    );
-                  })()}
-                </dd>
-              </div>
-            )}
-
-            {/* Node.js Version + App Port - only for Node.js projects */}
-            {project.type === 'nodejs' && (
-              <>
-                {project.nodeFramework && (
-                  <div className="flex justify-between items-center">
-                    <dt className="text-gray-500 dark:text-gray-400">Framework</dt>
-                    <dd className="font-medium text-gray-900 dark:text-white">
-                      {{
-                        express: 'Express', fastify: 'Fastify', nestjs: 'NestJS', nextjs: 'Next.js',
-                        nuxtjs: 'Nuxt.js', koa: 'Koa', hapi: 'Hapi', adonisjs: 'AdonisJS',
-                        remix: 'Remix', sveltekit: 'SvelteKit', strapi: 'Strapi', elysia: 'Elysia',
-                      }[project.nodeFramework] || project.nodeFramework}
-                    </dd>
-                  </div>
-                )}
-                <div className="flex justify-between items-center">
-                  <dt className="text-gray-500 dark:text-gray-400">Node.js Version</dt>
-                  <dd className="font-medium text-gray-900 dark:text-white">
-                    v{project.services?.nodejsVersion || '20'}
-                  </dd>
-                </div>
-                <div className="flex justify-between items-center">
-                  <dt className="text-gray-500 dark:text-gray-400">App Port</dt>
-                  <dd className="font-medium text-gray-900 dark:text-white font-mono">
-                    {project.nodePort || 3000}
-                  </dd>
-                </div>
-                {project.nodeStartCommand && (
-                  <div className="flex justify-between items-center">
-                    <dt className="text-gray-500 dark:text-gray-400">Start Command</dt>
-                    <dd className="font-medium text-gray-900 dark:text-white font-mono text-sm">
-                      {project.nodeStartCommand}
-                    </dd>
-                  </div>
-                )}
-              </>
-            )}
-            <div className="flex justify-between">
-              <dt className="text-gray-500 dark:text-gray-400">Port</dt>
-              <dd className="font-medium text-gray-900 dark:text-white">
-                {project.port} (HTTP) / {project.sslPort || 'N/A'} (HTTPS)
-              </dd>
+          {/* Stat tiles */}
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-3">
+              <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Type</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white capitalize">{project.type}</p>
             </div>
-            <div className="flex justify-between">
-              <dt className="text-gray-500 dark:text-gray-400">SSL</dt>
-              <dd className="font-medium text-gray-900 dark:text-white">
-                {project.ssl ? 'Enabled' : 'Disabled'}
-              </dd>
+            <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-3">
+              <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Status</p>
+              <span className={clsx('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium', project.isRunning ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400')}>
+                {project.isRunning ? 'Running' : 'Stopped'}
+              </span>
             </div>
-            <div className="flex justify-between">
-              <dt className="text-gray-500 dark:text-gray-400">Status</dt>
-              <dd>
-                <span className={clsx('badge', project.isRunning ? 'badge-success' : 'badge-neutral')}>
-                  {project.isRunning ? 'Running' : 'Stopped'}
-                </span>
-              </dd>
+            <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-3">
+              <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Port</p>
+              <p className="text-sm font-mono font-semibold text-gray-900 dark:text-white">{project.port}<span className="text-gray-400 dark:text-gray-500 font-normal"> / {project.sslPort || '—'}</span></p>
             </div>
-            <div className="flex justify-between items-center">
-              <dt className="text-gray-500 dark:text-gray-400">Auto-start</dt>
-              <dd>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={getEffectiveValue('autoStart') || false}
-                    onChange={(e) => {
-                      const newValue = e.target.checked;
-                      if (newValue === (project.autoStart || false)) {
-                        const { autoStart, ...rest } = pendingChanges;
-                        setPendingChanges(rest);
-                      } else {
-                        setPendingChanges({ ...pendingChanges, autoStart: newValue });
-                      }
-                    }}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
-                </label>
-              </dd>
-            </div>
-            <div className="flex justify-between items-center">
-              <dt className="text-gray-500 dark:text-gray-400">Share on Local Network</dt>
-              <dd>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={getEffectiveValue('networkAccess') || false}
-                    onChange={(e) => {
-                      const newValue = e.target.checked;
-                      if (newValue === (project.networkAccess || false)) {
-                        const { networkAccess, ...rest } = pendingChanges;
-                        setPendingChanges(rest);
-                      } else {
-                        setPendingChanges({ ...pendingChanges, networkAccess: newValue });
-                      }
-                    }}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
-                </label>
-              </dd>
-            </div>
-          </dl>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">
-            When auto-start is enabled, this project will start automatically when DevBox Pro launches.
-          </p>
-          {getEffectiveValue('networkAccess') && localIpAddresses.length > 0 && (
-            <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-              <p className="text-sm text-blue-700 dark:text-blue-300 font-medium mb-2">
-                🌐 Network Access URLs
+            <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-3">
+              <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">SSL</p>
+              <p className={clsx('text-sm font-semibold', project.ssl ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500')}>
+                {project.ssl ? '🔒 Enabled' : 'Disabled'}
               </p>
-              <div className="space-y-1">
-                {localIpAddresses.map((ip, index) => {
-                  // Use actual web server port for network access (with safe defaults)
-                  const httpPort = webServerPorts?.httpPort || 80;
-                  const displayPort = httpPort === 80 ? '' : `:${httpPort}`;
+            </div>
+          </div>
+
+          {/* PHP version - PHP projects only */}
+          {project.type !== 'nodejs' && (
+            <div className="flex items-center justify-between py-2 border-t border-gray-100 dark:border-gray-700/60">
+              <span className="text-sm text-gray-600 dark:text-gray-400">PHP Version</span>
+              <div className="flex items-center gap-1.5">
+                {(() => {
+                  const currentVersion = getEffectiveValue('phpVersion');
+                  const isCurrentInstalled = phpVersions.some(v => v.version === currentVersion);
+                  const displayVersions = isCurrentInstalled
+                    ? phpVersions
+                    : [{ version: currentVersion, notInstalled: true }, ...phpVersions];
                   return (
-                    <p key={index} className="text-xs text-blue-600 dark:text-blue-400 font-mono">
-                      http://{ip}{displayPort}
-                    </p>
+                    <>
+                      <select
+                        value={currentVersion}
+                        onChange={(e) => handlePhpVersionChange(e.target.value)}
+                        className={clsx('input py-1 px-2 text-sm w-24', !isCurrentInstalled && 'border-red-500 dark:border-red-500')}
+                      >
+                        {displayVersions.map((v) => (
+                          <option key={v.version} value={v.version} className={v.notInstalled ? 'text-red-500' : ''}>
+                            {v.version}{v.notInstalled ? ' (not installed)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {!isCurrentInstalled && <AlertTriangle className="w-4 h-4 text-red-500" title="PHP version not installed" />}
+                    </>
                   );
-                })}
+                })()}
               </div>
-              <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
-                ⚠️ Make sure Windows Firewall allows incoming connections on port {webServerPorts?.httpPort || 80}.
-              </p>
             </div>
           )}
-          {!getEffectiveValue('networkAccess') && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-              Allow devices on your Wi-Fi/LAN to access this project via IP address.
-            </p>
+
+          {/* Node.js info */}
+          {project.type === 'nodejs' && (
+            <div className="border-t border-gray-100 dark:border-gray-700/60 pt-2 space-y-2">
+              {project.nodeFramework && (
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Framework</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">
+                    {({ express: 'Express', fastify: 'Fastify', nestjs: 'NestJS', nextjs: 'Next.js', nuxtjs: 'Nuxt.js', koa: 'Koa', hapi: 'Hapi', adonisjs: 'AdonisJS', remix: 'Remix', sveltekit: 'SvelteKit', strapi: 'Strapi', elysia: 'Elysia' })[project.nodeFramework] || project.nodeFramework}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center justify-between py-1">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Node.js Version</span>
+                <span className="text-sm font-medium font-mono text-gray-900 dark:text-white">v{project.services?.nodejsVersion || '20'}</span>
+              </div>
+              <div className="flex items-center justify-between py-1">
+                <span className="text-sm text-gray-600 dark:text-gray-400">App Port</span>
+                <span className="text-sm font-medium font-mono text-gray-900 dark:text-white">{project.nodePort || 3000}</span>
+              </div>
+              {project.nodeStartCommand && (
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Start Command</span>
+                  <span className="text-sm font-mono text-gray-900 dark:text-white">{project.nodeStartCommand}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Toggles */}
+          <div className="border-t border-gray-100 dark:border-gray-700/60 mt-2 pt-2 space-y-1">
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Auto-start</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" checked={getEffectiveValue('autoStart') || false}
+                  onChange={(e) => {
+                    const newValue = e.target.checked;
+                    if (newValue === (project.autoStart || false)) { const { autoStart, ...rest } = pendingChanges; setPendingChanges(rest); }
+                    else { setPendingChanges({ ...pendingChanges, autoStart: newValue }); }
+                  }} className="sr-only peer" />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+              </label>
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <span className="text-sm text-gray-600 dark:text-gray-400">Share on Local Network</span>
+                {!getEffectiveValue('networkAccess') && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Allow LAN access via IP address</p>
+                )}
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" checked={getEffectiveValue('networkAccess') || false}
+                  onChange={(e) => {
+                    const newValue = e.target.checked;
+                    if (newValue === (project.networkAccess || false)) { const { networkAccess, ...rest } = pendingChanges; setPendingChanges(rest); }
+                    else { setPendingChanges({ ...pendingChanges, networkAccess: newValue }); }
+                  }} className="sr-only peer" />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+              </label>
+            </div>
+          </div>
+
+          {getEffectiveValue('networkAccess') && localIpAddresses.length > 0 && (
+            <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-1.5">🌐 Network Access URLs</p>
+              <div className="space-y-1">
+                {localIpAddresses.map((ip, index) => {
+                  const httpPort = webServerPorts?.httpPort || 80;
+                  const displayPort = httpPort === 80 ? '' : `:${httpPort}`;
+                  return <p key={index} className="text-xs text-blue-600 dark:text-blue-400 font-mono">http://{ip}{displayPort}</p>;
+                })}
+              </div>
+              <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">⚠️ Allow port {webServerPorts?.httpPort || 80} in Windows Firewall.</p>
+            </div>
           )}
         </div>
 
+        {/* Domains + Web Server — middle column */}
+        <div className="flex flex-col gap-4">
+
         {/* Domains */}
-        <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+        <div className="card p-5">
+          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
             Domains
           </h3>
           <ul className="space-y-2">
@@ -1060,8 +1019,8 @@ function OverviewTab({ project, processes, refreshProjects }) {
           )}
 
           {/* Document Root */}
-          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700/60">
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
               Document Root
             </label>
             <input
@@ -1090,8 +1049,8 @@ function OverviewTab({ project, processes, refreshProjects }) {
         </div>
 
         {/* Web Server */}
-        <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+        <div className="card p-5">
+          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
             Web Server
           </h3>
           <div className="grid grid-cols-2 gap-4">
@@ -1168,16 +1127,25 @@ function OverviewTab({ project, processes, refreshProjects }) {
           )}
         </div>
 
-        {/* Services - Now with toggle buttons and version selectors */}
-        <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Services
-          </h3>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            Note: Only one database (MySQL or MariaDB) can be active at a time. Select specific versions for legacy app compatibility.
-          </p>
-          <div className="space-y-3">
-            {serviceDefinitions.map((service) => {
+        </div>{/* end middle column */}
+
+        {/* Services — full width below */}
+        <div className="card p-5 lg:col-span-2">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white">Services</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Only one database can be active at a time. Changes take effect after saving.
+              </p>
+            </div>
+          </div>
+
+          {(() => {
+            const DB_IDS = ['mysql', 'mariadb', 'postgresql', 'mongodb'];
+            const dbServices = serviceDefinitions.filter(s => DB_IDS.includes(s.id));
+            const otherServices = serviceDefinitions.filter(s => !DB_IDS.includes(s.id));
+
+            const renderRow = (service) => {
               const effectiveServices = getEffectiveValue('services');
               const isEnabled = effectiveServices[service.id] || false;
               const isInstalled = service.installed;
@@ -1192,123 +1160,140 @@ function OverviewTab({ project, processes, refreshProjects }) {
                 <div
                   key={service.id}
                   className={clsx(
-                    'p-3 rounded-lg border-2 transition-all',
+                    'flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all',
                     isEnabled
-                      ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                      : 'border-gray-200 dark:border-gray-700',
-                    !isInstalled && 'opacity-50'
+                      ? 'border-green-400 bg-green-50 dark:bg-green-900/20'
+                      : isInstalled
+                        ? 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                        : 'border-dashed border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/20'
                   )}
                 >
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={() => isInstalled && handleServiceToggle(service.id)}
-                      disabled={!isInstalled}
-                      className="flex items-center gap-3 text-left flex-1"
-                    >
-                      <span className="text-xl">{service.icon}</span>
-                      <div>
-                        <span className={clsx(
-                          'font-medium',
-                          isEnabled ? 'text-green-700 dark:text-green-400' : 'text-gray-700 dark:text-gray-300'
-                        )}>
-                          {service.name}
+                  {/* Icon */}
+                  <span className={clsx('text-lg shrink-0 leading-none', !isInstalled && 'opacity-30')}>
+                    {service.icon}
+                  </span>
+
+                  {/* Name + port */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={clsx(
+                        'text-sm font-medium',
+                        isEnabled
+                          ? 'text-green-700 dark:text-green-400'
+                          : !isInstalled
+                            ? 'text-gray-400 dark:text-gray-500'
+                            : 'text-gray-800 dark:text-gray-200'
+                      )}>
+                        {service.name}
+                      </span>
+                      {isEnabled && servicePort && (
+                        <span className="text-xs font-mono text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/40 px-1.5 py-0.5 rounded">
+                          :{servicePort}
                         </span>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          {isEnabled && servicePort && (
-                            <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800">
-                              :{servicePort}
-                            </span>
-                          )}
-                          {(isChanged || versionChanged) && (
-                            <span className="text-xs text-yellow-600 dark:text-yellow-400">Modified</span>
-                          )}
-                          {!isInstalled && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">Not installed</span>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                    <div className="flex items-center gap-3">
-
-                      {/* phpMyAdmin Button for active database */}
-                      {isEnabled && service.isDatabase && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openPhpMyAdmin(service.id, currentVersion);
-                          }}
-                          className="btn-ghost btn-xs flex items-center gap-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
-                          title={`Open ${service.name} ${currentVersion} in phpMyAdmin`}
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                          <span className="hidden sm:inline">phpMyAdmin</span>
-                        </button>
                       )}
-
-                      {/* Version selector for services that support it */}
-                      {service.hasVersions && isEnabled && (
-                        <select
-                          value={currentVersion}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            handleServiceVersionChange(service.id, e.target.value);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="input py-1 px-2 text-xs w-20"
-                        >
-                          {versionOptions[service.id]?.map((v) => {
-                            // Check installed status from binariesStatus (not availableVersions)
-                            const isVersionInstalled = binariesStatus?.[service.id]?.[v]?.installed === true;
-                            return (
-                              <option key={v} value={v} disabled={!isVersionInstalled}>
-                                {v} {!isVersionInstalled ? '(not installed)' : ''}
-                              </option>
-                            );
-                          })}
-                        </select>
+                      {(isChanged || versionChanged) && (
+                        <span className="text-xs text-yellow-500 font-bold">•</span>
                       )}
+                    </div>
+                  </div>
+
+                  {/* Right side: version + toggle OR install */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {service.hasVersions && isEnabled && isInstalled && (
+                      <select
+                        value={currentVersion}
+                        onChange={(e) => handleServiceVersionChange(service.id, e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="input py-0.5 px-1.5 text-xs w-16"
+                      >
+                        {versionOptions[service.id]?.map((v) => (
+                          <option key={v} value={v} disabled={binariesStatus?.[service.id]?.[v]?.installed !== true}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    {!isInstalled ? (
                       <button
-                        onClick={() => isInstalled && handleServiceToggle(service.id)}
-                        disabled={!isInstalled}
+                        onClick={() => navigate('/binaries')}
+                        className="flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium border border-primary-200 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 dark:hover:bg-primary-900/40 px-2 py-1 rounded transition-colors"
+                      >
+                        <Download className="w-3 h-3" />
+                        Install
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleServiceToggle(service.id)}
                         className={clsx(
-                          'w-10 h-6 rounded-full transition-colors relative',
-                          isEnabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600',
-                          !isInstalled && 'cursor-not-allowed'
+                          'w-9 h-5 rounded-full transition-colors relative shrink-0',
+                          isEnabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
                         )}
                       >
                         <div className={clsx(
-                          'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                          isEnabled ? 'translate-x-5' : 'translate-x-1'
+                          'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform',
+                          isEnabled ? 'translate-x-4' : 'translate-x-0.5'
                         )} />
                       </button>
-                    </div>
+                    )}
                   </div>
                 </div>
               );
-            })}
-          </div>
-          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-            Click to toggle services. Select version for legacy app support. Changes will take effect after saving and restarting.
-          </p>
+            };
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+                {/* Databases */}
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2">
+                    Databases
+                  </p>
+                  {dbServices.map(renderRow)}
+                </div>
+
+                {/* Other services */}
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2">
+                    Services
+                  </p>
+                  {otherServices.map(renderRow)}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* phpMyAdmin quick-launch — only for MySQL / MariaDB */}
+          {(() => {
+            const effectiveServices = getEffectiveValue('services');
+            const activeDb = ['mysql', 'mariadb'].find(db => effectiveServices[db]);
+            if (!activeDb) return null;
+            const activeVersion = effectiveServices[`${activeDb}Version`] || versionOptions[activeDb]?.[0];
+            const isLoading = phpMyAdminLoading === activeDb;
+            return (
+              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                <button
+                  onClick={() => openPhpMyAdmin(activeDb, activeVersion)}
+                  disabled={isLoading}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Starting phpMyAdmin...
+                    </>
+                  ) : (
+                    <>
+                      <ExternalLink className="w-4 h-4" />
+                      Open phpMyAdmin
+                      <span className="text-xs opacity-60 capitalize">({activeDb} {activeVersion})</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            );
+          })()}
         </div>
 
-        {/* Workers Summary */}
-        <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Workers
-          </h3>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                {runningProcesses.length}
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                of {processes.length} running
-              </p>
-            </div>
-            <Cpu className="w-12 h-12 text-gray-300 dark:text-gray-600" />
-          </div>
-        </div>
       </div>
     </div >
   );
