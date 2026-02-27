@@ -32,7 +32,11 @@ class ConfigStore {
     let dataPath;
     let defaultProjectsPath;
 
-    if (process.env.PLAYWRIGHT_TEST === 'true') {
+    // Accept both env var (set by test runner) and CLI arg (set by main.js from --playwright-e2e)
+    const isPlaywrightTest = process.env.PLAYWRIGHT_TEST === 'true'
+      || process.argv.includes('--playwright-e2e');
+
+    if (isPlaywrightTest) {
       const baseDir = process.env.TEST_USER_DATA_DIR || os.tmpdir();
       dataPath = path.join(baseDir, '.devbox-pro-test');
       defaultProjectsPath = path.join(dataPath, 'Projects');

@@ -430,11 +430,24 @@ class DatabaseManager {
       return [];
     }
 
-    const result = await this.runDbQuery('SHOW DATABASES');
-    return result.map((row) => ({
-      name: (row.Database || '').trim(),
-      isSystem: ['information_schema', 'mysql', 'performance_schema', 'sys'].includes((row.Database || '').trim()),
-    }));
+    try {
+      const result = await this.runDbQuery('SHOW DATABASES');
+      return result.map((row) => ({
+        name: (row.Database || '').trim(),
+        isSystem: ['information_schema', 'mysql', 'performance_schema', 'sys'].includes((row.Database || '').trim()),
+      }));
+    } catch (error) {
+      // If the service reported as running but the connection fails (e.g. still
+      // starting up, or mocked as running in tests but not actually started),
+      // return an empty list rather than propagating a noisy connection error.
+      const msg = error.message || '';
+      const isConnectionError = msg.includes('2003') || msg.includes("Can't connect") ||
+        msg.includes('ECONNREFUSED') || msg.includes('Connection refused');
+      if (isConnectionError) {
+        return [];
+      }
+      throw error;
+    }
   }
 
   async createDatabase(name, version = null) {

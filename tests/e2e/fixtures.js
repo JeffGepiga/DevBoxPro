@@ -3,9 +3,35 @@ import { _electron as electron } from 'playwright';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
+import { promises as fsp } from 'fs';
+
+const realConfigPath = path.join(os.homedir(), '.devbox-pro', 'devbox-pro-config.json');
 
 // Setup highly-isolated test environments for each Playwright test worker
 export const test = base.extend({
+    // Worker-scoped fixture: backs up the real config before the first test and
+    // restores it after the last test in this worker — safety net if isolation fails.
+    _realConfigGuard: [async ({ }, use) => {
+        let backup = null;
+        try {
+            backup = await fsp.readFile(realConfigPath, 'utf8');
+        } catch {
+            // Config doesn't exist yet — nothing to back up
+        }
+
+        await use(null);
+
+        // Restore the real config after all tests in this worker
+        if (backup !== null) {
+            try {
+                await fsp.mkdir(path.dirname(realConfigPath), { recursive: true });
+                await fsp.writeFile(realConfigPath, backup, 'utf8');
+            } catch (e) {
+                console.error('[e2e fixture] Failed to restore real config:', e.message);
+            }
+        }
+    }, { scope: 'worker', auto: true }],
+
     electronApp: async ({ }, use) => {
         // Determine the path to the main process entry
         const mainEntry = path.join(__dirname, '..', '..', 'src', 'main', 'main.js');
@@ -16,14 +42,16 @@ export const test = base.extend({
         const envArgs = {
             ...process.env,
             NODE_ENV: 'production',
-            PLAYWRIGHT_TEST: 'true', // Optional flag for internal mocking if needed
-            TEST_USER_DATA_DIR: tempUserDataDir, // Explicitly pass to app
+            PLAYWRIGHT_TEST: 'true',
+            TEST_USER_DATA_DIR: tempUserDataDir,
         };
         delete envArgs.ELECTRON_RUN_AS_NODE;
 
-        // Launch Electron via Playwright
+        // Launch Electron via Playwright.
+        // --playwright-e2e <dir> is a CLI arg (always received, unlike env vars on Windows)
+        // that forces the main process into test mode and sets the data dir.
         const electronApp = await electron.launch({
-            args: [mainEntry, '--user-data-dir', tempUserDataDir],
+            args: [mainEntry, '--user-data-dir', tempUserDataDir, '--playwright-e2e', tempUserDataDir],
             env: envArgs
         });
 
@@ -32,6 +60,13 @@ export const test = base.extend({
 
         // Teardown: close app
         await electronApp.close();
+
+        // Remove the temp user data dir so no leftover files accumulate
+        try {
+            await fsp.rm(tempUserDataDir, { recursive: true, force: true });
+        } catch {
+            // Ignore cleanup errors — temp dir will be cleared by the OS eventually
+        }
     },
 
     page: async ({ electronApp }, use) => {

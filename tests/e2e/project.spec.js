@@ -20,7 +20,7 @@ test.describe('DevBoxPro Project Lifecycle', () => {
         // We need to wait for the next button to be enabled before clicking
         // Select Custom PHP to avoid running installation scripts (like composer) during tests
         await page.click('text="Custom PHP"');
-        const nextButton = page.getByRole('button', { name: 'Next' });
+        const nextButton = page.getByRole('button', { name: 'Next', exact: true });
         await expect(nextButton).toBeEnabled();
         await nextButton.click();
 

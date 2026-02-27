@@ -1,5 +1,16 @@
 const { app, BrowserWindow, ipcMain, Menu, Tray, nativeTheme, dialog, nativeImage } = require('electron');
 const path = require('path');
+
+// CLI arg takes priority over env var — more reliable on Windows when launched by Playwright
+// Usage: electron . --playwright-e2e <tempUserDataDir>
+const _e2eArgIndex = process.argv.indexOf('--playwright-e2e');
+if (_e2eArgIndex !== -1) {
+  process.env.PLAYWRIGHT_TEST = 'true';
+  const _e2eDir = process.argv[_e2eArgIndex + 1];
+  if (_e2eDir && !_e2eDir.startsWith('--')) {
+    process.env.TEST_USER_DATA_DIR = _e2eDir;
+  }
+}
 const { ServiceManager } = require('./services/ServiceManager');
 const { ProjectManager } = require('./services/ProjectManager');
 const { PhpManager } = require('./services/PhpManager');
