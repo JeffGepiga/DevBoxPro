@@ -51,8 +51,15 @@ test.describe('DevBoxPro Project Lifecycle', () => {
         await expect(submitButton).toBeEnabled();
         await submitButton.click();
 
-        // Custom projects don't have installation progress, so it redirects straight to Project details page
-        await expect(page.locator(`h1:has-text("${uniqueProjectName}")`).or(page.locator(`h2:has-text("${uniqueProjectName}")`))).toBeVisible({ timeout: 10000 });
+        // Custom projects don't have installation progress, so it redirects straight to Project details page.
+        // Wait for the URL to change to /projects/<id> (confirms navigation + IPC round-trip completed).
+        await page.waitForURL(/\/projects\/[^/]+$/, { timeout: 20000 });
+
+        // Wait for any loading spinner to disappear (ProjectDetail fetches project from context).
+        await page.waitForSelector('.animate-spin', { state: 'detached', timeout: 10000 }).catch(() => {});
+
+        // Now the project name heading should be visible.
+        await expect(page.locator(`h1:has-text("${uniqueProjectName}")`).or(page.locator(`h2:has-text("${uniqueProjectName}")`))).toBeVisible({ timeout: 15000 });
 
         // Check that project status is running or stopped (can be stopped initially)
         const statusBadge = page.locator('.status-stopped, .status-running').first();

@@ -47,9 +47,18 @@ export const test = base.extend({
         };
         delete envArgs.ELECTRON_RUN_AS_NODE;
 
+        // Write a sentinel file into the temp userData dir BEFORE launching Electron.
+        // Electron guarantees --user-data-dir sets app.getPath('userData'), so main.js
+        // reads the sentinel from there — 100% reliable, no argv parsing required.
+        await fsp.mkdir(tempUserDataDir, { recursive: true });
+        await fsp.writeFile(
+            path.join(tempUserDataDir, 'devboxpro-e2e.json'),
+            JSON.stringify({ dataDir: tempUserDataDir }),
+            'utf8'
+        );
+
         // Launch Electron via Playwright.
-        // --playwright-e2e <dir> is a CLI arg (always received, unlike env vars on Windows)
-        // that forces the main process into test mode and sets the data dir.
+        // Belt-and-suspenders: also pass --playwright-e2e arg + env vars as fallbacks.
         const electronApp = await electron.launch({
             args: [mainEntry, '--user-data-dir', tempUserDataDir, '--playwright-e2e', tempUserDataDir],
             env: envArgs

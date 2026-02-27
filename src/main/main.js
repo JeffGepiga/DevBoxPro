@@ -1,16 +1,31 @@
 const { app, BrowserWindow, ipcMain, Menu, Tray, nativeTheme, dialog, nativeImage } = require('electron');
 const path = require('path');
 
-// CLI arg takes priority over env var — more reliable on Windows when launched by Playwright
-// Usage: electron . --playwright-e2e <tempUserDataDir>
-const _e2eArgIndex = process.argv.indexOf('--playwright-e2e');
-if (_e2eArgIndex !== -1) {
-  process.env.PLAYWRIGHT_TEST = 'true';
-  const _e2eDir = process.argv[_e2eArgIndex + 1];
-  if (_e2eDir && !_e2eDir.startsWith('--')) {
-    process.env.TEST_USER_DATA_DIR = _e2eDir;
+// ── E2E Isolation ────────────────────────────────────────────────────────────
+// Strategy 1 (primary): sentinel file in userData dir.
+// Playwright writes <tempDir>/devboxpro-e2e.json before launching Electron.
+// Electron applies --user-data-dir BEFORE main.js runs, so app.getPath('userData')
+// already points to the temp dir here — no argv parsing required.
+try {
+  const _fs = require('fs');
+  const _sentinelPath = path.join(app.getPath('userData'), 'devboxpro-e2e.json');
+  if (_fs.existsSync(_sentinelPath)) {
+    const _sentinel = JSON.parse(_fs.readFileSync(_sentinelPath, 'utf8'));
+    process.env.PLAYWRIGHT_TEST = 'true';
+    if (_sentinel.dataDir) process.env.TEST_USER_DATA_DIR = _sentinel.dataDir;
+  }
+} catch (_e) { /* non-fatal */ }
+
+// Strategy 2 (fallback): explicit CLI arg --playwright-e2e <dir>
+if (process.env.PLAYWRIGHT_TEST !== 'true') {
+  const _e2eArgIndex = process.argv.indexOf('--playwright-e2e');
+  if (_e2eArgIndex !== -1) {
+    process.env.PLAYWRIGHT_TEST = 'true';
+    const _e2eDir = process.argv[_e2eArgIndex + 1];
+    if (_e2eDir && !_e2eDir.startsWith('--')) process.env.TEST_USER_DATA_DIR = _e2eDir;
   }
 }
+// ─────────────────────────────────────────────────────────────────────────────
 const { ServiceManager } = require('./services/ServiceManager');
 const { ProjectManager } = require('./services/ProjectManager');
 const { PhpManager } = require('./services/PhpManager');
