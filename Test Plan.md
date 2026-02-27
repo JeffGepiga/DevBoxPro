@@ -509,15 +509,13 @@ The [setupIpcHandlers](file:///c:/Users/Jeffrey/Documents/devboxpro/src/main/ipc
 | **ImportProjectModal.jsx** | Form validation; submit triggers import; error display; loading state |
 | **InstallationProgress.jsx** | Progress bar renders; percentage display; completion state |
 | **PhpIniEditor.jsx** | Renders INI content; edit mode; save triggers callback; cancel restores |
-| **ProjectTerminal.jsx** | Terminal container renders; sends commands; receives output |
-| **XTerminal.jsx** | Terminal initialization; resize handling; input/output |
+| **XTerminal.jsx** | Terminal initialization; resize handling; input/output; sends commands; receives output |
 
 - [x] `tests/renderer/components/Sidebar.test.jsx`
 - [x] `tests/renderer/components/Modal.test.jsx`
 - [x] `tests/renderer/components/ImportProjectModal.test.jsx`
 - [x] `tests/renderer/components/InstallationProgress.test.jsx`
 - [x] `tests/renderer/components/PhpIniEditor.test.jsx`
-- [x] `tests/renderer/components/ProjectTerminal.test.jsx`
 - [x] `tests/renderer/components/XTerminal.test.jsx`
 
 ### 5.3 Pages

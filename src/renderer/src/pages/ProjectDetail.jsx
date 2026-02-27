@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
-import ProjectTerminal from '../components/ProjectTerminal';
+import XTerminal from '../components/XTerminal';
 import {
   ArrowLeft,
   Play,
@@ -406,12 +406,11 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
         <OverviewTab project={project} processes={processes} refreshProjects={refreshProjects} />
       )}
       <div className="h-[500px]" style={{ display: activeTab === 'terminal' ? 'block' : 'none' }}>
-        <ProjectTerminal
+        <XTerminal
           projectId={id}
           projectPath={project.path}
-          phpVersion={project.phpVersion}
-          autoFocus={activeTab === 'terminal'}
-          onClose={() => setActiveTab('overview')}
+          className="h-full"
+          isVisible={activeTab === 'terminal'}
         />
       </div>
       {activeTab === 'logs' && <LogsTab logs={logs} onRefresh={loadLogs} projectId={id} />}

@@ -273,7 +273,7 @@ DevBoxPro/
 │       │   ├── components/      # Reusable components
 │       │   │   ├── Sidebar.jsx
 │       │   │   ├── PhpIniEditor.jsx
-│       │   │   ├── ProjectTerminal.jsx
+│       │   │   ├── XTerminal.jsx
 │       │   │   └── ...
 │       │   ├── pages/           # Page components
 │       │   │   ├── Dashboard.jsx

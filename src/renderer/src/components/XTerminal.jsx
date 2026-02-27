@@ -4,6 +4,31 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import 'xterm/css/xterm.css';
 
+// Ensure xterm fills its container correctly
+const xtermStyle = `
+  .xterm-container .xterm {
+    height: 100% !important;
+    width: 100% !important;
+    padding: 0 !important;
+  }
+  .xterm-container .xterm-viewport {
+    width: 100% !important;
+    overflow-y: auto !important;
+  }
+  .xterm-container .xterm-screen {
+    width: 100% !important;
+  }
+`;
+
+let styleInjected = false;
+function injectXtermStyle() {
+  if (styleInjected) return;
+  styleInjected = true;
+  const style = document.createElement('style');
+  style.textContent = xtermStyle;
+  document.head.appendChild(style);
+}
+
 const XTerminal = forwardRef(({
   projectPath = null,
   projectId = null,
@@ -11,17 +36,32 @@ const XTerminal = forwardRef(({
   initialCommand = null,
   readOnly = false,
   className = '',
+  isVisible = true,
 }, ref) => {
   const terminalRef = useRef(null);
   const xtermRef = useRef(null);
   const fitAddonRef = useRef(null);
+  const mountRef = useRef(null); // Separate mount point for xterm (no padding)
   const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    injectXtermStyle();
+  }, []);
   const commandBuffer = useRef('');
   const commandHistory = useRef([]);
   const historyIndex = useRef(-1);
   const savedCommand = useRef('');
   const isRunningCommand = useRef(false);
   const runningProcessId = useRef(null);
+
+  // Re-fit whenever the terminal becomes visible (container was display:none before)
+  useEffect(() => {
+    if (isVisible && fitAddonRef.current) {
+      // Small delay to let the browser complete the layout after display change
+      const t = setTimeout(() => fitAddonRef.current?.fit(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [isVisible]);
 
   // Expose methods to parent
   useImperativeHandle(ref, () => ({
@@ -54,7 +94,7 @@ const XTerminal = forwardRef(({
   }));
 
   useEffect(() => {
-    if (!terminalRef.current) return;
+    if (!mountRef.current) return;
 
     // Create terminal
     const terminal = new Terminal({
@@ -97,13 +137,13 @@ const XTerminal = forwardRef(({
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(webLinksAddon);
 
-    // Open terminal in container
-    terminal.open(terminalRef.current);
+    // Open terminal in its dedicated mount div (no padding so FitAddon measures correctly)
+    terminal.open(mountRef.current);
 
     // Fit to container
     setTimeout(() => {
       fitAddon.fit();
-    }, 100);
+    }, 50);
 
     xtermRef.current = terminal;
     fitAddonRef.current = fitAddon;
@@ -112,7 +152,7 @@ const XTerminal = forwardRef(({
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
     });
-    resizeObserver.observe(terminalRef.current);
+    resizeObserver.observe(mountRef.current);
 
     // Welcome message
     terminal.writeln('\x1b[1;34m╔══════════════════════════════════════════════════════════════════╗\x1b[0m');
@@ -319,7 +359,10 @@ const XTerminal = forwardRef(({
         // Event structure from backend: { projectId, text, type }
         // Add null check as other terminal events may have different structure
         if (event && event.projectId === processId && event.text) {
-          terminal.write(event.text);
+          // Normalize line endings: \n alone means "move down, keep column" in VT100.
+          // Without a real PTY, npm/node output raw \n so we must convert to \r\n
+          // so xterm resets the cursor to column 0 on each new line.
+          terminal.write(event.text.replace(/\r?\n/g, '\r\n'));
         }
       };
 
@@ -330,7 +373,10 @@ const XTerminal = forwardRef(({
         const result = await window.devbox?.terminal?.runCommand?.(
           processId,
           finalCommand,
-          { cwd, interactive: true }
+          {
+            cwd,
+            interactive: true,
+          }
         );
 
         // Remove listener after command completes
@@ -365,10 +411,18 @@ const XTerminal = forwardRef(({
         width: '100%',
         height: '100%',
         backgroundColor: '#1a1b26',
-        padding: '8px',
         borderRadius: '8px',
+        overflow: 'hidden',
+        padding: '4px',
+        boxSizing: 'border-box',
       }}
-    />
+    >
+      {/* Separate inner div for xterm mount — padding-free so FitAddon measures correctly */}
+      <div
+        ref={mountRef}
+        style={{ width: '100%', height: '100%' }}
+      />
+    </div>
   );
 });
 

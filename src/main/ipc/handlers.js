@@ -1264,12 +1264,11 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
           PATH: enhancedPath,
           Path: enhancedPath, // Windows uses Path
           COMPOSER_HOME: path.join(resourcePath, 'composer'),
-          // Force ANSI color output
+          // Force ANSI color codes only — do NOT set ANSICON/ConEmuANSI/TERM
+          // Those flags make npm think it has an interactive PTY and emit
+          // cursor-positioning escape codes (\x1b[NG) that break alignment
+          // when piped through stdio without a real PTY.
           FORCE_COLOR: '1',
-          TERM: 'xterm-256color',
-          // Laravel/Symfony specific
-          ANSICON: '1',
-          ConEmuANSI: 'ON',
         },
         shell: false,
         windowsHide: true,
@@ -1279,8 +1278,16 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       // Store process reference for potential cancellation
       runningProcesses.set(projectId, proc);
 
+      // Strip cursor-column positioning codes (\x1b[NG) that appear when a
+      // subprocess thinks it has a PTY — these cause cascading indentation in xterm.
+      const stripCursorCodes = (text) =>
+        text
+          .replace(/\x1b\[\d+G/g, '') // cursor to absolute column N
+          .replace(/\x1b\[\d+;\d+H/g, '') // cursor to row;col
+          .replace(/\x1b\[\d+C/g, ''); // cursor forward N cols
+
       proc.stdout.on('data', (data) => {
-        const text = data.toString();
+        const text = stripCursorCodes(data.toString());
         stdout += text;
         // Send real-time output to renderer
         mainWindow?.webContents.send('terminal:output', {
@@ -1291,7 +1298,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       });
 
       proc.stderr.on('data', (data) => {
-        const text = data.toString();
+        const text = stripCursorCodes(data.toString());
         stderr += text;
         mainWindow?.webContents.send('terminal:output', {
           projectId,

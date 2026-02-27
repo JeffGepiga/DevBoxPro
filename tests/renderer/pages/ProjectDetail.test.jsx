@@ -65,9 +65,8 @@ vi.mock('@/context/ModalContext', () => ({
     useModal: () => ({ showAlert: vi.fn(), showConfirm: vi.fn().mockResolvedValue(false) }),
 }));
 
-// Mock XTerminal & ProjectTerminal (they require canvas)
+// Mock XTerminal (requires canvas)
 vi.mock('@/components/XTerminal', () => ({ default: () => null }));
-vi.mock('@/components/ProjectTerminal', () => ({ default: () => <div data-testid="project-terminal" /> }));
 vi.mock('@/components/PhpIniEditor', () => ({ default: () => null }));
 
 import ProjectDetail from '@/pages/ProjectDetail';
