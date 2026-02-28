@@ -659,21 +659,10 @@ class ProjectManager {
       sendOutput('═══════════════════════════════════════════════════════════════', 'info');
       sendOutput('🎉 Thank you for using DevBox Pro!', 'success');
       sendOutput('', 'info');
-
-      // Get dynamic ports from ServiceManager for the project's web server
-      // so the displayed URLs include the correct port (e.g. :8082 when Apache
-      // runs on alternate ports because Nginx already owns 80/443).
-      const webServer = project.webServer || 'nginx';
-      const displayPorts = this.managers.service?.getServicePorts(webServer);
-      const displayHttpPort = displayPorts?.httpPort || 80;
-      const displaySslPort = displayPorts?.sslPort || 443;
-      const httpSuffix = displayHttpPort === 80 ? '' : `:${displayHttpPort}`;
-      const httpsSuffix = displaySslPort === 443 ? '' : `:${displaySslPort}`;
-
       sendOutput(`Your project "${project.name}" is now available at:`, 'info');
-      sendOutput(`   🌐 HTTP:  http://${project.domain}${httpSuffix}`, 'info');
+      sendOutput(`   🌐 HTTP:  http://${project.domain}`, 'info');
       if (project.ssl) {
-        sendOutput(`   🔒 HTTPS: https://${project.domain}${httpsSuffix}`, 'info');
+        sendOutput(`   🔒 HTTPS: https://${project.domain}`, 'info');
       }
       sendOutput('', 'info');
       sendOutput('Starting your project now...', 'info');
@@ -2642,15 +2631,19 @@ class ProjectManager {
     if (results.success) {
       this.managers.log?.project(project.id, `Services ready: ${results.started.join(', ')}`);
 
-      // If the web server was already running (not just started), reload it to pick up new vhost config.
-      // Skip if the web server was freshly started in this cycle — it already loaded all vhost files.
-      // Also skip if createVirtualHost (called before startProjectServices) already reloaded the server;
-      // a second reload on Windows is destructive (full stop/start) and can cause timing issues.
-      const webServerJustStarted = results.started.some(s => s.startsWith(webServer));
-      if (webServerWasRunning && !webServerJustStarted) {
-        // createVirtualHost already reloaded the web server with the new vhost — no need to reload again.
-        // Just log that the config was already picked up.
-        this.managers.log?.project(project.id, `${webServer} already reloaded by virtual host setup`);
+      // If the web server was already running (not just started), reload it to pick up new vhost config
+      // This ensures new projects are accessible without a full service restart
+      if (webServerWasRunning) {
+        try {
+          if (webServer === 'nginx') {
+            await serviceManager.reloadNginx();
+          } else if (webServer === 'apache') {
+            await serviceManager.reloadApache();
+          }
+          this.managers.log?.project(project.id, `Reloaded ${webServer} to pick up new configuration`);
+        } catch (reloadError) {
+          this.managers.log?.systemWarn(`Could not reload ${webServer}`, { error: reloadError.message });
+        }
       }
     } else {
       this.managers.log?.systemError(`Critical services failed for project ${project.name}`, { failures: results.criticalFailures });
@@ -3025,14 +3018,9 @@ class ProjectManager {
     const listenDirective = networkAccess
       ? `0.0.0.0:${finalHttpPort}`
       : `${httpPort}`;
-    // nginx 1.25.1+ uses separate 'http2 on;' directive
-    // nginx < 1.25 uses 'listen ... ssl http2;' in the listen directive
-    const nginxMajorMinor = nginxVersion.split('.').map(Number);
-    const supportsHttp2Directive = (nginxMajorMinor[0] > 1) || (nginxMajorMinor[0] === 1 && nginxMajorMinor[1] >= 25);
-
     const listenDirectiveSsl = networkAccess
-      ? `0.0.0.0:${httpsPort} ssl${supportsHttp2Directive ? '' : ' http2'}`
-      : `${httpsPort} ssl${supportsHttp2Directive ? '' : ' http2'}`;
+      ? `0.0.0.0:${httpsPort} ssl`
+      : `${httpsPort} ssl`;
 
     // Build server_name - ONLY add wildcard (_) for port 80 owner to accept IP access
     // Other projects should NOT have wildcard to allow proper SNI certificate selection
@@ -3115,7 +3103,8 @@ server {
 # HTTPS Server (SSL)
 server {
     listen ${listenDirectiveSsl};
-${supportsHttp2Directive ? '    http2 on;\n' : ''}    server_name ${serverName};
+    http2 on;
+    server_name ${serverName};
     root "${documentRoot.replace(/\\/g, '/')}";
     index index.php index.html index.htm;
 
@@ -3365,8 +3354,8 @@ ${supportsHttp2Directive ? '    http2 on;\n' : ''}    server_name ${serverName};
     </Directory>
 
     # PHP Configuration using Action/AddHandler (like Laragon)
-    ScriptAlias /php-cgi/ "${path.dirname(phpCgiPath).replace(/\\/g, '/')}/"
-    <Directory "${path.dirname(phpCgiPath).replace(/\\/g, '/')}">
+    ScriptAlias /php-cgi/ "${path.dirname(phpCgiPath).replace(/\\\\/g, '/')}/"
+    <Directory "${path.dirname(phpCgiPath).replace(/\\\\/g, '/')}">
         AllowOverride None
         Options None
         Require all granted
@@ -3621,12 +3610,8 @@ ${supportsHttp2Directive ? '    http2 on;\n' : ''}    server_name ${serverName};
       await fs.remove(apacheConfig);
     }
 
-    // Try to remove from hosts file (non-critical - don't block vhost removal)
-    try {
-      await this.removeFromHostsFile(project.domain);
-    } catch (error) {
-      this.managers.log?.systemWarn(`Could not remove ${project.domain} from hosts file during vhost removal`, { error: error.message });
-    }
+    // Try to remove from hosts file
+    await this.removeFromHostsFile(project.domain);
 
     // Virtual host removed
   }
@@ -3677,31 +3662,21 @@ ${supportsHttp2Directive ? '    http2 on;\n' : ''}    server_name ${serverName};
       // Other projects still using old web server - keeping it running
     }
 
-    // Update project with new web server and reset webServerVersion to match
-    const defaultVersion = newWebServer === 'nginx' ? '1.28' : '2.4';
+    // Update project with new web server
     const projects = this.configStore.get('projects', []);
     const index = projects.findIndex((p) => p.id === projectId);
     if (index !== -1) {
       projects[index] = {
         ...projects[index],
         webServer: newWebServer,
-        webServerVersion: defaultVersion,
         updatedAt: new Date().toISOString(),
       };
       this.configStore.set('projects', projects);
     }
     project.webServer = newWebServer;
-    project.webServerVersion = defaultVersion;
 
     // Create new vhost config BEFORE starting the new web server
     await this.createVirtualHost(project);
-
-    // Re-add domain to hosts file (removeVirtualHost removed it)
-    try {
-      await this.addToHostsFile(project.domain);
-    } catch (error) {
-      this.managers.log?.systemWarn(`Could not re-add ${project.domain} to hosts file after web server switch`, { error: error.message });
-    }
 
     // Restart if was running
     if (wasRunning) {

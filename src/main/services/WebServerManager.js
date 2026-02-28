@@ -196,17 +196,10 @@ class WebServerManager {
     // Use port 80 if this is the only project with network access
     const usePort80 = networkAccess && networkProjects.length === 1 && networkProjects[0].id === id;
 
-    // nginx 1.25.1+ uses separate 'http2 on;' directive
-    // nginx < 1.25 uses 'listen ... ssl http2;' in the listen directive
-    const nginxMajorMinor = nginxVersion.split('.').map(Number);
-    const supportsHttp2Directive = (nginxMajorMinor[0] > 1) || (nginxMajorMinor[0] === 1 && nginxMajorMinor[1] >= 25);
-
     // Determine final port and listen directive
     const finalPort = usePort80 ? 80 : port;
     const listenDirective = networkAccess ? `0.0.0.0:${finalPort}` : `${finalPort}`;
-    const listenDirectiveSsl = networkAccess
-      ? `0.0.0.0:${sslPort} ssl${supportsHttp2Directive ? '' : ' http2'}`
-      : `${sslPort} ssl${supportsHttp2Directive ? '' : ' http2'}`;
+    const listenDirectiveSsl = networkAccess ? `0.0.0.0:${sslPort} ssl http2` : `${sslPort} ssl http2`;
 
     // Build server_name - add wildcard if network access is enabled to accept any hostname
     const serverName = networkAccess
@@ -251,7 +244,7 @@ server {
 
 server {
     listen ${listenDirectiveSsl};
-${supportsHttp2Directive ? '    http2 on;\n' : ''}    server_name ${serverName};
+    server_name ${serverName};
 
     ssl_certificate "${certPath.replace(/\\/g, '/')}/cert.pem";
     ssl_certificate_key "${certPath.replace(/\\/g, '/')}/key.pem";
@@ -324,7 +317,7 @@ server {
 
 server {
     listen ${listenDirectiveSsl};
-${supportsHttp2Directive ? '    http2 on;\n' : ''}    server_name ${serverName};
+    server_name ${serverName};
     root "${docRootNginx}";
     index index.php index.html index.htm;
 
@@ -616,8 +609,7 @@ catch_workers_output = yes
 
   // Start a project with web server
   async startProject(project) {
-    // Use the project's own web server preference, falling back to global setting
-    const serverType = project.webServer || this.serverType;
+    const serverType = this.serverType;
 
     // Check if server is installed
     if (!await this.isServerInstalled(serverType)) {

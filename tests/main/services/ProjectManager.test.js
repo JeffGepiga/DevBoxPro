@@ -240,9 +240,7 @@ describe('ProjectManager', () => {
             await mgr.startProject('proj1');
 
             expect(mgr.runningProjects.has('proj1')).toBe(true);
-            // createVirtualHost (mocked) handles the web server reload internally,
-            // so startProjectServices no longer triggers a redundant second reload
-            expect(mgr.createVirtualHost).toHaveBeenCalled();
+            expect(managers.service.reloadNginx).toHaveBeenCalled();
         });
 
         it('stops a project and cleans up resources', async () => {

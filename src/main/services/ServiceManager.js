@@ -1222,79 +1222,13 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       return;
     }
 
-    // On Windows, Apache running as a process (not service) cannot use -k graceful.
-    // Instead of a full stopService/startService cycle (which clears port state and
-    // can trigger the port-fallback path in startApache that deletes vhost files),
-    // we kill the process directly and start a fresh one with the same config.
-    // This preserves port assignments, running-version tracking, and vhost files.
+    // On Windows, Apache running as a process (not service) cannot use -k graceful
+    // We need to restart it to pick up config changes
     if (process.platform === 'win32') {
       try {
-        const processKey = this.getProcessKey('apache', version);
-        const existingProc = this.processes.get(processKey);
-
-        // Kill existing Apache process directly (not through stopService)
-        if (existingProc) {
-          await this.killProcess(existingProc);
-        }
-
-        // Kill any orphan httpd.exe processes to ensure ports are freed
-        try {
-          const { killProcessByName } = require('../utils/SpawnUtils');
-          await killProcessByName('httpd.exe', true);
-        } catch (e) {
-          // Ignore - no orphan processes
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-        // Regenerate httpd.conf so Listen directives are up to date
-        const logsPath = path.join(dataPath, 'apache', 'logs');
-        const httpPort = this.serviceConfigs.apache.actualHttpPort || this.serviceConfigs.apache.alternatePort || 8082;
-        const httpsPort = this.serviceConfigs.apache.actualSslPort || this.serviceConfigs.apache.alternateSslPort || 8445;
-        await this.createApacheConfig(apachePath, confPath, logsPath, httpPort, httpsPort);
-
-        // Start new Apache process with the regenerated config
-        const newProc = spawn(httpdExe, ['-f', confPath], {
-          cwd: apachePath,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          detached: true,
-          windowsHide: true,
-        });
-
-        newProc.stdout.on('data', (data) => {
-          this.managers.log?.service('apache', data.toString());
-        });
-
-        newProc.stderr.on('data', (data) => {
-          this.managers.log?.service('apache', data.toString(), 'error');
-        });
-
-        newProc.on('error', (error) => {
-          this.managers.log?.systemError('Apache reload process error', { error: error.message });
-          const s = this.serviceStatus.get('apache');
-          s.status = 'error';
-          s.error = error.message;
-        });
-
-        newProc.on('exit', (code) => {
-          if (code !== 0 && code !== null) {
-            const s = this.serviceStatus.get('apache');
-            if (s.status === 'running') {
-              s.status = 'stopped';
-            }
-          }
-        });
-
-        newProc.unref();
-
-        // Update process reference (preserves port state & running versions)
-        this.processes.set(processKey, newProc);
-        status.pid = newProc.pid;
-
-        // Wait for Apache to be ready
-        await this.waitForService('apache', 15000);
+        await this.restartService('apache');
       } catch (error) {
-        this.managers.log?.systemError('Apache reload failed', { error: error.message });
+        this.managers.log?.systemError('Apache restart failed', { error: error.message });
         throw error;
       }
     } else {
@@ -1525,18 +1459,12 @@ http {
         httpPort = altHttpPort;
         httpsPort = altHttpsPort;
 
-        // Collect IDs of projects that currently have a vhost file
-        // (before deleting) so we can regenerate them with the new ports.
-        // This preserves vhosts for projects being started that aren't in
-        // runningProjects yet, while not recreating vhosts that were
-        // deliberately removed (stopped projects).
+        // Clear all existing vhost files - they have the old ports hardcoded
         const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
-        const existingVhostProjectIds = new Set();
         try {
           const files = await fs.readdir(vhostsDir);
           for (const file of files) {
             if (file.endsWith('.conf')) {
-              existingVhostProjectIds.add(file.replace('.conf', ''));
               await fs.remove(path.join(vhostsDir, file));
             }
           }
@@ -1556,12 +1484,13 @@ http {
         this.serviceConfigs.apache.actualHttpPort = httpPort;
         this.serviceConfigs.apache.actualSslPort = httpsPort;
 
-        // Regenerate vhost configs for all Apache projects that HAD a vhost file
-        // This includes projects being started (not yet in runningProjects)
+        // Regenerate vhost configs for all running Apache projects with the new ports
+        // Without this, vhosts created before the port fallback would have stale ports
         if (this.managers.project) {
+          const runningProjects = this.managers.project.runningProjects;
           const allProjects = this.configStore?.get('projects', []) || [];
           for (const proj of allProjects) {
-            if (proj.webServer === 'apache' && existingVhostProjectIds.has(proj.id)) {
+            if (proj.webServer === 'apache' && runningProjects?.has(proj.id)) {
               try {
                 await this.managers.project.createVirtualHost(proj);
               } catch (e) {
@@ -1706,13 +1635,6 @@ LoadModule proxy_fcgi_module modules/mod_proxy_fcgi.so
 # SSL modules
 LoadModule ssl_module modules/mod_ssl.so
 LoadModule socache_shmcb_module modules/mod_socache_shmcb.so
-
-# Global SSL configuration
-# SSLSessionCache is required for SNI (Server Name Indication) to work
-# properly with multiple SSL VirtualHosts on the same port.
-# Without it, Apache serves the first/default SSL vhost for ALL requests.
-SSLSessionCache "shmcb:${logsPath.replace(/\\/g, '/')}/ssl_scache(512000)"
-SSLSessionCacheTimeout 300
 
 TypesConfig "${mimeTypesPath}"
 
