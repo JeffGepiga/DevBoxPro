@@ -8,6 +8,60 @@
 
 ### ✨ New Features
 
+#### 🖱️ Drag & Drop Reordering
+- Easily reorder project cards and table rows via drag and drop
+- Custom ordering is saved persistently
+
+#### 🔌 Enhanced Port Conflict Detection
+- Accurately detects external web servers running on conflicting ports
+- Prompts you to close the occupying service before starting your project
+
+#### 🗄️ New Services
+- **PostgreSQL** – versions 14, 15, 16, 17
+- **MongoDB** – versions 6.0, 7.0, 8.0
+- **Python** – versions 3.10, 3.11, 3.12, 3.13
+- **SQLite 3** – embedded, no daemon required
+- **MinIO** – S3-compatible object storage (port 9000, console on 9001)
+- **Memcached 1.6** – high-performance in-memory caching
+
+#### 🟢 Node.js Project Support (First-class)
+- Create strict Node.js applications alongside PHP projects
+- Per-project Node.js version selection with seamless Proxy integration
+- Automatic reverse proxy configuration via Nginx
+
+#### ↩️ Version Rollback
+- Roll back to a previously installed version of DevBox Pro from the Settings page
+- Rollback handled safely with state preservation
+
+#### 🎨 Enhanced Themes
+- More built-in color themes and accent options in Settings
+- Live preview when switching themes
+
+#### 💻 xterm.js Integrated Terminal
+- Replaced the built-in project terminal with a full xterm.js-powered terminal
+- Proper handling of long-running processes (e.g., `npm run dev`)
+- Fixed cancellation of background processes that previously required a force-close
+
+#### 📤 Export Project Configuration
+- Export individual project configurations for backup or migration
+- Import previously exported configs via the improved Import Project modal
+
+### 🧹 Improvements & Bug Fixes
+
+- **Binary updates**: Resolved an issue where new dynamic binary versions (PHP 8.5, Node.js 24) failed to appear in the Binary Manager list
+- **Testing safety**: Fixed a critical bug where `npm run test` could clear production projects
+- **UI polish**: Fixed project card spacing issues and restored missing pointer cursors on hoverable buttons
+- **Import modal overlays**: Fixed z-index overlap issues within the Import Project modal
+- **Laravel installation**: Fixed an issue where `npm run dev` failed to install Laravel
+- **E2E stability**: Addressed various end-to-end testing launch failures and element visibility errors
+- **PHP 8.5 support** – Run the latest PHP pre-release alongside stable versions
+- **Node.js 16 & 24** – Additional Node.js versions now available
+- **Stale vhost cleanup** – Virtual host configs are removed automatically when a project is deleted, preventing ghost entries
+- **Optimized Projects tab** – Redesigned project list UI with faster load and better layout
+- **Project detail polish** – Cleaner layout and quicker access to common actions
+
+---
+
 #### 🗄️ New Services
 - **PostgreSQL** – versions 14, 15, 16, 17
 - **MongoDB** – versions 6.0, 7.0, 8.0

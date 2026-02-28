@@ -148,6 +148,7 @@ Before pushing changes:
 ## Version History
 
 ### binaries.json
+- `1.1.0` (2026-02-26): Added PHP 8.5 and Node.js 24; transitioned to dynamic version loading
 - `1.0.0` (2024-12-19): Initial release with all service binaries
 
 ### compatibility.json
