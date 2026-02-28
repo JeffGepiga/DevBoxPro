@@ -1674,6 +1674,37 @@ class ProjectManager {
     return projects[index];
   }
 
+  async reorderProjects(projectIds) {
+    const projects = this.configStore.get('projects', []);
+
+    // Create a map for quick lookup
+    const projectMap = new Map();
+    for (const p of projects) {
+      projectMap.set(p.id, p);
+    }
+
+    // Rebuild array in new order
+    const reorderedProjects = [];
+    for (const id of projectIds) {
+      if (projectMap.has(id)) {
+        reorderedProjects.push(projectMap.get(id));
+        projectMap.delete(id);
+      }
+    }
+
+    // Append any projects that weren't in the provided list (safety fallback)
+    for (const [id, p] of projectMap.entries()) {
+      reorderedProjects.push(p);
+    }
+
+    this.configStore.set('projects', reorderedProjects);
+
+    // Sync CLI projects file
+    await this.syncCliProjectsFile();
+
+    return { success: true };
+  }
+
   /**
    * Sync environment variables to the project's .env file
    */

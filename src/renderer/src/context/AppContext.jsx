@@ -276,6 +276,22 @@ export function AppProvider({ children }) {
     dispatch({ type: 'REMOVE_PROJECT', payload: id });
   }, []);
 
+  const reorderProjects = useCallback(async (projectIds, optimisticProjectsList = null) => {
+    if (optimisticProjectsList) {
+      dispatch({ type: 'SET_PROJECTS', payload: optimisticProjectsList });
+    }
+
+    try {
+      await window.devbox?.projects.reorder(projectIds);
+      // Wait a moment then refresh to ensure we are in sync with the backend
+      setTimeout(() => refreshProjects(), 100);
+    } catch (error) {
+      console.error('Failed to reorder projects:', error);
+      // If it fails, refresh to get the true state back
+      refreshProjects();
+    }
+  }, [refreshProjects]);
+
   const startProject = useCallback(async (id) => {
     try {
       const result = await window.devbox?.projects.start(id);
@@ -358,6 +374,7 @@ export function AppProvider({ children }) {
     refreshSettings,
     createProject,
     deleteProject,
+    reorderProjects,
     startProject,
     stopProject,
     startService,

@@ -41,6 +41,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return project.updateProject(id, projectConfig);
   });
 
+  ipcMain.handle('projects:reorder', async (event, projectIds) => {
+    return project.reorderProjects(projectIds);
+  });
+
   ipcMain.handle('projects:readEnv', async (event, id) => {
     return project.readEnvFile(id);
   });

@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('devbox', {
     getById: (id) => ipcRenderer.invoke('projects:getById', id),
     create: (config) => ipcRenderer.invoke('projects:create', config),
     update: (id, config) => ipcRenderer.invoke('projects:update', id, config),
+    reorder: (projectIds) => ipcRenderer.invoke('projects:reorder', projectIds),
     delete: (id, deleteFiles) => ipcRenderer.invoke('projects:delete', id, deleteFiles),
     start: (id) => ipcRenderer.invoke('projects:start', id),
     stop: (id) => ipcRenderer.invoke('projects:stop', id),

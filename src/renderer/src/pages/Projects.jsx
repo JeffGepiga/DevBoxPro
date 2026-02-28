@@ -144,7 +144,8 @@ function ServiceBadges({ project, compact = false }) {
 }
 
 function Projects() {
-  const { projects, loading, startProject, stopProject, deleteProject, refreshProjects, settings } = useApp();
+  const { projects, loading, startProject, stopProject, deleteProject, refreshProjects, settings, reorderProjects } = useApp();
+
   const { showAlert } = useModal();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
@@ -160,6 +161,55 @@ function Projects() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [moveModal, setMoveModal] = useState({ open: false, project: null });
   const [isMoving, setIsMoving] = useState(false);
+
+  const [draggedItemId, setDraggedItemId] = useState(null);
+  const [dragOverItemId, setDragOverItemId] = useState(null);
+
+  const isDraggable = searchQuery === '' && filterType === 'all' && filterStatus === 'all';
+
+  const handleDragStart = (e, id) => {
+    if (!isDraggable) return;
+    setDraggedItemId(id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragEnter = (e, id) => {
+    if (!isDraggable || id === draggedItemId) return;
+    setDragOverItemId(id);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e, targetId) => {
+    e.preventDefault();
+    if (!isDraggable || !draggedItemId || !targetId || draggedItemId === targetId) {
+      setDraggedItemId(null);
+      setDragOverItemId(null);
+      return;
+    }
+
+    const draggedIndex = filteredProjects.findIndex(p => p.id === draggedItemId);
+    const targetIndex = filteredProjects.findIndex(p => p.id === targetId);
+
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+      const newProjects = [...filteredProjects];
+      const [removed] = newProjects.splice(draggedIndex, 1);
+      newProjects.splice(targetIndex, 0, removed);
+
+      await reorderProjects(newProjects.map(p => p.id), newProjects);
+    }
+
+    setDraggedItemId(null);
+    setDragOverItemId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItemId(null);
+    setDragOverItemId(null);
+  };
 
   const handleSetViewMode = (mode) => {
     setViewMode(mode);
@@ -482,6 +532,14 @@ function Projects() {
                 onDelete={() => handleDeleteClick(project)}
                 onMove={() => handleMoveClick(project)}
                 defaultEditor={settings?.settings?.defaultEditor}
+                isDraggable={isDraggable}
+                isDragged={draggedItemId === project.id}
+                isDragOver={dragOverItemId === project.id}
+                onDragStart={(e) => handleDragStart(e, project.id)}
+                onDragEnter={(e) => handleDragEnter(e, project.id)}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, project.id)}
+                onDragEnd={handleDragEnd}
               />
             ))}
           </div>
@@ -509,6 +567,14 @@ function Projects() {
                     onDelete={() => handleDeleteClick(project)}
                     onMove={() => handleMoveClick(project)}
                     defaultEditor={settings?.settings?.defaultEditor}
+                    isDraggable={isDraggable}
+                    isDragged={draggedItemId === project.id}
+                    isDragOver={dragOverItemId === project.id}
+                    onDragStart={(e) => handleDragStart(e, project.id)}
+                    onDragEnter={(e) => handleDragEnter(e, project.id)}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, project.id)}
+                    onDragEnd={handleDragEnd}
                   />
                 ))}
               </tbody>
@@ -738,7 +804,7 @@ function DiscoveredProjectCard({ project, onImport }) {
   );
 }
 
-function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor }) {
+function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor, isDraggable, isDragged, isDragOver, onDragStart, onDragEnter, onDragOver, onDrop, onDragEnd }) {
   const { projectLoadingStates, setProjectLoading } = useApp();
   const loadingState = projectLoadingStates[project.id];
   const isStarting = loadingState === 'starting';
@@ -799,11 +865,20 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
   return (
     <Link
       to={`/projects/${project.id}`}
+      draggable={isDraggable}
+      onDragStart={onDragStart}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
       className={clsx(
-        'card overflow-hidden flex flex-col transition-all duration-200 cursor-pointer',
+        'card overflow-hidden flex flex-col transition-all duration-200',
+        isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
         'hover:shadow-lg hover:border-primary-300 dark:hover:border-primary-600',
         'hover:scale-[1.02] active:scale-[0.99]',
-        isHovered && 'ring-2 ring-primary-200 dark:ring-primary-700'
+        isHovered && !isDragged && !isDragOver && 'ring-2 ring-primary-200 dark:ring-primary-700',
+        isDragged && 'opacity-40 scale-95 ring-2 ring-primary-500 ring-offset-2',
+        isDragOver && 'ring-2 ring-blue-500 border-blue-500 shadow-xl z-20 scale-[1.02] bg-blue-50/50 dark:bg-blue-900/10'
       )}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => {
@@ -991,7 +1066,7 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
   );
 }
 
-function ProjectTableRow({ project, onStart, onStop, onDelete, onMove, defaultEditor }) {
+function ProjectTableRow({ project, onStart, onStop, onDelete, onMove, defaultEditor, isDraggable, isDragged, isDragOver, onDragStart, onDragEnter, onDragOver, onDrop, onDragEnd }) {
   const { projectLoadingStates, setProjectLoading } = useApp();
   const loadingState = projectLoadingStates[project.id];
   const isStarting = loadingState === 'starting';
@@ -1038,7 +1113,20 @@ function ProjectTableRow({ project, onStart, onStop, onDelete, onMove, defaultEd
   };
 
   return (
-    <tr className="group hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+    <tr
+      draggable={isDraggable}
+      onDragStart={onDragStart}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      className={clsx(
+        "group hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors",
+        isDraggable && 'cursor-grab active:cursor-grabbing',
+        isDragged && 'opacity-40 bg-gray-100 dark:bg-gray-800',
+        isDragOver && 'bg-blue-50/50 dark:bg-blue-900/20 outline outline-2 outline-blue-500 outline-offset-[-2px]'
+      )}
+    >
       {/* Status dot */}
       <td className="px-4 py-3">
         <div className={project.isRunning ? 'status-running' : 'status-stopped'} />
