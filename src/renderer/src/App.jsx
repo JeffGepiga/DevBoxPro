@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { RefreshCw, CheckCircle, AlertCircle, X, Database } from 'lucide-react';
 import clsx from 'clsx';
 import Sidebar from './components/Sidebar';
+import { applyAppearanceSettings } from './utils/themeConfig';
 
 // Lazy-load pages so each gets its own chunk and the initial bundle stays small
 const Dashboard     = lazy(() => import('./pages/Dashboard'));
@@ -116,7 +117,7 @@ function AppContent({ darkMode, setDarkMode }) {
   }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen overflow-hidden">
       <Sidebar darkMode={darkMode} setDarkMode={setDarkMode} />
       <main className="flex-1 overflow-auto relative">
         {/* Regular routes - hidden when on project detail */}
@@ -162,7 +163,8 @@ function App() {
     const loadTheme = async () => {
       try {
         const settings = await window.devbox?.settings.getAll();
-        const savedTheme = settings?.settings?.theme || 'system';
+        const s = settings?.settings || {};
+        const savedTheme = s.theme || 'system';
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
         if (savedTheme === 'dark') {
@@ -173,6 +175,9 @@ function App() {
           // System preference
           setDarkMode(prefersDark);
         }
+
+        // Apply accent color, texture, and dark surface variant
+        applyAppearanceSettings(s);
       } catch (error) {
         // Fallback to system preference
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;

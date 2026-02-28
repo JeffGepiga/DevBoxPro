@@ -40,6 +40,10 @@
     --color-text: 17 24 39;
     --color-text-muted: 107 114 128;
     --color-border: 229 231 235;
+
+    /* Dark surface override vars (set by JS) */
+    --dvp-dark-bg: #111827;
+    --dvp-dark-surface: #1f2937;
   }
 
   .dark {
@@ -53,6 +57,18 @@
   body {
     @apply bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  /* Dark mode surface color overrides */
+  .dark body {
+    background-color: var(--dvp-dark-bg);
+  }
+  .dark .card {
+    background-color: var(--dvp-dark-surface) !important;
+  }
+  .dark aside,
+  .dark [data-sidebar] {
+    background-color: color-mix(in srgb, var(--dvp-dark-surface) 80%, black) !important;
   }
 
   * {
@@ -247,3 +263,88 @@
 .log-level-debug {
   @apply text-gray-500 dark:text-gray-400;
 }
+
+/* =====================================================
+   Background Textures
+   Applied as classes on <body> via applyTexture()
+   Also usable on any element (e.g., preview divs)
+   ===================================================== */
+
+/* Dot grid */
+.texture-dots {
+  background-image: radial-gradient(circle, rgba(0, 0, 0, 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+body.texture-dots {
+  background-attachment: fixed;
+}
+.dark .texture-dots,
+.dark.texture-dots {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+}
+
+/* Fine grid */
+.texture-grid {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.06) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+body.texture-grid {
+  background-attachment: fixed;
+}
+.dark .texture-grid,
+.dark.texture-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+}
+
+/* Diagonal lines */
+.texture-diagonal {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 6px,
+    rgba(0, 0, 0, 0.045) 6px,
+    rgba(0, 0, 0, 0.045) 7px
+  );
+}
+body.texture-diagonal {
+  background-attachment: fixed;
+}
+.dark .texture-diagonal,
+.dark.texture-diagonal {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 6px,
+    rgba(255, 255, 255, 0.028) 6px,
+    rgba(255, 255, 255, 0.028) 7px
+  );
+}
+
+/* Circuit / PCB-style crosshatch */
+.texture-circuit {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+    linear-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.02) 1px, transparent 1px);
+  background-size: 60px 60px, 60px 60px, 10px 10px, 10px 10px;
+  background-position: -2px -2px, -2px -2px, -1px -1px, -1px -1px;
+}
+body.texture-circuit {
+  background-attachment: fixed;
+}
+.dark .texture-circuit,
+.dark.texture-circuit {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+  background-size: 60px 60px, 60px 60px, 10px 10px, 10px 10px;
+  background-position: -2px -2px, -2px -2px, -1px -1px, -1px -1px;
+}
+

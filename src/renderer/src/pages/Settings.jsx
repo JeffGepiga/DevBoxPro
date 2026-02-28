@@ -2,6 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
 import {
+  COLOR_PALETTES,
+  TEXTURES,
+  DARK_SURFACES,
+  applyAccentColor,
+  applyTexture,
+  applyDarkSurface,
+} from '../utils/themeConfig';
+import {
   Save,
   RefreshCw,
   Folder,
@@ -926,50 +934,191 @@ function NetworkSettings({ settings, updateSetting }) {
   );
 }
 
+// Small visual mockup for theme previews
+const THEME_ICONS = {
+  system: (
+    <svg className="w-8 h-8 mx-auto mb-2" viewBox="0 0 32 32" fill="none">
+      <rect x="2" y="6" width="28" height="18" rx="3" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="2" y="6" width="10" height="18" rx="2" fill="currentColor" opacity="0.15" />
+      <circle cx="16" cy="28" r="1.5" fill="currentColor" opacity="0.5" />
+    </svg>
+  ),
+  light: (
+    <svg className="w-8 h-8 mx-auto mb-2" viewBox="0 0 32 32" fill="none">
+      <circle cx="16" cy="16" r="6" stroke="currentColor" strokeWidth="1.5" />
+      {[0,45,90,135,180,225,270,315].map(a => (
+        <line key={a} x1="16" y1="3" x2="16" y2="6"
+          stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+          transform={`rotate(${a} 16 16)`} />
+      ))}
+    </svg>
+  ),
+  dark: (
+    <svg className="w-8 h-8 mx-auto mb-2" viewBox="0 0 32 32" fill="none">
+      <path d="M20 16a8 8 0 01-8-8 8 8 0 000 16 8 8 0 008-8z" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  ),
+};
+
 function AppearanceSettings({ settings, updateSetting }) {
-  // Apply theme when setting changes
   const handleThemeChange = (theme) => {
     updateSetting('theme', theme);
-
-    // Apply theme immediately
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const shouldBeDark = theme === 'dark' || (theme === 'system' && prefersDark);
-
-    if (shouldBeDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    if (shouldBeDark) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
   };
+
+  const handleAccentColorChange = (colorKey) => {
+    updateSetting('accentColor', colorKey);
+    applyAccentColor(colorKey);
+  };
+
+  const handleTextureChange = (textureKey) => {
+    updateSetting('texture', textureKey);
+    applyTexture(textureKey);
+  };
+
+  const handleDarkSurfaceChange = (surfaceKey) => {
+    updateSetting('darkSurface', surfaceKey);
+    applyDarkSurface(surfaceKey);
+  };
+
+  const currentAccent = settings.accentColor || 'sky';
+  const currentTexture = settings.texture || 'none';
+  const currentSurface = settings.darkSurface || 'default';
+  const isDark = document.documentElement.classList.contains('dark');
 
   return (
     <div className="space-y-6">
+      {/* Theme */}
       <div className="card p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Theme
-        </h3>
-        <div className="grid grid-cols-3 gap-4">
-          {['system', 'light', 'dark'].map((theme) => (
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Theme</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Overall light or dark mode</p>
+        <div className="grid grid-cols-3 gap-3">
+          {(['system', 'light', 'dark']).map((theme) => (
             <button
               key={theme}
               onClick={() => handleThemeChange(theme)}
               className={clsx(
-                'p-4 rounded-lg border-2 text-center transition-all capitalize text-gray-900 dark:text-white',
+                'p-4 rounded-xl border-2 text-center transition-all capitalize text-gray-900 dark:text-white',
                 settings.theme === theme
-                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 shadow-sm'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
               )}
             >
-              {theme}
+              {THEME_ICONS[theme]}
+              <span className="text-sm font-medium capitalize">{theme}</span>
             </button>
           ))}
         </div>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-3">
-          {settings.theme === 'system'
-            ? 'Theme follows your system preference'
-            : `Using ${settings.theme} theme`}
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
+          {settings.theme === 'system' ? 'Follows your OS preference' : `Using ${settings.theme} theme`}
         </p>
       </div>
+
+      {/* Accent Color */}
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Accent Color</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Changes buttons, links, active states, and highlights throughout the app
+        </p>
+        <div className="grid grid-cols-4 gap-3">
+          {Object.entries(COLOR_PALETTES).map(([key, palette]) => (
+            <button
+              key={key}
+              onClick={() => handleAccentColorChange(key)}
+              title={palette.label}
+              className={clsx(
+                'group relative flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all',
+                currentAccent === key
+                  ? 'border-gray-900 dark:border-white shadow-sm'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+              )}
+            >
+              {/* Color swatch strip */}
+              <div className="flex w-full rounded-md overflow-hidden h-6">
+                {[palette.shades[300], palette.shades[500], palette.shades[700]].map((c, i) => (
+                  <div key={i} className="flex-1" style={{ backgroundColor: c }} />
+                ))}
+              </div>
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 text-center leading-tight">
+                {palette.label}
+              </span>
+              {currentAccent === key && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-gray-900 dark:bg-white rounded-full flex items-center justify-center">
+                  <Check className="w-2.5 h-2.5 text-white dark:text-gray-900" />
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Background Texture */}
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Background Texture</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Adds a subtle pattern to the app background
+        </p>
+        <div className="grid grid-cols-5 gap-2">
+          {Object.entries(TEXTURES).map(([key, tex]) => (
+            <button
+              key={key}
+              onClick={() => handleTextureChange(key)}
+              title={tex.description}
+              className={clsx(
+                'flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all',
+                currentTexture === key
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 shadow-sm'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+              )}
+            >
+              {/* Texture mini-preview */}
+              <div className={clsx(
+                'w-full h-10 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900',
+                key !== 'none' && `texture-${key}`
+              )} />
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{tex.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Dark Surface */}
+      {(settings.theme === 'dark' || (settings.theme === 'system' && isDark)) && (
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Dark Mode Surface</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Choose the darkness and tint of surfaces in dark mode
+          </p>
+          <div className="grid grid-cols-4 gap-3">
+            {Object.entries(DARK_SURFACES).map(([key, surf]) => (
+              <button
+                key={key}
+                onClick={() => handleDarkSurfaceChange(key)}
+                className={clsx(
+                  'flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all',
+                  currentSurface === key
+                    ? 'border-primary-500 shadow-sm'
+                    : 'border-gray-700 hover:border-gray-500'
+                )}
+              >
+                <div
+                  className="w-full h-10 rounded-md border border-gray-600"
+                  style={{ backgroundColor: surf.bg }}
+                >
+                  <div
+                    className="w-1/2 h-full rounded-r-md rounded-l-none"
+                    style={{ backgroundColor: surf.surface }}
+                  />
+                </div>
+                <span className="text-xs font-medium text-gray-300">{surf.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
