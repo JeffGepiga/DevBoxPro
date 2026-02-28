@@ -155,10 +155,6 @@ const XTerminal = forwardRef(({
     resizeObserver.observe(mountRef.current);
 
     // Welcome message
-    terminal.writeln('\x1b[1;34m╔══════════════════════════════════════════════════════════════════╗\x1b[0m');
-    terminal.writeln('\x1b[1;34m║\x1b[0m  \x1b[1;36mDevBox Pro Terminal\x1b[0m                                             \x1b[1;34m║\x1b[0m');
-    terminal.writeln('\x1b[1;34m╚══════════════════════════════════════════════════════════════════╝\x1b[0m');
-    terminal.writeln('');
 
     if (projectPath) {
       terminal.writeln(`\x1b[90mWorking directory: ${projectPath}\x1b[0m`);
@@ -169,16 +165,10 @@ const XTerminal = forwardRef(({
     if (!readOnly) {
       writePrompt(terminal, projectPath);
 
-      let escapeSequence = '';
-
       terminal.onData(async (data) => {
         // Handle escape sequences for arrow keys
-        if (escapeSequence.length > 0 || data === '\x1b') {
-          escapeSequence += data;
-
-          // Check for complete escape sequences
-          if (escapeSequence === '\x1b[A') { // Arrow Up
-            escapeSequence = '';
+        if (data.startsWith('\x1b')) {
+          if (data === '\x1b[A') { // Arrow Up
             if (isRunningCommand.current) return;
 
             if (commandHistory.current.length > 0) {
@@ -198,8 +188,7 @@ const XTerminal = forwardRef(({
               }
             }
             return;
-          } else if (escapeSequence === '\x1b[B') { // Arrow Down
-            escapeSequence = '';
+          } else if (data === '\x1b[B') { // Arrow Down
             if (isRunningCommand.current) return;
 
             if (historyIndex.current > 0) {
@@ -216,16 +205,10 @@ const XTerminal = forwardRef(({
               terminal.write(savedCommand.current);
             }
             return;
-          } else if (escapeSequence === '\x1b[C') { // Arrow Right
-            escapeSequence = '';
+          } else if (data === '\x1b[C') { // Arrow Right
             return; // Ignore for now
-          } else if (escapeSequence === '\x1b[D') { // Arrow Left
-            escapeSequence = '';
+          } else if (data === '\x1b[D') { // Arrow Left
             return; // Ignore for now
-          } else if (escapeSequence.length >= 3) {
-            // Unknown escape sequence, reset
-            escapeSequence = '';
-            return;
           }
           return;
         }
@@ -264,6 +247,11 @@ const XTerminal = forwardRef(({
             terminal.write('\b \b');
           }
         } else if (code === 3) { // Ctrl+C
+          if (terminal.hasSelection()) {
+            navigator.clipboard.writeText(terminal.getSelection());
+            terminal.clearSelection();
+            return;
+          }
           terminal.write('^C\r\n');
           commandBuffer.current = '';
           historyIndex.current = -1;
@@ -276,9 +264,25 @@ const XTerminal = forwardRef(({
           isRunningCommand.current = false;
           runningProcessId.current = null;
           writePrompt(terminal, projectPath);
+        } else if (code === 22) { // Ctrl+V
+          try {
+            const text = await navigator.clipboard.readText();
+            const cleanText = text.replace(/\r?\n/g, ' '); // simple cleaning of multilines
+            commandBuffer.current += cleanText;
+            terminal.write(cleanText);
+          } catch (err) {
+            console.error('Failed to paste:', err);
+          }
         } else if (code >= 32) { // Printable characters
-          commandBuffer.current += data;
-          terminal.write(data);
+          // In case the user pasted using context menu native browser paste
+          if (data.length > 1 && (data.includes('\n') || data.includes('\r'))) {
+            const cleanText = data.replace(/\r?\n/g, ' ');
+            commandBuffer.current += cleanText;
+            terminal.write(cleanText);
+          } else {
+            commandBuffer.current += data;
+            terminal.write(data);
+          }
         }
       });
     }
@@ -296,6 +300,15 @@ const XTerminal = forwardRef(({
         commandBuffer.current = '';
       }, 200);
     }
+
+    terminal.onSelectionChange(() => {
+      const selection = terminal.getSelection();
+      if (selection) {
+        navigator.clipboard.writeText(selection).catch(err => {
+          console.error("Failed to copy text:", err);
+        });
+      }
+    });
 
     return () => {
       resizeObserver.disconnect();

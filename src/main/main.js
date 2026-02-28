@@ -7,6 +7,8 @@ if (!util.isFunction) util.isFunction = (arg) => typeof arg === 'function';
 const { app, BrowserWindow, ipcMain, Menu, Tray, nativeTheme, dialog, nativeImage } = require('electron');
 const path = require('path');
 
+// Disable hardware acceleration to save 40-80MB of RAM since we don't need intense GPU rendering
+app.disableHardwareAcceleration();
 
 const { ServiceManager } = require('./services/ServiceManager');
 const { ProjectManager } = require('./services/ProjectManager');

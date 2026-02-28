@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
@@ -72,11 +72,32 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
     }
   }, [searchParams]);
 
+  const loadLogs = useCallback(async () => {
+    try {
+      const projectLogs = await window.devbox?.logs.getProjectLogs(id, 100);
+      setLogs(projectLogs || []);
+    } catch (error) {
+      // Error loading logs
+    }
+  }, [id]);
+
+  const loadProcesses = useCallback(async () => {
+    try {
+      const supervisorProcesses = await window.devbox?.supervisor.getProcesses(id);
+      setProcesses(supervisorProcesses || []);
+    } catch (error) {
+      // Error loading processes
+    }
+  }, [id]);
+
   useEffect(() => {
     const foundProject = projects.find((p) => p.id === id);
     setProject(foundProject);
     setLoading(false);
+  }, [id, projects]);
 
+  useEffect(() => {
+    const foundProject = projects.find((p) => p.id === id);
     if (foundProject) {
       loadLogs();
       loadProcesses();
@@ -94,25 +115,8 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
       };
       fetchWebServerPorts();
     }
-  }, [id, projects]);
-
-  const loadLogs = async () => {
-    try {
-      const projectLogs = await window.devbox?.logs.getProjectLogs(id, 100);
-      setLogs(projectLogs || []);
-    } catch (error) {
-      // Error loading logs
-    }
-  };
-
-  const loadProcesses = async () => {
-    try {
-      const supervisorProcesses = await window.devbox?.supervisor.getProcesses(id);
-      setProcesses(supervisorProcesses || []);
-    } catch (error) {
-      // Error loading processes
-    }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, loadLogs, loadProcesses]);
 
   const handleStart = async () => {
     setProjectLoading(id, 'starting');
@@ -997,139 +1001,139 @@ function OverviewTab({ project, processes, refreshProjects }) {
         {/* Domains + Web Server — middle column */}
         <div className="flex flex-col gap-4">
 
-        {/* Domains */}
-        <div className="card p-5">
-          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-            Domains
-          </h3>
-          <ul className="space-y-2">
-            {project.domains?.map((domain, index) => (
-              <li key={index} className="flex items-center gap-2">
-                <Globe className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-900 dark:text-white">{domain}</span>
-              </li>
-            ))}
-            {project.domain && !project.domains?.includes(project.domain) && (
-              <li className="flex items-center gap-2">
-                <Globe className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-900 dark:text-white">{project.domain}</span>
-              </li>
+          {/* Domains */}
+          <div className="card p-5">
+            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+              Domains
+            </h3>
+            <ul className="space-y-2">
+              {project.domains?.map((domain, index) => (
+                <li key={index} className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-gray-400" />
+                  <span className="text-gray-900 dark:text-white">{domain}</span>
+                </li>
+              ))}
+              {project.domain && !project.domains?.includes(project.domain) && (
+                <li className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-gray-400" />
+                  <span className="text-gray-900 dark:text-white">{project.domain}</span>
+                </li>
+              )}
+            </ul>
+            {project.ssl && (
+              <p className="mt-3 text-sm text-green-600 dark:text-green-400">
+                🔒 HTTPS enabled for all domains
+              </p>
             )}
-          </ul>
-          {project.ssl && (
-            <p className="mt-3 text-sm text-green-600 dark:text-green-400">
-              🔒 HTTPS enabled for all domains
-            </p>
-          )}
 
-          {/* Document Root */}
-          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700/60">
-            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
-              Document Root
-            </label>
-            <input
-              type="text"
-              value={getEffectiveValue('documentRoot') || ''}
-              onChange={(e) => {
-                const newValue = e.target.value;
-                if (newValue === (project.documentRoot || '')) {
-                  const { documentRoot, ...rest } = pendingChanges;
-                  setPendingChanges(rest);
-                } else {
-                  setPendingChanges({ ...pendingChanges, documentRoot: newValue });
+            {/* Document Root */}
+            <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700/60">
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+                Document Root
+              </label>
+              <input
+                type="text"
+                value={getEffectiveValue('documentRoot') || ''}
+                onChange={(e) => {
+                  const newValue = e.target.value;
+                  if (newValue === (project.documentRoot || '')) {
+                    const { documentRoot, ...rest } = pendingChanges;
+                    setPendingChanges(rest);
+                  } else {
+                    setPendingChanges({ ...pendingChanges, documentRoot: newValue });
+                  }
+                }}
+                placeholder={
+                  project.type === 'wordpress' ? 'Default: project root' :
+                    project.type === 'laravel' || project.type === 'symfony' ? 'Default: public' :
+                      'Default: auto-detect (public, www, web)'
                 }
-              }}
-              placeholder={
-                project.type === 'wordpress' ? 'Default: project root' :
-                  project.type === 'laravel' || project.type === 'symfony' ? 'Default: public' :
-                    'Default: auto-detect (public, www, web)'
-              }
-              className="input text-sm w-full"
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              The folder web server points to. Leave empty to use default based on project type.
-            </p>
+                className="input text-sm w-full"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                The folder web server points to. Leave empty to use default based on project type.
+              </p>
+            </div>
           </div>
-        </div>
 
-        {/* Web Server */}
-        <div className="card p-5">
-          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-            Web Server
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
-            {['nginx', 'apache'].map((server) => {
-              const effectiveServer = getEffectiveValue('webServer');
-              const effectiveVersion = getEffectiveValue('webServerVersion');
-              const isSelected = effectiveServer === server;
-              const isChanged = pendingChanges.webServer && pendingChanges.webServer !== project.webServer;
-              const versionChanged = pendingChanges.webServerVersion && pendingChanges.webServerVersion !== project.webServerVersion;
-              const serverVersions = versionOptions[server] || [];
-              const isInstalled = serverVersions.length > 0;
+          {/* Web Server */}
+          <div className="card p-5">
+            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+              Web Server
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              {['nginx', 'apache'].map((server) => {
+                const effectiveServer = getEffectiveValue('webServer');
+                const effectiveVersion = getEffectiveValue('webServerVersion');
+                const isSelected = effectiveServer === server;
+                const isChanged = pendingChanges.webServer && pendingChanges.webServer !== project.webServer;
+                const versionChanged = pendingChanges.webServerVersion && pendingChanges.webServerVersion !== project.webServerVersion;
+                const serverVersions = versionOptions[server] || [];
+                const isInstalled = serverVersions.length > 0;
 
-              return (
-                <button
-                  key={server}
-                  onClick={() => isInstalled && handleWebServerChange(server)}
-                  disabled={!isInstalled}
-                  className={clsx(
-                    'p-4 rounded-lg border-2 text-left transition-all',
-                    !isInstalled && 'opacity-50 cursor-not-allowed',
-                    isSelected
-                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {server === 'nginx' ? (
-                        <Server className="w-5 h-5 text-green-500" />
-                      ) : (
-                        <Layers className="w-5 h-5 text-orange-500" />
-                      )}
-                      <span className="font-medium text-gray-900 dark:text-white capitalize">{server}</span>
-                    </div>
-                    {/* Version selector */}
-                    {isSelected && serverVersions.length > 0 && (
-                      <select
-                        value={effectiveVersion || serverVersions[0]}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          handleWebServerVersionChange(e.target.value);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        className="input py-1 px-2 text-xs w-16"
-                      >
-                        {serverVersions.map((v) => (
-                          <option key={v} value={v}>{v}</option>
-                        ))}
-                      </select>
+                return (
+                  <button
+                    key={server}
+                    onClick={() => isInstalled && handleWebServerChange(server)}
+                    disabled={!isInstalled}
+                    className={clsx(
+                      'p-4 rounded-lg border-2 text-left transition-all',
+                      !isInstalled && 'opacity-50 cursor-not-allowed',
+                      isSelected
+                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                     )}
-                  </div>
-                  {!isInstalled ? (
-                    <span className="text-xs mt-1 block text-gray-500 dark:text-gray-400">
-                      Not installed
-                    </span>
-                  ) : isSelected ? (
-                    <span className={clsx(
-                      'text-xs mt-1 block',
-                      (isChanged || versionChanged) && effectiveServer === server
-                        ? 'text-yellow-600 dark:text-yellow-400'
-                        : 'text-primary-600 dark:text-primary-400'
-                    )}>
-                      {(isChanged || versionChanged) && effectiveServer === server ? 'Modified' : 'Active'}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {server === 'nginx' ? (
+                          <Server className="w-5 h-5 text-green-500" />
+                        ) : (
+                          <Layers className="w-5 h-5 text-orange-500" />
+                        )}
+                        <span className="font-medium text-gray-900 dark:text-white capitalize">{server}</span>
+                      </div>
+                      {/* Version selector */}
+                      {isSelected && serverVersions.length > 0 && (
+                        <select
+                          value={effectiveVersion || serverVersions[0]}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            handleWebServerVersionChange(e.target.value);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="input py-1 px-2 text-xs w-16"
+                        >
+                          {serverVersions.map((v) => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                    {!isInstalled ? (
+                      <span className="text-xs mt-1 block text-gray-500 dark:text-gray-400">
+                        Not installed
+                      </span>
+                    ) : isSelected ? (
+                      <span className={clsx(
+                        'text-xs mt-1 block',
+                        (isChanged || versionChanged) && effectiveServer === server
+                          ? 'text-yellow-600 dark:text-yellow-400'
+                          : 'text-primary-600 dark:text-primary-400'
+                      )}>
+                        {(isChanged || versionChanged) && effectiveServer === server ? 'Modified' : 'Active'}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+            {(pendingChanges.webServer || pendingChanges.webServerVersion) && (
+              <p className="mt-3 text-xs text-yellow-600 dark:text-yellow-400">
+                Web server configuration will change after saving
+              </p>
+            )}
           </div>
-          {(pendingChanges.webServer || pendingChanges.webServerVersion) && (
-            <p className="mt-3 text-xs text-yellow-600 dark:text-yellow-400">
-              Web server configuration will change after saving
-            </p>
-          )}
-        </div>
 
         </div>{/* end middle column */}
 
