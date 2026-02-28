@@ -585,22 +585,19 @@ function OverviewTab({ project, processes, refreshProjects }) {
         }));
         setPhpVersions(installedPhpVersions);
 
-        // Load service config and filter to only installed versions
-        const config = await window.devbox?.binaries.getServiceConfig();
-        if (config?.versions && status) {
-          setVersionOptions({
-            mysql: getInstalledVersions('mysql'),
-            mariadb: getInstalledVersions('mariadb'),
-            redis: getInstalledVersions('redis'),
-            nodejs: getInstalledVersions('nodejs'),
-            nginx: getInstalledVersions('nginx'),
-            apache: getInstalledVersions('apache'),
-            postgresql: getInstalledVersions('postgresql'),
-            mongodb: getInstalledVersions('mongodb'),
-            python: getInstalledVersions('python'),
-            memcached: getInstalledVersions('memcached'),
-          });
-        }
+        // Set version options directly from status (installed versions only)
+        setVersionOptions({
+          mysql: getInstalledVersions('mysql'),
+          mariadb: getInstalledVersions('mariadb'),
+          redis: getInstalledVersions('redis'),
+          nodejs: getInstalledVersions('nodejs'),
+          nginx: getInstalledVersions('nginx'),
+          apache: getInstalledVersions('apache'),
+          postgresql: getInstalledVersions('postgresql'),
+          mongodb: getInstalledVersions('mongodb'),
+          python: getInstalledVersions('python'),
+          memcached: getInstalledVersions('memcached'),
+        });
       } catch (error) {
         // Error loading data
       }
@@ -658,12 +655,19 @@ function OverviewTab({ project, processes, refreshProjects }) {
     let newServices = { ...currentServices };
 
     // For databases, make them mutually exclusive
-    if (serviceName === 'mysql' || serviceName === 'mariadb') {
+    const databaseServices = ['mysql', 'mariadb', 'postgresql', 'mongodb'];
+    if (databaseServices.includes(serviceName)) {
       const isEnabling = !currentServices[serviceName];
       if (isEnabling) {
-        // Disable the other database
-        newServices.mysql = serviceName === 'mysql';
-        newServices.mariadb = serviceName === 'mariadb';
+        // Disable all other databases
+        databaseServices.forEach(db => {
+          newServices[db] = db === serviceName;
+        });
+        // Set default version for the enabled database if not already set
+        const versionKey = `${serviceName}Version`;
+        if (!newServices[versionKey]) {
+          newServices[versionKey] = versionOptions[serviceName]?.[0] || '';
+        }
       } else {
         // Just disable this one
         newServices[serviceName] = false;

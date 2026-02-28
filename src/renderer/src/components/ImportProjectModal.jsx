@@ -248,9 +248,13 @@ function ImportProjectModal({ project, onClose, onImport }) {
                 if (db !== service) acc[db] = false;
                 return acc;
             }, {});
+            // Set default version for the newly enabled database
+            const dbVersionMap = { mysql: installedDatabases.mysql, mariadb: installedDatabases.mariadb, postgresql: installedDatabases.postgresql, mongodb: installedDatabases.mongodb };
+            const defaultVersion = dbVersionMap[service]?.[0] || '';
+            const versionKey = `${service}Version`;
             setConfig(prev => ({
                 ...prev,
-                services: { ...prev.services, ...exclusions, [service]: true },
+                services: { ...prev.services, ...exclusions, [service]: true, [versionKey]: prev.services[versionKey] || defaultVersion },
             }));
         } else {
             setConfig(prev => ({
