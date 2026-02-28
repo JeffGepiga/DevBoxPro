@@ -31,6 +31,7 @@ import {
   Trash2,
   AlertTriangle,
   ArrowUpCircle,
+  History,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -1152,6 +1153,14 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
   const [currentVersion, setCurrentVersion] = useState(null);
 
+  // Version history / rollback state
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [versionHistory, setVersionHistory] = useState(null);
+  const [loadingVersionHistory, setLoadingVersionHistory] = useState(false);
+  const [rollingBackTo, setRollingBackTo] = useState(null);
+  const [rollbackProgress, setRollbackProgress] = useState(null);
+  const [rollbackError, setRollbackError] = useState(null);
+
   // Load config info and app data path on mount
   useEffect(() => {
     const loadConfigInfo = async () => {
@@ -1196,9 +1205,14 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
       }
     });
 
+    const unsubRollbackProgress = window.devbox?.update?.onRollbackProgress?.((data) => {
+      setRollbackProgress(data);
+    });
+
     return () => {
       unsubProgress?.();
       unsubStatus?.();
+      unsubRollbackProgress?.();
     };
   }, []);
 
@@ -1229,6 +1243,61 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
 
   const handleInstallUpdate = () => {
     window.devbox?.update?.quitAndInstall();
+  };
+
+  const handleLoadVersionHistory = async () => {
+    if (versionHistory) {
+      setShowVersionHistory((v) => !v);
+      return;
+    }
+    setShowVersionHistory(true);
+    setLoadingVersionHistory(true);
+    try {
+      const result = await window.devbox?.update?.getReleasesHistory();
+      setVersionHistory(result);
+    } catch (error) {
+      setVersionHistory({ success: false, error: error.message, releases: [] });
+    } finally {
+      setLoadingVersionHistory(false);
+    }
+  };
+
+  const handleRollbackToVersion = async (version, assets) => {
+    setRollbackError(null);
+    setRollbackProgress(null);
+
+    // Pick the right asset for this platform
+    const platform = navigator.platform.toLowerCase();
+    let asset = null;
+    if (platform.includes('win')) {
+      // Prefer NSIS setup installer over portable
+      asset = assets.find((a) => a.name.toLowerCase().includes('setup') && a.name.endsWith('.exe'))
+        || assets.find((a) => a.name.endsWith('.exe'));
+    } else if (platform.includes('mac') || platform.includes('darwin')) {
+      asset = assets.find((a) => a.name.endsWith('.dmg'));
+    } else {
+      asset = assets.find((a) => a.name.endsWith('.AppImage')) || assets.find((a) => a.name.endsWith('.deb'));
+    }
+
+    if (!asset) {
+      setRollbackError(`No compatible installer found for this platform in v${version}.`);
+      return;
+    }
+
+    setRollingBackTo(version);
+    try {
+      const result = await window.devbox?.update?.downloadAndInstallVersion(version, asset.downloadUrl);
+      if (!result?.success) {
+        setRollbackError(result?.error || 'Failed to download version');
+        setRollingBackTo(null);
+        setRollbackProgress(null);
+      }
+      // On success the app will quit and install — no further state update needed
+    } catch (error) {
+      setRollbackError(error.message);
+      setRollingBackTo(null);
+      setRollbackProgress(null);
+    }
   };
 
   const handleCheckBinaryUpdates = async () => {
@@ -1456,8 +1525,115 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
             <div className="mt-3 p-3 rounded-lg text-sm bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200">
               <span className="flex items-center gap-2">
                 <CheckCircle className="w-4 h-4" />
-                Update downloaded! Click "Install & Restart" to complete the update.
+                Update downloaded! Click "Install &amp; Restart" to complete the update.
               </span>
+            </div>
+          )}
+        </div>
+
+        {/* Version History / Rollback */}
+        <div className="mt-4 border-t border-gray-100 dark:border-gray-700 pt-4">
+          <button
+            onClick={handleLoadVersionHistory}
+            className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+          >
+            <History className="w-4 h-4" />
+            {showVersionHistory ? 'Hide version history' : 'Version history & rollback'}
+          </button>
+
+          {showVersionHistory && (
+            <div className="mt-3">
+              {loadingVersionHistory ? (
+                <div className="flex items-center gap-2 text-sm text-gray-400">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Loading releases...
+                </div>
+              ) : !versionHistory?.success ? (
+                <div className="text-sm text-red-500">
+                  {versionHistory?.error || 'Failed to load version history.'}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {rollbackError && (
+                    <div className="p-3 rounded-lg text-sm bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      {rollbackError}
+                    </div>
+                  )}
+                  {versionHistory.releases.length === 0 ? (
+                    <p className="text-sm text-gray-400">No previous releases found.</p>
+                  ) : (
+                    versionHistory.releases.map((release) => (
+                      <div
+                        key={release.version}
+                        className="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-900 dark:text-white">
+                              v{release.version}
+                            </span>
+                            {release.isCurrent && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 font-medium">
+                                current
+                              </span>
+                            )}
+                            {release.isPrerelease && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
+                                pre-release
+                              </span>
+                            )}
+                          </div>
+                          {release.releaseDate && (
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {new Date(release.releaseDate).toLocaleDateString()}
+                            </p>
+                          )}
+                          {rollingBackTo === release.version && rollbackProgress && (
+                            <div className="mt-2 w-48">
+                              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                                <div
+                                  className="bg-primary-500 h-1.5 rounded-full transition-all duration-200"
+                                  style={{ width: `${rollbackProgress.percent || 0}%` }}
+                                />
+                              </div>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {Math.round(rollbackProgress.percent || 0)}% — downloading installer...
+                              </p>
+                            </div>
+                          )}
+                          {rollingBackTo === release.version && !rollbackProgress && (
+                            <p className="text-xs text-gray-400 mt-1">Preparing download...</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 ml-4">
+                          {release.isCurrent ? (
+                            <span className="text-xs text-gray-400">Installed</span>
+                          ) : rollingBackTo === release.version ? (
+                            <button disabled className="btn-secondary text-xs py-1 px-2.5 opacity-70">
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                              Downloading...
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleRollbackToVersion(release.version, release.assets)}
+                              disabled={!!rollingBackTo}
+                              className="btn-secondary text-xs py-1 px-2.5"
+                              title={`Install v${release.version}`}
+                            >
+                              <Download className="w-3 h-3" />
+                              Install
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  <p className="text-xs text-gray-400 mt-2">
+                    Installing a previous version will replace the current installation. Your projects and settings are preserved.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

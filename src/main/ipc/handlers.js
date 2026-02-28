@@ -659,6 +659,20 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return managers.update.getStatus();
   });
 
+  ipcMain.handle('update:getReleasesHistory', async () => {
+    if (!managers.update) {
+      return { success: false, error: 'Update manager not initialized', releases: [] };
+    }
+    return managers.update.fetchReleasesHistory();
+  });
+
+  ipcMain.handle('update:downloadAndInstallVersion', async (event, version, downloadUrl) => {
+    if (!managers.update) {
+      return { success: false, error: 'Update manager not initialized' };
+    }
+    return managers.update.downloadAndInstallVersion(version, downloadUrl);
+  });
+
   // Keep legacy handler for backward compatibility
   ipcMain.handle('system:checkForUpdates', async () => {
     if (!managers.update) {

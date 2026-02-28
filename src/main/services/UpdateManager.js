@@ -209,6 +209,164 @@ class UpdateManager {
     }
 
     /**
+     * Fetch the list of GitHub releases for version history / rollback
+     * @returns {Promise<Object>} List of releases
+     */
+    async fetchReleasesHistory() {
+        const https = require('https');
+        const currentVersion = app.getVersion();
+        const owner = 'JeffGepiga';
+        const repo = 'DevBoxPro';
+
+        return new Promise((resolve) => {
+            const options = {
+                hostname: 'api.github.com',
+                path: `/repos/${owner}/${repo}/releases?per_page=15`,
+                headers: {
+                    'User-Agent': 'DevBoxPro-App',
+                    'Accept': 'application/vnd.github.v3+json',
+                },
+            };
+
+            const req = https.get(options, (res) => {
+                let data = '';
+                res.on('data', (chunk) => { data += chunk; });
+                res.on('end', () => {
+                    try {
+                        const releases = JSON.parse(data);
+                        if (!Array.isArray(releases)) {
+                            resolve({ success: false, error: releases.message || 'Failed to fetch releases', releases: [] });
+                            return;
+                        }
+                        const formatted = releases.map((release) => ({
+                            version: release.tag_name.replace(/^v/, ''),
+                            tagName: release.tag_name,
+                            releaseName: release.name || release.tag_name,
+                            releaseDate: release.published_at,
+                            releaseNotes: release.body || '',
+                            isCurrent: release.tag_name.replace(/^v/, '') === currentVersion,
+                            isPrerelease: release.prerelease,
+                            assets: release.assets.map((a) => ({
+                                name: a.name,
+                                downloadUrl: a.browser_download_url,
+                                size: a.size,
+                            })),
+                        }));
+                        resolve({ success: true, releases: formatted, currentVersion });
+                    } catch (err) {
+                        resolve({ success: false, error: 'Failed to parse releases response', releases: [] });
+                    }
+                });
+            });
+
+            req.on('error', (err) => {
+                resolve({ success: false, error: err.message, releases: [] });
+            });
+
+            req.setTimeout(15000, () => {
+                req.destroy();
+                resolve({ success: false, error: 'Request timed out', releases: [] });
+            });
+        });
+    }
+
+    /**
+     * Download and install a specific version (rollback or manual version install)
+     * @param {string} version - Version string (e.g., "1.2.0")
+     * @param {string} downloadUrl - Direct download URL for the installer asset
+     * @returns {Promise<Object>} Result
+     */
+    async downloadAndInstallVersion(version, downloadUrl) {
+        if (!app.isPackaged) {
+            return { success: false, error: 'Cannot install versions in development mode' };
+        }
+
+        const path = require('path');
+        const fs = require('fs');
+        const os = require('os');
+
+        const ext = path.extname(new URL(downloadUrl).pathname) || '.exe';
+        const fileName = `DevBoxPro-rollback-${version}${ext}`;
+        const destPath = path.join(os.tmpdir(), fileName);
+
+        return new Promise((resolve) => {
+            const file = fs.createWriteStream(destPath);
+
+            const downloadWithRedirects = (url, redirectCount = 0) => {
+                if (redirectCount > 5) {
+                    resolve({ success: false, error: 'Too many redirects during download' });
+                    return;
+                }
+
+                const urlObj = new URL(url);
+                const mod = urlObj.protocol === 'https:' ? require('https') : require('http');
+
+                mod.get(url, { headers: { 'User-Agent': 'DevBoxPro-App' } }, (res) => {
+                    if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) {
+                        downloadWithRedirects(res.headers.location, redirectCount + 1);
+                        return;
+                    }
+
+                    if (res.statusCode !== 200) {
+                        file.close();
+                        fs.unlink(destPath, () => {});
+                        resolve({ success: false, error: `Download failed with status ${res.statusCode}` });
+                        return;
+                    }
+
+                    const total = parseInt(res.headers['content-length'] || '0', 10);
+                    let downloaded = 0;
+
+                    res.on('data', (chunk) => {
+                        downloaded += chunk.length;
+                        if (total > 0) {
+                            this._sendEvent('update:rollbackProgress', {
+                                percent: (downloaded / total) * 100,
+                                downloaded,
+                                total,
+                            });
+                        }
+                    });
+
+                    res.pipe(file);
+
+                    file.on('finish', () => {
+                        file.close();
+                        this.managers?.log?.systemInfo?.(`Rollback installer downloaded: ${destPath}`);
+
+                        const { spawn } = require('child_process');
+                        app.isQuitting = true;
+
+                        if (process.platform === 'win32') {
+                            spawn(destPath, ['/S'], {
+                                detached: true,
+                                stdio: 'ignore',
+                                windowsHide: false,
+                            }).unref();
+                        } else if (process.platform === 'darwin') {
+                            const { shell } = require('electron');
+                            shell.openPath(destPath);
+                        }
+
+                        setTimeout(() => app.quit(), 1500);
+                        resolve({ success: true });
+                    });
+
+                    file.on('error', (err) => {
+                        fs.unlink(destPath, () => {});
+                        resolve({ success: false, error: err.message });
+                    });
+                }).on('error', (err) => {
+                    fs.unlink(destPath, () => {});
+                    resolve({ success: false, error: err.message });
+                });
+            };
+
+            downloadWithRedirects(downloadUrl);
+        });
+    }
+
+    /**
      * Get the current update status
      * @returns {Object} Current status
      */

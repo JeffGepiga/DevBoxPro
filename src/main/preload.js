@@ -188,6 +188,8 @@ contextBridge.exposeInMainWorld('devbox', {
     downloadUpdate: () => ipcRenderer.invoke('update:downloadUpdate'),
     quitAndInstall: () => ipcRenderer.invoke('update:quitAndInstall'),
     getStatus: () => ipcRenderer.invoke('update:getStatus'),
+    getReleasesHistory: () => ipcRenderer.invoke('update:getReleasesHistory'),
+    downloadAndInstallVersion: (version, downloadUrl) => ipcRenderer.invoke('update:downloadAndInstallVersion', version, downloadUrl),
     onStatus: (callback) => {
       const handler = (event, data) => callback(data);
       ipcRenderer.on('update:status', handler);
@@ -197,6 +199,11 @@ contextBridge.exposeInMainWorld('devbox', {
       const handler = (event, data) => callback(data);
       ipcRenderer.on('update:progress', handler);
       return () => ipcRenderer.removeListener('update:progress', handler);
+    },
+    onRollbackProgress: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('update:rollbackProgress', handler);
+      return () => ipcRenderer.removeListener('update:rollbackProgress', handler);
     },
   },
 
