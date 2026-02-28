@@ -1,35 +1,57 @@
-# 🚀 DevBox Pro v1.0.3
+# 🚀 DevBox Pro v1.0.4
 
-**Stable Release | Your all-in-one local development environment for PHP**
+**Stable Release | Your all-in-one local development environment for PHP & Node.js**
 
 ---
 
-## 🆕 What's New in v1.0.3
+## 🆕 What's New in v1.0.4
 
 ### ✨ New Features
 
-#### 🎨 Enhanced Editor Support
-- **More Editor Options** – Added support for popular editors:
-  - Cursor (AI-powered editor)
-  - Antigravity
-  - Zed (high-performance collaborative editor)
-  - WebStorm, IntelliJ IDEA, Rider (JetBrains IDEs)
-  - Notepad++, Nova, and more
-- **Custom Editor Support** – Select "Other (Custom)" to use any code editor
-- **File Browser Integration** – Browse button to select custom editor executable
-- **Full Path Support** – Use either PATH commands or full executable paths
+#### 🗄️ New Services
+- **PostgreSQL** – versions 14, 15, 16, 17
+- **MongoDB** – versions 6.0, 7.0, 8.0
+- **Python** – versions 3.10, 3.11, 3.12, 3.13
+- **SQLite 3** – embedded, no daemon required
+- **MinIO** – S3-compatible object storage (port 9000, console on 9001)
+- **Memcached 1.6** – high-performance in-memory caching
+
+#### 🟢 Node.js Project Type
+- Create Node.js applications as first-class projects (alongside PHP)
+- Per-project Node.js version selection
+- Automatic proxy configuration via Nginx
+
+#### ↩️ Version Rollback
+- Roll back to a previously installed version of DevBox Pro from the Settings page
+- Rollback handled safely with state preservation
+
+#### 🎨 Enhanced Themes
+- More built-in color themes and accent options in Settings
+- Live preview when switching themes
+
+#### 💻 xterm.js Integrated Terminal
+- Replaced the built-in project terminal with a full xterm.js-powered terminal
+- Proper handling of long-running processes (e.g., `npm run dev`)
+- Fixed cancellation of background processes that previously required a force-close
+
+#### 📤 Export Project Configuration
+- Export individual project configurations for backup or migration
+- Import previously exported configs via the improved Import Project modal
 
 ### 🧹 Improvements
 
-- **Better editor configuration** – Easier to set up your preferred code editor
-- **Platform-specific file filtering** – Automatic filtering for .exe/.cmd/.bat on Windows
+- **PHP 8.5 support** – Run the latest PHP pre-release alongside stable versions
+- **Node.js 16 & 24** – Additional Node.js versions now available
+- **Stale vhost cleanup** – Virtual host configs are removed automatically when a project is deleted, preventing ghost entries
+- **Optimized Projects tab** – Redesigned project list UI with faster load and better layout
+- **Project detail polish** – Cleaner layout and quicker access to common actions
 
 ---
 
 ## ✨ All Features
 
 ### 🐘 Multi-PHP Version Support
-- PHP 7.4, 8.0, 8.1, 8.2, 8.3, 8.4 – run any version side by side
+- PHP 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5 – run any version side by side
 - Per-project PHP version selection with compatibility validation
 - Built-in php.ini editor for easy configuration
 
@@ -45,7 +67,13 @@
 | MySQL | 8.0, 8.4 |
 | MariaDB | 10.11, 11.4 |
 | Redis | 7.2, 7.4 |
-| Node.js | 18, 20 (LTS), 22 |
+| Node.js | 16, 18, 20 (LTS), 22, 24 |
+| PostgreSQL | 14, 15, 16, 17 |
+| MongoDB | 6.0, 7.0, 8.0 |
+| Python | 3.10, 3.11, 3.12, 3.13 |
+| SQLite | 3 (embedded) |
+| MinIO | Latest |
+| Memcached | 1.6 |
 | Mailpit | Latest |
 | phpMyAdmin | Latest |
 | Composer | Latest |
@@ -65,6 +93,7 @@
 - **Laravel** – fresh installation with Composer, app key, npm
 - **WordPress** – automatic download and setup
 - **Symfony** – console commands ready
+- **Node.js** – first-class Node.js project support with Nginx proxy
 - **Custom PHP** – works with any PHP application
 
 ### 🌐 Local Network Project Sharing
@@ -95,8 +124,8 @@ mysqldump -u root mydb > backup.sql  # Dump with the active DB version
 
 | File | Description |
 |------|-------------|
-| **DevBox-Pro-Setup-1.0.3.exe** | Installer version (recommended) |
-| **DevBox-Pro-1.0.3.exe** | Portable version – no installation required |
+| **DevBox-Pro-Setup-1.0.4.exe** | Installer version (recommended) |
+| **DevBox-Pro-1.0.4.exe** | Portable version – no installation required |
 
 ### System Requirements (Windows)
 - **OS**: Windows 10/11 (64-bit)

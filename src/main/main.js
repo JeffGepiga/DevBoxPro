@@ -1,3 +1,9 @@
+// Polyfill util.isObject/isFunction removed in modern Node.js
+// Required by sudo-prompt v9.x which still references these legacy methods
+const util = require('util');
+if (!util.isObject) util.isObject = (arg) => arg !== null && typeof arg === 'object';
+if (!util.isFunction) util.isFunction = (arg) => typeof arg === 'function';
+
 const { app, BrowserWindow, ipcMain, Menu, Tray, nativeTheme, dialog, nativeImage } = require('electron');
 const path = require('path');
 
