@@ -1255,11 +1255,6 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return managers.webServer.getServerType();
   });
 
-  ipcMain.handle('webserver:startProject', async (event, project) => {
-    if (!managers.webServer) throw new Error('WebServer manager not initialized');
-    return managers.webServer.startProject(project);
-  });
-
   ipcMain.handle('webserver:stopProject', async (event, projectId) => {
     if (!managers.webServer) throw new Error('WebServer manager not initialized');
     return managers.webServer.stopProject(projectId);

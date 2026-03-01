@@ -11,6 +11,15 @@ import ImportProjectModal from '@/components/ImportProjectModal';
 
 afterEach(cleanup);
 
+vi.mock('@/context/AppContext', () => ({
+    useApp: () => ({
+        projects: [],
+        loading: false,
+        settings: { settings: { defaultTld: 'test' } },
+        refreshProjects: vi.fn(),
+    }),
+}));
+
 const mockDevbox = {
     binaries: {
         getStatus: vi.fn(),

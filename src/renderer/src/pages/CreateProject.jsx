@@ -787,6 +787,7 @@ function CreateProject() {
                 updateFormData={updateFormData}
                 binariesStatus={binariesStatus}
                 serviceConfig={serviceConfig}
+                defaultTld={settings?.settings?.defaultTld || 'test'}
               />
             )}
             {currentStep === 4 && <StepReview formData={formData} />}
@@ -1917,9 +1918,9 @@ function StepServices({ formData, updateFormData, binariesStatus }) {
   );
 }
 
-function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig }) {
+function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig, defaultTld = 'test' }) {
   const suggestedDomain = formData.name
-    ? `${formData.name.toLowerCase().replace(/\s+/g, '-')}.test`
+    ? `${formData.name.toLowerCase().replace(/\s+/g, '-')}.${defaultTld}`
     : '';
 
   // Check if web servers are installed
@@ -2077,7 +2078,7 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig })
             value={formData.domain}
             onChange={(e) => updateFormData({ domain: e.target.value })}
             className="input"
-            placeholder={suggestedDomain || 'myproject.test'}
+            placeholder={suggestedDomain || `myproject.${defaultTld}`}
           />
           {suggestedDomain && !formData.domain && (
             <button
@@ -2088,8 +2089,8 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig })
             </button>
           )}
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            A virtual host will be automatically created for both HTTP ({formData.domain || suggestedDomain || 'myproject.test'})
-            and HTTPS (https://{formData.domain || suggestedDomain || 'myproject.test'})
+            A virtual host will be automatically created for both HTTP ({formData.domain || suggestedDomain || `myproject.${defaultTld}`})
+            and HTTPS (https://{formData.domain || suggestedDomain || `myproject.${defaultTld}`})
           </p>
         </div>
 

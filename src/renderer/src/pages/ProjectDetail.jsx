@@ -1006,25 +1006,32 @@ function OverviewTab({ project, processes, refreshProjects }) {
             <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
               Domains
             </h3>
-            <ul className="space-y-2">
-              {project.domains?.map((domain, index) => (
-                <li key={index} className="flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-gray-400" />
-                  <span className="text-gray-900 dark:text-white">{domain}</span>
-                </li>
-              ))}
-              {project.domain && !project.domains?.includes(project.domain) && (
-                <li className="flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-gray-400" />
-                  <span className="text-gray-900 dark:text-white">{project.domain}</span>
-                </li>
-              )}
-            </ul>
+
+            <DomainManager
+              domains={getEffectiveValue('domains') || (project.domain ? [project.domain] : [])}
+              onChange={(newDomains) => {
+                const original = project.domains || (project.domain ? [project.domain] : []);
+                const sameAsOriginal =
+                  newDomains.length === original.length &&
+                  [...newDomains].sort().join(',') === [...original].sort().join(',');
+                if (sameAsOriginal) {
+                  const { domains, ...rest } = pendingChanges;
+                  setPendingChanges(rest);
+                } else {
+                  setPendingChanges({ ...pendingChanges, domains: newDomains });
+                }
+              }}
+            />
+
             {project.ssl && (
               <p className="mt-3 text-sm text-green-600 dark:text-green-400">
                 🔒 HTTPS enabled for all domains
               </p>
             )}
+
+            <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+              Subdomains like <span className="font-mono">api.{project.domain}</span> are automatically routed to this project.
+            </p>
 
             {/* Document Root */}
             <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700/60">
@@ -1933,6 +1940,82 @@ function EnvironmentTab({ project, onRefresh }) {
         <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-amber-700 dark:text-amber-400 text-sm">
           You have unsaved changes. Click "Save Changes" to apply.
         </div>
+      )}
+    </div>
+  );
+}
+
+// Domain management sub-component
+function DomainManager({ domains, onChange }) {
+  const [addingDomain, setAddingDomain] = useState(false);
+  const [newDomain, setNewDomain] = useState('');
+
+  const handleRemove = (index) => {
+    if (domains.length <= 1) return; // Must keep at least one domain
+    onChange(domains.filter((_, i) => i !== index));
+  };
+
+  const handleAdd = () => {
+    const trimmed = newDomain.trim().toLowerCase();
+    if (!trimmed || domains.includes(trimmed)) return;
+    onChange([...domains, trimmed]);
+    setNewDomain('');
+    setAddingDomain(false);
+  };
+
+  return (
+    <div className="space-y-1.5">
+      {domains.map((domain, index) => (
+        <div key={index} className="flex items-center gap-2 group">
+          <Globe className="w-4 h-4 text-gray-400 shrink-0" />
+          <span className="text-sm text-gray-900 dark:text-white flex-1 font-mono break-all">{domain}</span>
+          {index === 0 && (
+            <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">primary</span>
+          )}
+          {domains.length > 1 && (
+            <button
+              onClick={() => handleRemove(index)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-gray-400 hover:text-red-500"
+              title="Remove domain"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      ))}
+      {addingDomain ? (
+        <div className="flex items-center gap-2 mt-2">
+          <input
+            type="text"
+            value={newDomain}
+            onChange={(e) => setNewDomain(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleAdd();
+              if (e.key === 'Escape') { setAddingDomain(false); setNewDomain(''); }
+            }}
+            placeholder="api.myproject.test or myproject.site"
+            className="input text-sm flex-1 py-1"
+            autoFocus
+          />
+          <button onClick={handleAdd} className="p-1 text-green-600 hover:text-green-700" title="Confirm">
+            <Check className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => { setAddingDomain(false); setNewDomain(''); }}
+            className="p-1 text-gray-400 hover:text-gray-600"
+            title="Cancel"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setAddingDomain(true)}
+          className="mt-1 flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add domain / subdomain
+        </button>
       )}
     </div>
   );

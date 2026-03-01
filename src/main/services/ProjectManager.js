@@ -315,7 +315,8 @@ class ProjectManager {
     }
 
     // Generate domain name from project name
-    const domainName = config.domain || `${config.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}.test`;
+    const defaultTld = this.configStore.get('settings.defaultTld', 'test');
+    const domainName = config.domain || `${config.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}.${defaultTld}`;
 
     const project = {
       id,
@@ -1169,7 +1170,8 @@ class ProjectManager {
         envContent = envContent.replace(/^APP_NAME=.*/m, `APP_NAME="${projectName}"`);
 
         // Update APP_URL
-        const projectDomain = `${projectName.toLowerCase().replace(/[^a-z0-9]/g, '-')}.test`;
+        const envTld = this.configStore.get('settings.defaultTld', 'test');
+        const projectDomain = `${projectName.toLowerCase().replace(/[^a-z0-9]/g, '-')}.${envTld}`;
         envContent = envContent.replace(/^APP_URL=.*/m, `APP_URL=http://${projectDomain}`);
 
         // Update DB settings if project has MySQL enabled
@@ -1642,8 +1644,15 @@ class ProjectManager {
     }
 
     const isRunning = this.runningProjects.has(id);
+    const oldProject = { ...projects[index] };
+
     if (isRunning) {
       await this.stopProject(id);
+    }
+
+    // If domains array changed, sync the primary domain field to domains[0]
+    if (updates.domains?.length) {
+      updates.domain = updates.domains[0];
     }
 
     // Merge updates
@@ -1665,6 +1674,35 @@ class ProjectManager {
         await this.syncEnvFile(projects[index]);
       } catch (error) {
         this.managers.log?.systemWarn('Could not sync .env file', { project: projects[index].name, error: error.message });
+      }
+    }
+
+    // If domains changed, update hosts file, regenerate vhosts and SSL cert
+    if (updates.domains || updates.domain) {
+      // Remove old domains from hosts file
+      const oldDomains = oldProject.domains?.length ? oldProject.domains : (oldProject.domain ? [oldProject.domain] : []);
+      for (const d of oldDomains) {
+        try { await this.removeFromHostsFile(d); } catch { /* ignore */ }
+      }
+      // Add new domains to hosts file
+      try {
+        await this.updateHostsFile(projects[index]);
+      } catch (error) {
+        this.managers.log?.systemWarn('Could not update hosts file after domain change', { error: error.message });
+      }
+      // Regenerate virtual host config
+      try {
+        await this.createVirtualHost(projects[index]);
+      } catch (error) {
+        this.managers.log?.systemWarn('Could not regenerate virtual host after domain change', { error: error.message });
+      }
+      // Regenerate SSL certificate for new domains
+      if (projects[index].ssl) {
+        try {
+          await this.managers.ssl?.createCertificate(projects[index].domains || [projects[index].domain]);
+        } catch (error) {
+          this.managers.log?.systemWarn('Could not regenerate SSL certificate after domain change', { error: error.message });
+        }
       }
     }
 
@@ -3204,11 +3242,16 @@ class ProjectManager {
       ? `0.0.0.0:${httpsPort} ssl${http2ListenSuffix}`
       : `${httpsPort} ssl${http2ListenSuffix}`;
 
-    // Build server_name - ONLY add wildcard (_) for port 80 owner to accept IP access
-    // Other projects should NOT have wildcard to allow proper SNI certificate selection
-    const serverName = (networkAccess && canUsePort80)
-      ? `${project.domain} www.${project.domain} _`  // Port 80 owner can match any hostname (for IP access)
-      : `${project.domain} www.${project.domain}`;   // Others: specific domain only (for proper SNI)
+    // Build server_name from all project domains + wildcard for subdomains
+    const allNginxDomains = [...new Set([
+      ...(project.domains?.length ? project.domains : [project.domain]),
+      `www.${project.domain}`,
+      `*.${project.domain}`,  // Wildcard allows any subdomain (e.g. api.myproject.test)
+    ])];
+    if (networkAccess && canUsePort80) {
+      allNginxDomains.push('_');  // Catch-all for IP-based access
+    }
+    const serverName = allNginxDomains.join(' ');
 
     // Generate nginx config with both HTTP and HTTPS
     // PHP-CGI runs on phpFpmPort for FastCGI
@@ -3428,11 +3471,16 @@ server {
 
     const listenAddress = networkAccess ? '0.0.0.0' : '*';
 
-    // Build ServerAlias - add wildcard (*) for port 80 owner to accept IP-based access
-    // Other projects should NOT have wildcard to allow proper SNI certificate selection
-    const serverAlias = (networkAccess && canUsePort80)
-      ? `www.${project.domain} *`   // Port 80 owner can match any hostname (for IP access)
-      : `www.${project.domain}`;    // Others: specific domain only (for proper SNI)
+    // Build ServerAlias - include all custom domains + wildcard for subdomains
+    const allApacheDomains = [...new Set([
+      `www.${project.domain}`,
+      `*.${project.domain}`,  // Wildcard allows any subdomain (e.g. api.myproject.test)
+      ...(project.domains?.filter(d => d !== project.domain) || []),
+    ])];
+    if (networkAccess && canUsePort80) {
+      allApacheDomains.push('*');  // Catch-all for IP-based access
+    }
+    const serverAlias = allApacheDomains.join(' ');
 
     // Get PHP-CGI path for this PHP version
     const phpVersion = project.phpVersion || '8.4';
@@ -3993,7 +4041,8 @@ server {
     const projectType = config.type || (await this.detectProjectType(config.path));
 
     // Generate domain name from folder name
-    const domainName = `${config.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}.test`;
+    const defaultTld = settings.defaultTld || 'test';
+    const domainName = `${config.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}.${defaultTld}`;
 
     const project = {
       id,

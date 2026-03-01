@@ -970,6 +970,30 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     await fs.ensureDir(path.join(nginxPath, 'temp', 'uwsgi_temp'));
     await fs.ensureDir(path.join(nginxPath, 'temp', 'scgi_temp'));
 
+    // On Windows, kill any stale DevBox nginx processes from previous sessions before starting.
+    // Multiple nginx instances can accumulate via SO_REUSEADDR, all binding port 443 but
+    // serving different (old) configs — causing browsers to randomly receive wrong certs.
+    // Use path filter to only kill our own binaries, leaving system nginx or other tools untouched.
+    // IMPORTANT: Only kill if no nginx version is already tracked in this session — otherwise
+    // we'd kill a legitimately running nginx 1.24 when starting nginx 1.26 alongside it.
+    if (process.platform === 'win32') {
+      const hasRunningNginx = Array.from(this.processes.keys()).some(k => k.startsWith('nginx-'));
+      if (!hasRunningNginx) {
+        try {
+          const { killProcessesByPath, isProcessRunning } = require('../utils/SpawnUtils');
+          if (isProcessRunning('nginx.exe')) {
+            const nginxResourcesPath = path.join(app.getPath('userData'), 'resources', 'nginx');
+            this.managers.log?.systemInfo('Killing stale DevBox nginx processes before start');
+            await killProcessesByPath('nginx.exe', nginxResourcesPath);
+            // Brief pause for ports to be released
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } catch (e) {
+          this.managers.log?.systemWarn('Could not kill stale nginx processes', { error: e.message });
+        }
+      }
+    }
+
     // Always recreate config with current ports
     await this.createNginxConfig(confPath, logsPath, httpPort, sslPort, version);
 
@@ -1308,6 +1332,14 @@ http {
             try_files $uri $uri/ =404;
         }
     }
+
+    # Default SSL catch-all: reject SSL handshakes for unrecognized hostnames.
+    # Without this, nginx falls back to the first loaded SSL server block (alphabetically)
+    # and serves a DevBox project certificate for any unmatched domain.
+    server {
+        listen ${sslPort} ssl default_server;
+        ssl_reject_handshake on;
+    }
 }
 `;
     await fs.writeFile(confPath, config);
@@ -1337,6 +1369,27 @@ http {
     await fs.ensureDir(logsPath);
     await fs.ensureDir(path.join(dataPath, 'apache', 'vhosts'));
     await fs.ensureDir(path.join(dataPath, 'www')); // Default document root
+
+    // On Windows, proactively kill stale DevBox Apache processes before starting.
+    // Use path filter to only kill our own binaries, leaving system Apache untouched.
+    // IMPORTANT: Only kill if no apache version is already tracked in this session — otherwise
+    // we'd kill a legitimately running Apache 2.4 when starting another Apache version alongside it.
+    if (process.platform === 'win32') {
+      const hasRunningApache = Array.from(this.processes.keys()).some(k => k.startsWith('apache-'));
+      if (!hasRunningApache) {
+        try {
+          const { killProcessesByPath, isProcessRunning } = require('../utils/SpawnUtils');
+          if (isProcessRunning('httpd.exe')) {
+            const apacheResourcesPath = path.join(app.getPath('userData'), 'resources', 'apache');
+            this.managers.log?.systemInfo('Killing stale DevBox Apache processes before start');
+            await killProcessesByPath('httpd.exe', apacheResourcesPath);
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } catch (e) {
+          this.managers.log?.systemWarn('Could not kill stale Apache processes', { error: e.message });
+        }
+      }
+    }
 
     // Determine which ports to use based on first-come-first-served
     let httpPort, httpsPort;
@@ -1376,21 +1429,6 @@ http {
       httpPort = this.serviceConfigs.apache.alternatePort;
       httpsPort = this.serviceConfigs.apache.alternateSslPort;
 
-    }
-
-    // Verify chosen ports are available, find alternatives if not
-    // Pre-start cleanup for Windows: If ports are busy, it might be a zombie process
-    if (process.platform === 'win32') {
-      if (!(await isPortAvailable(httpPort)) || !(await isPortAvailable(httpsPort))) {
-        const { killProcessByName } = require('../utils/SpawnUtils');
-        try {
-          this.managers.log?.systemInfo('Port blocked, attempting to clear zombie Apache processes...');
-          await killProcessByName('httpd.exe', true);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        } catch (e) {
-          // Ignore errors if no process found
-        }
-      }
     }
 
     // Verify chosen ports are available, find alternatives if not
@@ -1581,6 +1619,27 @@ http {
     const dataPath = path.join(app.getPath('userData'), 'data');
     const mimeTypesPath = path.join(apachePath, 'conf', 'mime.types').replace(/\\/g, '/');
 
+    // Default SSL catch-all: Apache falls back to the first defined SSL VirtualHost when
+    // no SNI match is found, which would expose a DevBox project cert for random domains.
+    // By defining this dummy VirtualHost BEFORE IncludeOptional, unrecognized hostnames
+    // get the root CA cert (cert mismatch → browser SSL error) instead of a project cert.
+    const caPath = path.join(dataPath, 'ssl', 'ca');
+    const caCertFile = path.join(caPath, 'rootCA.pem').replace(/\\/g, '/');
+    const caKeyFile = path.join(caPath, 'rootCA-key.pem').replace(/\\/g, '/');
+    const caExists = await fs.pathExists(caCertFile);
+    const sslCatchAll = caExists ? `
+# Default SSL catch-all (must be first, before project vhosts)
+<VirtualHost *:${httpsPort}>
+    ServerName _devbox_catchall_
+    SSLEngine on
+    SSLCertificateFile "${caCertFile}"
+    SSLCertificateKeyFile "${caKeyFile}"
+    <Location />
+        Require all denied
+    </Location>
+</VirtualHost>
+` : '';
+
     // Runtime check: Which project currently owns Port 80 for network access?
     const networkPort80OwnerId = this.managers.project?.networkPort80Owner;
 
@@ -1650,7 +1709,7 @@ DocumentRoot "${dataPath.replace(/\\/g, '/')}/www"
 
 ErrorLog "${logsPath.replace(/\\/g, '/')}/error.log"
 CustomLog "${logsPath.replace(/\\/g, '/')}/access.log" combined
-
+${sslCatchAll}
 IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 `;
     await fs.writeFile(confPath, config);

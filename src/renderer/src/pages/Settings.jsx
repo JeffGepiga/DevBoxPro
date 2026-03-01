@@ -262,6 +262,24 @@ function GeneralSettings({ settings, updateSetting }) {
               New projects will be created in this directory by default
             </p>
           </div>
+
+          <div>
+            <label className="label">Default Domain TLD</label>
+            <select
+              value={settings.defaultTld || 'test'}
+              onChange={(e) => updateSetting('defaultTld', e.target.value)}
+              className="select w-full"
+            >
+              <option value="test">.test (recommended)</option>
+              <option value="site">.site</option>
+              <option value="local">.local</option>
+              <option value="dev">.dev</option>
+              <option value="app">.app</option>
+            </select>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              TLD used for auto-generated project domains (e.g. myproject.test). Applies to new projects only.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -1607,12 +1625,20 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
                           )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0 ml-4">
-                          {release.isCurrent ? (
-                            <span className="text-xs text-gray-400">Installed</span>
-                          ) : rollingBackTo === release.version ? (
+                          {rollingBackTo === release.version ? (
                             <button disabled className="btn-secondary text-xs py-1 px-2.5 opacity-70">
                               <RefreshCw className="w-3 h-3 animate-spin" />
                               Downloading...
+                            </button>
+                          ) : release.isCurrent ? (
+                            <button
+                              onClick={() => handleRollbackToVersion(release.version, release.assets)}
+                              disabled={!!rollingBackTo}
+                              className="btn-secondary text-xs py-1 px-2.5"
+                              title={`Reinstall v${release.version}`}
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                              Reinstall
                             </button>
                           ) : (
                             <button

@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Download, RefreshCw } from 'lucide-react';
+import { useApp } from '../context/AppContext';
 
 /**
  * Shared Import Project Modal Component
  * Used by both Projects.jsx and CreateProject.jsx
  */
 function ImportProjectModal({ project, onClose, onImport }) {
+    const { settings } = useApp();
+    const defaultTld = settings?.settings?.defaultTld || 'test';
     const [config, setConfig] = useState({
         name: project.name || '',
         path: project.path,
@@ -96,7 +99,7 @@ function ImportProjectModal({ project, onClose, onImport }) {
 
     // Generate suggested domain from name
     const suggestedDomain = config.name
-        ? `${config.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}.test`
+        ? `${config.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}.${defaultTld}`
         : '';
 
     // Fetch installed binaries on mount

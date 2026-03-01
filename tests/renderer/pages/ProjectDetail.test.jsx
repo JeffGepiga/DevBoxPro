@@ -55,6 +55,7 @@ vi.mock('@/context/AppContext', () => ({
         loading: false,
         services: {},
         projectLoadingStates: {},
+        settings: { settings: { defaultTld: 'test' } },
         refreshProjects: vi.fn(),
         startProject: vi.fn(),
         stopProject: vi.fn(),
@@ -93,7 +94,7 @@ describe('ProjectDetail', () => {
 
         it('shows project domain', async () => {
             renderProjectDetail();
-            await waitFor(() => expect(screen.getByText(/myapp\.test/i)).toBeInTheDocument());
+            await waitFor(() => expect(screen.getAllByText(/myapp\.test/i).length).toBeGreaterThan(0));
         });
 
         it('shows project type and PHP version', async () => {

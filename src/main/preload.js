@@ -302,7 +302,6 @@ contextBridge.exposeInMainWorld('devbox', {
     getStatus: () => ipcRenderer.invoke('webserver:getStatus'),
     setServerType: (type) => ipcRenderer.invoke('webserver:setServerType', type),
     getServerType: () => ipcRenderer.invoke('webserver:getServerType'),
-    startProject: (project) => ipcRenderer.invoke('webserver:startProject', project),
     stopProject: (projectId) => ipcRenderer.invoke('webserver:stopProject', projectId),
     reloadConfig: () => ipcRenderer.invoke('webserver:reloadConfig'),
     getRunningProjects: () => ipcRenderer.invoke('webserver:getRunningProjects'),
