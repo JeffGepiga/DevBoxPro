@@ -83,7 +83,7 @@ const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLat
   </div>
 );
 
-const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, isPhp, isNodejs, installed, downloading, expandedSections, toggleSection, downloadSources, getProgressDisplay, setPhpIniEditor, handleImportApache, getInstalledVersionsCount }) => {
+const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, isPhp, isNodejs, installed, downloading, progress, expandedSections, toggleSection, downloadSources, getProgressDisplay, setPhpIniEditor, handleImportApache, getInstalledVersionsCount }) => {
   const installedCount = getInstalledVersionsCount(service.id);
   const hasInstalled = installedCount > 0;
   const isExpanded = expandedSections[service.id];
@@ -150,7 +150,7 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
           {(service.versions || []).map((version) => {
             const id = `${service.id}-${version}`;
             const isInstalled = installed[service.id]?.[version];
-            const isDownloading = downloading[id];
+            const isDownloading = downloading[id] || progress?.[id]?.status === 'error';
             const isCustom = service.predefinedVersions && !service.predefinedVersions.includes(version);
 
             return (
@@ -181,8 +181,8 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
   );
 };
 
-const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst, size, onDownload, onRemove, onImport, sourceKey, importLabel, downloading, downloadSources, getProgressDisplay }) => {
-  const isDownloading = downloading[id];
+const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst, size, onDownload, onRemove, onImport, sourceKey, importLabel, downloading, progress, downloadSources, getProgressDisplay }) => {
+  const isDownloading = downloading[id] || progress?.[id]?.status === 'error';
   const hasSource = !!downloadSources[sourceKey]?.url;
 
   return (
@@ -451,9 +451,14 @@ function BinaryManager() {
 
     // Fire and forget - don't await, let progress events handle updates
     window.devbox?.binaries.downloadPhp(version).catch((error) => {
-      // Error downloading PHP
       setProgressGlobal(id, { status: 'error', error: error.message });
       setDownloadingGlobal(id, false);
+      showAlert({
+        title: 'Download Failed',
+        message: `Failed to download PHP ${version}`,
+        detail: error.message || 'An unknown error occurred. Please check your internet connection and try again.',
+        type: 'error',
+      });
     });
   };
 
@@ -514,9 +519,15 @@ function BinaryManager() {
     }
 
     downloadPromise?.catch((error) => {
-      // Error downloading service
       setProgressGlobal(id, { status: 'error', error: error.message });
       setDownloadingGlobal(id, false);
+      const label = version ? `${service} ${version}` : service;
+      showAlert({
+        title: 'Download Failed',
+        message: `Failed to download ${label}`,
+        detail: error.message || 'An unknown error occurred. Please check your internet connection and try again.',
+        type: 'error',
+      });
     });
   };
 
@@ -796,32 +807,63 @@ function BinaryManager() {
 
     // Fire and forget - don't await, let progress events handle updates
     window.devbox?.binaries.downloadNodejs(version).catch((error) => {
-      // Error downloading Node.js
       setProgressGlobal(id, { status: 'error', error: error.message });
       setDownloadingGlobal(id, false);
+      showAlert({
+        title: 'Download Failed',
+        message: `Failed to download Node.js ${version}`,
+        detail: error.message || 'An unknown error occurred. Please check your internet connection and try again.',
+        type: 'error',
+      });
     });
   };
 
   const handleRemove = async (type, version = null) => {
-    const confirmMsg = version
-      ? `Remove ${type} ${version}?`
-      : `Remove ${type}?`;
+    const label = version ? `${type} ${version}` : type;
 
-    const confirmed = await showConfirm({
-      title: 'Remove Binary',
-      message: confirmMsg,
-      detail: "You'll need to re-download it to use it again.",
-      confirmText: 'Remove',
-      confirmStyle: 'danger',
-      type: 'warning'
-    });
+    // Check for running conflicts before showing the confirm dialog
+    let conflicts = { hasConflicts: false, items: [] };
+    try {
+      conflicts = await window.devbox?.binaries.getRunningConflicts(type, version) ?? conflicts;
+    } catch (_) {
+      // If check fails, continue with normal removal
+    }
+
+    let confirmed;
+    if (conflicts.hasConflicts) {
+      const itemLines = conflicts.items
+        .map(item => `• ${item.name} — ${item.reason}`)
+        .join('\n');
+      confirmed = await showConfirm({
+        title: 'Stop and Remove?',
+        message: `${label} is currently in use`,
+        detail: `The following must be stopped before removal:\n${itemLines}\n\nThey will be stopped automatically. You\'ll need to re-download the binary to use it again.`,
+        confirmText: 'Stop and Remove',
+        confirmStyle: 'danger',
+        type: 'warning',
+      });
+    } else {
+      confirmed = await showConfirm({
+        title: 'Remove Binary',
+        message: `Remove ${label}?`,
+        detail: "You'll need to re-download it to use it again.",
+        confirmText: 'Remove',
+        confirmStyle: 'danger',
+        type: 'warning',
+      });
+    }
     if (!confirmed) return;
 
     try {
-      await window.devbox?.binaries.remove(type, version);
-      await loadInstalled();
+      await window.devbox?.binaries.remove(type, version, conflicts.hasConflicts);
+      await forceRefreshInstalled();
     } catch (error) {
-      // Error removing binary
+      showAlert({
+        title: 'Remove Failed',
+        message: `Failed to remove ${label}`,
+        detail: error.message || 'An unknown error occurred.',
+        type: 'error',
+      });
     }
   };
 
@@ -888,16 +930,25 @@ function BinaryManager() {
         );
       case 'error':
         return (
-          <div className="flex flex-col">
-            <span className="text-red-600 dark:text-red-400 flex items-center gap-1">
-              <AlertCircle className="w-4 h-4" />
-              Download Failed
-            </span>
-            {p.error && (
-              <span className="text-xs text-red-500 dark:text-red-400/80 mt-0.5 max-w-xs">
-                {p.error}
+          <div className="flex items-start gap-1.5">
+            <div className="flex flex-col">
+              <span className="text-red-600 dark:text-red-400 flex items-center gap-1">
+                <AlertCircle className="w-4 h-4" />
+                Download Failed
               </span>
-            )}
+              {p.error && (
+                <span className="text-xs text-red-500 dark:text-red-400/80 mt-0.5 max-w-xs">
+                  {p.error}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => clearDownload(id)}
+              className="ml-1 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors shrink-0"
+              title="Dismiss"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         );
       case 'cancelled':
@@ -1100,6 +1151,7 @@ function BinaryManager() {
   const sharedCardProps = {
     installed,
     downloading,
+    progress,
     expandedSections,
     toggleSection,
     downloadSources,
@@ -1108,7 +1160,7 @@ function BinaryManager() {
     handleImportApache,
     getInstalledVersionsCount,
   };
-  const sharedSimpleProps = { downloading, downloadSources, getProgressDisplay };
+  const sharedSimpleProps = { downloading, progress, downloadSources, getProgressDisplay };
 
   return (
     <div className="p-8">

@@ -1178,9 +1178,14 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return managers.binaryDownload.runNpm(projectPath, command, nodeVersion);
   });
 
-  ipcMain.handle('binaries:remove', async (event, type, version) => {
+  ipcMain.handle('binaries:getRunningConflicts', async (event, type, version) => {
     if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
-    return managers.binaryDownload.removeBinary(type, version);
+    return managers.binaryDownload.getRunningConflicts(type, version);
+  });
+
+  ipcMain.handle('binaries:remove', async (event, type, version, force) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.removeBinary(type, version, force);
   });
 
   // Scan for custom imported versions

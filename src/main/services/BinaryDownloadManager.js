@@ -305,6 +305,17 @@ class BinaryDownloadManager {
       },
       // Node.js - Multiple versions
       nodejs: {
+        '24': {
+          win: {
+            url: 'https://nodejs.org/dist/v24.14.0/node-v24.14.0-win-x64.zip',
+            filename: 'node-v24.14.0-win-x64.zip',
+          },
+          mac: {
+            url: 'https://nodejs.org/dist/v24.14.0/node-v24.14.0-darwin-arm64.tar.gz',
+            filename: 'node-v24.14.0-darwin-arm64.tar.gz',
+          },
+          label: 'Current',
+        },
         '22': {
           win: {
             url: 'https://nodejs.org/dist/v22.12.0/node-v22.12.0-win-x64.zip',
@@ -314,7 +325,7 @@ class BinaryDownloadManager {
             url: 'https://nodejs.org/dist/v22.12.0/node-v22.12.0-darwin-arm64.tar.gz',
             filename: 'node-v22.12.0-darwin-arm64.tar.gz',
           },
-          label: 'Current',
+          label: 'LTS',
         },
         '20': {
           win: {
@@ -2421,7 +2432,71 @@ AddType application/x-httpd-php-source .phps
     return result;
   }
 
-  async removeBinary(type, version = null) {
+  /**
+   * Detect running projects/services that would block removal of a binary.
+   * Returns { hasConflicts: boolean, items: [{ kind, id?, name, reason }] }
+   */
+  async getRunningConflicts(type, version) {
+    const items = [];
+    const projectManager = this.managers?.project;
+    const serviceManager = this.managers?.service;
+
+    // Project-level conflicts: PHP and Node.js binaries are used per-project
+    if ((type === 'php' || type === 'nodejs') && projectManager) {
+      const runningIds = Array.from(projectManager.runningProjects.keys());
+      for (const id of runningIds) {
+        const proj = projectManager.getProject(id);
+        if (!proj) continue;
+        if (type === 'php' && proj.phpVersion === version) {
+          items.push({ kind: 'project', id, name: proj.name, reason: `Uses PHP ${version}` });
+        } else if (type === 'nodejs' && proj.nodeVersion === version) {
+          items.push({ kind: 'project', id, name: proj.name, reason: `Uses Node.js ${version}` });
+        }
+      }
+    }
+
+    // Service-level conflicts: standalone services tracked in ServiceManager
+    const serviceTypes = ['mysql', 'mariadb', 'redis', 'postgresql', 'mongodb', 'memcached', 'nginx', 'apache', 'mailpit', 'minio'];
+    if (serviceTypes.includes(type) && serviceManager) {
+      const runningMap = serviceManager.runningVersions?.get(type);
+      if (runningMap) {
+        if (version) {
+          if (runningMap.has(version)) {
+            items.push({ kind: 'service', name: `${type} ${version}`, reason: 'Service is currently running' });
+          }
+        } else {
+          // No version key (mailpit, minio) – flag any running entry
+          for (const [v] of runningMap) {
+            items.push({ kind: 'service', name: `${type}${v ? ` ${v}` : ''}`, reason: 'Service is currently running' });
+          }
+        }
+      }
+    }
+
+    return { hasConflicts: items.length > 0, items };
+  }
+
+  async removeBinary(type, version = null, force = false) {
+    if (force) {
+      // Stop any running conflicts before removing so file handles are released
+      const conflicts = await this.getRunningConflicts(type, version);
+      for (const item of conflicts.items) {
+        try {
+          if (item.kind === 'project') {
+            await this.managers?.project?.stopProject(item.id);
+          } else if (item.kind === 'service') {
+            await this.managers?.service?.stopService(type, version);
+          }
+        } catch (err) {
+          this.managers?.log?.systemWarn(`Could not stop ${item.name} before removal`, { error: err.message });
+        }
+      }
+      // Brief pause to allow OS to release file handles
+      if (conflicts.hasConflicts) {
+        await new Promise(resolve => setTimeout(resolve, 1200));
+      }
+    }
+
     const platform = this.getPlatform();
     let targetPath;
 
