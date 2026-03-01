@@ -420,7 +420,7 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
       </div>
       {activeTab === 'logs' && <LogsTab logs={logs} onRefresh={loadLogs} projectId={id} />}
       {activeTab === 'workers' && (
-        <WorkersTab processes={processes} projectId={id} onRefresh={loadProcesses} />
+        <WorkersTab processes={processes} projectId={id} onRefresh={loadProcesses} isRunning={project.isRunning} />
       )}
       {activeTab === 'environment' && <EnvironmentTab project={project} onRefresh={refreshProjects} />}
 
@@ -1362,7 +1362,7 @@ function LogsTab({ logs, onRefresh, projectId }) {
   );
 }
 
-function WorkersTab({ processes, projectId, onRefresh }) {
+function WorkersTab({ processes, projectId, onRefresh, isRunning }) {
   const { showConfirm } = useModal();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProcess, setNewProcess] = useState({
@@ -1374,7 +1374,12 @@ function WorkersTab({ processes, projectId, onRefresh }) {
   });
   const [expandedLogs, setExpandedLogs] = useState({});
   const [workerLogs, setWorkerLogs] = useState({});
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(!!isRunning);
+
+  // Sync autoRefresh with project running state
+  useEffect(() => {
+    setAutoRefresh(!!isRunning);
+  }, [isRunning]);
 
   // Auto-expand logs for running processes on mount
   useEffect(() => {
@@ -1399,8 +1404,9 @@ function WorkersTab({ processes, projectId, onRefresh }) {
     }
   };
 
-  // Subscribe to real-time output
+  // Subscribe to real-time output (only when project is running)
   useEffect(() => {
+    if (!isRunning) return;
     const unsubscribe = window.devbox?.supervisor?.onOutput?.((data) => {
       // Use strict equality and ensure both are strings for comparison
       if (String(data.projectId) === String(projectId)) {
@@ -1421,11 +1427,11 @@ function WorkersTab({ processes, projectId, onRefresh }) {
     });
 
     return () => unsubscribe?.();
-  }, [projectId]);
+  }, [projectId, isRunning]);
 
-  // Auto-refresh logs for expanded workers
+  // Auto-refresh logs for expanded workers (only when project is running)
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || !isRunning) return;
 
     const expandedNames = Object.keys(expandedLogs).filter(name => expandedLogs[name]);
     if (expandedNames.length === 0) return;
