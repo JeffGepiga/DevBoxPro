@@ -71,7 +71,7 @@ class ProjectManager {
       }
 
       // Add to PATH if not already in PATH (Windows only supports auto-add)
-      if (!status.inPath && process.platform === 'win32') {
+      if (!status.inPath && process.platform === 'win32' && process.env.PLAYWRIGHT_TEST !== 'true') {
         try {
           await cli.addToPath();
         } catch (error) {
@@ -107,7 +107,9 @@ class ProjectManager {
           // Install shims and add to PATH automatically
           await cli.installCli();
           await cli.installDirectShims();
-          await cli.addToPath();
+          if (process.env.PLAYWRIGHT_TEST !== 'true') {
+            await cli.addToPath();
+          }
           this.managers.log?.systemInfo('Terminal commands auto-initialized');
         }
       }

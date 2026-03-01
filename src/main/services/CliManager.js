@@ -1649,7 +1649,15 @@ if exist "%NODE_PATH%\\node.exe" (
     "%NODE_PATH%\\node.exe" %*
     exit /b %ERRORLEVEL%
 ) else (
-    echo [DevBox Pro] Node.js %NODE_VERSION% not found.
+    REM DevBox Pro Node.js not installed - fall back to system node
+    set "SHIM_DIR=%~dp0"
+    for /f "tokens=*" %%i in ('where node 2^>nul') do (
+        if /i not "%%~dpi"=="%SHIM_DIR%" (
+            "%%i" %*
+            exit /b %ERRORLEVEL%
+        )
+    )
+    echo [DevBox Pro] Node.js %NODE_VERSION% not found. Install it from the DevBox Pro Binaries page.
     exit /b 1
 )
 `;
@@ -1694,7 +1702,15 @@ if exist "%NODE_PATH%\\npm.cmd" (
     call "%NODE_PATH%\\npm.cmd" %*
     exit /b %ERRORLEVEL%
 ) else (
-    echo [DevBox Pro] npm not found.
+    REM DevBox Pro Node.js not installed - fall back to system npm
+    set "SHIM_DIR=%~dp0"
+    for /f "tokens=*" %%i in ('where npm 2^>nul') do (
+        if /i not "%%~dpi"=="%SHIM_DIR%" (
+            call "%%i" %*
+            exit /b %ERRORLEVEL%
+        )
+    )
+    echo [DevBox Pro] npm not found. Install Node.js from the DevBox Pro Binaries page.
     exit /b 1
 )
 `;
@@ -1738,7 +1754,15 @@ if exist "%NODE_PATH%\\npx.cmd" (
     call "%NODE_PATH%\\npx.cmd" %*
     exit /b %ERRORLEVEL%
 ) else (
-    echo [DevBox Pro] npx not found.
+    REM DevBox Pro Node.js not installed - fall back to system npx
+    set "SHIM_DIR=%~dp0"
+    for /f "tokens=*" %%i in ('where npx 2^>nul') do (
+        if /i not "%%~dpi"=="%SHIM_DIR%" (
+            call "%%i" %*
+            exit /b %ERRORLEVEL%
+        )
+    )
+    echo [DevBox Pro] npx not found. Install Node.js from the DevBox Pro Binaries page.
     exit /b 1
 )
 `;
