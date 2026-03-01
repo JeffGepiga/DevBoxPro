@@ -85,8 +85,8 @@ describe('Settings', () => {
         // Click Network tab
         fireEvent.click(screen.getByRole('button', { name: 'Network' }));
 
-        // Should show Database Credentials now
-        expect(screen.getByText('Database Credentials')).toBeInTheDocument();
+        // Should show Database Credentials section now
+        expect(screen.getByText('MySQL & MariaDB Credentials')).toBeInTheDocument();
         expect(screen.getByDisplayValue('root')).toBeInTheDocument(); // dbUser
     });
 

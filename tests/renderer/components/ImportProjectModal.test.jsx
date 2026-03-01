@@ -134,15 +134,14 @@ describe('ImportProjectModal', () => {
         it('shows Optional Services section when services are available', async () => {
             renderModal({ type: 'laravel' });
             await waitFor(() => {
-                expect(screen.getByText(/Optional Services/i)).toBeInTheDocument();
+                // The services panel heading is "Services" (always visible, not collapsible)
+                expect(screen.getByText('Services')).toBeInTheDocument();
             });
         });
 
         it('expands optional services when clicked', async () => {
+            // Services are always visible - no click to expand needed
             renderModal({ type: 'laravel' });
-            await waitFor(() => screen.getByText(/Optional Services/i));
-
-            fireEvent.click(screen.getByText(/Optional Services/i));
             await waitFor(() => {
                 expect(screen.getByText('MySQL')).toBeInTheDocument();
                 expect(screen.getByText('MariaDB')).toBeInTheDocument();
@@ -151,17 +150,18 @@ describe('ImportProjectModal', () => {
 
         it('selecting MySQL disables MariaDB', async () => {
             renderModal({ type: 'laravel' });
-            await waitFor(() => screen.getByText(/Optional Services/i));
-
-            fireEvent.click(screen.getByText(/Optional Services/i));
             await waitFor(() => screen.getByText('MySQL'));
 
-            const mysqlCheckbox = screen.getByRole('checkbox', { name: /^MySQL/i });
-            fireEvent.click(mysqlCheckbox);
-            expect(mysqlCheckbox).toBeChecked();
+            // Services use div cards (not checkboxes) - click the MySQL card
+            const mysqlCard = screen.getByText('MySQL').closest('div[class*="rounded-lg"]');
+            fireEvent.click(mysqlCard);
 
-            const mariadbCheckbox = screen.getByRole('checkbox', { name: /^MariaDB/i });
-            expect(mariadbCheckbox).not.toBeChecked();
+            // MySQL card should now have selected styling (border-green-500)
+            expect(mysqlCard.className).toMatch(/border-green-500/);
+
+            // MariaDB card should NOT be selected
+            const mariadbCard = screen.getByText('MariaDB').closest('div[class*="rounded-lg"]');
+            expect(mariadbCard.className).not.toMatch(/border-green-500/);
         });
     });
 
