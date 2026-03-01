@@ -2018,12 +2018,27 @@ class ProjectManager {
         ? 9000 + (parseInt(project.id.slice(-4), 16) % 1000)
         : 0;
 
+      // Determine the nginx version that WILL be running.
+      // This is needed before nginx starts so all vhost configs use compatible syntax.
+      const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
+
       // Regenerate virtual host config BEFORE starting services
       // This ensures the vhost config has correct paths for the current web server version
       // Note: ports are predicted at this point; they will be verified after the web server starts
       const predictedPorts = this.managers.service?.getServicePorts(webServer);
       const predictedHttpPort = predictedPorts?.httpPort || 80;
-      await this.createVirtualHost(project, phpFpmPort || undefined);
+      const targetVersion = webServerVersion;
+      await this.createVirtualHost(project, phpFpmPort || undefined, targetVersion);
+
+      // Regenerate ALL other vhost configs BEFORE starting services.
+      // All conf files are loaded by a single web server instance, so they must all use
+      // syntax compatible with the version that is about to run. This MUST happen before
+      // the web server starts, otherwise it may crash on incompatible directives in stale confs.
+      if (webServer === 'nginx') {
+        await this.regenerateAllNginxVhosts(id, webServerVersion);
+      } else if (webServer === 'apache') {
+        await this.regenerateAllApacheVhosts(id, webServerVersion);
+      }
 
       // Start required services (nginx/apache, mysql, redis, etc.)
       const serviceResult = await this.startProjectServices(project);
@@ -2043,7 +2058,7 @@ class ProjectManager {
       const actualHttpPort = actualPorts?.httpPort || 80;
       if (actualHttpPort !== predictedHttpPort) {
         this.managers.log?.project(id, `Web server ports changed (predicted: ${predictedHttpPort}, actual: ${actualHttpPort}). Regenerating vhost config.`);
-        await this.createVirtualHost(project, phpFpmPort || undefined);
+        await this.createVirtualHost(project, phpFpmPort || undefined, targetVersion);
         // Reload the web server to pick up the regenerated vhost config
         try {
           if (webServer === 'nginx') {
@@ -2055,6 +2070,9 @@ class ProjectManager {
           this.managers.log?.systemWarn(`Could not reload ${webServer} after port change`, { error: reloadError.message });
         }
       }
+
+      // Note: regenerateAllNginxVhosts / regenerateAllApacheVhosts was already called above
+      // BEFORE startProjectServices to ensure all conf files have compatible syntax.
 
       let phpCgiProcess = null;
       let actualPhpFpmPort = phpFpmPort;
@@ -2069,7 +2087,7 @@ class ProjectManager {
 
         // If port changed due to availability, regenerate vhost with correct port
         if (actualPhpFpmPort !== phpFpmPort) {
-          await this.createVirtualHost(project, actualPhpFpmPort);
+          await this.createVirtualHost(project, actualPhpFpmPort, targetVersion);
         }
       }
 
@@ -2666,8 +2684,20 @@ class ProjectManager {
       // This ensures new projects are accessible without a full service restart
       if (webServerWasRunning) {
         try {
+          // On Windows, if this project uses a non-standard port for network access,
+          // nginx needs a full restart (not just reload) to bind to the new port
+          const needsNginxRestart = process.platform === 'win32'
+            && webServer === 'nginx'
+            && project.networkAccess
+            && this.networkPort80Owner !== project.id
+            && project.port;
+
           if (webServer === 'nginx') {
-            await serviceManager.reloadNginx();
+            if (needsNginxRestart) {
+              await serviceManager.restartService('nginx');
+            } else {
+              await serviceManager.reloadNginx();
+            }
           } else if (webServer === 'apache') {
             await serviceManager.reloadApache();
           }
@@ -2929,25 +2959,66 @@ class ProjectManager {
   }
 
   // Create virtual host configuration for the project
-  async createVirtualHost(project, phpFpmPort = null) {
+  // @param {string|null} targetVersion - Web server version for version-specific config decisions
+  //   Passed as targetNginxVersion for nginx, targetApacheVersion for apache
+  async createVirtualHost(project, phpFpmPort = null, targetVersion = null) {
     const webServer = project.webServer || this.configStore.get('settings.webServer', 'nginx');
 
     if (webServer === 'nginx') {
-      await this.createNginxVhost(project, phpFpmPort);
-      // Reload nginx to pick up config changes
+      const result = await this.createNginxVhost(project, phpFpmPort, targetVersion);
+
+      // On Windows, nginx -s reload cannot bind to NEW ports that weren't in the original config.
+      // If this project uses a non-standard port (network access on a secondary project),
+      // we must restart nginx so it re-binds to all ports including the new one.
+      const needsRestart = process.platform === 'win32'
+        && result?.networkAccess
+        && result?.finalHttpPort !== result?.httpPort;
+
       try {
-        await this.managers.service?.reloadNginx();
+        if (needsRestart) {
+          this.managers.log?.systemInfo(`Restarting nginx to bind to new network port ${result.finalHttpPort}`);
+          await this.managers.service?.restartService('nginx');
+        } else {
+          await this.managers.service?.reloadNginx();
+        }
         // On Windows, add a small delay to ensure SSL config is fully applied
         // This fixes issues where nginx serves wrong certificates immediately after reload
         if (process.platform === 'win32') {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
       } catch (error) {
-        this.managers.log?.systemWarn('Could not reload nginx', { error: error.message });
+        this.managers.log?.systemWarn('Could not reload/restart nginx', { error: error.message });
       }
     } else {
-      await this.createApacheVhost(project);
-      // Reload Apache to pick up config changes
+      const result = await this.createApacheVhost(project, targetVersion);
+
+      // If this project uses a non-standard port for network access (secondary project),
+      // we need to regenerate httpd.conf to include the new Listen directive before restarting
+      const needsConfigRegen = result?.networkAccess
+        && result?.finalHttpPort !== result?.httpPort;
+
+      if (needsConfigRegen) {
+        try {
+          const serviceManager = this.managers.service;
+          const apacheVersion = serviceManager?.serviceStatus?.get('apache')?.version || '2.4';
+          const apachePath = serviceManager?.getApachePath(apacheVersion);
+          const dataPath = path.join(require('electron').app.getPath('userData'), 'data');
+          const confPath = path.join(dataPath, 'apache', 'httpd.conf');
+          const logsPath = path.join(dataPath, 'apache', 'logs');
+          const ports = serviceManager?.getServicePorts('apache');
+          if (apachePath && confPath) {
+            await serviceManager.createApacheConfig(
+              apachePath, confPath, logsPath,
+              ports?.httpPort || 80, ports?.sslPort || 443
+            );
+            this.managers.log?.systemInfo(`Regenerated httpd.conf to include Listen for port ${result.finalHttpPort}`);
+          }
+        } catch (error) {
+          this.managers.log?.systemWarn('Could not regenerate httpd.conf', { error: error.message });
+        }
+      }
+
+      // Reload Apache to pick up config changes (on Windows this does a full restart)
       try {
         await this.managers.service?.reloadApache();
       } catch (error) {
@@ -2956,8 +3027,71 @@ class ProjectManager {
     }
   }
 
+  /**
+   * Regenerate vhost configs for all OTHER apache projects to ensure consistent syntax.
+   * All vhosts/*.conf files are loaded by a single Apache instance, so any version-specific
+   * directives must match the Apache version across ALL configs.
+   * @param {string} excludeProjectId - The project that was just regenerated (skip it)
+   * @param {string} targetApacheVersion - The Apache version that will be running
+   */
+  async regenerateAllApacheVhosts(excludeProjectId = null, targetApacheVersion = null) {
+    const allProjects = this.configStore.get('projects', []);
+    const { app } = require('electron');
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
+
+    for (const proj of allProjects) {
+      if (proj.id === excludeProjectId) continue;
+      if (proj.webServer && proj.webServer !== 'apache') continue;
+
+      // Only regenerate if a vhost conf file exists for this project
+      const confFile = path.join(vhostsDir, `${proj.id}.conf`);
+      if (!await fs.pathExists(confFile)) continue;
+
+      try {
+        await this.createApacheVhost(proj, targetApacheVersion);
+      } catch (error) {
+        this.managers.log?.systemWarn(`Could not regenerate Apache vhost for ${proj.name}`, { error: error.message });
+      }
+    }
+  }
+
+  /**
+   * Regenerate vhost configs for all OTHER nginx projects to ensure consistent syntax.
+   * All sites/*.conf files are loaded by a single nginx instance, so directives like http2
+   * must match the nginx version across ALL configs.
+   * @param {string} excludeProjectId - The project that was just regenerated (skip it)
+   * @param {string} targetNginxVersion - The nginx version that will be running (used for http2 syntax decision)
+   */
+  async regenerateAllNginxVhosts(excludeProjectId = null, targetNginxVersion = null) {
+    const allProjects = this.configStore.get('projects', []);
+    const { app } = require('electron');
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const sitesDir = path.join(dataPath, 'nginx', 'sites');
+
+    for (const proj of allProjects) {
+      if (proj.id === excludeProjectId) continue;
+      if (proj.webServer && proj.webServer !== 'nginx') continue;
+
+      // Only regenerate if a vhost conf file exists for this project
+      const confFile = path.join(sitesDir, `${proj.id}.conf`);
+      if (!await fs.pathExists(confFile)) continue;
+
+      try {
+        // Get the running PHP-CGI port for this project if it's running
+        const running = this.runningProjects.get(proj.id);
+        const phpFpmPort = running?.phpFpmPort || null;
+        await this.createNginxVhost(proj, phpFpmPort, targetNginxVersion);
+      } catch (error) {
+        this.managers.log?.systemWarn(`Could not regenerate vhost for ${proj.name}`, { error: error.message });
+      }
+    }
+  }
+
   // Create Nginx virtual host
-  async createNginxVhost(project, overridePhpFpmPort = null) {
+  // @param {string|null} targetNginxVersion - If provided, use this version for http2 syntax decision
+  //   instead of reading from serviceStatus. This is critical when called BEFORE nginx starts.
+  async createNginxVhost(project, overridePhpFpmPort = null, targetNginxVersion = null) {
     const { app } = require('electron');
     const dataPath = path.join(app.getPath('userData'), 'data');
     const resourcesPath = path.join(app.getPath('userData'), 'resources');
@@ -3019,7 +3153,10 @@ class ProjectManager {
       // Check if this project can use port 80
       if (this.networkPort80Owner === null) {
         // No project owns port 80 yet - check if actually available
-        canUsePort80 = await isPortAvailable(80) && httpPort === 80;
+        // Port 80 is usable if it's truly free OR if our own web server (DevBox's nginx) already owns it
+        const port80Free = await isPortAvailable(80);
+        const ownServerOnPort80 = !port80Free && this.managers.service?.standardPortOwner === 'nginx';
+        canUsePort80 = (port80Free || ownServerOnPort80) && httpPort === 80;
         if (canUsePort80) {
           this.networkPort80Owner = project.id; // Claim port 80 for this project
         }
@@ -3045,13 +3182,25 @@ class ProjectManager {
     // All projects on same web server share SSL port (SNI handles certificate selection)
 
     // Determine listen directive - bind to all interfaces if network access enabled
-    // Note: Don't add default_server as main nginx.conf already has one
+    // Add default_server for port 80 owner so IP-based requests route here (not to fallback)
     const listenDirective = networkAccess
-      ? `0.0.0.0:${finalHttpPort}`
+      ? `0.0.0.0:${finalHttpPort}${canUsePort80 ? ' default_server' : ''}`
       : `${httpPort}`;
+    // nginx >= 1.25.1 uses 'http2 on;' directive; older versions use 'listen ... ssl http2;'
+    // IMPORTANT: Use the TARGET nginx version for this decision, not the project's configured version.
+    // All vhost files in sites/ are loaded by a single nginx instance, so they must all use the
+    // same http2 syntax matching whichever nginx version is actually running.
+    // Priority: explicitly passed targetNginxVersion > running version from serviceStatus > project version
+    const effectiveNginxVersion = targetNginxVersion
+      || this.managers.service?.serviceStatus?.get('nginx')?.version
+      || nginxVersion;
+    const useHttp2Directive = parseFloat(effectiveNginxVersion) >= 1.25;
+    const http2ListenSuffix = useHttp2Directive ? '' : ' http2';
+    const http2Directive = useHttp2Directive ? '\n    http2 on;' : '';
+
     const listenDirectiveSsl = networkAccess
-      ? `0.0.0.0:${httpsPort} ssl`
-      : `${httpsPort} ssl`;
+      ? `0.0.0.0:${httpsPort} ssl${http2ListenSuffix}`
+      : `${httpsPort} ssl${http2ListenSuffix}`;
 
     // Build server_name - ONLY add wildcard (_) for port 80 owner to accept IP access
     // Other projects should NOT have wildcard to allow proper SNI certificate selection
@@ -3133,8 +3282,7 @@ server {
       config += `
 # HTTPS Server (SSL)
 server {
-    listen ${listenDirectiveSsl};
-    http2 on;
+    listen ${listenDirectiveSsl};${http2Directive}
     server_name ${serverName};
     root "${documentRoot.replace(/\\/g, '/')}";
     index index.php index.html index.htm;
@@ -3192,15 +3340,24 @@ server {
     // Ensure logs directory exists
     await fs.ensureDir(path.join(dataPath, 'nginx', 'logs'));
 
-    return configPath;
+    return { configPath, finalHttpPort, httpPort, networkAccess };
   }
 
   // Create Apache virtual host
-  async createApacheVhost(project) {
+  // @param {string|null} targetApacheVersion - If provided, use this version for version-specific
+  //   config decisions instead of reading from serviceStatus. Mirrors targetNginxVersion.
+  async createApacheVhost(project, targetApacheVersion = null) {
     const { app } = require('electron');
     const dataPath = path.join(app.getPath('userData'), 'data');
     const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
     const sslDir = path.join(dataPath, 'ssl', project.domain).replace(/\\/g, '/');
+
+    // Determine the effective Apache version for any version-specific config decisions.
+    // Priority: explicitly passed targetApacheVersion > running version from serviceStatus > project version
+    const apacheVersion = project.webServerVersion || '2.4';
+    const effectiveApacheVersion = targetApacheVersion
+      || this.managers.service?.serviceStatus?.get('apache')?.version
+      || apacheVersion;
 
     await fs.ensureDir(vhostsDir);
 
@@ -3239,7 +3396,10 @@ server {
       // Check if this project can use port 80
       if (this.networkPort80Owner === null) {
         // No project owns port 80 yet - check if actually available
-        canUsePort80 = await isPortAvailable(80) && httpPort === 80;
+        // Port 80 is usable if it's truly free OR if our own web server (DevBox's apache) already owns it
+        const port80Free = await isPortAvailable(80);
+        const ownServerOnPort80 = !port80Free && this.managers.service?.standardPortOwner === 'apache';
+        canUsePort80 = (port80Free || ownServerOnPort80) && httpPort === 80;
         if (canUsePort80) {
           this.networkPort80Owner = project.id; // Claim port 80 for this project
         }
@@ -3266,9 +3426,11 @@ server {
 
     const listenAddress = networkAccess ? '0.0.0.0' : '*';
 
-    // Build ServerAlias - NO wildcard to ensure proper SNI certificate selection
-    // Apache uses first loaded vhost as default for unmatched requests (load order)
-    const serverAlias = `www.${project.domain}`;
+    // Build ServerAlias - add wildcard (*) for port 80 owner to accept IP-based access
+    // Other projects should NOT have wildcard to allow proper SNI certificate selection
+    const serverAlias = (networkAccess && canUsePort80)
+      ? `www.${project.domain} *`   // Port 80 owner can match any hostname (for IP access)
+      : `www.${project.domain}`;    // Others: specific domain only (for proper SNI)
 
     // Get PHP-CGI path for this PHP version
     const phpVersion = project.phpVersion || '8.4';
@@ -3410,7 +3572,7 @@ server {
     // Ensure logs directory exists
     await fs.ensureDir(path.join(dataPath, 'apache', 'logs'));
 
-    return configPath;
+    return { configPath, finalHttpPort, httpPort, networkAccess };
   }
 
   /**

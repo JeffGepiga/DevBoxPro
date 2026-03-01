@@ -1296,7 +1296,8 @@ http {
     # Include virtual host configs from sites directory
     include ${sitesPath}/*.conf;
 
-    # Fallback server for unmatched requests (no default_server to allow project vhosts with _ to match)
+    # Fallback server for unmatched requests
+    # Project vhosts with network access use default_server to claim IP-based traffic
     server {
         listen ${httpPort};
         server_name localhost;
