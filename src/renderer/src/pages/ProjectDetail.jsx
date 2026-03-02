@@ -633,7 +633,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
       }
     };
     loadLocalIps();
-  }, [project?.id, project?.webServer, project?.networkAccess]);
+  }, [project?.id, project?.webServer, project?.networkAccess, project?.isRunning]);
 
   // Check if there are pending changes
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
@@ -1009,6 +1009,8 @@ function OverviewTab({ project, processes, refreshProjects }) {
 
             <DomainManager
               domains={getEffectiveValue('domains') || (project.domain ? [project.domain] : [])}
+              webServerPorts={webServerPorts}
+              ssl={project.ssl}
               onChange={(newDomains) => {
                 const original = project.domains || (project.domain ? [project.domain] : []);
                 const sameAsOriginal =
@@ -1946,7 +1948,15 @@ function EnvironmentTab({ project, onRefresh }) {
 }
 
 // Domain management sub-component
-function DomainManager({ domains, onChange }) {
+function DomainManager({ domains, onChange, webServerPorts, ssl }) {
+  const httpPort = webServerPorts?.httpPort || 80;
+  const sslPort = webServerPorts?.sslPort || 443;
+  const portSuffix = ssl
+    ? (sslPort === 443 ? '' : `:${sslPort}`)
+    : (httpPort === 80 ? '' : `:${httpPort}`);
+  const scheme = ssl ? 'https' : 'http';
+
+  const buildUrl = (domain) => `${scheme}://${domain}${portSuffix}`;
   const [addingDomain, setAddingDomain] = useState(false);
   const [newDomain, setNewDomain] = useState('');
 
@@ -1968,7 +1978,13 @@ function DomainManager({ domains, onChange }) {
       {domains.map((domain, index) => (
         <div key={index} className="flex items-center gap-2 group">
           <Globe className="w-4 h-4 text-gray-400 shrink-0" />
-          <span className="text-sm text-gray-900 dark:text-white flex-1 font-mono break-all">{domain}</span>
+          <button
+            onClick={() => window.devbox?.system?.openExternal(buildUrl(domain))}
+            className="text-sm text-primary-600 dark:text-primary-400 hover:underline flex-1 font-mono break-all text-left"
+            title={buildUrl(domain)}
+          >
+            {domain}{portSuffix}
+          </button>
           {index === 0 && (
             <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">primary</span>
           )}
