@@ -2598,6 +2598,17 @@ AddType application/x-httpd-php-source .phps
       };
     }
 
+    // Python versions
+    urls.python = {};
+    for (const version of Object.keys(this.downloads.python || {})) {
+      if (this.downloads.python[version][platform]) {
+        urls.python[version] = {
+          ...this.downloads.python[version][platform],
+          label: this.downloads.python[version].label,
+        };
+      }
+    }
+
     return urls;
   }
 

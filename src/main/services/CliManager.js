@@ -499,7 +499,8 @@ try {
             $node = if ($prop.Value.nodejsVersion) { $prop.Value.nodejsVersion } else { "" }
             $mt = if ($prop.Value.mysqlType) { $prop.Value.mysqlType } else { "mysql" }
             $mv = if ($prop.Value.mysqlVersion) { $prop.Value.mysqlVersion } else { "8.4" }
-            Write-Output "FOUND|$php|$node|$mt|$mv"
+            $py = if ($prop.Value.services -and $prop.Value.services.pythonVersion) { $prop.Value.services.pythonVersion } else { "" }
+            Write-Output "FOUND|$php|$node|$mt|$mv|$py"
             exit 0
         }
     }
@@ -540,12 +541,14 @@ if "%~1"=="" (
     echo   npx         - Run npx with project's Node.js version
     echo   mysql       - Run MySQL client with active database version
     echo   mysqldump   - Run mysqldump with active database version
+    echo   python      - Run Python with project-specific version
     echo.
     echo Example:
     echo   ${alias} php artisan migrate
     echo   ${alias} npm install
     echo   ${alias} composer install
     echo   ${alias} mysql -u root
+    echo   ${alias} python script.py
     exit /b 0
 )
 
@@ -565,12 +568,13 @@ set "NODE_VERSION="
 set "MYSQL_TYPE=mysql"
 set "MYSQL_VERSION=8.4"
 
-for /f "tokens=1,2,3,4,5 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%DEVBOX_CLI%\\find-project.ps1" "%DEVBOX_PROJECTS%" "%CURRENT_DIR%"') do (
+for /f "tokens=1,2,3,4,5,6 delims=|" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%DEVBOX_CLI%\\find-project.ps1" "%DEVBOX_PROJECTS%" "%CURRENT_DIR%"') do (
     set "PROJECT_STATUS=%%a"
     set "PHP_VERSION=%%b"
     set "NODE_VERSION=%%c"
     if not "%%d"=="" set "MYSQL_TYPE=%%d"
     if not "%%e"=="" set "MYSQL_VERSION=%%e"
+    if not "%%f"=="" set "PYTHON_VERSION=%%f"
 )
 
 if "%PROJECT_STATUS%"=="NOTFOUND" (
@@ -588,9 +592,10 @@ set "PHP_PATH=%DEVBOX_RESOURCES%\\php\\%PHP_VERSION%\\win"
 set "NODE_PATH=%DEVBOX_RESOURCES%\\nodejs\\%NODE_VERSION%\\win"
 set "COMPOSER_PATH=%DEVBOX_RESOURCES%\\composer"
 set "MYSQL_BIN_PATH=%DEVBOX_RESOURCES%\\%MYSQL_TYPE%\\%MYSQL_VERSION%\\win\\bin"
+set "PYTHON_PATH=%DEVBOX_RESOURCES%\\python\\%PYTHON_VERSION%\\win"
 
 REM Prepend to PATH
-set "PATH=%PHP_PATH%;%NODE_PATH%;%COMPOSER_PATH%;%MYSQL_BIN_PATH%;%PATH%"
+set "PATH=%PHP_PATH%;%NODE_PATH%;%COMPOSER_PATH%;%MYSQL_BIN_PATH%;%PYTHON_PATH%;%PATH%"
 
 REM Handle special commands
 set "CMD=%~1"
@@ -683,6 +688,20 @@ if /i "%CMD%"=="mysqldump" (
     exit /b %ERRORLEVEL%
 )
 
+if /i "%CMD%"=="python" (
+    if "%PYTHON_VERSION%"=="" (
+        echo Python is not enabled for this project. Enable Python in project settings.
+        exit /b 1
+    )
+    if exist "%PYTHON_PATH%\\python.exe" (
+        "%PYTHON_PATH%\\python.exe" %1 %2 %3 %4 %5 %6 %7 %8 %9
+    ) else (
+        echo Python %PYTHON_VERSION% not found. Install it from DevBox Pro Binaries page.
+        exit /b 1
+    )
+    exit /b %ERRORLEVEL%
+)
+
 REM Unknown command - try to run it directly
 %CMD% %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
@@ -726,12 +745,14 @@ if [ $# -eq 0 ]; then
     echo "  npx         - Run npx with project's Node.js version"
     echo "  mysql       - Run MySQL client with active database version"
     echo "  mysqldump   - Run mysqldump with active database version"
+    echo "  python      - Run Python with project-specific version"
     echo ""
     echo "Example:"
     echo "  ${alias} php artisan migrate"
     echo "  ${alias} npm install"
     echo "  ${alias} composer install"
     echo "  ${alias} mysql -u root"
+    echo "  ${alias} python script.py"
     exit 0
 fi
 
@@ -748,7 +769,7 @@ CURRENT_DIR_LOWER=$(echo "$CURRENT_DIR" | tr '[:upper:]' '[:lower:]')
 
 # Use python/node/jq to parse JSON and find matching project
 if command -v python3 &> /dev/null; then
-    read PHP_VERSION NODE_VERSION MYSQL_TYPE MYSQL_VERSION < <(python3 -c "
+    read PHP_VERSION NODE_VERSION MYSQL_TYPE MYSQL_VERSION PYTHON_VERSION < <(python3 -c "
 import json
 import os
 current_dir = '$CURRENT_DIR_LOWER'
@@ -761,10 +782,11 @@ for proj_path, config in projects.items():
         node = config.get('nodejsVersion') or ''
         mt = config.get('mysqlType') or 'mysql'
         mv = config.get('mysqlVersion') or '8.4'
-        print(f'{php} {node} {mt} {mv}')
+        py = (config.get('services') or {}).get('pythonVersion') or ''
+        print(f'{php} {node} {mt} {mv} {py}')
         break
 else:
-    print('8.3  mysql 8.4')
+    print('8.3  mysql 8.4 ')
 " 2>/dev/null)
 elif command -v jq &> /dev/null; then
     # Fallback to jq if available
@@ -787,6 +809,7 @@ PHP_PATH="$DEVBOX_RESOURCES/php/$PHP_VERSION/${platform}"
 NODE_PATH="$DEVBOX_RESOURCES/nodejs/$NODE_VERSION/${platform}"
 COMPOSER_PATH="$DEVBOX_RESOURCES/composer"
 MYSQL_BIN_PATH="$DEVBOX_RESOURCES/$MYSQL_TYPE/$MYSQL_VERSION/${platform}/bin"
+PYTHON_PATH="$DEVBOX_RESOURCES/python/$PYTHON_VERSION/${platform}"
 
 # Get the command
 CMD="$1"
@@ -863,9 +886,23 @@ case "$CMD" in
             exit 1
         fi
         ;;
+    python|python3)
+        if [ -z "$PYTHON_VERSION" ]; then
+            echo "Python is not enabled for this project. Enable Python in project settings."
+            exit 1
+        fi
+        if [ -x "$PYTHON_PATH/bin/python3" ]; then
+            exec "$PYTHON_PATH/bin/python3" "$@"
+        elif [ -x "$PYTHON_PATH/python.exe" ]; then
+            exec "$PYTHON_PATH/python.exe" "$@"
+        else
+            echo "Python $PYTHON_VERSION not found. Install it from DevBox Pro Binaries page."
+            exit 1
+        fi
+        ;;
     *)
         # Unknown command - try to run it directly with modified PATH
-        export PATH="$PHP_PATH:$NODE_PATH:$MYSQL_BIN_PATH:$PATH"
+        export PATH="$PHP_PATH:$NODE_PATH:$MYSQL_BIN_PATH:$PYTHON_PATH:$PATH"
         exec "$CMD" "$@"
         ;;
 esac
@@ -1498,6 +1535,24 @@ if ($newArray.Count -lt $pathArray.Count) {
   }
 
   /**
+   * Get default Python version for non-project directories
+   */
+  getDefaultPythonVersion() {
+    return this.configStore.get('settings.defaultPythonVersion', null);
+  }
+
+  /**
+   * Set default Python version
+   */
+  setDefaultPythonVersion(version) {
+    if (version) {
+      this.configStore.set('settings.defaultPythonVersion', version);
+    } else {
+      this.configStore.delete('settings.defaultPythonVersion');
+    }
+  }
+
+  /**
    * Get default MySQL type for non-project directories
    * Returns the active database type from settings
    */
@@ -1537,7 +1592,7 @@ if ($newArray.Count -lt $pathArray.Count) {
    */
   async removeDirectShims() {
     const cliPath = this.getCliPath();
-    const commands = ['php', 'node', 'npm', 'npx', 'composer', 'mysql', 'mysqldump'];
+    const commands = ['php', 'node', 'npm', 'npx', 'composer', 'mysql', 'mysqldump', 'python', 'python3'];
     const ext = process.platform === 'win32' ? '.cmd' : '';
 
     for (const cmd of commands) {
@@ -1562,6 +1617,7 @@ if ($newArray.Count -lt $pathArray.Count) {
     const projectsFilePath = this.getProjectsFilePath();
     const defaultPhpVersion = this.getDefaultPhpVersion() || this.getFirstInstalledPhpVersion();
     const defaultNodeVersion = this.getDefaultNodeVersion() || this.getFirstInstalledNodeVersion();
+    const defaultPythonVersion = this.getDefaultPythonVersion() || this.getFirstInstalledPythonVersion();
     const defaultMysqlInfo = this.getActiveMysqlInfo();
     const defaultMysqlType = defaultMysqlInfo.dbType;
     const defaultMysqlVersion = defaultMysqlInfo.version;
@@ -1921,6 +1977,58 @@ if exist "%MYSQL_BIN_PATH%\\mysqldump.exe" (
 )
 `;
 
+    // Python shim
+    const pythonShim = `@echo off
+setlocal enabledelayedexpansion
+
+REM DevBox Pro Python Shim - Auto-detects project Python version
+set "DEVBOX_RESOURCES=${resourcesPath}"
+set "DEVBOX_PROJECTS=${projectsFilePath}"
+set "DEFAULT_PYTHON=${defaultPythonVersion}"
+set "CURRENT_DIR=%CD%"
+
+REM Create temp PowerShell script to find project Python version
+set "TEMP_PS=%TEMP%\\devbox_python_lookup.ps1"
+echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo $best = $null >> "%TEMP_PS%"
+echo $bestLen = 0 >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ >> "%TEMP_PS%"
+echo   $pp = $prop.Name.ToLower().Replace('/', '\\') >> "%TEMP_PS%"
+echo   if($d -eq $pp -or $d.StartsWith($pp + '\\')){ >> "%TEMP_PS%"
+echo     if($pp.Length -gt $bestLen){ $best = $prop.Value; $bestLen = $pp.Length } >> "%TEMP_PS%"
+echo   } >> "%TEMP_PS%"
+echo } >> "%TEMP_PS%"
+echo if($best -and $best.services -and $best.services.pythonVersion){ $best.services.pythonVersion } >> "%TEMP_PS%"
+
+set "PYTHON_VERSION="
+for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (
+    if not "%%a"=="" set "PYTHON_VERSION=%%a"
+)
+del "%TEMP_PS%" 2>nul
+
+REM Use project version or default
+if "%PYTHON_VERSION%"=="" set "PYTHON_VERSION=%DEFAULT_PYTHON%"
+
+set "PYTHON_PATH=%DEVBOX_RESOURCES%\\python\\%PYTHON_VERSION%\\win"
+
+if exist "%PYTHON_PATH%\\python.exe" (
+    "%PYTHON_PATH%\\python.exe" %*
+    exit /b %ERRORLEVEL%
+) else (
+    REM DevBox Pro Python not installed - fall back to system python
+    set "SHIM_DIR=%~dp0"
+    for /f "tokens=*" %%i in ('where python 2^>nul') do (
+        if /i not "%%~dpi"=="%SHIM_DIR%" (
+            "%%i" %*
+            exit /b %ERRORLEVEL%
+        )
+    )
+    echo [DevBox Pro] Python %PYTHON_VERSION% not found. Install it from the DevBox Pro Binaries page.
+    exit /b 1
+)
+`;
+
     // Write all shims
     await fs.writeFile(path.join(cliPath, 'php.cmd'), phpShim, 'utf8');
     await fs.writeFile(path.join(cliPath, 'node.cmd'), nodeShim, 'utf8');
@@ -1929,6 +2037,7 @@ if exist "%MYSQL_BIN_PATH%\\mysqldump.exe" (
     await fs.writeFile(path.join(cliPath, 'composer.cmd'), composerShim, 'utf8');
     await fs.writeFile(path.join(cliPath, 'mysql.cmd'), mysqlShim, 'utf8');
     await fs.writeFile(path.join(cliPath, 'mysqldump.cmd'), mysqldumpShim, 'utf8');
+    await fs.writeFile(path.join(cliPath, 'python.cmd'), pythonShim, 'utf8');
 
     return true;
   }
@@ -1942,6 +2051,7 @@ if exist "%MYSQL_BIN_PATH%\\mysqldump.exe" (
     const platform = process.platform === 'darwin' ? 'mac' : 'linux';
     const defaultPhpVersion = this.getDefaultPhpVersion() || this.getFirstInstalledPhpVersion();
     const defaultNodeVersion = this.getDefaultNodeVersion() || this.getFirstInstalledNodeVersion();
+    const defaultPythonVersion = this.getDefaultPythonVersion() || this.getFirstInstalledPythonVersion();
     const defaultMysqlInfo = this.getActiveMysqlInfo();
     const defaultMysqlType = defaultMysqlInfo.dbType;
     const defaultMysqlVersion = defaultMysqlInfo.version;
@@ -2214,6 +2324,60 @@ fi
     await fs.writeFile(path.join(cliPath, 'mysqldump'), mysqldumpShim, 'utf8');
     await fs.chmod(path.join(cliPath, 'mysqldump'), 0o755);
 
+    // Python shim
+    const pythonShim = `#!/bin/bash
+# DevBox Pro Python Shim - Auto-detects project Python version
+
+DEVBOX_RESOURCES="${resourcesPath}"
+DEVBOX_PROJECTS="${projectsFilePath}"
+DEFAULT_PYTHON="${defaultPythonVersion}"
+CURRENT_DIR="$(pwd)"
+
+# Find project for current directory
+PYTHON_VERSION=""
+if [ -f "$DEVBOX_PROJECTS" ]; then
+    RESULT=$(python3 -c "
+import json, sys
+try:
+    with open('$DEVBOX_PROJECTS') as f:
+        projects = json.load(f)
+    current = '$CURRENT_DIR'.lower()
+    for path, config in projects.items():
+        if current.startswith(path.lower()) or current == path.lower():
+            pv = (config.get('services') or {}).get('pythonVersion')
+            if pv:
+                print('FOUND|' + pv)
+            sys.exit(0)
+except:
+    pass
+print('NOTFOUND|')
+" 2>/dev/null)
+    
+    if [[ "$RESULT" == FOUND* ]]; then
+        PYTHON_VERSION="\${RESULT#FOUND|}"
+    fi
+fi
+
+# Use project version or default
+[ -z "$PYTHON_VERSION" ] && PYTHON_VERSION="$DEFAULT_PYTHON"
+
+PYTHON_PATH="$DEVBOX_RESOURCES/python/$PYTHON_VERSION/${platform}"
+
+if [ -x "$PYTHON_PATH/bin/python3" ]; then
+    exec "$PYTHON_PATH/bin/python3" "$@"
+elif command -v python3 &> /dev/null; then
+    exec python3 "$@"
+else
+    echo "[DevBox Pro] Python $PYTHON_VERSION not found. Install from Binaries page or set a default version."
+    exit 1
+fi
+`;
+
+    await fs.writeFile(path.join(cliPath, 'python'), pythonShim, 'utf8');
+    await fs.chmod(path.join(cliPath, 'python'), 0o755);
+    await fs.writeFile(path.join(cliPath, 'python3'), pythonShim, 'utf8');
+    await fs.chmod(path.join(cliPath, 'python3'), 0o755);
+
     return true;
   }
 
@@ -2240,6 +2404,30 @@ fi
       return versions[0] || '8.3';
     } catch (e) {
       return '8.3';
+    }
+  }
+
+  /**
+   * Get the first available installed Python version
+   */
+  getFirstInstalledPythonVersion() {
+    if (!this.resourcesPath) return '3.13';
+
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const pyDir = path.join(this.resourcesPath, 'python');
+    const pyExe = process.platform === 'win32' ? 'python.exe' : 'bin/python3';
+
+    try {
+      if (!fs.existsSync(pyDir)) return '3.13';
+
+      const versions = fs.readdirSync(pyDir)
+        .filter(v => v !== 'downloads' && v !== 'win' && v !== 'mac')
+        .filter(v => fs.existsSync(path.join(pyDir, v, platform, pyExe)))
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+
+      return versions[0] || '3.13';
+    } catch (e) {
+      return '3.13';
     }
   }
 }

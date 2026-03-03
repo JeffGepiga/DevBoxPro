@@ -331,25 +331,50 @@ class UpdateManager {
                     res.pipe(file);
 
                     file.on('finish', () => {
-                        file.close();
-                        this.managers?.log?.systemInfo?.(`Rollback installer downloaded: ${destPath}`);
+                        // Wait for the file handle to be fully released before spawning
+                        file.close((closeErr) => {
+                            if (closeErr) {
+                                this.managers?.log?.systemError?.(`Failed to close installer file: ${closeErr.message}`);
+                                resolve({ success: false, error: `Failed to close installer file: ${closeErr.message}` });
+                                return;
+                            }
 
-                        const { spawn } = require('child_process');
-                        app.isQuitting = true;
+                            this.managers?.log?.systemInfo?.(`Rollback installer downloaded: ${destPath}`);
 
-                        if (process.platform === 'win32') {
-                            spawn(destPath, ['/S'], {
-                                detached: true,
-                                stdio: 'ignore',
-                                windowsHide: false,
-                            }).unref();
-                        } else if (process.platform === 'darwin') {
-                            const { shell } = require('electron');
-                            shell.openPath(destPath);
-                        }
+                            // Notify UI that installer is launching (download is 100% done)
+                            this._sendEvent('update:rollbackProgress', {
+                                percent: 100,
+                                status: 'launching',
+                                installerPath: destPath,
+                                downloadUrl,
+                            });
 
-                        setTimeout(() => app.quit(), 1500);
-                        resolve({ success: true });
+                            const { spawn } = require('child_process');
+
+                            try {
+                                if (process.platform === 'win32') {
+                                    const child = spawn(destPath, [], {
+                                        detached: true,
+                                        stdio: 'ignore',
+                                        windowsHide: false,
+                                    });
+                                    child.unref();
+                                } else if (process.platform === 'darwin') {
+                                    const { shell } = require('electron');
+                                    shell.openPath(destPath);
+                                }
+                            } catch (spawnErr) {
+                                this.managers?.log?.systemError?.(`Failed to launch installer: ${spawnErr.message}`);
+                                resolve({ success: false, error: `Failed to launch installer: ${spawnErr.message}` });
+                                return;
+                            }
+
+                            app.isQuitting = true;
+                            setTimeout(() => {
+                                app.quit();
+                            }, 2000);
+                            resolve({ success: true });
+                        });
                     });
 
                     file.on('error', (err) => {

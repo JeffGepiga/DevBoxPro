@@ -640,6 +640,11 @@ function BinaryManager() {
       name: 'getcomposer.org',
       note: 'Download composer.phar file',
     },
+    python: {
+      url: 'https://www.python.org/downloads/',
+      name: 'python.org',
+      note: 'Download the Windows embeddable package (ZIP)',
+    },
   };
 
   // Version detection patterns for different services
@@ -670,55 +675,47 @@ function BinaryManager() {
     return null;
   };
 
-  // Generic import handler - opens file picker and detects/prompts for version
-  const handleImportBinary = async (service, acceptedExtensions = '.zip,.tar.gz') => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = acceptedExtensions;
-    input.onchange = async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+  // Generic import handler - opens native file dialog and detects/prompts for version
+  const handleImportBinary = async (service) => {
+    // Use Electron's native dialog — file.path is not available in sandboxed renderer
+    const filePath = await window.devbox?.system.selectFile([
+      { name: 'Archive Files', extensions: ['zip', 'gz', 'tar.gz', 'tar'] },
+      { name: 'All Files', extensions: ['*'] },
+    ]);
+    if (!filePath) return;
 
-      const filePath = file.path;
-      if (!filePath) {
-        showAlert({ title: 'Error', message: 'Could not get file path. Please try again.', type: 'error' });
-        return;
-      }
+    const fileName = filePath.split(/[\\/]/).pop();
+    const detectedVersion = detectVersionFromFilename(service, fileName);
 
-      const fileName = file.name;
-      const detectedVersion = detectVersionFromFilename(service, fileName);
+    // Get available versions for this service
+    const availableVersions = serviceVersions[service] || [];
 
-      // Get available versions for this service
-      const availableVersions = serviceVersions[service] || [];
-
-      // If version detected and matches available versions, import directly
-      if (detectedVersion && availableVersions.includes(detectedVersion)) {
-        await executeImport(service, detectedVersion, filePath);
-      } else if (detectedVersion) {
-        // Version detected but not in predefined list - ask user to confirm or use custom
-        setImportModal({
-          open: true,
-          service,
-          filePath,
-          fileName,
-          detectedVersion,
-          customVersion: detectedVersion,
-          availableVersions,
-        });
-      } else {
-        // No version detected - prompt user
-        setImportModal({
-          open: true,
-          service,
-          filePath,
-          fileName,
-          detectedVersion: null,
-          customVersion: '',
-          availableVersions,
-        });
-      }
-    };
-    input.click();
+    // If version detected and matches available versions, import directly
+    if (detectedVersion && availableVersions.includes(detectedVersion)) {
+      await executeImport(service, detectedVersion, filePath);
+    } else if (detectedVersion) {
+      // Version detected but not in predefined list - ask user to confirm or use custom
+      setImportModal({
+        open: true,
+        service,
+        filePath,
+        fileName,
+        detectedVersion,
+        customVersion: detectedVersion,
+        availableVersions,
+      });
+    } else {
+      // No version detected - prompt user
+      setImportModal({
+        open: true,
+        service,
+        filePath,
+        fileName,
+        detectedVersion: null,
+        customVersion: '',
+        availableVersions,
+      });
+    }
   };
 
   // Execute the actual import
@@ -748,52 +745,35 @@ function BinaryManager() {
   };
 
   // Simple import for non-versioned services (Mailpit, phpMyAdmin, Composer)
-  const handleImportSimple = async (service, acceptedExtensions = '.zip,.tar.gz') => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = acceptedExtensions;
-    input.onchange = async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      const filePath = file.path;
-      if (!filePath) {
-        showAlert({ title: 'Error', message: 'Could not get file path. Please try again.', type: 'error' });
-        return;
-      }
-
-      await executeImport(service, null, filePath);
-    };
-    input.click();
+  const handleImportSimple = async (service) => {
+    // Use Electron's native dialog — file.path is not available in sandboxed renderer
+    const filePath = await window.devbox?.system.selectFile([
+      { name: 'Archive Files', extensions: ['zip', 'gz', 'tar.gz', 'tar'] },
+      { name: 'All Files', extensions: ['*'] },
+    ]);
+    if (!filePath) return;
+    await executeImport(service, null, filePath);
   };
 
   const handleImportApache = async (version = '2.4') => {
-    // Use file input to select a file
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.zip';
-    input.onchange = async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+    // Use Electron's native dialog — file.path is not available in sandboxed renderer
+    const filePath = await window.devbox?.system.selectFile([
+      { name: 'ZIP Archive', extensions: ['zip'] },
+      { name: 'All Files', extensions: ['*'] },
+    ]);
+    if (!filePath) return;
 
-      const id = `apache-${version}`;
-      setDownloadingGlobal(id, true);
-      setProgressGlobal(id, { status: 'starting', progress: 0 });
+    const id = `apache-${version}`;
+    setDownloadingGlobal(id, true);
+    setProgressGlobal(id, { status: 'starting', progress: 0 });
 
-      try {
-        // Get the file path - we need to use the path property
-        const filePath = file.path;
-        if (!filePath) {
-          throw new Error('Could not get file path. Please try again.');
-        }
-        await window.devbox?.binaries.importApache(filePath, version);
-      } catch (error) {
-        // Error importing Apache
-        setProgressGlobal(id, { status: 'error', error: error.message });
-        setDownloadingGlobal(id, false);
-      }
-    };
-    input.click();
+    try {
+      await window.devbox?.binaries.importApache(filePath, version);
+    } catch (error) {
+      // Error importing Apache
+      setProgressGlobal(id, { status: 'error', error: error.message });
+      setDownloadingGlobal(id, false);
+    }
   };
 
   const handleDownloadNodejs = async (version) => {
@@ -928,7 +908,21 @@ function BinaryManager() {
             Installed
           </span>
         );
-      case 'error':
+      case 'error': {
+        // Try to find a manual download URL for this service/version
+        const [svcKey, verKey] = (() => {
+          // id format is "service-version" or just "service" (e.g. "python-3.13", "mailpit")
+          const parts = id.split('-');
+          // Some services have version-like names (mariadb, mysqldump...) — find a known service prefix
+          const knownServices = ['php', 'mysql', 'mariadb', 'redis', 'nginx', 'apache', 'nodejs', 'python', 'postgresql', 'mongodb', 'memcached', 'mailpit', 'phpmyadmin', 'composer'];
+          for (const svc of knownServices) {
+            if (id === svc) return [svc, null];
+            if (id.startsWith(svc + '-')) return [svc, id.slice(svc.length + 1)];
+          }
+          return [parts[0], parts.slice(1).join('-') || null];
+        })();
+        const manualUrl = (verKey ? downloadUrls[svcKey]?.[verKey]?.url : null)
+          || downloadSources[svcKey]?.url;
         return (
           <div className="flex items-start gap-1.5">
             <div className="flex flex-col">
@@ -941,6 +935,15 @@ function BinaryManager() {
                   {p.error}
                 </span>
               )}
+              {manualUrl && (
+                <button
+                  onClick={() => window.devbox?.system.openExternal(manualUrl)}
+                  className="mt-1 text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
+                  title="Download manually"
+                >
+                  <ExternalLink className="w-3 h-3" /> Download manually
+                </button>
+              )}
             </div>
             <button
               onClick={() => clearDownload(id)}
@@ -951,6 +954,7 @@ function BinaryManager() {
             </button>
           </div>
         );
+      }
       case 'cancelled':
         return (
           <span className="text-orange-600 dark:text-orange-400 flex items-center gap-1">

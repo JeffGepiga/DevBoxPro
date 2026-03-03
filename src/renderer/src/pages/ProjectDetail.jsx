@@ -567,47 +567,58 @@ function OverviewTab({ project, processes, refreshProjects }) {
   });
 
   // Load available PHP versions, binaries status, and service config
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const status = await window.devbox?.binaries.getStatus();
-        setBinariesStatus(status || {});
+  const loadBinariesData = useCallback(async () => {
+    try {
+      const status = await window.devbox?.binaries.getStatus();
+      setBinariesStatus(status || {});
 
-        // Get installed PHP versions from binaries status (real-time disk check)
-        const getInstalledVersions = (service) => {
-          if (!status[service]) return [];
-          return Object.entries(status[service])
-            .filter(([_, v]) => v?.installed)
-            .map(([version]) => version)
-            .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-        };
+      // Get installed PHP versions from binaries status (real-time disk check)
+      const getInstalledVersions = (service) => {
+        if (!status[service]) return [];
+        return Object.entries(status[service])
+          .filter(([_, v]) => v?.installed)
+          .map(([version]) => version)
+          .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+      };
 
-        // Set PHP versions from binaries status
-        const installedPhpVersions = getInstalledVersions('php').map(version => ({
-          version,
-          available: true,
-        }));
-        setPhpVersions(installedPhpVersions);
+      // Set PHP versions from binaries status
+      const installedPhpVersions = getInstalledVersions('php').map(version => ({
+        version,
+        available: true,
+      }));
+      setPhpVersions(installedPhpVersions);
 
-        // Set version options directly from status (installed versions only)
-        setVersionOptions({
-          mysql: getInstalledVersions('mysql'),
-          mariadb: getInstalledVersions('mariadb'),
-          redis: getInstalledVersions('redis'),
-          nodejs: getInstalledVersions('nodejs'),
-          nginx: getInstalledVersions('nginx'),
-          apache: getInstalledVersions('apache'),
-          postgresql: getInstalledVersions('postgresql'),
-          mongodb: getInstalledVersions('mongodb'),
-          python: getInstalledVersions('python'),
-          memcached: getInstalledVersions('memcached'),
-        });
-      } catch (error) {
-        // Error loading data
-      }
-    };
-    loadData();
+      // Set version options directly from status (installed versions only)
+      setVersionOptions({
+        mysql: getInstalledVersions('mysql'),
+        mariadb: getInstalledVersions('mariadb'),
+        redis: getInstalledVersions('redis'),
+        nodejs: getInstalledVersions('nodejs'),
+        nginx: getInstalledVersions('nginx'),
+        apache: getInstalledVersions('apache'),
+        postgresql: getInstalledVersions('postgresql'),
+        mongodb: getInstalledVersions('mongodb'),
+        python: getInstalledVersions('python'),
+        memcached: getInstalledVersions('memcached'),
+      });
+    } catch (error) {
+      // Error loading data
+    }
   }, []);
+
+  useEffect(() => {
+    loadBinariesData();
+  }, [loadBinariesData]);
+
+  // Re-fetch binaries status whenever a binary download completes (e.g. Python install)
+  useEffect(() => {
+    const unsubscribe = window.devbox?.binaries.onProgress((id, progressData) => {
+      if (progressData.status === 'completed') {
+        loadBinariesData();
+      }
+    });
+    return () => unsubscribe?.();
+  }, [loadBinariesData]);
 
   // Load local IP addresses for network access feature
   useEffect(() => {

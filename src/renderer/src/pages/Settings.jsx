@@ -1177,6 +1177,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
   const [loadingVersionHistory, setLoadingVersionHistory] = useState(false);
   const [rollingBackTo, setRollingBackTo] = useState(null);
   const [rollbackProgress, setRollbackProgress] = useState(null);
+  const [rollbackDownloadUrl, setRollbackDownloadUrl] = useState(null);
   const [rollbackError, setRollbackError] = useState(null);
 
   // Load config info and app data path on mount
@@ -1283,6 +1284,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
   const handleRollbackToVersion = async (version, assets) => {
     setRollbackError(null);
     setRollbackProgress(null);
+    setRollbackDownloadUrl(null);
 
     // Pick the right asset for this platform
     const platform = navigator.platform.toLowerCase();
@@ -1302,6 +1304,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
       return;
     }
 
+    setRollbackDownloadUrl(asset.downloadUrl);
     setRollingBackTo(version);
     try {
       const result = await window.devbox?.update?.downloadAndInstallVersion(version, asset.downloadUrl);
@@ -1608,16 +1611,33 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
                             </p>
                           )}
                           {rollingBackTo === release.version && rollbackProgress && (
-                            <div className="mt-2 w-48">
-                              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                                <div
-                                  className="bg-primary-500 h-1.5 rounded-full transition-all duration-200"
-                                  style={{ width: `${rollbackProgress.percent || 0}%` }}
-                                />
-                              </div>
-                              <p className="text-xs text-gray-400 mt-0.5">
-                                {Math.round(rollbackProgress.percent || 0)}% — downloading installer...
-                              </p>
+                            <div className="mt-2 w-56">
+                              {rollbackProgress.status === 'launching' ? (
+                                <p className="text-xs text-green-600 dark:text-green-400 font-medium">
+                                  ✓ Installer launched — app will restart shortly...
+                                </p>
+                              ) : (
+                                <>
+                                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                                    <div
+                                      className="bg-primary-500 h-1.5 rounded-full transition-all duration-200"
+                                      style={{ width: `${rollbackProgress.percent || 0}%` }}
+                                    />
+                                  </div>
+                                  <p className="text-xs text-gray-400 mt-0.5">
+                                    {Math.round(rollbackProgress.percent || 0)}% — downloading installer...
+                                  </p>
+                                </>
+                              )}
+                              {rollbackDownloadUrl && (
+                                <button
+                                  onClick={() => window.devbox?.system.openExternal(rollbackDownloadUrl)}
+                                  className="mt-1 text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
+                                  title="Download installer manually"
+                                >
+                                  <ExternalLink className="w-3 h-3" /> Download manually
+                                </button>
+                              )}
                             </div>
                           )}
                           {rollingBackTo === release.version && !rollbackProgress && (
@@ -1626,30 +1646,78 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
                         </div>
                         <div className="flex items-center gap-2 shrink-0 ml-4">
                           {rollingBackTo === release.version ? (
-                            <button disabled className="btn-secondary text-xs py-1 px-2.5 opacity-70">
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                              Downloading...
-                            </button>
+                            <>
+                              <button
+                                disabled
+                                className="btn-secondary text-xs py-1 px-2.5 opacity-70"
+                              >
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                                {rollbackProgress?.status === 'launching' ? 'Launching...' : 'Downloading...'}
+                              </button>
+                              {rollbackProgress?.status === 'launching' && (
+                                <button
+                                  onClick={() => { setRollingBackTo(null); setRollbackProgress(null); setRollbackDownloadUrl(null); }}
+                                  className="btn-secondary text-xs py-1 px-2.5"
+                                  title="Dismiss"
+                                >
+                                  Dismiss
+                                </button>
+                              )}
+                            </>
                           ) : release.isCurrent ? (
-                            <button
-                              onClick={() => handleRollbackToVersion(release.version, release.assets)}
-                              disabled={!!rollingBackTo}
-                              className="btn-secondary text-xs py-1 px-2.5"
-                              title={`Reinstall v${release.version}`}
-                            >
-                              <RefreshCw className="w-3 h-3" />
-                              Reinstall
-                            </button>
+                            <>
+                              {(() => {
+                                const plat = navigator.platform.toLowerCase();
+                                const asset = plat.includes('win')
+                                  ? (release.assets?.find(a => a.name.toLowerCase().includes('setup') && a.name.endsWith('.exe')) || release.assets?.find(a => a.name.endsWith('.exe')))
+                                  : plat.includes('mac') || plat.includes('darwin')
+                                    ? release.assets?.find(a => a.name.endsWith('.dmg'))
+                                    : (release.assets?.find(a => a.name.endsWith('.AppImage')) || release.assets?.find(a => a.name.endsWith('.deb')));
+                                return asset ? (
+                                  <button
+                                    onClick={() => window.devbox?.system.openExternal(asset.downloadUrl)}
+                                    className="btn-icon text-gray-400 hover:text-gray-600"
+                                    title={`Download v${release.version} manually (${asset.name})`}
+                                  ><ExternalLink className="w-3.5 h-3.5" /></button>
+                                ) : null;
+                              })()}
+                              <button
+                                onClick={() => handleRollbackToVersion(release.version, release.assets)}
+                                disabled={!!rollingBackTo}
+                                className="btn-secondary text-xs py-1 px-2.5"
+                                title={`Reinstall v${release.version}`}
+                              >
+                                <RefreshCw className="w-3 h-3" />
+                                Reinstall
+                              </button>
+                            </>
                           ) : (
-                            <button
-                              onClick={() => handleRollbackToVersion(release.version, release.assets)}
-                              disabled={!!rollingBackTo}
-                              className="btn-secondary text-xs py-1 px-2.5"
-                              title={`Install v${release.version}`}
-                            >
-                              <Download className="w-3 h-3" />
-                              Install
-                            </button>
+                            <>
+                              {(() => {
+                                const plat = navigator.platform.toLowerCase();
+                                const asset = plat.includes('win')
+                                  ? (release.assets?.find(a => a.name.toLowerCase().includes('setup') && a.name.endsWith('.exe')) || release.assets?.find(a => a.name.endsWith('.exe')))
+                                  : plat.includes('mac') || plat.includes('darwin')
+                                    ? release.assets?.find(a => a.name.endsWith('.dmg'))
+                                    : (release.assets?.find(a => a.name.endsWith('.AppImage')) || release.assets?.find(a => a.name.endsWith('.deb')));
+                                return asset ? (
+                                  <button
+                                    onClick={() => window.devbox?.system.openExternal(asset.downloadUrl)}
+                                    className="btn-icon text-gray-400 hover:text-gray-600"
+                                    title={`Download v${release.version} manually (${asset.name})`}
+                                  ><ExternalLink className="w-3.5 h-3.5" /></button>
+                                ) : null;
+                              })()}
+                              <button
+                                onClick={() => handleRollbackToVersion(release.version, release.assets)}
+                                disabled={!!rollingBackTo}
+                                className="btn-secondary text-xs py-1 px-2.5"
+                                title={`Install v${release.version}`}
+                              >
+                                <Download className="w-3 h-3" />
+                                Install
+                              </button>
+                            </>
                           )}
                         </div>
                       </div>
