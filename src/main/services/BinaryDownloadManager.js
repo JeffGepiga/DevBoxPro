@@ -424,13 +424,13 @@ class BinaryDownloadManager {
           label: 'LTS',
         },
         '3.11': {
-          win: { url: 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip', filename: 'python-3.11.9-embed-amd64.zip' },
+          win: { url: 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-embeddable-amd64.zip', filename: 'python-3.11.9-embeddable-amd64.zip' },
           mac: { url: 'https://www.python.org/ftp/python/3.11.12/Python-3.11.12.tgz', filename: 'Python-3.11.12.tgz' },
           linux: { url: 'https://www.python.org/ftp/python/3.11.12/Python-3.11.12.tgz', filename: 'Python-3.11.12.tgz' },
           label: 'Stable',
         },
         '3.10': {
-          win: { url: 'https://www.python.org/ftp/python/3.10.13/python-3.10.13-embed-amd64.zip', filename: 'python-3.10.13-embed-amd64.zip' },
+          win: { url: 'https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-amd64.zip', filename: 'python-3.10.11-embed-amd64.zip' },
           mac: { url: 'https://www.python.org/ftp/python/3.10.16/Python-3.10.16.tgz', filename: 'Python-3.10.16.tgz' },
           linux: { url: 'https://www.python.org/ftp/python/3.10.16/Python-3.10.16.tgz', filename: 'Python-3.10.16.tgz' },
           label: 'Legacy',
@@ -2821,7 +2821,7 @@ AddType application/x-httpd-php-source .phps
       // Clean up download
       await fs.remove(downloadPath);
 
-      this.emitProgress(id, { status: 'complete', progress: 100 });
+      this.emitProgress(id, { status: 'completed', progress: 100 });
 
       return {
         success: true,
@@ -3281,6 +3281,9 @@ exit 1
         }
       }
 
+      // Bootstrap pip using get-pip.py (embeddable Python doesn't include pip or ensurepip)
+      await this.bootstrapPip(extractPath, platform, id);
+
       await fs.remove(downloadPath);
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true, version };
@@ -3289,6 +3292,71 @@ exit 1
       this.managers?.log?.systemError(`Failed to download Python ${version}`, { error: error.message });
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
+    }
+  }
+
+  /**
+   * Bootstrap pip into a Python installation using get-pip.py
+   * The embeddable Python distribution does not include pip or ensurepip,
+   * so we download get-pip.py from the official source and run it.
+   */
+  async bootstrapPip(pythonDir, platform, id) {
+    const pyExe = platform === 'win' ? 'python.exe' : 'bin/python3';
+    const pythonPath = path.join(pythonDir, pyExe);
+
+    if (!await fs.pathExists(pythonPath)) {
+      this.managers?.log?.systemWarn('Cannot bootstrap pip: Python executable not found');
+      return;
+    }
+
+    try {
+      this.emitProgress(id, { status: 'installing_pip', progress: 85, message: 'Installing pip...' });
+
+      // Download get-pip.py and emit sub-progress so the UI tracks and clears it properly
+      const getPipPath = path.join(pythonDir, 'get-pip.py');
+      const getPipUrl = 'https://bootstrap.pypa.io/get-pip.py';
+      const getPipId = `${id}-getpip`;
+
+      try {
+        await this.downloadFile(getPipUrl, getPipPath, getPipId);
+        this.emitProgress(getPipId, { status: 'completed', progress: 100 });
+      } catch (err) {
+        this.emitProgress(getPipId, { status: 'error', error: err.message });
+        throw err;
+      }
+
+      // Run get-pip.py with the Python executable
+      await new Promise((resolve, reject) => {
+        const proc = spawn(pythonPath, [getPipPath, '--no-warn-script-location'], {
+          cwd: pythonDir,
+          windowsHide: true,
+          env: { ...process.env },
+        });
+
+        let stderr = '';
+        proc.stdout.on('data', () => { }); // drain stdout
+        proc.stderr.on('data', (d) => { stderr += d.toString(); });
+
+        proc.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`get-pip.py failed with code ${code}: ${stderr}`));
+          }
+        });
+
+        proc.on('error', (err) => {
+          reject(new Error(`Failed to run get-pip.py: ${err.message}`));
+        });
+      });
+
+      // Clean up get-pip.py
+      await fs.remove(getPipPath);
+
+      this.managers?.log?.system?.('pip bootstrapped successfully');
+    } catch (error) {
+      // pip bootstrap failure is non-fatal — Python still works, just without pip
+      this.managers?.log?.systemWarn?.('Failed to bootstrap pip', { error: error.message });
     }
   }
 
@@ -3551,6 +3619,18 @@ exit 1
             await fs.move(path.join(srcPath, file), path.join(extractPath, file), { overwrite: true });
           }
           await fs.remove(srcPath);
+        }
+      }
+
+      // On Windows, the memcached executable is inside a 'bin' subdirectory, flatten it
+      if (platform === 'win') {
+        const binPath = path.join(extractPath, 'bin');
+        if (await fs.pathExists(binPath)) {
+          const binFiles = await fs.readdir(binPath);
+          for (const file of binFiles) {
+            await fs.move(path.join(binPath, file), path.join(extractPath, file), { overwrite: true });
+          }
+          await fs.remove(binPath);
         }
       }
 

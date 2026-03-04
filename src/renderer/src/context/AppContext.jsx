@@ -187,10 +187,12 @@ export function AppProvider({ children }) {
 
       if (progressData.status === 'completed' || progressData.status === 'error') {
         dispatch({ type: 'SET_DOWNLOADING', payload: { id, value: false } });
-        // Clear from state after a short delay
-        setTimeout(() => {
-          dispatch({ type: 'CLEAR_DOWNLOAD', payload: id });
-        }, 2000);
+        // Only auto-clear completed downloads. Keep errors visible until dismissed.
+        if (progressData.status === 'completed') {
+          setTimeout(() => {
+            dispatch({ type: 'CLEAR_DOWNLOAD', payload: id });
+          }, 2000);
+        }
       }
     });
 

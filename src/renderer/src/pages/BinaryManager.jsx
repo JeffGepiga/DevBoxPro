@@ -422,10 +422,12 @@ function BinaryManager() {
     };
     init();
 
-    // Download progress is now handled by AppContext - just refresh installed list on complete, and alert on error
     const unsubscribe = window.devbox?.binaries.onProgress((id, progressData) => {
       if (progressData.status === 'completed') {
-        forceRefreshInstalled();
+        // Slight delay ensures filesystem is fully synced before checking install status
+        setTimeout(() => {
+          forceRefreshInstalled();
+        }, 500);
       } else if (progressData.status === 'error') {
         const label = id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
         showAlert({
@@ -453,12 +455,7 @@ function BinaryManager() {
     window.devbox?.binaries.downloadPhp(version).catch((error) => {
       setProgressGlobal(id, { status: 'error', error: error.message });
       setDownloadingGlobal(id, false);
-      showAlert({
-        title: 'Download Failed',
-        message: `Failed to download PHP ${version}`,
-        detail: error.message || 'An unknown error occurred. Please check your internet connection and try again.',
-        type: 'error',
-      });
+      // Alert is handled by the onProgress listener to prevent duplicates
     });
   };
 
@@ -521,13 +518,7 @@ function BinaryManager() {
     downloadPromise?.catch((error) => {
       setProgressGlobal(id, { status: 'error', error: error.message });
       setDownloadingGlobal(id, false);
-      const label = version ? `${service} ${version}` : service;
-      showAlert({
-        title: 'Download Failed',
-        message: `Failed to download ${label}`,
-        detail: error.message || 'An unknown error occurred. Please check your internet connection and try again.',
-        type: 'error',
-      });
+      // Alert is handled by the onProgress listener to prevent duplicates
     });
   };
 
@@ -789,12 +780,7 @@ function BinaryManager() {
     window.devbox?.binaries.downloadNodejs(version).catch((error) => {
       setProgressGlobal(id, { status: 'error', error: error.message });
       setDownloadingGlobal(id, false);
-      showAlert({
-        title: 'Download Failed',
-        message: `Failed to download Node.js ${version}`,
-        detail: error.message || 'An unknown error occurred. Please check your internet connection and try again.',
-        type: 'error',
-      });
+      // Alert is handled by the onProgress listener to prevent duplicates
     });
   };
 
@@ -1663,28 +1649,57 @@ function BinaryManager() {
       )}
 
       {/* ── Quick Download All ──────────────────────────────── */}
-      <div className="mt-6 p-4 rounded-xl border border-blue-200 dark:border-blue-800 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 flex items-center justify-between gap-4">
-        <div>
-          <h3 className="font-semibold text-sm text-gray-900 dark:text-white">Download Core Stack</h3>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">PHP 8.5, Nginx 1.28, MySQL 8.4, Redis 7.4, Mailpit, phpMyAdmin, Node.js 24 & Composer</p>
-        </div>
-        <button
-          onClick={() => {
-            if (!installed.php?.['8.5']) handleDownloadPhp('8.5');
-            if (!installed.nginx?.['1.28']) handleDownloadService('nginx', '1.28');
-            if (!installed.mysql?.['8.4']) handleDownloadService('mysql', '8.4');
-            if (!installed.redis?.['7.4']) handleDownloadService('redis', '7.4');
-            if (!installed.mailpit) handleDownloadService('mailpit');
-            if (!installed.phpmyadmin) handleDownloadService('phpmyadmin');
-            if (!installed.nodejs?.['24']) handleDownloadNodejs('24');
-            if (!installed.composer) handleDownloadService('composer');
-          }}
-          className="shrink-0 btn-primary bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-sm"
-        >
-          <Download className="w-4 h-4" />
-          Download All
-        </button>
-      </div>
+      {(() => {
+        const isCoreInstalled = installed.php?.['8.4'] &&
+          installed.nginx?.['1.28'] &&
+          installed.mysql?.['8.4'] &&
+          installed.redis?.['7.4'] &&
+          installed.mailpit &&
+          installed.phpmyadmin &&
+          installed.nodejs?.['24'] &&
+          installed.composer;
+
+        return (
+          <div className={clsx(
+            "mt-6 p-4 rounded-xl border flex items-center justify-between gap-4 transition-colors",
+            isCoreInstalled
+              ? "border-green-200 dark:border-green-800/50 bg-green-50/50 dark:bg-green-900/10"
+              : "border-blue-200 dark:border-blue-800 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20"
+          )}>
+            <div>
+              <h3 className="font-semibold text-sm text-gray-900 dark:text-white">
+                {isCoreInstalled ? "Core Stack Installed" : "Download Core Stack"}
+              </h3>
+              <p className={clsx("text-xs mt-0.5", isCoreInstalled ? "text-green-600 dark:text-green-400" : "text-gray-500 dark:text-gray-400")}>
+                PHP 8.4, Nginx 1.28, MySQL 8.4, Redis 7.4, Mailpit, phpMyAdmin, Node.js 24 & Composer
+              </p>
+            </div>
+            {isCoreInstalled ? (
+              <div className="shrink-0 flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-green-200 dark:border-green-800 rounded-lg text-green-600 dark:text-green-400 text-sm font-medium">
+                <CheckCircle2 className="w-4 h-4" />
+                All Installed
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  if (!installed.php?.['8.4']) handleDownloadPhp('8.4');
+                  if (!installed.nginx?.['1.28']) handleDownloadService('nginx', '1.28');
+                  if (!installed.mysql?.['8.4']) handleDownloadService('mysql', '8.4');
+                  if (!installed.redis?.['7.4']) handleDownloadService('redis', '7.4');
+                  if (!installed.mailpit) handleDownloadService('mailpit');
+                  if (!installed.phpmyadmin) handleDownloadService('phpmyadmin');
+                  if (!installed.nodejs?.['24']) handleDownloadNodejs('24');
+                  if (!installed.composer) handleDownloadService('composer');
+                }}
+                className="shrink-0 btn-primary bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-sm"
+              >
+                <Download className="w-4 h-4" />
+                Download All
+              </button>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

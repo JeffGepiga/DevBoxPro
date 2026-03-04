@@ -122,7 +122,7 @@ class CliManager {
 
     const projectsFilePath = this.getProjectsFilePath();
     await fs.writeJson(projectsFilePath, projectMappings, { spaces: 2 });
-    
+
     // Return the path for logging purposes
     return projectsFilePath;
   }
@@ -194,7 +194,10 @@ class CliManager {
       const pyVersion = project.services.pythonVersion || '3.13';
       const pythonPath = this.getPythonPath(pyVersion);
       if (pythonPath) {
-        env.PATH = `${path.dirname(pythonPath)}${path.delimiter}${env.PATH}`;
+        const pythonDir = path.dirname(pythonPath);
+        // Add both the Python dir and Scripts subdir (where pip lives)
+        const scriptsDir = path.join(pythonDir, 'Scripts');
+        env.PATH = `${pythonDir}${path.delimiter}${scriptsDir}${path.delimiter}${env.PATH}`;
       }
     }
 
@@ -424,6 +427,38 @@ class CliManager {
         }
         break;
 
+      case 'pip':
+      case 'pip3': {
+        if (project.services?.python) {
+          const pyVersion = project.services.pythonVersion || '3.13';
+          const pythonPath = this.getPythonPath(pyVersion);
+          if (pythonPath) {
+            const scriptsDir = path.join(path.dirname(pythonPath), 'Scripts');
+            const pipExe = process.platform === 'win32' ? 'pip.exe' : 'pip3';
+            const pipFullPath = path.join(scriptsDir, pipExe);
+            if (fs.existsSync(pipFullPath)) {
+              executable = pipFullPath;
+            } else {
+              // Fallback: use python -m pip
+              executable = pythonPath;
+              finalArgs = ['-m', 'pip', ...args];
+            }
+          }
+        }
+        break;
+      }
+
+      case 'python': {
+        if (project.services?.python) {
+          const pyVersion = project.services.pythonVersion || '3.13';
+          const pythonPath = this.getPythonPath(pyVersion);
+          if (pythonPath) {
+            executable = pythonPath;
+          }
+        }
+        break;
+      }
+
       case 'mysql':
       case 'mysqldump': {
         const dbInfo = this.getActiveMysqlInfo();
@@ -593,9 +628,10 @@ set "NODE_PATH=%DEVBOX_RESOURCES%\\nodejs\\%NODE_VERSION%\\win"
 set "COMPOSER_PATH=%DEVBOX_RESOURCES%\\composer"
 set "MYSQL_BIN_PATH=%DEVBOX_RESOURCES%\\%MYSQL_TYPE%\\%MYSQL_VERSION%\\win\\bin"
 set "PYTHON_PATH=%DEVBOX_RESOURCES%\\python\\%PYTHON_VERSION%\\win"
+set "PYTHON_SCRIPTS_PATH=%PYTHON_PATH%\\Scripts"
 
 REM Prepend to PATH
-set "PATH=%PHP_PATH%;%NODE_PATH%;%COMPOSER_PATH%;%MYSQL_BIN_PATH%;%PYTHON_PATH%;%PATH%"
+set "PATH=%PHP_PATH%;%NODE_PATH%;%COMPOSER_PATH%;%MYSQL_BIN_PATH%;%PYTHON_PATH%;%PYTHON_SCRIPTS_PATH%;%PATH%"
 
 REM Handle special commands
 set "CMD=%~1"
@@ -697,6 +733,22 @@ if /i "%CMD%"=="python" (
         "%PYTHON_PATH%\\python.exe" %1 %2 %3 %4 %5 %6 %7 %8 %9
     ) else (
         echo Python %PYTHON_VERSION% not found. Install it from DevBox Pro Binaries page.
+        exit /b 1
+    )
+    exit /b %ERRORLEVEL%
+)
+
+if /i "%CMD%"=="pip" (
+    if "%PYTHON_VERSION%"=="" (
+        echo pip is not available. Enable Python in project settings.
+        exit /b 1
+    )
+    if exist "%PYTHON_SCRIPTS_PATH%\\pip.exe" (
+        "%PYTHON_SCRIPTS_PATH%\\pip.exe" %1 %2 %3 %4 %5 %6 %7 %8 %9
+    ) else if exist "%PYTHON_PATH%\\python.exe" (
+        "%PYTHON_PATH%\\python.exe" -m pip %1 %2 %3 %4 %5 %6 %7 %8 %9
+    ) else (
+        echo pip not found for Python %PYTHON_VERSION%. Install Python from DevBox Pro Binaries page.
         exit /b 1
     )
     exit /b %ERRORLEVEL%
@@ -1592,7 +1644,7 @@ if ($newArray.Count -lt $pathArray.Count) {
    */
   async removeDirectShims() {
     const cliPath = this.getCliPath();
-    const commands = ['php', 'node', 'npm', 'npx', 'composer', 'mysql', 'mysqldump', 'python', 'python3'];
+    const commands = ['php', 'node', 'npm', 'npx', 'composer', 'mysql', 'mysqldump', 'python', 'python3', 'pip', 'pip3'];
     const ext = process.platform === 'win32' ? '.cmd' : '';
 
     for (const cmd of commands) {
@@ -2029,6 +2081,62 @@ if exist "%PYTHON_PATH%\\python.exe" (
 )
 `;
 
+    // Pip shim
+    const pipShim = `@echo off
+setlocal enabledelayedexpansion
+
+REM DevBox Pro pip Shim - Auto-detects project Python version
+set "DEVBOX_RESOURCES=${resourcesPath}"
+set "DEVBOX_PROJECTS=${projectsFilePath}"
+set "DEFAULT_PYTHON=${defaultPythonVersion}"
+set "CURRENT_DIR=%CD%"
+
+REM Create temp PowerShell script to find project Python version
+set "TEMP_PS=%TEMP%\\\\devbox_pip_lookup.ps1"
+echo $p = Get-Content '%DEVBOX_PROJECTS%' -Raw ^| ConvertFrom-Json > "%TEMP_PS%"
+echo $d = '%CURRENT_DIR%'.ToLower().Replace('/', '\\\\') >> "%TEMP_PS%"
+echo $best = $null >> "%TEMP_PS%"
+echo $bestLen = 0 >> "%TEMP_PS%"
+echo foreach($prop in $p.PSObject.Properties){ >> "%TEMP_PS%"
+echo   $pp = $prop.Name.ToLower().Replace('/', '\\\\') >> "%TEMP_PS%"
+echo   if($d -eq $pp -or $d.StartsWith($pp + '\\\\')){ >> "%TEMP_PS%"
+echo     if($pp.Length -gt $bestLen){ $best = $prop.Value; $bestLen = $pp.Length } >> "%TEMP_PS%"
+echo   } >> "%TEMP_PS%"
+echo } >> "%TEMP_PS%"
+echo if($best -and $best.services -and $best.services.pythonVersion){ $best.services.pythonVersion } >> "%TEMP_PS%"
+
+set "PYTHON_VERSION="
+for /f "tokens=*" %%a in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS%" 2^>nul') do (
+    if not "%%a"=="" set "PYTHON_VERSION=%%a"
+)
+del "%TEMP_PS%" 2>nul
+
+REM Use project version or default
+if "%PYTHON_VERSION%"=="" set "PYTHON_VERSION=%DEFAULT_PYTHON%"
+
+set "PYTHON_PATH=%DEVBOX_RESOURCES%\\\\python\\\\%PYTHON_VERSION%\\\\win"
+set "PYTHON_SCRIPTS=%PYTHON_PATH%\\\\Scripts"
+
+if exist "%PYTHON_SCRIPTS%\\\\pip.exe" (
+    "%PYTHON_SCRIPTS%\\\\pip.exe" %*
+    exit /b %ERRORLEVEL%
+) else if exist "%PYTHON_PATH%\\\\python.exe" (
+    "%PYTHON_PATH%\\\\python.exe" -m pip %*
+    exit /b %ERRORLEVEL%
+) else (
+    REM DevBox Pro Python not installed - fall back to system pip
+    set "SHIM_DIR=%~dp0"
+    for /f "tokens=*" %%i in ('where pip 2^>nul') do (
+        if /i not "%%~dpi"=="%SHIM_DIR%" (
+            "%%i" %*
+            exit /b %ERRORLEVEL%
+        )
+    )
+    echo [DevBox Pro] pip not found for Python %PYTHON_VERSION%. Install Python from the DevBox Pro Binaries page.
+    exit /b 1
+)
+`;
+
     // Write all shims
     await fs.writeFile(path.join(cliPath, 'php.cmd'), phpShim, 'utf8');
     await fs.writeFile(path.join(cliPath, 'node.cmd'), nodeShim, 'utf8');
@@ -2038,6 +2146,7 @@ if exist "%PYTHON_PATH%\\python.exe" (
     await fs.writeFile(path.join(cliPath, 'mysql.cmd'), mysqlShim, 'utf8');
     await fs.writeFile(path.join(cliPath, 'mysqldump.cmd'), mysqldumpShim, 'utf8');
     await fs.writeFile(path.join(cliPath, 'python.cmd'), pythonShim, 'utf8');
+    await fs.writeFile(path.join(cliPath, 'pip.cmd'), pipShim, 'utf8');
 
     return true;
   }
@@ -2377,6 +2486,62 @@ fi
     await fs.chmod(path.join(cliPath, 'python'), 0o755);
     await fs.writeFile(path.join(cliPath, 'python3'), pythonShim, 'utf8');
     await fs.chmod(path.join(cliPath, 'python3'), 0o755);
+
+    // Pip shim
+    const pipShim = `#!/bin/bash
+# DevBox Pro pip Shim - Auto-detects project Python version
+
+DEVBOX_RESOURCES="${resourcesPath}"
+DEVBOX_PROJECTS="${projectsFilePath}"
+DEFAULT_PYTHON="${defaultPythonVersion}"
+CURRENT_DIR="$(pwd)"
+
+# Find project for current directory
+PYTHON_VERSION=""
+if [ -f "$DEVBOX_PROJECTS" ]; then
+    RESULT=$(python3 -c "
+import json, sys
+try:
+    with open('$DEVBOX_PROJECTS') as f:
+        projects = json.load(f)
+    current = '$CURRENT_DIR'.lower()
+    for path, config in projects.items():
+        if current.startswith(path.lower()) or current == path.lower():
+            pv = (config.get('services') or {}).get('pythonVersion')
+            if pv:
+                print('FOUND|' + pv)
+            sys.exit(0)
+except:
+    pass
+print('NOTFOUND|')
+" 2>/dev/null)
+    
+    if [[ "$RESULT" == FOUND* ]]; then
+        PYTHON_VERSION="\${RESULT#FOUND|}"
+    fi
+fi
+
+# Use project version or default
+[ -z "$PYTHON_VERSION" ] && PYTHON_VERSION="$DEFAULT_PYTHON"
+
+PYTHON_PATH="$DEVBOX_RESOURCES/python/$PYTHON_VERSION/${platform}"
+
+if [ -x "$PYTHON_PATH/bin/pip3" ]; then
+    exec "$PYTHON_PATH/bin/pip3" "$@"
+elif [ -x "$PYTHON_PATH/bin/python3" ]; then
+    exec "$PYTHON_PATH/bin/python3" -m pip "$@"
+elif command -v pip3 &> /dev/null; then
+    exec pip3 "$@"
+else
+    echo "[DevBox Pro] pip not found for Python $PYTHON_VERSION. Install from Binaries page or set a default version."
+    exit 1
+fi
+`;
+
+    await fs.writeFile(path.join(cliPath, 'pip'), pipShim, 'utf8');
+    await fs.chmod(path.join(cliPath, 'pip'), 0o755);
+    await fs.writeFile(path.join(cliPath, 'pip3'), pipShim, 'utf8');
+    await fs.chmod(path.join(cliPath, 'pip3'), 0o755);
 
     return true;
   }

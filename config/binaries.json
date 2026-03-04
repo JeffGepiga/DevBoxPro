@@ -14,31 +14,31 @@
     "downloads": {
       "8.5": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.5.3-nts-Win32-vs17-x64.zip",
-          "filename": "php-8.5.3-nts-Win32-vs17-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.5.1-nts-Win32-vs17-x64.zip",
+          "filename": "php-8.5.1-nts-Win32-vs17-x64.zip"
         },
         "mac": {
-          "url": "https://github.com/shivammathur/php-builder/releases/download/8.5.3/php-8.5.3-darwin-arm64.tar.gz",
-          "filename": "php-8.5.3-darwin-arm64.tar.gz"
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.5.1/php-8.5.1-darwin-arm64.tar.gz",
+          "filename": "php-8.5.1-darwin-arm64.tar.gz"
         },
         "linux": {
-          "url": "https://github.com/shivammathur/php-builder/releases/download/8.5.3/php-8.5.3-linux-x86_64.tar.gz",
-          "filename": "php-8.5.3-linux-x86_64.tar.gz"
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.5.1/php-8.5.1-linux-x86_64.tar.gz",
+          "filename": "php-8.5.1-linux-x86_64.tar.gz"
         },
         "label": "Latest"
       },
       "8.4": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.4.18-nts-Win32-vs17-x64.zip",
-          "filename": "php-8.4.18-nts-Win32-vs17-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.4.16-nts-Win32-vs17-x64.zip",
+          "filename": "php-8.4.16-nts-Win32-vs17-x64.zip"
         },
         "mac": {
-          "url": "https://github.com/shivammathur/php-builder/releases/download/8.4.18/php-8.4.18-darwin-arm64.tar.gz",
-          "filename": "php-8.4.18-darwin-arm64.tar.gz"
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.4.16/php-8.4.16-darwin-arm64.tar.gz",
+          "filename": "php-8.4.16-darwin-arm64.tar.gz"
         },
         "linux": {
-          "url": "https://github.com/shivammathur/php-builder/releases/download/8.4.18/php-8.4.18-linux-x86_64.tar.gz",
-          "filename": "php-8.4.18-linux-x86_64.tar.gz"
+          "url": "https://github.com/shivammathur/php-builder/releases/download/8.4.16/php-8.4.16-linux-x86_64.tar.gz",
+          "filename": "php-8.4.16-linux-x86_64.tar.gz"
         },
         "label": "Active"
       },
@@ -376,50 +376,20 @@
       "16"
     ],
     "downloads": {
-      "24": {
+      "16": {
         "win": {
-          "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-win-x64.zip",
-          "filename": "node-v24.14.0-win-x64.zip"
+          "url": "https://nodejs.org/dist/v16.20.2/node-v16.20.2-win-x64.zip",
+          "filename": "node-v16.20.2-win-x64.zip"
         },
         "mac": {
-          "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-darwin-arm64.tar.gz",
-          "filename": "node-v24.14.0-darwin-arm64.tar.gz"
+          "url": "https://nodejs.org/dist/v16.20.2/node-v16.20.2-darwin-arm64.tar.gz",
+          "filename": "node-v16.20.2-darwin-arm64.tar.gz"
         },
         "linux": {
-          "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-x64.tar.gz",
-          "filename": "node-v24.14.0-linux-x64.tar.gz"
+          "url": "https://nodejs.org/dist/v16.20.2/node-v16.20.2-linux-x64.tar.gz",
+          "filename": "node-v16.20.2-linux-x64.tar.gz"
         },
-        "label": "LTS"
-      },
-      "22": {
-        "win": {
-          "url": "https://nodejs.org/dist/v22.22.1/node-v22.22.1-win-x64.zip",
-          "filename": "node-v22.22.1-win-x64.zip"
-        },
-        "mac": {
-          "url": "https://nodejs.org/dist/v22.22.1/node-v22.22.1-darwin-arm64.tar.gz",
-          "filename": "node-v22.22.1-darwin-arm64.tar.gz"
-        },
-        "linux": {
-          "url": "https://nodejs.org/dist/v22.22.1/node-v22.22.1-linux-x64.tar.gz",
-          "filename": "node-v22.22.1-linux-x64.tar.gz"
-        },
-        "label": "Maintenance LTS"
-      },
-      "20": {
-        "win": {
-          "url": "https://nodejs.org/dist/v20.20.1/node-v20.20.1-win-x64.zip",
-          "filename": "node-v20.20.1-win-x64.zip"
-        },
-        "mac": {
-          "url": "https://nodejs.org/dist/v20.20.1/node-v20.20.1-darwin-arm64.tar.gz",
-          "filename": "node-v20.20.1-darwin-arm64.tar.gz"
-        },
-        "linux": {
-          "url": "https://nodejs.org/dist/v20.20.1/node-v20.20.1-linux-x64.tar.gz",
-          "filename": "node-v20.20.1-linux-x64.tar.gz"
-        },
-        "label": "Maintenance LTS (EOL Apr 2026)"
+        "label": "Legacy"
       },
       "18": {
         "win": {
@@ -436,20 +406,50 @@
         },
         "label": "Legacy (EOL)"
       },
-      "16": {
+      "20": {
         "win": {
-          "url": "https://nodejs.org/dist/v16.20.2/node-v16.20.2-win-x64.zip",
-          "filename": "node-v16.20.2-win-x64.zip"
+          "url": "https://nodejs.org/dist/v20.20.1/node-v20.20.1-win-x64.zip",
+          "filename": "node-v20.20.1-win-x64.zip"
         },
         "mac": {
-          "url": "https://nodejs.org/dist/v16.20.2/node-v16.20.2-darwin-arm64.tar.gz",
-          "filename": "node-v16.20.2-darwin-arm64.tar.gz"
+          "url": "https://nodejs.org/dist/v20.20.1/node-v20.20.1-darwin-arm64.tar.gz",
+          "filename": "node-v20.20.1-darwin-arm64.tar.gz"
         },
         "linux": {
-          "url": "https://nodejs.org/dist/v16.20.2/node-v16.20.2-linux-x64.tar.gz",
-          "filename": "node-v16.20.2-linux-x64.tar.gz"
+          "url": "https://nodejs.org/dist/v20.20.1/node-v20.20.1-linux-x64.tar.gz",
+          "filename": "node-v20.20.1-linux-x64.tar.gz"
         },
-        "label": "Legacy"
+        "label": "Maintenance LTS (EOL Apr 2026)"
+      },
+      "22": {
+        "win": {
+          "url": "https://nodejs.org/dist/v22.22.1/node-v22.22.1-win-x64.zip",
+          "filename": "node-v22.22.1-win-x64.zip"
+        },
+        "mac": {
+          "url": "https://nodejs.org/dist/v22.22.1/node-v22.22.1-darwin-arm64.tar.gz",
+          "filename": "node-v22.22.1-darwin-arm64.tar.gz"
+        },
+        "linux": {
+          "url": "https://nodejs.org/dist/v22.22.1/node-v22.22.1-linux-x64.tar.gz",
+          "filename": "node-v22.22.1-linux-x64.tar.gz"
+        },
+        "label": "Maintenance LTS"
+      },
+      "24": {
+        "win": {
+          "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-win-x64.zip",
+          "filename": "node-v24.14.0-win-x64.zip"
+        },
+        "mac": {
+          "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-darwin-arm64.tar.gz",
+          "filename": "node-v24.14.0-darwin-arm64.tar.gz"
+        },
+        "linux": {
+          "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-x64.tar.gz",
+          "filename": "node-v24.14.0-linux-x64.tar.gz"
+        },
+        "label": "LTS"
       }
     }
   },
@@ -523,37 +523,27 @@
     }
   },
   "postgresql": {
-    "versions": ["17", "16", "15", "14"],
+    "versions": [
+      "17",
+      "16",
+      "15",
+      "14"
+    ],
     "downloads": {
-      "17": {
+      "14": {
         "win": {
-          "url": "https://get.enterprisedb.com/postgresql/postgresql-17.4-1-windows-x64-binaries.zip",
-          "filename": "postgresql-17.4-1-windows-x64-binaries.zip"
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-14.17-1-windows-x64-binaries.zip",
+          "filename": "postgresql-14.17-1-windows-x64-binaries.zip"
         },
         "mac": {
-          "url": "https://get.enterprisedb.com/postgresql/postgresql-17.4-1-osx-binaries.zip",
-          "filename": "postgresql-17.4-1-osx-binaries.zip"
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-14.17-1-osx-binaries.zip",
+          "filename": "postgresql-14.17-1-osx-binaries.zip"
         },
         "linux": {
-          "url": "https://get.enterprisedb.com/postgresql/postgresql-17.4-1-linux-x64-binaries.tar.gz",
-          "filename": "postgresql-17.4-1-linux-x64-binaries.tar.gz"
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-14.17-1-linux-x64-binaries.tar.gz",
+          "filename": "postgresql-14.17-1-linux-x64-binaries.tar.gz"
         },
-        "label": "Latest"
-      },
-      "16": {
-        "win": {
-          "url": "https://get.enterprisedb.com/postgresql/postgresql-16.8-1-windows-x64-binaries.zip",
-          "filename": "postgresql-16.8-1-windows-x64-binaries.zip"
-        },
-        "mac": {
-          "url": "https://get.enterprisedb.com/postgresql/postgresql-16.8-1-osx-binaries.zip",
-          "filename": "postgresql-16.8-1-osx-binaries.zip"
-        },
-        "linux": {
-          "url": "https://get.enterprisedb.com/postgresql/postgresql-16.8-1-linux-x64-binaries.tar.gz",
-          "filename": "postgresql-16.8-1-linux-x64-binaries.tar.gz"
-        },
-        "label": "LTS"
+        "label": "Legacy"
       },
       "15": {
         "win": {
@@ -570,25 +560,45 @@
         },
         "label": "Stable"
       },
-      "14": {
+      "16": {
         "win": {
-          "url": "https://get.enterprisedb.com/postgresql/postgresql-14.17-1-windows-x64-binaries.zip",
-          "filename": "postgresql-14.17-1-windows-x64-binaries.zip"
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-16.8-1-windows-x64-binaries.zip",
+          "filename": "postgresql-16.8-1-windows-x64-binaries.zip"
         },
         "mac": {
-          "url": "https://get.enterprisedb.com/postgresql/postgresql-14.17-1-osx-binaries.zip",
-          "filename": "postgresql-14.17-1-osx-binaries.zip"
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-16.8-1-osx-binaries.zip",
+          "filename": "postgresql-16.8-1-osx-binaries.zip"
         },
         "linux": {
-          "url": "https://get.enterprisedb.com/postgresql/postgresql-14.17-1-linux-x64-binaries.tar.gz",
-          "filename": "postgresql-14.17-1-linux-x64-binaries.tar.gz"
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-16.8-1-linux-x64-binaries.tar.gz",
+          "filename": "postgresql-16.8-1-linux-x64-binaries.tar.gz"
         },
-        "label": "Legacy"
+        "label": "LTS"
+      },
+      "17": {
+        "win": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-17.4-1-windows-x64-binaries.zip",
+          "filename": "postgresql-17.4-1-windows-x64-binaries.zip"
+        },
+        "mac": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-17.4-1-osx-binaries.zip",
+          "filename": "postgresql-17.4-1-osx-binaries.zip"
+        },
+        "linux": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-17.4-1-linux-x64-binaries.tar.gz",
+          "filename": "postgresql-17.4-1-linux-x64-binaries.tar.gz"
+        },
+        "label": "Latest"
       }
     }
   },
   "python": {
-    "versions": ["3.13", "3.12", "3.11", "3.10"],
+    "versions": [
+      "3.13",
+      "3.12",
+      "3.11",
+      "3.10"
+    ],
     "downloads": {
       "3.13": {
         "win": {
@@ -624,8 +634,8 @@
       },
       "3.11": {
         "win": {
-          "url": "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip",
-          "filename": "python-3.11.9-embed-amd64.zip"
+          "url": "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embeddable-amd64.zip",
+          "filename": "python-3.11.9-embeddable-amd64.zip"
         },
         "mac": {
           "url": "https://www.python.org/ftp/python/3.11.12/Python-3.11.12.tgz",
@@ -640,8 +650,8 @@
       },
       "3.10": {
         "win": {
-          "url": "https://www.python.org/ftp/python/3.10.13/python-3.10.13-embed-amd64.zip",
-          "filename": "python-3.10.13-embed-amd64.zip"
+          "url": "https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-amd64.zip",
+          "filename": "python-3.10.11-embed-amd64.zip"
         },
         "mac": {
           "url": "https://www.python.org/ftp/python/3.10.16/Python-3.10.16.tgz",
@@ -657,7 +667,11 @@
     }
   },
   "mongodb": {
-    "versions": ["8.0", "7.0", "6.0"],
+    "versions": [
+      "8.0",
+      "7.0",
+      "6.0"
+    ],
     "downloads": {
       "8.0": {
         "win": {
@@ -707,7 +721,9 @@
     }
   },
   "mongosh": {
-    "versions": ["latest"],
+    "versions": [
+      "latest"
+    ],
     "downloads": {
       "latest": {
         "win": {
@@ -727,7 +743,9 @@
     }
   },
   "sqlite": {
-    "versions": ["3"],
+    "versions": [
+      "3"
+    ],
     "downloads": {
       "3": {
         "win": {
@@ -747,7 +765,9 @@
     }
   },
   "minio": {
-    "versions": ["latest"],
+    "versions": [
+      "latest"
+    ],
     "downloads": {
       "latest": {
         "win": {
@@ -767,7 +787,9 @@
     }
   },
   "memcached": {
-    "versions": ["1.6"],
+    "versions": [
+      "1.6"
+    ],
     "downloads": {
       "1.6": {
         "win": {
