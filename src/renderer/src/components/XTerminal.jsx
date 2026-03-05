@@ -53,6 +53,7 @@ const XTerminal = forwardRef(({
   const savedCommand = useRef('');
   const isRunningCommand = useRef(false);
   const runningProcessId = useRef(null);
+  const outputListenerRef = useRef(null);
 
   // Re-fit whenever the terminal becomes visible (container was display:none before)
   useEffect(() => {
@@ -126,7 +127,7 @@ const XTerminal = forwardRef(({
       lineHeight: 1.2,
       cursorBlink: true,
       cursorStyle: 'bar',
-      scrollback: 10000,
+      scrollback: 2000,
       allowProposedApi: true,
     });
 
@@ -311,6 +312,7 @@ const XTerminal = forwardRef(({
     });
 
     return () => {
+      if (outputListenerRef.current) outputListenerRef.current();
       resizeObserver.disconnect();
       terminal.dispose();
     };
@@ -379,8 +381,13 @@ const XTerminal = forwardRef(({
         }
       };
 
+      // Clean up previous listener if this is a new command
+      if (outputListenerRef.current) {
+        outputListenerRef.current();
+      }
+
       // Listen for output events
-      const removeListener = window.devbox?.terminal?.onOutput?.(outputHandler);
+      outputListenerRef.current = window.devbox?.terminal?.onOutput?.(outputHandler);
 
       try {
         const result = await window.devbox?.terminal?.runCommand?.(
@@ -393,7 +400,10 @@ const XTerminal = forwardRef(({
         );
 
         // Remove listener after command completes
-        if (removeListener) removeListener();
+        if (outputListenerRef.current) {
+          outputListenerRef.current();
+          outputListenerRef.current = null;
+        }
 
         // Don't write buffered output since we already handled streaming
         // Only show errors that weren't streamed
@@ -401,7 +411,10 @@ const XTerminal = forwardRef(({
           terminal.write(`\x1b[31m${result.error}\x1b[0m`);
         }
       } catch (error) {
-        if (removeListener) removeListener();
+        if (outputListenerRef.current) {
+          outputListenerRef.current();
+          outputListenerRef.current = null;
+        }
         terminal.writeln(`\x1b[31mError: ${error.message}\x1b[0m`);
       } finally {
         isRunningCommand.current = false;

@@ -1287,8 +1287,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     const phpVersion = options.phpVersion || projectData?.phpVersion || '8.4';
 
     return new Promise((resolve, reject) => {
+      // Bounded buffers to prevent memory leaks for long-running processes
       let stdout = '';
       let stderr = '';
+      const MAX_BUFFER = 100 * 1024; // 100KB max per stream to return
 
       // Parse command for PHP/Composer handling
       let cmd, args;
@@ -1369,6 +1371,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       proc.stdout.on('data', (data) => {
         const text = stripCursorCodes(data.toString());
         stdout += text;
+        if (stdout.length > MAX_BUFFER) stdout = stdout.slice(-MAX_BUFFER);
         // Send real-time output to renderer
         mainWindow?.webContents.send('terminal:output', {
           projectId,
@@ -1380,6 +1383,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       proc.stderr.on('data', (data) => {
         const text = stripCursorCodes(data.toString());
         stderr += text;
+        if (stderr.length > MAX_BUFFER) stderr = stderr.slice(-MAX_BUFFER);
         mainWindow?.webContents.send('terminal:output', {
           projectId,
           text,
