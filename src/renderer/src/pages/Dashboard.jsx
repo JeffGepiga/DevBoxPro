@@ -199,37 +199,41 @@ function Dashboard() {
         </p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatCard
-          title="Total Projects"
-          value={projects.length}
-          icon={Folder}
-          color="blue"
-        />
-        <StatCard
-          title="Running Projects"
-          value={runningProjects.length}
-          icon={Activity}
-          color="green"
-        />
-        <StatCard
-          title="Active Services"
-          value={runningServices.length}
-          icon={HardDrive}
-          color="purple"
-        />
-        <StatCard
-          title="CPU Usage"
-          value={`${Math.round(resourceUsage.total?.cpu || 0)}%`}
-          icon={Cpu}
-          color="orange"
-        />
+      {/* Stats Grid - Bento Box Style */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="md:col-span-2">
+          <StatCard
+            title="Total Projects"
+            value={projects.length}
+            icon={Folder}
+            color="blue"
+            description="Active codebases"
+          />
+        </div>
+        <div className="md:col-span-1">
+          <StatCard
+            title="Running"
+            value={runningProjects.length}
+            icon={Activity}
+            color="green"
+            description="Projects"
+          />
+        </div>
+        <div className="md:col-span-1">
+          <StatCard
+            title="Active"
+            value={runningServices.length}
+            icon={HardDrive}
+            color="purple"
+            description="Services"
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      {/* Main Content Bento Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Recent Projects */}
-        <div className="card">
+        <div className="card lg:col-span-7 flex flex-col h-full">
           <div className="card-header flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
               Recent Projects
@@ -259,7 +263,7 @@ function Dashboard() {
         </div>
 
         {/* Services Status */}
-        <div className="card">
+        <div className="card lg:col-span-5 flex flex-col h-full">
           <div className="card-header flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
               Services
@@ -296,23 +300,50 @@ function Dashboard() {
   );
 }
 
-function StatCard({ title, value, icon: Icon, color }) {
-  const colorClasses = {
-    blue: 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400',
-    green: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400',
-    purple: 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400',
-    orange: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400',
+function StatCard({ title, value, icon: Icon, color, description }) {
+  const colorStyles = {
+    blue: {
+      bg: 'from-blue-500/10 to-blue-500/5 dark:from-blue-500/20 dark:to-blue-500/10',
+      iconBg: 'bg-blue-500/20 text-blue-600 dark:text-blue-400',
+      border: 'border-blue-500/20 dark:border-blue-500/10',
+    },
+    green: {
+      bg: 'from-green-500/10 to-green-500/5 dark:from-green-500/20 dark:to-green-500/10',
+      iconBg: 'bg-green-500/20 text-green-600 dark:text-green-400',
+      border: 'border-green-500/20 dark:border-green-500/10',
+    },
+    purple: {
+      bg: 'from-purple-500/10 to-purple-500/5 dark:from-purple-500/20 dark:to-purple-500/10',
+      iconBg: 'bg-purple-500/20 text-purple-600 dark:text-purple-400',
+      border: 'border-purple-500/20 dark:border-purple-500/10',
+    },
+    orange: {
+      bg: 'from-orange-500/10 to-orange-500/5 dark:from-orange-500/20 dark:to-orange-500/10',
+      iconBg: 'bg-orange-500/20 text-orange-600 dark:text-orange-400',
+      border: 'border-orange-500/20 dark:border-orange-500/10',
+    },
   };
 
+  const style = colorStyles[color];
+
   return (
-    <div className="card p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
-          <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
+    <div className={clsx("card h-full p-6 bg-gradient-to-br border relative overflow-hidden group", style.bg, style.border)}>
+      {/* Decorative background glow */}
+      <div className="absolute -right-8 -top-8 w-32 h-32 bg-white/20 dark:bg-white/5 rounded-full blur-3xl group-hover:bg-white/30 dark:group-hover:bg-white/10 transition-colors duration-500" />
+
+      <div className="flex flex-col h-full justify-between relative z-10">
+        <div className="flex items-start justify-between">
+          <div className={clsx('p-3 rounded-2xl backdrop-blur-md', style.iconBg)}>
+            <Icon className="w-6 h-6" />
+          </div>
         </div>
-        <div className={clsx('p-3 rounded-xl', colorClasses[color])}>
-          <Icon className="w-6 h-6" />
+
+        <div className="mt-4">
+          <p className="text-4xl font-black tracking-tight text-gray-900 dark:text-white drop-shadow-sm">{value}</p>
+          <div className="mt-1 flex items-baseline gap-2">
+            <p className="text-base font-semibold text-gray-800 dark:text-gray-200">{title}</p>
+            {description && <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{description}</p>}
+          </div>
         </div>
       </div>
     </div>
@@ -351,13 +382,13 @@ function ProjectRow({ project, onStart, onStop }) {
   };
 
   return (
-    <div className="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-      <div className="flex items-center gap-3">
+    <div className="p-4 flex items-center justify-between hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors group">
+      <div className="flex items-center gap-4">
         <div className={statusColors[isStarting ? 'starting' : (project.isRunning ? 'running' : 'stopped')]} />
         <div>
           <Link
             to={`/projects/${project.id}`}
-            className="font-medium text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400"
+            className="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors"
           >
             {project.name}
           </Link>
@@ -423,13 +454,16 @@ function ServiceRow({ serviceName, version, isRunning, port, serviceInfo }) {
   const displayName = version ? `${info?.name || serviceName} v${version}` : (info?.name || serviceName);
 
   return (
-    <div className="p-4 flex items-center justify-between">
-      <div className="flex items-center gap-3">
+    <div className="p-4 flex items-center justify-between hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors">
+      <div className="flex items-center gap-4">
         <div className={isRunning ? 'status-running' : 'status-stopped'} />
         <div>
-          <p className="font-medium text-gray-900 dark:text-white">{displayName}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Port: {port}
+          <p className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <Icon className="w-4 h-4 text-gray-400" />
+            {displayName}
+          </p>
+          <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+            Port: <span className="text-gray-900 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-md">{port}</span>
           </p>
         </div>
       </div>

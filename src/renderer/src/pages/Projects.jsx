@@ -547,7 +547,7 @@ function Projects() {
           <div className="card overflow-visible">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                <tr className="border-b border-gray-200/50 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-800/30">
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400 w-4"></th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Name</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Type</th>
@@ -582,20 +582,20 @@ function Projects() {
           </div>
         )
       ) : (
-        <div className="card p-12 text-center">
-          <Folder className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+        <div className="card p-12 text-center max-w-2xl mx-auto mt-12 bg-white/50 dark:bg-gray-800/20 backdrop-blur-sm border-dashed">
+          <Folder className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-6" />
+          <h3 className="text-2xl font-black tracking-tight text-gray-900 dark:text-white mb-2">
             {projects.length === 0 ? 'No projects yet' : 'No projects match your filters'}
           </h3>
-          <p className="text-gray-500 dark:text-gray-400 mb-6">
+          <p className="text-gray-500 dark:text-gray-400 mb-8 max-w-md mx-auto">
             {projects.length === 0
-              ? 'Create your first project to get started'
-              : 'Try adjusting your search or filters'}
+              ? 'Create your first project to get started with DevBox Pro. It takes just a few clicks to set up your ideal environment.'
+              : 'Try adjusting your search or filters to find what you\'re looking for.'}
           </p>
           {projects.length === 0 && (
-            <Link to="/projects/new" className="btn-primary">
-              <Plus className="w-4 h-4" />
-              Create Project
+            <Link to="/projects/new" className="btn-primary shadow-lg shadow-primary-500/25">
+              <Plus className="w-5 h-5 mr-1" />
+              Create Your First Project
             </Link>
           )}
         </div>
@@ -795,7 +795,7 @@ function DiscoveredProjectCard({ project, onImport }) {
       </p>
       <button
         onClick={onImport}
-        className="w-full btn-sm bg-amber-500 hover:bg-amber-600 text-white"
+        className="w-full btn-sm bg-amber-500 hover:bg-amber-600 text-white shadow-sm"
       >
         <Download className="w-4 h-4" />
         Import Project
@@ -872,11 +872,10 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
       onDrop={onDrop}
       onDragEnd={onDragEnd}
       className={clsx(
-        'card overflow-hidden flex flex-col transition-all duration-200',
+        'card overflow-hidden flex flex-col transition-all duration-300 relative group/card',
         isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
-        'hover:shadow-lg hover:border-primary-300 dark:hover:border-primary-600',
-        'hover:scale-[1.02] active:scale-[0.99]',
-        isHovered && !isDragged && !isDragOver && 'ring-2 ring-primary-200 dark:ring-primary-700',
+        'hover:-translate-y-1 hover:shadow-xl hover:shadow-primary-500/10',
+        isHovered && !isDragged && !isDragOver && 'ring-1 ring-primary-500/50 dark:ring-primary-500/50 border-primary-200 dark:border-primary-800 bg-gradient-to-br from-white to-primary-50/30 dark:from-gray-800 dark:to-primary-900/10',
         isDragged && 'opacity-40 scale-95 ring-2 ring-primary-500 ring-offset-2',
         isDragOver && 'ring-2 ring-blue-500 border-blue-500 shadow-xl z-20 scale-[1.02] bg-blue-50/50 dark:bg-blue-900/10'
       )}
@@ -886,12 +885,22 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
         setShowMenu(false);
       }}
     >
-      <div className="p-6 flex-1">
+      {/* Decorative top border glow */}
+      <div className={clsx(
+        'absolute top-0 inset-x-0 h-[2px] w-full transition-opacity duration-300',
+        isHovered ? 'bg-gradient-to-r from-transparent via-primary-500 to-transparent opacity-100' : 'opacity-0'
+      )} />
+
+      <div className="p-6 flex-1 relative z-10">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className={project.isRunning ? 'status-running' : 'status-stopped'} />
-            <span className="text-lg font-semibold text-gray-900 dark:text-white">
+            <div className={clsx(
+              project.isRunning ? 'status-running' : 'status-stopped',
+              'ring-4 ring-white dark:ring-gray-800 transition-all duration-300 shadow-sm',
+              isHovered && project.isRunning && 'shadow-[0_0_12px_rgba(34,197,94,0.6)]'
+            )} />
+            <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-white group-hover/card:text-primary-600 dark:group-hover/card:text-primary-400 transition-colors">
               {project.name}
             </span>
           </div>

@@ -134,18 +134,18 @@ function Settings() {
   ];
 
   return (
-    <div className="p-8">
+    <div className="p-8 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">
+          <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">Settings</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1 font-medium">
             Configure DevBox Pro preferences
           </p>
         </div>
         {/* Only show Save/Reset for tabs that need manual saving */}
         {['general', 'network', 'appearance'].includes(activeTab) && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button onClick={handleReset} className="btn-secondary">
               <RotateCcw className="w-4 h-4" />
               Reset
@@ -153,7 +153,7 @@ function Settings() {
             <button
               onClick={handleSave}
               disabled={saving}
-              className={clsx('btn-primary', saved && 'bg-green-600 hover:bg-green-700')}
+              className={clsx('btn-primary shadow-lg', saved && 'bg-green-600 hover:bg-green-700 shadow-green-500/25')}
             >
               {saving ? (
                 <>
@@ -176,48 +176,70 @@ function Settings() {
         )}
       </div>
 
-      <div className="flex gap-8">
-        {/* Tabs */}
-        <nav className="w-48 space-y-1">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={clsx(
-                'w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors',
-                activeTab === tab.id
-                  ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400'
-                  : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
-              )}
-            >
-              <tab.icon className="w-5 h-5" />
-              {tab.label}
-            </button>
-          ))}
+      <div className="flex flex-col lg:flex-row gap-8 items-start">
+        {/* Tabs - Modern Floating Pill Design */}
+        <nav className="w-full lg:w-56 flex flex-row lg:flex-col gap-2 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 scrollbar-none relative shrink-0">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={clsx(
+                  'group flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all duration-300 relative font-semibold whitespace-nowrap overflow-hidden',
+                  isActive
+                    ? 'text-primary-700 dark:text-primary-300'
+                    : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+                )}
+              >
+                {/* Active Indicator Background */}
+                {isActive && (
+                  <div className="absolute inset-0 bg-white dark:bg-gray-800 shadow-sm border border-gray-200/50 dark:border-gray-700/50 rounded-xl" />
+                )}
+                {/* Hover Indicator Background */}
+                {!isActive && (
+                  <div className="absolute inset-0 bg-gray-100/0 dark:bg-gray-800/0 group-hover:bg-gray-100/50 dark:group-hover:bg-gray-800/50 transition-colors rounded-xl" />
+                )}
+
+                {/* Active indicator glowing line - left on LG, bottom on SM */}
+                {isActive && (
+                  <>
+                    <div className="hidden lg:block absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-500 rounded-r-full shadow-[0_0_10px_rgba(14,165,233,0.8)]" />
+                    <div className="lg:hidden absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-1 bg-primary-500 rounded-t-full shadow-[0_0_10px_rgba(14,165,233,0.8)]" />
+                  </>
+                )}
+
+                <tab.icon className={clsx("w-5 h-5 relative z-10 transition-transform duration-300", isActive ? "scale-110" : "group-hover:scale-110")} />
+                <span className="relative z-10">{tab.label}</span>
+              </button>
+            );
+          })}
         </nav>
 
         {/* Content */}
-        <div className="flex-1">
-          {activeTab === 'general' && (
-            <GeneralSettings settings={localSettings} updateSetting={updateSetting} />
-          )}
-          {activeTab === 'cli' && (
-            <CliSettings settings={localSettings} updateSetting={updateSetting} />
-          )}
-          {activeTab === 'network' && (
-            <NetworkSettings settings={localSettings} updateSetting={updateSetting} />
-          )}
-          {activeTab === 'appearance' && (
-            <AppearanceSettings settings={localSettings} updateSetting={updateSetting} />
-          )}
-          {activeTab === 'advanced' && (
-            <AdvancedSettings
-              settings={localSettings}
-              updateSetting={updateSetting}
-              onExport={handleExportConfig}
-              onImport={handleImportConfig}
-            />
-          )}
+        <div className="flex-1 w-full relative">
+          <div className="max-w-4xl">
+            {activeTab === 'general' && (
+              <GeneralSettings settings={localSettings} updateSetting={updateSetting} />
+            )}
+            {activeTab === 'cli' && (
+              <CliSettings settings={localSettings} updateSetting={updateSetting} />
+            )}
+            {activeTab === 'network' && (
+              <NetworkSettings settings={localSettings} updateSetting={updateSetting} />
+            )}
+            {activeTab === 'appearance' && (
+              <AppearanceSettings settings={localSettings} updateSetting={updateSetting} />
+            )}
+            {activeTab === 'advanced' && (
+              <AdvancedSettings
+                settings={localSettings}
+                updateSetting={updateSetting}
+                onExport={handleExportConfig}
+                onImport={handleImportConfig}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -350,11 +372,11 @@ function GeneralSettings({ settings, updateSetting }) {
                   const isWindows = navigator.platform.toLowerCase().includes('win');
                   const filters = isWindows
                     ? [
-                        { name: 'Executable Files', extensions: ['exe', 'cmd', 'bat'] },
-                        { name: 'All Files', extensions: ['*'] }
-                      ]
+                      { name: 'Executable Files', extensions: ['exe', 'cmd', 'bat'] },
+                      { name: 'All Files', extensions: ['*'] }
+                    ]
                     : [{ name: 'All Files', extensions: ['*'] }];
-                  
+
                   const filePath = await window.devbox?.system?.selectFile(filters);
                   if (filePath) {
                     updateSetting('customEditorCommand', filePath);
@@ -965,7 +987,7 @@ const THEME_ICONS = {
   light: (
     <svg className="w-8 h-8 mx-auto mb-2" viewBox="0 0 32 32" fill="none">
       <circle cx="16" cy="16" r="6" stroke="currentColor" strokeWidth="1.5" />
-      {[0,45,90,135,180,225,270,315].map(a => (
+      {[0, 45, 90, 135, 180, 225, 270, 315].map(a => (
         <line key={a} x1="16" y1="3" x2="16" y2="6"
           stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
           transform={`rotate(${a} 16 16)`} />

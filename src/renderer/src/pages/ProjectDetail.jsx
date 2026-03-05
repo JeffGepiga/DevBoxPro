@@ -385,23 +385,30 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200 dark:border-gray-700 mb-6">
-        <nav className="flex gap-6">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={clsx(
-                'flex items-center gap-2 pb-3 text-sm font-medium border-b-2 -mb-px transition-colors',
-                activeTab === tab.id
-                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-              )}
-            >
-              <tab.icon className="w-4 h-4" />
-              {tab.label}
-            </button>
-          ))}
+      <div className="border-b border-gray-200/50 dark:border-gray-700/50 mb-6 relative">
+        <nav className="flex gap-8">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={clsx(
+                  'flex items-center gap-2 pb-3 mb-[-1px] text-sm font-semibold transition-colors relative group',
+                  isActive
+                    ? 'text-primary-600 dark:text-primary-400'
+                    : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+                )}
+              >
+                <tab.icon className={clsx("w-4 h-4 transition-transform", isActive ? "scale-110" : "group-hover:scale-110")} />
+                {tab.label}
+                {/* Active Indicator Line */}
+                {isActive && (
+                  <div className="absolute bottom-0 inset-x-0 h-0.5 bg-primary-500 shadow-[0_0_8px_rgba(14,165,233,0.6)]" />
+                )}
+              </button>
+            );
+          })}
         </nav>
       </div>
 
@@ -874,29 +881,35 @@ function OverviewTab({ project, processes, refreshProjects }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         {/* Project Info */}
-        <div className="card p-5">
-          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Project Information</h3>
+        <div className="card p-6 bg-gradient-to-br from-white to-gray-50/50 dark:from-gray-800 dark:to-gray-800/80">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+            <Activity className="w-4 h-4 text-primary-500" />
+            Project Information
+          </h3>
 
-          {/* Stat tiles */}
-          <div className="grid grid-cols-2 gap-2 mb-4">
-            <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-3">
-              <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Type</p>
-              <p className="text-sm font-semibold text-gray-900 dark:text-white capitalize">{project.type}</p>
+          {/* Stat tiles - Bento Layout */}
+          <div className="grid grid-cols-2 gap-3 mb-5">
+            <div className="bg-white dark:bg-gray-800/80 rounded-xl p-4 border border-gray-100 dark:border-gray-700/50 shadow-sm transition-all hover:shadow-md hover:border-primary-200 dark:hover:border-primary-800 group">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1 group-hover:text-primary-500/70 transition-colors">Type</p>
+              <p className="text-base font-bold text-gray-900 dark:text-white capitalize">{project.type}</p>
             </div>
-            <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-3">
-              <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Status</p>
-              <span className={clsx('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium', project.isRunning ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400')}>
-                {project.isRunning ? 'Running' : 'Stopped'}
-              </span>
+            <div className="bg-white dark:bg-gray-800/80 rounded-xl p-4 border border-gray-100 dark:border-gray-700/50 shadow-sm transition-all hover:shadow-md hover:border-primary-200 dark:hover:border-primary-800 group">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1 group-hover:text-primary-500/70 transition-colors">Status</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <div className={clsx("w-2 h-2 rounded-full", project.isRunning ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-gray-400')} />
+                <span className="text-sm font-bold text-gray-900 dark:text-white">
+                  {project.isRunning ? 'Running' : 'Stopped'}
+                </span>
+              </div>
             </div>
-            <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-3">
-              <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">Port</p>
-              <p className="text-sm font-mono font-semibold text-gray-900 dark:text-white">{project.port}<span className="text-gray-400 dark:text-gray-500 font-normal"> / {project.sslPort || '—'}</span></p>
+            <div className="bg-white dark:bg-gray-800/80 rounded-xl p-4 border border-gray-100 dark:border-gray-700/50 shadow-sm transition-all hover:shadow-md hover:border-primary-200 dark:hover:border-primary-800 group">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1 group-hover:text-primary-500/70 transition-colors">Port</p>
+              <p className="text-sm font-mono font-bold text-gray-900 dark:text-white">{project.port}<span className="text-xs font-medium text-gray-400 dark:text-gray-500 ml-1">HTTP</span></p>
             </div>
-            <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg p-3">
-              <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">SSL</p>
-              <p className={clsx('text-sm font-semibold', project.ssl ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500')}>
-                {project.ssl ? '🔒 Enabled' : 'Disabled'}
+            <div className="bg-white dark:bg-gray-800/80 rounded-xl p-4 border border-gray-100 dark:border-gray-700/50 shadow-sm transition-all hover:shadow-md hover:border-primary-200 dark:hover:border-primary-800 group">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1 group-hover:text-primary-500/70 transition-colors">SSL</p>
+              <p className={clsx('text-sm font-bold', project.ssl ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500')}>
+                {project.ssl ? 'Enabled' : 'Disabled'}
               </p>
             </div>
           </div>
@@ -1013,8 +1026,9 @@ function OverviewTab({ project, processes, refreshProjects }) {
         <div className="flex flex-col gap-4">
 
           {/* Domains */}
-          <div className="card p-5">
-            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+          <div className="card p-6 border-t-4 border-t-blue-500/20 bg-gradient-to-br from-white to-blue-50/10 dark:from-gray-800 dark:to-blue-900/10">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+              <Globe className="w-4 h-4 text-blue-500" />
               Domains
             </h3>
 
@@ -1077,8 +1091,9 @@ function OverviewTab({ project, processes, refreshProjects }) {
           </div>
 
           {/* Web Server */}
-          <div className="card p-5">
-            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+          <div className="card p-6 border-t-4 border-t-indigo-500/20 bg-gradient-to-br from-white to-indigo-50/10 dark:from-gray-800 dark:to-indigo-900/10">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+              <Server className="w-4 h-4 text-indigo-500" />
               Web Server
             </h3>
             <div className="grid grid-cols-2 gap-4">
@@ -1158,11 +1173,12 @@ function OverviewTab({ project, processes, refreshProjects }) {
         </div>{/* end middle column */}
 
         {/* Services — full width below */}
-        <div className="card p-5 lg:col-span-2">
-          <div className="flex items-center justify-between mb-4">
+        <div className="card p-6 lg:col-span-2 border-t-4 border-t-purple-500/20 bg-gradient-to-br from-white to-purple-50/10 dark:from-gray-800 dark:to-purple-900/10">
+          <div className="flex items-center gap-2 mb-6">
+            <Database className="w-5 h-5 text-purple-500" />
             <div>
-              <h3 className="text-base font-semibold text-gray-900 dark:text-white">Services</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              <h3 className="text-base font-bold text-gray-900 dark:text-white">Services</h3>
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mt-0.5">
                 Only one database can be active at a time. Changes take effect after saving.
               </p>
             </div>

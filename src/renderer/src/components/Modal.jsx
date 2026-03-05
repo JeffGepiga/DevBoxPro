@@ -56,7 +56,7 @@ export function AlertModal({ isOpen, onClose, title, message, type = 'info' }) {
             />
 
             {/* Modal */}
-            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="relative bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 dark:border-gray-700/50 max-w-md w-full mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                 {/* Header */}
                 <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                     <Icon className={clsx('w-5 h-5', iconColors[type])} />
@@ -77,7 +77,7 @@ export function AlertModal({ isOpen, onClose, title, message, type = 'info' }) {
                 </div>
 
                 {/* Footer */}
-                <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+                <div className="px-6 py-4 bg-gray-50/50 dark:bg-gray-900/50 backdrop-blur-sm border-t border-gray-100 dark:border-gray-800 flex justify-end">
                     <button
                         ref={buttonRef}
                         onClick={onClose}
@@ -165,7 +165,7 @@ export function ConfirmModal({
             />
 
             {/* Modal */}
-            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="relative bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 dark:border-gray-700/50 max-w-md w-full mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                 {/* Header */}
                 <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                     <Icon className={clsx('w-5 h-5', iconColors[type])} />
@@ -189,7 +189,7 @@ export function ConfirmModal({
                 </div>
 
                 {/* Footer */}
-                <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+                <div className="px-6 py-4 bg-gray-50/50 dark:bg-gray-900/50 backdrop-blur-sm border-t border-gray-100 dark:border-gray-800 flex justify-end gap-3">
                     <button
                         onClick={onCancel}
                         className="btn-secondary"
