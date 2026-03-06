@@ -1362,25 +1362,33 @@ class ProjectManager {
           const protocol = url.startsWith('https') ? https : http;
 
           // On Windows, SSL certificate verification can fail. Use agent with fallback.
+          // Also explicitly use IPv4 (family: 4) because Node.js 20+ prefers IPv6 which fails on some networks for wordpress.org
           const options = url.startsWith('https') ? {
+            family: 4,
             agent: new https.Agent({
               rejectUnauthorized: !retryWithoutVerify // First try with verification, then without
             })
-          } : {};
+          } : { family: 4 };
 
           const request = protocol.get(url, options, (response) => {
             // Handle redirects
             if (response.statusCode === 301 || response.statusCode === 302) {
-              file.close();
-              fs.unlinkSync(dest);
-              downloadFile(response.headers.location, dest, retryWithoutVerify);
+              file.close(() => {
+                try {
+                  if (fs.existsSync(dest)) fs.unlinkSync(dest);
+                } catch (e) {} // ignore unlink errors
+                downloadFile(response.headers.location, dest, retryWithoutVerify);
+              });
               return;
             }
 
             if (response.statusCode !== 200) {
-              file.close();
-              fs.unlinkSync(dest);
-              reject(new Error(`Failed to download: HTTP ${response.statusCode}`));
+              file.close(() => {
+                try {
+                  if (fs.existsSync(dest)) fs.unlinkSync(dest);
+                } catch (e) {}
+                reject(new Error(`Failed to download: HTTP ${response.statusCode}`));
+              });
               return;
             }
 
@@ -1407,18 +1415,24 @@ class ProjectManager {
           });
 
           request.on('error', (err) => {
-            file.close();
-            fs.unlink(dest, () => { }); // Delete partial file
+            file.close(() => {
+              fs.unlink(dest, () => { }); // Delete partial file
+            });
+
+            // Format error message for AggregateError which has empty err.message
+            if (!err.message && err.errors && err.errors.length > 0) {
+              err.message = err.errors.map(e => e.message || e.code).join(', ');
+            }
 
             // If SSL certificate error and we haven't retried yet, try without verification
             if (!retryWithoutVerify && (err.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
               err.code === 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' ||
-              err.message.includes('certificate') ||
-              err.message.includes('SSL'))) {
+              (err.message && (err.message.includes('certificate') || err.message.includes('SSL'))))) {
               onOutput('   SSL certificate verification failed, retrying...', 'warning');
               downloadFile(url, dest, true);
               return;
             }
+            
             reject(err);
           });
         };
