@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DevBox Pro — Local Development Made Simple</title>
+  <meta name="description" content="DevBox Pro is a desktop app that lets you run PHP and Node.js projects side by side with zero configuration. No Docker, no complex setup — just install and start coding.">
+  <link rel="icon" href="images/logo.png" type="image/png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ============ Navbar ============ -->
+  <nav class="navbar" id="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-brand">
+        <img src="images/logo.png" alt="DevBox Pro logo">
+        DevBox Pro
+      </a>
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="index.html" class="active">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="features.html">Features</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li><a href="guides.html">Guides</a></li>
+        <li><a href="faq.html">FAQ</a></li>
+        <li><a href="https://github.com/JeffGepiga/DevBoxPro/releases" class="nav-cta" target="_blank">Download</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ============ Hero ============ -->
+  <section class="page-hero home-hero">
+    <div class="container">
+      <h1 class="animate-in">
+        Your All-in-One<br>
+        <span class="gradient-text">Local Dev Environment</span>
+      </h1>
+      <p class="subtitle animate-in">
+        Run PHP and Node.js projects side by side — no conflicts, no headaches. Everything you need in one beautiful desktop app.
+      </p>
+      <div class="btn-group animate-in">
+        <a href="https://github.com/JeffGepiga/DevBoxPro/releases" class="btn btn-primary" target="_blank">⬇ Download DevBox Pro</a>
+        <a href="getting-started.html" class="btn btn-secondary">Get Started →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Stats ============ -->
+  <section class="section">
+    <div class="container">
+      <div class="stats-bar animate-in">
+        <div class="stat-item">
+          <div class="stat-number">7+</div>
+          <div class="stat-label">PHP Versions</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-number">5+</div>
+          <div class="stat-label">Node.js Versions</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-number">15+</div>
+          <div class="stat-label">Bundled Services</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-number">1‑Click</div>
+          <div class="stat-label">Project Setup</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ What Is DevBox Pro ============ -->
+  <section class="section section-alt">
+    <div class="container">
+      <div class="section-header animate-in">
+        <h2>What is DevBox Pro?</h2>
+        <p>Think of it as your personal web server — packaged neatly inside a desktop app.</p>
+      </div>
+
+      <div class="grid-2 animate-in" style="max-width:900px; margin:0 auto;">
+        <div>
+          <p style="color:var(--text-secondary); line-height:1.9; font-size:var(--font-size-lg);">
+            DevBox Pro is a <strong style="color:var(--text-primary);">desktop application</strong> for Windows that bundles everything a web developer needs to build and test websites on their own computer.
+          </p>
+          <p style="color:var(--text-secondary); line-height:1.9; margin-top:var(--space-md);">
+            It includes <strong style="color:var(--text-primary);">PHP</strong>, <strong style="color:var(--text-primary);">Node.js</strong>, <strong style="color:var(--text-primary);">databases</strong> (MySQL, MariaDB, PostgreSQL, MongoDB), <strong style="color:var(--text-primary);">web servers</strong> (Nginx, Apache), and many other tools — all managed through a simple, visual interface. No command-line knowledge required.
+          </p>
+        </div>
+        <div class="screenshot-wrap">
+          <img src="images/pic-3.png" alt="DevBox Pro dashboard showing active projects">
+          <div class="screenshot-caption">The DevBox Pro Dashboard</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Key Benefits ============ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-header animate-in">
+        <h2>Why DevBox Pro?</h2>
+        <p>Built to solve the most common pain points of local web development.</p>
+      </div>
+
+      <div class="grid-3 animate-in">
+        <div class="card">
+          <div class="card-icon">🔄</div>
+          <h3>Multiple Versions, Zero Conflicts</h3>
+          <p>Run PHP 7.4 for a legacy project and PHP 8.4 for a new one at the same time. Each project uses its own version — automatically.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">📦</div>
+          <h3>Everything Included</h3>
+          <p>PHP, Node.js, MySQL, MariaDB, PostgreSQL, MongoDB, Redis, Memcached, Nginx, Apache, Mailpit, phpMyAdmin — all in one installer.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🚀</div>
+          <h3>One-Click Projects</h3>
+          <p>Create a new Laravel, WordPress, Symfony, or Node.js project with a single click. DevBox Pro handles installation, configuration, and domain setup.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🔒</div>
+          <h3>Automatic HTTPS</h3>
+          <p>Every project gets its own .test domain with a free SSL certificate. Browse your projects at https://myapp.test — just like production.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🖥️</div>
+          <h3>Visual Interface</h3>
+          <p>No need to edit config files. Start and stop services, manage databases, and configure projects — all through a clean, modern UI.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">💻</div>
+          <h3>Terminal Ready</h3>
+          <p>Use php, npm, composer, and mysql commands directly from any terminal. DevBox Pro auto-detects which versions to use for each project.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Screenshot Gallery ============ -->
+  <section class="section section-alt">
+    <div class="container">
+      <div class="section-header animate-in">
+        <h2>See It in Action</h2>
+        <p>A visual tour of DevBox Pro's main features.</p>
+      </div>
+
+      <div class="grid-2">
+        <div class="animate-in">
+          <div class="screenshot-wrap">
+          <img src="images/pic-2.png" alt="Projects list view">
+          <div class="screenshot-caption">Projects list view</div>
+        </div>
+        </div>
+        <div class="animate-in">
+          <div class="screenshot-wrap">
+            <img src="images/pic-7.png" alt="Database management">
+            <div class="screenshot-caption">Database management — create, import, and export with a few clicks</div>
+          </div>
+        </div>
+        <div class="animate-in">
+          <div class="screenshot-wrap">
+          <img src="images/pic-4.png" alt="Binary Manager">
+          <div class="screenshot-caption">Binary Manager overview</div>
+        </div>
+        </div>
+        <div class="animate-in">
+          <div class="screenshot-wrap">
+            <img src="images/pic-8.png" alt="Running services panel">
+            <div class="screenshot-caption">Services panel — start and stop MySQL, Redis, and more independently</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Quick Start ============ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-header animate-in">
+        <h2>Get Started in 3 Steps</h2>
+        <p>From download to your first project in under 5 minutes.</p>
+      </div>
+
+      <div class="grid-3 animate-in">
+        <div class="card" style="text-align:center;">
+          <div class="card-icon" style="margin:0 auto var(--space-lg); font-size:2rem;">1️⃣</div>
+          <h3>Download &amp; Install</h3>
+          <p>Grab the installer from the releases page and run it. That's it — no prerequisites needed.</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <div class="card-icon" style="margin:0 auto var(--space-lg); font-size:2rem;">2️⃣</div>
+          <h3>Get Your Tools</h3>
+          <p>Open the Binary Manager and download the PHP, Node.js, and database versions you need.</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <div class="card-icon" style="margin:0 auto var(--space-lg); font-size:2rem;">3️⃣</div>
+          <h3>Create a Project</h3>
+          <p>Click "+ New Project", pick your framework, and DevBox Pro sets everything up automatically.</p>
+        </div>
+      </div>
+
+      <div style="text-align:center; margin-top:var(--space-2xl);" class="animate-in">
+        <a href="getting-started.html" class="btn btn-primary">Read the Full Guide →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Footer ============ -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a href="index.html" class="nav-brand">
+            <img src="images/logo.png" alt="DevBox Pro logo">
+            DevBox Pro
+          </a>
+          <p>Your all-in-one local development environment for PHP &amp; Node.js. Run any version, build any project.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Documentation</h4>
+          <ul>
+            <li><a href="getting-started.html">Getting Started</a></li>
+            <li><a href="features.html">Features</a></li>
+            <li><a href="services.html">Services</a></li>
+            <li><a href="guides.html">Guides</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Resources</h4>
+          <ul>
+            <li><a href="faq.html">FAQ</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/releases" target="_blank">Downloads</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro" target="_blank">GitHub</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/issues" target="_blank">Report a Bug</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/discussions" target="_blank">Discussions</a></li>
+            <li><a href="mailto:jeffreygepiga27@gmail.com">Email</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 DevBox Pro. Made with ❤️ for PHP &amp; Node.js developers.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

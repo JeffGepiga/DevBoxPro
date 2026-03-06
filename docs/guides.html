@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guides — DevBox Pro</title>
+  <meta name="description" content="Step-by-step guides for common DevBox Pro tasks: creating projects, managing databases, setting up SSL, using terminal commands, and more.">
+  <link rel="icon" href="images/logo.png" type="image/png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ============ Navbar ============ -->
+  <nav class="navbar" id="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-brand">
+        <img src="images/logo.png" alt="DevBox Pro logo">
+        DevBox Pro
+      </a>
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="features.html">Features</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li><a href="guides.html" class="active">Guides</a></li>
+        <li><a href="faq.html">FAQ</a></li>
+        <li><a href="https://github.com/JeffGepiga/DevBoxPro/releases" class="nav-cta" target="_blank">Download</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ============ Hero ============ -->
+  <section class="page-hero">
+    <div class="container">
+      <h1 class="animate-in">
+        <span class="gradient-text">How-To Guides</span>
+      </h1>
+      <p class="subtitle animate-in">
+        Practical, step-by-step instructions for the most common things you'll do in DevBox&nbsp;Pro.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ Guide: Laravel ============ -->
+  <section class="section" id="guide-laravel">
+    <div class="container" style="max-width:900px;">
+      <div class="section-header animate-in">
+        <h2>🚀 Creating a Laravel Project</h2>
+        <p>Laravel is one of the most popular PHP frameworks. Here's how to set one up.</p>
+      </div>
+
+      <ol class="steps animate-in">
+        <li class="step-item">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Make sure PHP and Composer are downloaded</h3>
+            <p>Open <strong>Binary Manager</strong> and ensure you have at least one PHP version (8.2 or higher recommended) and Composer downloaded.</p>
+          </div>
+        </li>
+        <li class="step-item">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Click "+ New Project"</h3>
+            <p>On the Dashboard, click the <strong>"+ New Project"</strong> button. In the dialog:</p>
+            <ul style="list-style:none; padding:0; margin-top:var(--space-sm); color:var(--text-secondary);">
+              <li style="padding:3px 0;">• Set <strong style="color:var(--text-primary);">Project Type</strong> to <strong>"Laravel"</strong></li>
+              <li style="padding:3px 0;">• Choose a folder for your project</li>
+              <li style="padding:3px 0;">• Select your PHP version (e.g., PHP 8.4)</li>
+              <li style="padding:3px 0;">• Set your domain (e.g., <code>mylaravel.test</code>)</li>
+              <li style="padding:3px 0;">• Enable MySQL or MariaDB if your app needs a database</li>
+            </ul>
+          </div>
+        </li>
+        <li class="step-item">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Wait for installation</h3>
+            <p>DevBox Pro will automatically run Composer to install Laravel, generate your app key, install npm dependencies, and create a database. You'll see real-time progress.</p>
+            <div class="screenshot-wrap">
+              <img src="images/pic-1.png" alt="Laravel installation progress">
+              <div class="screenshot-caption">Real-time installation progress for a Laravel project</div>
+            </div>
+          </div>
+        </li>
+        <li class="step-item">
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <h3>Start and visit your project</h3>
+            <p>Click <strong>"Start"</strong> on the project card, then open <code>https://mylaravel.test</code> in your browser. You should see the Laravel welcome page!</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ============ Guide: WordPress ============ -->
+  <section class="section section-alt" id="guide-wordpress">
+    <div class="container" style="max-width:900px;">
+      <div class="section-header animate-in">
+        <h2>📝 Setting Up WordPress</h2>
+        <p>Create a local WordPress site for development and testing.</p>
+      </div>
+
+      <ol class="steps animate-in">
+        <li class="step-item">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Create a new WordPress project</h3>
+            <p>Click <strong>"+ New Project"</strong> and set the type to <strong>"WordPress"</strong>. Choose PHP 8.2 or 8.3 (WordPress works best with these). Enable MySQL and set your domain (e.g., <code>myblog.test</code>).</p>
+          </div>
+        </li>
+        <li class="step-item">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Wait for download</h3>
+            <p>DevBox Pro downloads the latest WordPress automatically and creates your database.</p>
+          </div>
+        </li>
+        <li class="step-item">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Run the WordPress installer</h3>
+            <p>Start the project, then open <code>https://myblog.test</code>. WordPress will show its famous 5-minute installation wizard. Fill in your site title, username, and password.</p>
+          </div>
+        </li>
+        <li class="step-item">
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <h3>Start building!</h3>
+            <p>Your WordPress admin panel is at <code>https://myblog.test/wp-admin</code>. Install themes, add plugins, and customize your site — all running locally on your computer.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ============ Guide: Node.js ============ -->
+  <section class="section" id="guide-nodejs">
+    <div class="container" style="max-width:900px;">
+      <div class="section-header animate-in">
+        <h2>🟢 Creating a Node.js Project</h2>
+        <p>Set up an Express, Next.js, or any Node.js application.</p>
+      </div>
+
+      <ol class="steps animate-in">
+        <li class="step-item">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Download Node.js</h3>
+            <p>Open <strong>Binary Manager</strong> and download the Node.js version you want (Node.js 24 LTS is recommended).</p>
+          </div>
+        </li>
+        <li class="step-item">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Create a Node.js project</h3>
+            <p>Click <strong>"+ New Project"</strong> and set the type to <strong>"Node.js"</strong>. Choose your Node.js version and domain. DevBox Pro will configure Nginx to reverse proxy requests to your Node.js app.</p>
+          </div>
+        </li>
+        <li class="step-item">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Start your app</h3>
+            <p>Use the built-in terminal or any external terminal to run your app's start command (e.g., <code>npm run dev</code>). Visit <code>https://myapp.test</code> to see it in action.</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="callout callout-tip animate-in">
+        <span class="callout-icon">💡</span>
+        <p><strong>Tip:</strong> When you create a Node.js project, DevBox Pro sets up the reverse proxy automatically so your Node.js app is accessible via a <code>.test</code> domain — just like PHP projects.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Guide: Database ============ -->
+  <section class="section section-alt" id="guide-database">
+    <div class="container" style="max-width:900px;">
+      <div class="section-header animate-in">
+        <h2>💾 Managing Databases</h2>
+        <p>Create, import, export, and browse your databases.</p>
+      </div>
+
+      <div class="animate-in">
+        <h3 style="margin-bottom:var(--space-md);">Creating a Database</h3>
+        <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-lg);">
+          Go to the <strong style="color:var(--text-primary);">Databases</strong> page in the sidebar. Click <strong style="color:var(--text-primary);">"+ Create Database"</strong>, enter a name, and choose which database server to use (MySQL, MariaDB, or PostgreSQL). The database is created instantly.
+        </p>
+
+        <h3 style="margin-bottom:var(--space-md);">Importing Data</h3>
+        <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-lg);">
+          If you have an existing database backup (a <code>.sql</code> or <code>.sql.gz</code> file), click the <strong style="color:var(--text-primary);">import</strong> button next to a database. Choose your file and DevBox Pro will import it with a progress bar for large files.
+        </p>
+
+        <h3 style="margin-bottom:var(--space-md);">Exporting a Backup</h3>
+        <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-lg);">
+          Click the <strong style="color:var(--text-primary);">export</strong> button next to any database to download a backup. You can choose to compress it as a <code>.gz</code> file to save space.
+        </p>
+
+        <h3 style="margin-bottom:var(--space-md);">Using phpMyAdmin</h3>
+        <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-md);">
+          For a visual way to browse tables and run queries, start <strong style="color:var(--text-primary);">phpMyAdmin</strong> from the Services panel. It will open in your browser at <code>http://localhost:8080</code>. Log in with username <code>root</code> and no password.
+        </p>
+
+        <div class="screenshot-wrap">
+          <img src="images/pic-7.png" alt="Database management interface">
+          <div class="screenshot-caption">The database management interface — create, import, and export with ease</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Guide: SSL ============ -->
+  <section class="section" id="guide-ssl">
+    <div class="container" style="max-width:900px;">
+      <div class="section-header animate-in">
+        <h2>🔒 Setting Up SSL (HTTPS)</h2>
+        <p>Get secure HTTPS working for your local projects.</p>
+      </div>
+
+      <ol class="steps animate-in">
+        <li class="step-item">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>SSL is automatic</h3>
+            <p>When you create a project, DevBox Pro automatically generates an SSL certificate for your <code>.test</code> domain. No action needed from you.</p>
+          </div>
+        </li>
+        <li class="step-item">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Trust the certificate (one time)</h3>
+            <p>The first time you use HTTPS, your browser may show a security warning because the certificate is self-signed (generated on your computer, not by a company like Let's Encrypt). To fix this:</p>
+            <ul style="list-style:none; padding:0; margin-top:var(--space-sm); color:var(--text-secondary);">
+              <li style="padding:3px 0;">1. Go to <strong style="color:var(--text-primary);">Settings</strong> in DevBox Pro</li>
+              <li style="padding:3px 0;">2. Click <strong style="color:var(--text-primary);">"Trust SSL Certificate"</strong></li>
+              <li style="padding:3px 0;">3. Approve the Windows administrator prompt</li>
+              <li style="padding:3px 0;">4. Restart your browser</li>
+            </ul>
+            <p style="margin-top:var(--space-sm);">After this, all your <code>.test</code> domains will show a green padlock — no more warnings!</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ============ Guide: Terminal ============ -->
+  <section class="section section-alt" id="guide-terminal">
+    <div class="container" style="max-width:900px;">
+      <div class="section-header animate-in">
+        <h2>💻 Using Terminal Commands</h2>
+        <p>Run PHP, npm, and database commands from any terminal.</p>
+      </div>
+
+      <ol class="steps animate-in">
+        <li class="step-item">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Enable the CLI tool</h3>
+            <p>Go to <strong>Settings → CLI Tool</strong> in DevBox Pro and toggle on <strong>"Terminal commands"</strong>.</p>
+          </div>
+        </li>
+        <li class="step-item">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Restart your terminal</h3>
+            <p>Close and reopen your terminal (VS Code, PowerShell, or Windows Terminal) so it picks up the new commands.</p>
+          </div>
+        </li>
+        <li class="step-item">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Navigate to a project &amp; run commands</h3>
+            <p>Use <code>cd</code> to enter a project folder, then use commands as normal:</p>
+            <div class="code-block">
+cd C:\Projects\my-app<br>
+php artisan migrate<br>
+composer install<br>
+npm run dev<br>
+mysql -u root
+            </div>
+            <p style="margin-top:var(--space-sm);">DevBox Pro automatically detects your project and uses the correct PHP/Node.js version.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ============ Guide: Network Sharing ============ -->
+  <section class="section" id="guide-sharing">
+    <div class="container" style="max-width:900px;">
+      <div class="section-header animate-in">
+        <h2>🌐 Sharing on Your Local Network</h2>
+        <p>Let others on your Wi-Fi network see your project.</p>
+      </div>
+
+      <div class="animate-in">
+        <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-lg);">
+          This is useful for testing your website on a phone, tablet, or another computer connected to the same network (Wi-Fi).
+        </p>
+
+        <ol class="steps">
+          <li class="step-item">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <h3>Enable network sharing</h3>
+              <p>Open your project in DevBox Pro and toggle on <strong>"Share on Local Network"</strong>.</p>
+            </div>
+          </li>
+          <li class="step-item">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <h3>Find your IP address</h3>
+              <p>DevBox Pro will display your computer's IP address (something like <code>192.168.1.100</code>).</p>
+            </div>
+          </li>
+          <li class="step-item">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <h3>Open on another device</h3>
+              <p>On your phone or another computer, open a browser and go to <code>http://192.168.1.100</code> (using the IP shown in DevBox Pro). You'll see your project!</p>
+            </div>
+          </li>
+        </ol>
+
+        <div class="callout callout-warning" style="margin-top:var(--space-xl);">
+          <span class="callout-icon">⚠️</span>
+          <p><strong>Note:</strong> Windows Firewall may block incoming connections. If the other device can't connect, check that DevBox Pro is allowed through the firewall.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Footer ============ -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a href="index.html" class="nav-brand">
+            <img src="images/logo.png" alt="DevBox Pro logo">
+            DevBox Pro
+          </a>
+          <p>Your all-in-one local development environment for PHP &amp; Node.js. Run any version, build any project.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Documentation</h4>
+          <ul>
+            <li><a href="getting-started.html">Getting Started</a></li>
+            <li><a href="features.html">Features</a></li>
+            <li><a href="services.html">Services</a></li>
+            <li><a href="guides.html">Guides</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Resources</h4>
+          <ul>
+            <li><a href="faq.html">FAQ</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/releases" target="_blank">Downloads</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro" target="_blank">GitHub</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/issues" target="_blank">Report a Bug</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/discussions" target="_blank">Discussions</a></li>
+            <li><a href="mailto:jeffreygepiga27@gmail.com">Email</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 DevBox Pro. Made with ❤️ for PHP &amp; Node.js developers.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

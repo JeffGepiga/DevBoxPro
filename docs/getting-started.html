@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Getting Started — DevBox Pro</title>
+  <meta name="description" content="Download and install DevBox Pro, set up your first project, and start building in under 5 minutes. Step-by-step guide for beginners.">
+  <link rel="icon" href="images/logo.png" type="image/png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ============ Navbar ============ -->
+  <nav class="navbar" id="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-brand">
+        <img src="images/logo.png" alt="DevBox Pro logo">
+        DevBox Pro
+      </a>
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html" class="active">Getting Started</a></li>
+        <li><a href="features.html">Features</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li><a href="guides.html">Guides</a></li>
+        <li><a href="faq.html">FAQ</a></li>
+        <li><a href="https://github.com/JeffGepiga/DevBoxPro/releases" class="nav-cta" target="_blank">Download</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ============ Hero ============ -->
+  <section class="page-hero">
+    <div class="container">
+      <h1 class="animate-in">
+        <span class="gradient-text">Getting Started</span>
+      </h1>
+      <p class="subtitle animate-in">
+        From download to your first running project in under 5&nbsp;minutes. No technical experience needed.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ System Requirements ============ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-header animate-in">
+        <h2>System Requirements</h2>
+        <p>Make sure your computer meets these minimum specifications.</p>
+      </div>
+
+      <div class="grid-3 animate-in" style="max-width:900px; margin:0 auto;">
+        <div class="card" style="text-align:center;">
+          <div class="card-icon" style="margin:0 auto var(--space-lg);">🖥️</div>
+          <h3>Operating System</h3>
+          <p>Windows 10 or Windows 11 (64-bit)</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <div class="card-icon" style="margin:0 auto var(--space-lg);">🧠</div>
+          <h3>Memory (RAM)</h3>
+          <p>4 GB minimum<br>8 GB recommended</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <div class="card-icon" style="margin:0 auto var(--space-lg);">💾</div>
+          <h3>Disk Space</h3>
+          <p>2 GB for the app + extra space for the services you download</p>
+        </div>
+      </div>
+
+      <div class="callout callout-info animate-in" style="max-width:700px; margin:var(--space-xl) auto;">
+        <span class="callout-icon">💡</span>
+        <p><strong>macOS support</strong> is coming in a future release. Stay tuned!</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Step-by-Step ============ -->
+  <section class="section section-alt">
+    <div class="container" style="max-width:900px;">
+      <div class="section-header animate-in">
+        <h2>Step-by-Step Installation</h2>
+      </div>
+
+      <ol class="steps">
+        <!-- Step 1 -->
+        <li class="step-item animate-in">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Download DevBox Pro</h3>
+            <p>
+              Go to the <a href="https://github.com/JeffGepiga/DevBoxPro/releases" target="_blank">GitHub Releases page</a> and download the latest version. You have two options:
+            </p>
+            <ul style="margin-top:var(--space-sm); list-style:none; padding:0;">
+              <li style="padding:4px 0; color:var(--text-secondary);">
+                <strong style="color:var(--text-primary);">DevBox-Pro-Setup-x.x.x.exe</strong> — the installer (recommended for most&nbsp;users)
+              </li>
+              <li style="padding:4px 0; color:var(--text-secondary);">
+                <strong style="color:var(--text-primary);">DevBox-Pro-x.x.x.exe</strong> — portable version (no installation needed, runs from any folder)
+              </li>
+            </ul>
+          </div>
+        </li>
+
+        <!-- Step 2 -->
+        <li class="step-item animate-in">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Install &amp; Launch</h3>
+            <p>
+              Run the installer and follow the on-screen prompts. When it finishes, DevBox Pro will open automatically. The first launch may take a few seconds while it initializes — this is normal.
+            </p>
+            <div class="callout callout-tip" style="margin-top:var(--space-md);">
+              <span class="callout-icon">🛡️</span>
+              <p>Windows Defender may ask you to allow network access the first time you start a web server. Click <strong>"Allow"</strong> so your projects can be accessed in the browser.</p>
+            </div>
+          </div>
+        </li>
+
+        <!-- Step 3 -->
+        <li class="step-item animate-in">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Download Your Tools (Binaries)</h3>
+            <p>
+              Before creating projects, you need to download the components you'll use. Click on <strong>"Binary Manager"</strong> in the sidebar.
+            </p>
+            <p style="margin-top:var(--space-sm);">
+              You can click <strong>"Download All"</strong> to get everything, or pick and choose only what you need — for example, PHP 8.4, Nginx 1.28, MySQL 8.4, and Node.js 24.
+            </p>
+            <div class="screenshot-wrap" style="margin-top:var(--space-lg);">
+              <img src="images/binaries/php.png" alt="Binary Manager showing downloadable PHP versions">
+              <div class="screenshot-caption">The Binary Manager — pick the versions you want to use</div>
+            </div>
+          </div>
+        </li>
+
+        <!-- Step 4 -->
+        <li class="step-item animate-in">
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <h3>Create Your First Project</h3>
+            <p>
+              Click the <strong>"+ New Project"</strong> button on the Dashboard. A dialog will appear where you can:
+            </p>
+            <ul style="margin-top:var(--space-sm); list-style:none; padding:0; color:var(--text-secondary);">
+              <li style="padding:4px 0;">✓ Pick your <strong style="color:var(--text-primary);">project type</strong> — Laravel, WordPress, Symfony, custom PHP, or Node.js</li>
+              <li style="padding:4px 0;">✓ Choose a <strong style="color:var(--text-primary);">folder</strong> on your computer for the project files</li>
+              <li style="padding:4px 0;">✓ Select the <strong style="color:var(--text-primary);">PHP or Node.js version</strong> to use</li>
+              <li style="padding:4px 0;">✓ Pick which <strong style="color:var(--text-primary);">services</strong> to enable (MySQL, Redis, etc.)</li>
+              <li style="padding:4px 0;">✓ Set your <strong style="color:var(--text-primary);">local domain</strong> (e.g., <code>myproject.test</code>)</li>
+            </ul>
+            <p style="margin-top:var(--space-sm);">
+              Click <strong>"Create"</strong> and DevBox Pro will handle the rest — installing frameworks, setting up the database, and configuring virtual hosts.
+            </p>
+            <div class="screenshot-wrap" style="margin-top:var(--space-lg);">
+              <img src="images/pic-1.png" alt="Laravel project being installed with progress tracking">
+              <div class="screenshot-caption">Creating a Laravel project — DevBox Pro handles every step automatically</div>
+            </div>
+          </div>
+        </li>
+
+        <!-- Step 5 -->
+        <li class="step-item animate-in">
+          <div class="step-number">5</div>
+          <div class="step-content">
+            <h3>Open Your Project</h3>
+            <p>
+              Once the project is created, click <strong>"Start"</strong> on the project card. DevBox Pro will boot the web server and any enabled services. Then simply open your browser and go to:
+            </p>
+            <div class="code-block" style="margin-top:var(--space-md);">
+              https://myproject.test
+            </div>
+            <p style="margin-top:var(--space-sm);">
+              That's it — your website is live on your computer! 🎉
+            </p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ============ What's Next ============ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-header animate-in">
+        <h2>What's Next?</h2>
+        <p>Now that you're set up, explore everything DevBox Pro can do.</p>
+      </div>
+
+      <div class="grid-3 animate-in">
+        <a href="features.html" class="card guide-card">
+          <div class="card-icon">✨</div>
+          <h3>Explore Features</h3>
+          <p>Discover multi-version support, SSL certificates, log streaming, and more.</p>
+        </a>
+        <a href="guides.html" class="card guide-card">
+          <div class="card-icon">📖</div>
+          <h3>Follow a Guide</h3>
+          <p>Step-by-step tutorials for creating projects, managing databases, and using the terminal.</p>
+        </a>
+        <a href="services.html" class="card guide-card">
+          <div class="card-icon">📦</div>
+          <h3>Browse Services</h3>
+          <p>See all available services, versions, and default port numbers.</p>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Footer ============ -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a href="index.html" class="nav-brand">
+            <img src="images/logo.png" alt="DevBox Pro logo">
+            DevBox Pro
+          </a>
+          <p>Your all-in-one local development environment for PHP &amp; Node.js. Run any version, build any project.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Documentation</h4>
+          <ul>
+            <li><a href="getting-started.html">Getting Started</a></li>
+            <li><a href="features.html">Features</a></li>
+            <li><a href="services.html">Services</a></li>
+            <li><a href="guides.html">Guides</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Resources</h4>
+          <ul>
+            <li><a href="faq.html">FAQ</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/releases" target="_blank">Downloads</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro" target="_blank">GitHub</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/issues" target="_blank">Report a Bug</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/discussions" target="_blank">Discussions</a></li>
+            <li><a href="mailto:jeffreygepiga27@gmail.com">Email</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 DevBox Pro. Made with ❤️ for PHP &amp; Node.js developers.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

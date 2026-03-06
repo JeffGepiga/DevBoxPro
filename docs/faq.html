@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FAQ &amp; Troubleshooting — DevBox Pro</title>
+  <meta name="description" content="Frequently asked questions about DevBox Pro. Find answers to common questions about installation, projects, services, and troubleshooting.">
+  <link rel="icon" href="images/logo.png" type="image/png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ============ Navbar ============ -->
+  <nav class="navbar" id="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-brand">
+        <img src="images/logo.png" alt="DevBox Pro logo">
+        DevBox Pro
+      </a>
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="features.html">Features</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li><a href="guides.html">Guides</a></li>
+        <li><a href="faq.html" class="active">FAQ</a></li>
+        <li><a href="https://github.com/JeffGepiga/DevBoxPro/releases" class="nav-cta" target="_blank">Download</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ============ Hero ============ -->
+  <section class="page-hero">
+    <div class="container">
+      <h1 class="animate-in">
+        <span class="gradient-text">FAQ &amp; Troubleshooting</span>
+      </h1>
+      <p class="subtitle animate-in">
+        Answers to common questions and solutions to typical issues.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ General FAQ ============ -->
+  <section class="section">
+    <div class="container" style="max-width:800px;">
+      <div class="section-header animate-in">
+        <h2>❓ General Questions</h2>
+      </div>
+
+      <div class="animate-in">
+        <!-- Q1 -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>What is DevBox Pro?</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>DevBox Pro is a <strong>desktop application</strong> that gives you everything needed to develop websites on your own computer (locally). It bundles web servers, programming languages, databases, and other tools into a single, easy-to-use app — so you don't need to install them separately or use Docker.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q2 -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>Is DevBox Pro free?</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>Yes! DevBox Pro is open-source and free to use. You can download it from the <a href="https://github.com/JeffGepiga/DevBoxPro/releases" target="_blank">GitHub Releases page</a>.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q3 -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>What operating systems are supported?</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>Currently, DevBox Pro supports <strong>Windows 10 and Windows 11 (64-bit)</strong>. macOS support is planned for a future release.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q4 -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>How is this different from XAMPP, WAMP, or Laragon?</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>DevBox Pro solves a key limitation of those tools: <strong>multi-version support</strong>. With XAMPP or WAMP, you're typically locked to one PHP version. DevBox Pro lets you run PHP 7.4, 8.2, 8.4, and more all at the same time — each project gets its own version.</p>
+              <p>It also includes first-class <strong>Node.js support</strong>, multiple database engines (MySQL, MariaDB, PostgreSQL, MongoDB), Redis, Memcached, MinIO, and a modern visual interface with real-time logging, database management, and binary downloads.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q5 -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>Do I need to know how to use the command line?</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>No! DevBox Pro has a visual interface for everything: creating projects, starting services, managing databases, and downloading tools. However, if you <em>do</em> use the command line, DevBox Pro's CLI integration makes it even easier by auto-detecting project versions.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q6 -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>Do I need Docker?</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>No! DevBox Pro runs native binaries directly on your computer — no Docker, no virtual machines, no containers. This means faster performance and simpler setup.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Projects FAQ ============ -->
+  <section class="section section-alt">
+    <div class="container" style="max-width:800px;">
+      <div class="section-header animate-in">
+        <h2>📁 Projects</h2>
+      </div>
+
+      <div class="animate-in">
+        <!-- Q -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>What frameworks can I use?</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>DevBox Pro has built-in support for <strong>Laravel</strong>, <strong>WordPress</strong>, <strong>Symfony</strong>, <strong>custom PHP apps</strong>, and <strong>Node.js</strong> projects (Express, Next.js, Nuxt, Fastify, etc.).</p>
+              <p>In reality, any PHP or Node.js application will work — just choose "Custom PHP" or "Node.js" as the project type.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>Can I use my own existing project folder?</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>Yes! When creating a project, just point it to your existing folder. DevBox Pro will configure the web server and services around your existing code without modifying your files.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>What does the .test domain mean?</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>The <code>.test</code> domain (like <code>myproject.test</code>) is a special domain that only works on your computer. It's a reserved domain name that will never conflict with real websites on the internet. DevBox Pro automatically maps it to your local project so you can visit it in your browser just like a real URL.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>Can I run multiple projects at the same time?</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>Absolutely! You can run as many projects as you like simultaneously. Each project gets its own domain, PHP/Node.js version, and database — they don't interfere with each other.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Troubleshooting ============ -->
+  <section class="section">
+    <div class="container" style="max-width:800px;">
+      <div class="section-header animate-in">
+        <h2>🔧 Troubleshooting</h2>
+      </div>
+
+      <div class="animate-in">
+        <!-- Q -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>My browser shows "This site can't be reached" when I visit my project</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>This usually means the web server or project isn't running. Check these things:</p>
+              <p>1. Make sure the project is <strong>started</strong> (green status indicator on the project card).</p>
+              <p>2. Check that the web server (Nginx or Apache) is running in the Services panel.</p>
+              <p>3. If you just created the project, wait a few seconds — the web server needs a moment to start.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>I see a security/SSL warning in my browser</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>This happens because DevBox Pro uses a self-signed SSL certificate (not one from a certificate authority). To fix this:</p>
+              <p>1. Go to <strong>Settings</strong> in DevBox Pro.</p>
+              <p>2. Click <strong>"Trust SSL Certificate"</strong>.</p>
+              <p>3. Approve the administrator prompt.</p>
+              <p>4. Restart your browser.</p>
+              <p>This only needs to be done once — after that, all your <code>.test</code> domains will work with HTTPS without warnings.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>Windows Firewall keeps blocking DevBox Pro</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>When you first start web servers or database services, Windows Firewall may ask for permission. <strong>Click "Allow access"</strong> to let the services work properly. This is normal and expected — the services need network access to serve your web pages and handle database connections.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>Port conflict: "Port 80 is already in use"</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>This means another program on your computer is already using port 80. Common culprits:</p>
+              <p>• <strong>Skype</strong> — older versions use port 80. Disable it in Skype's settings.</p>
+              <p>• <strong>IIS (Internet Information Services)</strong> — Windows' built-in web server. Disable it via "Turn Windows features on or off".</p>
+              <p>• <strong>Another web server</strong> — like XAMPP, WAMP, or a standalone Nginx/Apache. Stop it before starting DevBox Pro.</p>
+              <p>DevBox Pro will detect the conflict and tell you which program is using the port.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>The terminal commands (php, npm, etc.) aren't working</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>Make sure you've done these steps:</p>
+              <p>1. Go to <strong>Settings → CLI Tool</strong> and enable <strong>"Terminal commands"</strong>.</p>
+              <p>2. <strong>Restart your terminal</strong> completely (close the window and open a new one).</p>
+              <p>3. If using VS Code, restart VS Code entirely (not just the terminal panel).</p>
+              <p>If commands still don't work after restarting, try logging out and back in to Windows so the PATH changes take effect.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>My database won't start</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>Check the <strong>Logs</strong> page for error messages from the database service. Common causes:</p>
+              <p>• <strong>Port conflict</strong> — another MySQL or MariaDB instance is already running on the same port.</p>
+              <p>• <strong>Corrupted data</strong> — if the database crashed previously, try reinitializing the data directory from the service settings.</p>
+              <p>• <strong>Missing binary</strong> — make sure the database version is downloaded in the Binary Manager.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q -->
+        <div class="accordion-item">
+          <button class="accordion-header">
+            <span>The first launch is slow</span>
+            <span class="accordion-chevron">▼</span>
+          </button>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>This is normal! The first time you launch DevBox Pro, it needs to:</p>
+              <p>• Initialize configuration files.</p>
+              <p>• Set up data directories for services.</p>
+              <p>• Generate SSL certificates.</p>
+              <p>Subsequent launches will be much faster.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Still Need Help ============ -->
+  <section class="section section-alt">
+    <div class="container" style="text-align:center;">
+      <div class="section-header animate-in">
+        <h2>Still Need Help?</h2>
+        <p>We're here to help you get the most out of DevBox Pro.</p>
+      </div>
+
+      <div class="grid-3 animate-in" style="max-width:900px; margin:0 auto;">
+        <a href="https://github.com/JeffGepiga/DevBoxPro/issues" target="_blank" class="card guide-card" style="text-align:center;">
+          <div class="card-icon" style="margin:0 auto var(--space-lg);">🐛</div>
+          <h3>Report a Bug</h3>
+          <p>Found something broken? Open an issue on GitHub and we'll look into it.</p>
+        </a>
+        <a href="https://github.com/JeffGepiga/DevBoxPro/discussions" target="_blank" class="card guide-card" style="text-align:center;">
+          <div class="card-icon" style="margin:0 auto var(--space-lg);">💬</div>
+          <h3>Community</h3>
+          <p>Ask questions and share tips with other DevBox Pro users in Discussions.</p>
+        </a>
+        <a href="mailto:jeffreygepiga27@gmail.com" class="card guide-card" style="text-align:center;">
+          <div class="card-icon" style="margin:0 auto var(--space-lg);">📧</div>
+          <h3>Email Us</h3>
+          <p>For direct support, send us an email and we'll get back to you as soon as possible.</p>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Footer ============ -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a href="index.html" class="nav-brand">
+            <img src="images/logo.png" alt="DevBox Pro logo">
+            DevBox Pro
+          </a>
+          <p>Your all-in-one local development environment for PHP &amp; Node.js. Run any version, build any project.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Documentation</h4>
+          <ul>
+            <li><a href="getting-started.html">Getting Started</a></li>
+            <li><a href="features.html">Features</a></li>
+            <li><a href="services.html">Services</a></li>
+            <li><a href="guides.html">Guides</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Resources</h4>
+          <ul>
+            <li><a href="faq.html">FAQ</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/releases" target="_blank">Downloads</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro" target="_blank">GitHub</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/issues" target="_blank">Report a Bug</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/discussions" target="_blank">Discussions</a></li>
+            <li><a href="mailto:jeffreygepiga27@gmail.com">Email</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 DevBox Pro. Made with ❤️ for PHP &amp; Node.js developers.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

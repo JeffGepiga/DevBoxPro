@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Features — DevBox Pro</title>
+  <meta name="description" content="Explore all DevBox Pro features: multi-PHP versions, Node.js support, database management, SSL certificates, terminal commands, and more.">
+  <link rel="icon" href="images/logo.png" type="image/png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ============ Navbar ============ -->
+  <nav class="navbar" id="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-brand">
+        <img src="images/logo.png" alt="DevBox Pro logo">
+        DevBox Pro
+      </a>
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="features.html" class="active">Features</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li><a href="guides.html">Guides</a></li>
+        <li><a href="faq.html">FAQ</a></li>
+        <li><a href="https://github.com/JeffGepiga/DevBoxPro/releases" class="nav-cta" target="_blank">Download</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ============ Hero ============ -->
+  <section class="page-hero">
+    <div class="container">
+      <h1 class="animate-in">
+        <span class="gradient-text">Features</span>
+      </h1>
+      <p class="subtitle animate-in">
+        Everything you need to build, test, and run web applications — bundled in one desktop app.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ Multi-PHP ============ -->
+  <section class="section">
+    <div class="container">
+      <div class="feature-row animate-in">
+        <div class="feature-content">
+          <h3>🐘 Run Multiple PHP Versions</h3>
+          <p>
+            Working on an older project that requires PHP 7.4 while also building a new app on PHP 8.4? No problem. DevBox Pro lets you run <strong>any PHP version from 7.4 to 8.5</strong>, and each project automatically uses the version you assign to it.
+          </p>
+          <ul>
+            <li>PHP 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, and 8.5 available</li>
+            <li>Each project uses its own PHP version — no conflicts</li>
+            <li>Built-in php.ini editor for fine-tuning settings</li>
+            <li>Extensions managed per version</li>
+          </ul>
+        </div>
+        <div class="screenshot-wrap">
+          <img src="images/binaries/php.png" alt="Binary Manager showing multiple PHP versions available for download">
+          <div class="screenshot-caption">Download only the PHP versions you need</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Node.js ============ -->
+  <section class="section section-alt">
+    <div class="container">
+      <div class="feature-row reverse animate-in">
+        <div class="feature-content">
+          <h3>🟢 Node.js Project Support</h3>
+          <p>
+            Build full-stack applications by running Node.js projects alongside PHP. DevBox Pro supports <strong>Node.js 16 through 24</strong> with automatic reverse proxy through Nginx — meaning your Node.js apps get the same <code>.test</code> domain experience as PHP projects.
+          </p>
+          <ul>
+            <li>Run Express, Next.js, Nuxt, Fastify, or any Node.js framework</li>
+            <li>Per-project Node.js version selection</li>
+            <li>Automatic Nginx proxy for .test domains</li>
+            <li>npm and npx available from any terminal</li>
+          </ul>
+        </div>
+        <div class="screenshot-wrap">
+          <img src="images/binaries/nodejs.png" alt="Binary Manager showing Node.js versions">
+          <div class="screenshot-caption">Node.js versions ready to download and use</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Web Servers ============ -->
+  <section class="section">
+    <div class="container">
+      <div class="feature-row animate-in">
+        <div class="feature-content">
+          <h3>🌐 Nginx &amp; Apache Web Servers</h3>
+          <p>
+            Choose the web server that works best for each project. <strong>Nginx</strong> is lightweight and fast (recommended for most projects), while <strong>Apache</strong> is ideal when you need <code>.htaccess</code> file support.
+          </p>
+          <ul>
+            <li>Nginx 1.26 and 1.28 available</li>
+            <li>Apache 2.4 with full mod_rewrite support</li>
+            <li>Automatic virtual host configuration</li>
+            <li>HTTP and HTTPS for every project</li>
+            <li>Use different servers for different projects</li>
+          </ul>
+        </div>
+        <div class="screenshot-wrap">
+          <img src="images/binaries/nginx.png" alt="Binary Manager showing Nginx web server versions">
+          <div class="screenshot-caption">Multiple web server versions ready to download</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Database Management ============ -->
+  <section class="section section-alt">
+    <div class="container">
+      <div class="feature-row reverse animate-in">
+        <div class="feature-content">
+          <h3>💾 Database Management</h3>
+          <p>
+            Manage all your databases through a simple visual interface. Create new databases, import existing ones from <code>.sql</code> or compressed <code>.gz</code> files, and export backups — all with progress tracking.
+          </p>
+          <ul>
+            <li>MySQL 8.0 and 8.4 with multi-version support</li>
+            <li>MariaDB 10.11 and 11.4</li>
+            <li>PostgreSQL 14, 15, 16, and 17</li>
+            <li>MongoDB 6.0, 7.0, and 8.0</li>
+            <li>SQLite 3 (embedded, no setup required)</li>
+            <li>phpMyAdmin for visual database browsing</li>
+            <li>One-click import and export with compression</li>
+          </ul>
+        </div>
+        <div class="screenshot-wrap">
+          <img src="images/pic-7.png" alt="Database management interface showing create, import, and export options">
+          <div class="screenshot-caption">Import, export, and manage databases with a few clicks</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SSL & Domains ============ -->
+  <section class="section">
+    <div class="container">
+      <div class="feature-row animate-in">
+        <div class="feature-content">
+          <h3>🔒 Automatic HTTPS &amp; Custom Domains</h3>
+          <p>
+            Every project in DevBox Pro gets its own custom <code>.test</code> domain (for example, <code>myshop.test</code>). SSL certificates are generated automatically, so your local site works over <strong>HTTPS</strong> — just like a real website.
+          </p>
+          <ul>
+            <li>Automatic SSL certificate generation</li>
+            <li>Wildcard certificate support</li>
+            <li>One-click certificate trust in Windows</li>
+            <li>Custom .test domains per project</li>
+          </ul>
+        </div>
+        <div class="screenshot-wrap">
+          <img src="images/pic-9.png" alt="Settings page showing SSL and cloud configuration">
+          <div class="screenshot-caption">SSL and configuration settings</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Terminal & CLI ============ -->
+  <section class="section section-alt">
+    <div class="container">
+      <div class="section-header animate-in">
+        <h2>💻 Terminal Commands</h2>
+        <p>Use PHP, Node.js, and database tools directly from any terminal on your computer.</p>
+      </div>
+
+      <div class="animate-in" style="max-width:800px; margin:0 auto;">
+        <p style="color:var(--text-secondary); margin-bottom:var(--space-lg); line-height:1.8;">
+          Once you enable the CLI tool in Settings, you can open <strong style="color:var(--text-primary);">any terminal</strong> (VS Code, PowerShell, Windows Terminal) and use commands like <code>php</code>, <code>npm</code>, <code>composer</code>, and <code>mysql</code> directly. DevBox Pro automatically figures out which version to use based on your project folder.
+        </p>
+
+        <div class="code-block">
+# Navigate to your project folder<br>
+cd C:\Projects\my-laravel-app<br>
+<br>
+# PHP uses your project's configured version automatically<br>
+php artisan migrate<br>
+php artisan serve<br>
+<br>
+# Composer uses the matching PHP version<br>
+composer install<br>
+composer update<br>
+<br>
+# Node.js and npm use your project's version<br>
+npm install<br>
+npm run dev<br>
+<br>
+# Database commands use the running version<br>
+mysql -u root<br>
+mysqldump -u root mydb > backup.sql
+        </div>
+
+        <div class="callout callout-info" style="margin-top:var(--space-xl);">
+          <span class="callout-icon">💡</span>
+          <p><strong>How it works:</strong> When you run a command from inside a project folder, DevBox Pro checks which versions are assigned to that project and uses the correct one. Outside a project folder, it uses your default version from Settings.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ More Features Grid ============ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-header animate-in">
+        <h2>And Much More</h2>
+      </div>
+
+      <div class="grid-3 animate-in">
+        <div class="card">
+          <div class="card-icon">🔧</div>
+          <h3>Binary Manager</h3>
+          <p>Download, update, and manage individual components. Only install what you need. Import custom-compiled versions if you want.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">📊</div>
+          <h3>Real-Time Logs</h3>
+          <p>Stream logs from all services live. Errors are highlighted in red, warnings in yellow. Filter by project or service to find issues fast.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🎯</div>
+          <h3>Framework Support</h3>
+          <p>One-click installation for Laravel, WordPress, and Symfony. Also supports custom PHP and any Node.js framework.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">☁️</div>
+          <h3>Cloud Updates</h3>
+          <p>New binary versions and compatibility rules sync from the cloud — so you get new PHP and Node.js releases without updating the app.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🌐</div>
+          <h3>Network Sharing</h3>
+          <p>Share projects across your local network with a simple toggle. Great for testing on mobile devices or showing work to teammates.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🔗</div>
+          <h3>Git Integration</h3>
+          <p>Clone repos from GitHub, GitLab, or Bitbucket directly from DevBox Pro. Supports HTTPS, SSH keys, and Personal Access Tokens.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">📤</div>
+          <h3>Project Export &amp; Import</h3>
+          <p>Export your project configuration for backup or sharing. Import it on another machine to set up the same project instantly.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">↩️</div>
+          <h3>Version Rollback</h3>
+          <p>Roll back to a previous version of DevBox Pro from the Settings page if anything goes wrong after an update.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🎨</div>
+          <h3>Themes</h3>
+          <p>Customize the look and feel with built-in color themes and accent options. Preview changes in real-time before applying.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Footer ============ -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a href="index.html" class="nav-brand">
+            <img src="images/logo.png" alt="DevBox Pro logo">
+            DevBox Pro
+          </a>
+          <p>Your all-in-one local development environment for PHP &amp; Node.js. Run any version, build any project.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Documentation</h4>
+          <ul>
+            <li><a href="getting-started.html">Getting Started</a></li>
+            <li><a href="features.html">Features</a></li>
+            <li><a href="services.html">Services</a></li>
+            <li><a href="guides.html">Guides</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Resources</h4>
+          <ul>
+            <li><a href="faq.html">FAQ</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/releases" target="_blank">Downloads</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro" target="_blank">GitHub</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/issues" target="_blank">Report a Bug</a></li>
+            <li><a href="https://github.com/JeffGepiga/DevBoxPro/discussions" target="_blank">Discussions</a></li>
+            <li><a href="mailto:jeffreygepiga27@gmail.com">Email</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 DevBox Pro. Made with ❤️ for PHP &amp; Node.js developers.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>
