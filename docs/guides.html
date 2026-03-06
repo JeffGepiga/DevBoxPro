@@ -379,24 +379,52 @@ mysql -u root
     <div class="container" style="max-width:900px;">
       <div class="section-header animate-in">
         <h2>⚙️ Configuring Settings</h2>
-        <p>Customize DevBox Pro's appearance and advanced behavior.</p>
+        <p>Complete guide to DevBox Pro's preferences and configuration.</p>
       </div>
 
       <div class="animate-in">
-        <h3 style="margin-bottom:var(--space-md);">Appearance</h3>
         <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-lg);">
-          Head over to the <strong style="color:var(--text-primary);">Settings</strong> page and click the <strong style="color:var(--text-primary);">Appearance</strong> tab to change the look of DevBox Pro. You can switch between Light and Dark modes, or set it to match your system preferences. You can also customize the primary accent color to match your style.
+          DevBox Pro is highly customizable. The <strong style="color:var(--text-primary);">Settings</strong> page is divided into 5 major tabs:
         </p>
 
-        <h3 style="margin-bottom:var(--space-md);">Advanced Settings</h3>
-        <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-md);">
-          The <strong style="color:var(--text-primary);">Advanced</strong> tab in Settings allows you to configure deep application behaviors:
-        </p>
+        <!-- General Tab -->
+        <h3 style="margin-bottom:var(--space-sm);">1. General</h3>
         <ul style="list-style:none; padding:0; margin-bottom:var(--space-lg); color:var(--text-secondary);">
-          <li style="padding:4px 0;">• <strong>Auto-Start Projects:</strong> Choose whether projects should automatically start when DevBox Pro opens.</li>
-          <li class="padding:4px 0;">• <strong>Default TLD:</strong> Change the default local domain suffix (e.g., from <code>.test</code> to <code>.local</code>).</li>
-          <li class="padding:4px 0;">• <strong>Port Ranges:</strong> Specify the starting ports for web servers to avoid conflicts with other apps.</li>
-          <li class="padding:4px 0;">• <strong>Hardware Acceleration:</strong> Toggle GPU acceleration for the desktop app.</li>
+          <li style="padding:4px 0;">• <strong>Projects:</strong> Set the default folder where new projects are created and choose your preferred local Top-Level Domain (TLD) like <code>.test</code> or <code>.local</code>.</li>
+          <li style="padding:4px 0;">• <strong>Startup:</strong> Choose whether DevBox Pro opens automatically when you log into your computer.</li>
+          <li style="padding:4px 0;">• <strong>Default Editor:</strong> Select your preferred code editor (VS Code, Cursor, PhpStorm, etc.) to quickly open project directories directly from the app.</li>
+        </ul>
+
+        <!-- CLI Tool Tab -->
+        <h3 style="margin-bottom:var(--space-sm);">2. CLI Tool</h3>
+        <ul style="list-style:none; padding:0; margin-bottom:var(--space-lg); color:var(--text-secondary);">
+          <li style="padding:4px 0;">• <strong>Terminal Commands:</strong> Enable global shims so you can use commands like <code>php</code>, <code>npm</code>, <code>node</code>, <code>composer</code>, and <code>mysql</code> directly from any external terminal. DevBox Pro natively intercepts these and routes them to the correct local version based on what folder you are in.</li>
+          <li style="padding:4px 0;">• <strong>Default Versions:</strong> Set the fallback PHP and Node.js versions to use when you type terminal commands outside of a known project directory.</li>
+        </ul>
+
+        <!-- Network Tab -->
+        <h3 style="margin-bottom:var(--space-sm);">3. Network</h3>
+        <ul style="list-style:none; padding:0; margin-bottom:var(--space-lg); color:var(--text-secondary);">
+          <li style="padding:4px 0;">• <strong>Database Credentials:</strong> Configure the universal username/password for MySQL, MariaDB, and PostgreSQL. Changing these restarts the databases automatically to apply the new credentials.</li>
+          <li style="padding:4px 0;">• <strong>Server Timezone:</strong> Synchronize the timezone configuration for PHP and database engines.</li>
+          <li style="padding:4px 0;">• <strong>Port Configuration:</strong> Easily re-map the default ports for databases, object, and caching services if they conflict with software you already have installed.</li>
+          <li style="padding:4px 0;">• <strong>SSL:</strong> Choose if new projects should be generated with valid HTTPS certificates by default.</li>
+        </ul>
+
+        <!-- Appearance Tab -->
+        <h3 style="margin-bottom:var(--space-sm);">4. Appearance</h3>
+        <ul style="list-style:none; padding:0; margin-bottom:var(--space-lg); color:var(--text-secondary);">
+          <li style="padding:4px 0;">• <strong>Theme:</strong> Force Light mode, Dark mode, or follow your System settings.</li>
+          <li style="padding:4px 0;">• <strong>Accent Color & Textures:</strong> Tailor the primary UI color and background pattern of the app to your liking.</li>
+          <li style="padding:4px 0;">• <strong>Dark Mode Surface:</strong> Fine-tune the tint and contrast levels of dark mode components.</li>
+        </ul>
+
+        <!-- Advanced Tab -->
+        <h3 style="margin-bottom:var(--space-sm);">5. Advanced</h3>
+        <ul style="list-style:none; padding:0; margin-bottom:var(--space-lg); color:var(--text-secondary);">
+          <li style="padding:4px 0;">• <strong>App Updates & Rollbacks:</strong> Check for DevBox Pro client updates, or safely roll back to a previous version if an update causes issues.</li>
+          <li style="padding:4px 0;">• <strong>Cloud Updates:</strong> Pull the latest compatibility rules and binary definitions catalog straight from the cloud without updating the core app.</li>
+          <li style="padding:4px 0;">• <strong>Data Management:</strong> Review the raw App Data path, or perform a total factory reset (Clear All Data), which can wipe databases and projects if requested.</li>
         </ul>
       </div>
     </div>
