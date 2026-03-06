@@ -163,8 +163,8 @@ describe('ServiceManager', () => {
 
             await mgr.restartService('mysql');
 
-            expect(mgr.stopService).toHaveBeenCalledWith('mysql');
-            expect(mgr.startService).toHaveBeenCalledWith('mysql');
+            expect(mgr.stopService).toHaveBeenCalledWith('mysql', null);
+            expect(mgr.startService).toHaveBeenCalledWith('mysql', null);
         });
     });
 
