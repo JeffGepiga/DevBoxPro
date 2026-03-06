@@ -6,7 +6,35 @@ document.addEventListener('DOMContentLoaded', () => {
   initNavbar();
   initScrollAnimations();
   initAccordions();
+  updateDownloadLinks();
 });
+
+async function updateDownloadLinks() {
+  try {
+    const response = await fetch('https://api.github.com/repos/JeffGepiga/DevBoxPro/releases/latest');
+    const data = await response.json();
+    
+    if (data && data.assets) {
+      const setupAsset = data.assets.find(a => a.name.includes('Setup') && a.name.endsWith('.exe'));
+      const portableAsset = data.assets.find(a => !a.name.includes('Setup') && a.name.endsWith('.exe'));
+      
+      if (setupAsset) {
+        document.querySelectorAll('.download-setup-btn').forEach(btn => {
+          btn.href = setupAsset.browser_download_url;
+        });
+      }
+      
+      if (portableAsset) {
+        document.querySelectorAll('.download-portable-btn').forEach(btn => {
+          btn.href = portableAsset.browser_download_url;
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to fetch latest release:', err);
+  }
+}
+
 
 /* ---------- Navbar ---------- */
 function initNavbar() {
