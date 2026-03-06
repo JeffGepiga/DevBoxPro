@@ -374,6 +374,57 @@ mysql -u root
     </div>
   </section>
 
+  <!-- ============ Guide: Project Details ============ -->
+  <section class="section" id="guide-project-details">
+    <div class="container" style="max-width:900px;">
+      <div class="section-header animate-in">
+        <h2>🛠️ Managing a Project</h2>
+        <p>Explore the features inside the Project Details page.</p>
+      </div>
+
+      <div class="animate-in">
+        <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-lg);">
+          When you click on a project card from the Dashboard or Projects list, you'll enter the <strong style="color:var(--text-primary);">Project Details</strong> page. This page gives you granular control over the project through several tabs:
+        </p>
+
+        <!-- Overview Tab -->
+        <h3 style="margin-bottom:var(--space-sm);">1. Overview</h3>
+        <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-md);">
+          The central command center for your project:
+        </p>
+        <ul style="list-style:none; padding:0; margin-bottom:var(--space-lg); color:var(--text-secondary);">
+          <li style="padding:4px 0;">• <strong>Web Server & PHP/Node Version:</strong> Change the assigned framework versions or switch between Nginx/Apache on the fly.</li>
+          <li style="padding:4px 0;">• <strong>Services:</strong> Toggle specific databases (MySQL, PostgreSQL, MongoDB, etc.) or caching layers (Redis, Memcached) exclusively for this project.</li>
+          <li style="padding:4px 0;">• <strong>Domains & Network:</strong> Add custom domain aliases, change the document root folder, or enable <code>Share on Local Network</code> to test your app from your phone.</li>
+        </ul>
+
+        <!-- Terminal Tab -->
+        <h3 style="margin-bottom:var(--space-sm);">2. Terminal</h3>
+        <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-lg);">
+          A fully featured, built-in command line interface that automatically opens in your project's folder. Run <code>npm install</code>, <code>composer update</code>, or <code>php artisan</code> commands directly inside DevBox Pro without opening a separate terminal window.
+        </p>
+
+        <!-- Logs Tab -->
+        <h3 style="margin-bottom:var(--space-sm);">3. Logs</h3>
+        <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-lg);">
+          View real-time, consolidated logs for the project. Includes access logs, error logs, and output from any running Node.js process. You can toggle auto-refresh to watch logs stream in live as you develop.
+        </p>
+
+        <!-- Workers Tab -->
+        <h3 style="margin-bottom:var(--space-sm);">4. Workers</h3>
+        <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-lg);">
+          Manage background processes using the built-in Supervisor integration. Add persistent background workers like Laravel Queue workers, Horizon, or any custom long-running scripts (e.g., <code>php artisan queue:work</code>). Set them to auto-restart if they crash.
+        </p>
+
+        <!-- Environment Tab -->
+        <h3 style="margin-bottom:var(--space-sm);">5. Environment</h3>
+        <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-lg);">
+          A built-in editor for your project's <code>.env</code> file. Easily update connection strings, api keys, and environment variables without needing to open your code editor.
+        </p>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ Guide: Settings ============ -->
   <section class="section" id="guide-settings">
     <div class="container" style="max-width:900px;">
