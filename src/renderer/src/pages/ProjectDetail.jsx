@@ -1552,6 +1552,18 @@ function WorkersTab({ processes, projectId, onRefresh, isRunning, projectType })
     return () => clearInterval(interval);
   }, [expandedLogs, autoRefresh, projectId]);
 
+  useEffect(() => {
+    const unsubscribe = window.devbox?.supervisor?.onStatusChange?.((data) => {
+      if (String(data.projectId) !== String(projectId)) {
+        return;
+      }
+
+      onRefresh();
+    });
+
+    return () => unsubscribe?.();
+  }, [onRefresh, projectId]);
+
   const toggleLogs = async (processName) => {
     const isExpanding = !expandedLogs[processName];
     setExpandedLogs(prev => ({ ...prev, [processName]: isExpanding }));

@@ -540,6 +540,16 @@ class SupervisorManager {
       status === 'running' ? new Date().toISOString() : null;
 
     this.configStore.set('projects', projects);
+
+    if (this.mainWindow) {
+      this.mainWindow.webContents.send('supervisor:statusChanged', {
+        projectId,
+        processName,
+        status,
+        pid,
+        startedAt: projects[projectIndex].supervisor.processes[processIndex].startedAt,
+      });
+    }
   }
 
   logOutput(projectId, processName, output, type) {

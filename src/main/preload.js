@@ -122,6 +122,11 @@ contextBridge.exposeInMainWorld('devbox', {
       ipcRenderer.on('supervisor:output', handler);
       return () => ipcRenderer.removeListener('supervisor:output', handler);
     },
+    onStatusChange: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('supervisor:statusChanged', handler);
+      return () => ipcRenderer.removeListener('supervisor:statusChanged', handler);
+    },
   },
 
   // Log operations
@@ -309,6 +314,7 @@ contextBridge.exposeInMainWorld('devbox', {
       'update:progress',
       'binaries:progress',
       'supervisor:output',
+      'supervisor:statusChanged',
     ];
 
     if (validChannels.includes(channel)) {
