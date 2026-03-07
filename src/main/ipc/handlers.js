@@ -212,28 +212,8 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return result;
   });
 
-  ipcMain.handle('projects:regenerateVhost', async (event, id) => {
-    const projectData = project.getProject(id);
-    if (!projectData) throw new Error('Project not found');
-    await project.createVirtualHost(projectData);
-    return { success: true };
-  });
-
-  // Project service version handlers
-  ipcMain.handle('projects:getServiceVersions', async (event, id) => {
-    return project.getProjectServiceVersions(id);
-  });
-
-  ipcMain.handle('projects:updateServiceVersions', async (event, id, versions) => {
-    return project.updateProjectServiceVersions(id, versions);
-  });
-
   ipcMain.handle('projects:checkCompatibility', async (event, config) => {
     return project.checkCompatibility(config);
-  });
-
-  ipcMain.handle('projects:getCompatibilityRules', async () => {
-    return project.getCompatibilityRules();
   });
 
   // ============ COMPATIBILITY HANDLERS ============
@@ -631,8 +611,17 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('system:getLocalIpAddresses', async () => {
-    if (!managers.webServer) return [];
-    return managers.webServer.getLocalIpAddresses();
+    const os = require('os');
+    const interfaces = os.networkInterfaces();
+    const addresses = [];
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          addresses.push(iface.address);
+        }
+      }
+    }
+    return addresses;
   });
 
   // ============ UPDATE HANDLERS ============
@@ -1241,36 +1230,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   };
   setupBinaryProgressListener();
 
-  // ============ WEB SERVER HANDLERS ============
-  ipcMain.handle('webserver:getStatus', async () => {
-    if (!managers.webServer) return {};
-    return managers.webServer.getStatus();
-  });
 
-  ipcMain.handle('webserver:setServerType', async (event, type) => {
-    if (!managers.webServer) throw new Error('WebServer manager not initialized');
-    return managers.webServer.setServerType(type);
-  });
-
-  ipcMain.handle('webserver:getServerType', async () => {
-    if (!managers.webServer) return 'nginx';
-    return managers.webServer.getServerType();
-  });
-
-  ipcMain.handle('webserver:stopProject', async (event, projectId) => {
-    if (!managers.webServer) throw new Error('WebServer manager not initialized');
-    return managers.webServer.stopProject(projectId);
-  });
-
-  ipcMain.handle('webserver:reloadConfig', async () => {
-    if (!managers.webServer) throw new Error('WebServer manager not initialized');
-    return managers.webServer.reloadConfig();
-  });
-
-  ipcMain.handle('webserver:getRunningProjects', async () => {
-    if (!managers.webServer) return [];
-    return managers.webServer.getRunningProjects();
-  });
 
   // ============ TERMINAL HANDLERS ============
   const runningProcesses = new Map();

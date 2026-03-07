@@ -2,7 +2,6 @@ const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { app } = require('electron');
-const os = require('os');
 
 /**
  * GitManager - Handles Git operations for cloning repositories

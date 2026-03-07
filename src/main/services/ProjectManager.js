@@ -3,9 +3,7 @@ const fs = require('fs-extra');
 const { v4: uuidv4 } = require('uuid');
 const { spawn, exec } = require('child_process');
 const http = require('http');
-const httpProxy = require('http-proxy');
 const os = require('os');
-const net = require('net');
 const { isPortAvailable, findAvailablePort } = require('../utils/PortUtils');
 const CompatibilityManager = require('./CompatibilityManager');
 
@@ -33,7 +31,6 @@ class ProjectManager {
     this.managers = managers;
     this.runningProjects = new Map();
     this.projectServers = new Map();
-    this.proxy = httpProxy.createProxyServer({});
     this.compatibilityManager = new CompatibilityManager();
 
     // Track which project currently owns port 80 for network access
@@ -49,6 +46,56 @@ class ProjectManager {
 
     // Initialize compatibility manager (loads cached config)
     await this.compatibilityManager.initialize();
+
+    // Remove stale vhost/site configs from previous sessions or deleted projects
+    await this.cleanupOrphanedConfigs();
+  }
+
+  /**
+   * Remove vhost/site .conf files that don't correspond to any known project.
+   * Covers both the old flat nginx/sites/ directory and per-version nginx/<ver>/sites/ dirs,
+   * as well as the apache/vhosts/ directory.
+   */
+  async cleanupOrphanedConfigs() {
+    const { app } = require('electron');
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const projects = this.configStore.get('projects', []);
+    const validIds = new Set(projects.map(p => p.id));
+
+    const dirs = [
+      path.join(dataPath, 'apache', 'vhosts'),
+      path.join(dataPath, 'nginx', 'sites'),
+    ];
+
+    // Also include per-version nginx sites directories
+    const nginxDataDir = path.join(dataPath, 'nginx');
+    try {
+      if (await fs.pathExists(nginxDataDir)) {
+        const entries = await fs.readdir(nginxDataDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            const sitesDir = path.join(nginxDataDir, entry.name, 'sites');
+            if (await fs.pathExists(sitesDir)) {
+              dirs.push(sitesDir);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore errors reading nginx data directory
+    }
+
+    for (const dir of dirs) {
+      if (!await fs.pathExists(dir)) continue;
+      const files = await fs.readdir(dir);
+      for (const file of files) {
+        if (!file.endsWith('.conf')) continue;
+        const projectId = file.replace('.conf', '');
+        if (!validIds.has(projectId)) {
+          await fs.remove(path.join(dir, file));
+        }
+      }
+    }
   }
 
   /**
@@ -2043,11 +2090,9 @@ class ProjectManager {
     try {
       // Get expected ports for this project's web server directly from ServiceManager
       const webServer = project.webServer || 'nginx';
-      this.managers.log?.project(id, `[DEBUG] Step 1: Getting service ports for ${webServer}`);
       const webServerPorts = this.managers.service?.getServicePorts(webServer, project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4'));
       const httpPort = webServerPorts?.httpPort || 80;
       const httpsPort = webServerPorts?.sslPort || 443;
-      this.managers.log?.project(id, `[DEBUG] Step 1 done: ports HTTP=${httpPort}, HTTPS=${httpsPort}`);
 
       const isHttpAvailable = await isPortAvailable(httpPort);
       const isHttpsAvailable = await isPortAvailable(httpsPort);
@@ -2061,9 +2106,7 @@ class ProjectManager {
       }
 
       // Validate required binaries before starting
-      this.managers.log?.project(id, `[DEBUG] Step 2: Validating binaries`);
       const missingBinaries = await this.validateProjectBinaries(project);
-      this.managers.log?.project(id, `[DEBUG] Step 2 done: missing=${missingBinaries.length}`);
       if (missingBinaries.length > 0) {
         const missingErrorMsg = `Missing required binaries: ${missingBinaries.join(', ')}. Please install them from the Binary Manager.`;
         this.managers.log?.project(id, `ERROR: ${missingErrorMsg}`);
@@ -2086,14 +2129,11 @@ class ProjectManager {
       // This determines whether we can safely create vhost configs now (ports are known)
       // or must wait until after startup (ports may change due to fallback).
       const webServerAlreadyRunning = this.managers.service?.isVersionRunning(webServer, webServerVersion);
-      this.managers.log?.project(id, `[DEBUG] Step 3: webServerAlreadyRunning=${webServerAlreadyRunning}`);
 
       if (webServerAlreadyRunning) {
         // Web server is already running — ports are known and stable.
         // Create vhost now so the reload in startProjectServices picks it up.
-        this.managers.log?.project(id, `[DEBUG] Step 3a: Creating vhost (web server already running)`);
         await this.createVirtualHost(project, phpFpmPort || undefined, targetVersion);
-        this.managers.log?.project(id, `[DEBUG] Step 3a done: vhost created`);
 
         // Regenerate ALL other vhost configs for version compatibility.
         if (webServer === 'nginx') {
@@ -2106,9 +2146,7 @@ class ProjectManager {
       // until after the web server starts with actual ports (see below).
 
       // Start required services (nginx/apache, mysql, redis, etc.)
-      this.managers.log?.project(id, `[DEBUG] Step 4: Starting project services`);
       const serviceResult = await this.startProjectServices(project);
-      this.managers.log?.project(id, `[DEBUG] Step 4 done: success=${serviceResult.success}, started=[${serviceResult.started}], errors=[${serviceResult.errors}]`);
 
       // Check if critical services failed
       if (!serviceResult.success) {
@@ -2118,7 +2156,6 @@ class ProjectManager {
         throw new Error(errorMsg);
       }
 
-      this.managers.log?.project(id, `[DEBUG] Step 5: Post-service-start, webServerAlreadyRunning=${webServerAlreadyRunning}`);
       if (!webServerAlreadyRunning) {
         // Web server just started — ports are now known (may be alternate like 8081/8443).
         // Create this project's vhost and regenerate all others with actual ports.
@@ -2176,9 +2213,7 @@ class ProjectManager {
       // Apache uses Action/AddHandler CGI approach - invokes PHP-CGI directly per request
       // Node.js projects don't need PHP-CGI at all
       if (webServer === 'nginx' && project.type !== 'nodejs') {
-        this.managers.log?.project(id, `[DEBUG] Step 6: Starting PHP-CGI on port ${phpFpmPort}`);
         const phpCgiResult = await this.startPhpCgi(project, phpFpmPort);
-        this.managers.log?.project(id, `[DEBUG] Step 6 done: PHP-CGI port=${phpCgiResult.port}`);
         phpCgiProcess = phpCgiResult.process;
         actualPhpFpmPort = phpCgiResult.port;
 
@@ -2199,10 +2234,8 @@ class ProjectManager {
         await this.startSupervisorProcesses(project);
       }
 
-      this.managers.log?.project(id, `[DEBUG] Step 7: Updating hosts file`);
       // Update hosts file for custom domains (if possible)
       await this.updateHostsFile(project);
-      this.managers.log?.project(id, `[DEBUG] Step 7 done`);
 
       // Update last started time
       const projects = this.configStore.get('projects', []);
@@ -3055,17 +3088,12 @@ class ProjectManager {
   //   Passed as targetNginxVersion for nginx, targetApacheVersion for apache
   async createVirtualHost(project, phpFpmPort = null, targetVersion = null) {
     const webServer = project.webServer || this.configStore.get('settings.webServer', 'nginx');
-    this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: webServer=${webServer}`);
 
     if (webServer === 'nginx') {
-      this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: Creating nginx vhost`);
       const result = await this.createNginxVhost(project, phpFpmPort, targetVersion);
-      this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: nginx vhost created, networkAccess=${result?.networkAccess}, finalHttpPort=${result?.finalHttpPort}, httpPort=${result?.httpPort}`);
 
       try {
-        this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: Reloading nginx`);
         await this.managers.service?.reloadNginx(targetVersion);
-        this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: nginx reload complete`);
         // On Windows, add a small delay to ensure SSL config is fully applied
         // This fixes issues where nginx serves wrong certificates immediately after reload
         if (process.platform === 'win32') {
@@ -4176,85 +4204,6 @@ server {
    */
   checkCompatibility(config) {
     return this.compatibilityManager.checkCompatibility(config);
-  }
-
-  /**
-   * Get compatibility rules for display
-   * @returns {Array} List of compatibility rules
-   */
-  getCompatibilityRules() {
-    return this.compatibilityManager.getAllRules();
-  }
-
-  /**
-   * Get project service versions summary
-   * @param {string} id - Project ID
-   * @returns {Object} Service versions info
-   */
-  getProjectServiceVersions(id) {
-    const project = this.getProject(id);
-    if (!project) {
-      return null;
-    }
-
-    return {
-      phpVersion: project.phpVersion,
-      webServer: project.webServer,
-      webServerVersion: project.webServerVersion || '1.28',
-      mysql: project.services?.mysql ? project.services.mysqlVersion || '8.4' : null,
-      mariadb: project.services?.mariadb ? project.services.mariadbVersion || '11.4' : null,
-      redis: project.services?.redis ? project.services.redisVersion || '7.4' : null,
-      nodejs: project.services?.nodejs ? project.services.nodejsVersion || '20' : null,
-      compatibilityWarnings: project.compatibilityWarnings || [],
-    };
-  }
-
-  /**
-   * Update service versions for a project
-   * @param {string} id - Project ID
-   * @param {Object} versions - New version configuration
-   * @returns {Object} Updated project
-   */
-  async updateProjectServiceVersions(id, versions) {
-    const project = this.getProject(id);
-    if (!project) {
-      throw new Error('Project not found');
-    }
-
-    const updates = {};
-
-    // Update individual version fields
-    if (versions.phpVersion !== undefined) {
-      updates.phpVersion = versions.phpVersion;
-    }
-    if (versions.webServerVersion !== undefined) {
-      updates.webServerVersion = versions.webServerVersion;
-    }
-    if (versions.services) {
-      updates.services = {
-        ...project.services,
-        ...versions.services,
-      };
-    }
-
-    // Check compatibility of new configuration
-    const compatConfig = {
-      phpVersion: updates.phpVersion || project.phpVersion,
-      mysqlVersion: (updates.services?.mysql ?? project.services?.mysql)
-        ? (updates.services?.mysqlVersion || project.services?.mysqlVersion) : null,
-      mariadbVersion: (updates.services?.mariadb ?? project.services?.mariadb)
-        ? (updates.services?.mariadbVersion || project.services?.mariadbVersion) : null,
-      redisVersion: (updates.services?.redis ?? project.services?.redis)
-        ? (updates.services?.redisVersion || project.services?.redisVersion) : null,
-      nodejsVersion: (updates.services?.nodejs ?? project.services?.nodejs)
-        ? (updates.services?.nodejsVersion || project.services?.nodejsVersion) : null,
-      projectType: project.type,
-    };
-
-    const compatibility = this.compatibilityManager.checkCompatibility(compatConfig);
-    updates.compatibilityWarnings = compatibility.warnings || [];
-
-    return this.updateProject(id, updates);
   }
 
   /**

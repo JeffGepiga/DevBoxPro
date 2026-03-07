@@ -1,6 +1,5 @@
 const path = require('path');
 const fs = require('fs-extra');
-const os = require('os');
 const treeKill = require('tree-kill');
 const { spawn } = require('child_process');
 

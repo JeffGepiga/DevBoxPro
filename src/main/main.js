@@ -18,7 +18,7 @@ const { SupervisorManager } = require('./services/SupervisorManager');
 const { DatabaseManager } = require('./services/DatabaseManager');
 const { LogManager } = require('./services/LogManager');
 const BinaryDownloadManager = require('./services/BinaryDownloadManager');
-const { WebServerManager } = require('./services/WebServerManager');
+
 const CliManager = require('./services/CliManager');
 const { GitManager } = require('./services/GitManager');
 const { UpdateManager } = require('./services/UpdateManager');
@@ -281,7 +281,7 @@ async function initializeManagers() {
   managers.service = new ServiceManager(resourcePath, configStore, managers);
   managers.project = new ProjectManager(configStore, managers);
   managers.binaryDownload = new BinaryDownloadManager();
-  managers.webServer = new WebServerManager(configStore, managers);
+
   managers.cli = new CliManager(configStore, managers);
   managers.git = new GitManager(configStore, managers);
   managers.update = new UpdateManager(managers);
@@ -308,7 +308,7 @@ async function initializeManagersDeferred() {
       managers.supervisor.initialize(),
       managers.project.initialize(),
       managers.service.initialize(),
-      managers.webServer.initialize(),
+
     ]);
 
     // These depend on others or are slower

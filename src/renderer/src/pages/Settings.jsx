@@ -225,6 +225,10 @@ function Settings() {
 }
 
 function GeneralSettings({ settings, updateSetting }) {
+  const defaultTldSelectId = 'settings-default-tld';
+  const defaultEditorSelectId = 'settings-default-editor';
+  const customEditorInputId = 'settings-custom-editor-command';
+
   const handleSelectProjectsPath = async () => {
     try {
       const result = await window.devbox?.system?.selectDirectory?.();
@@ -264,8 +268,9 @@ function GeneralSettings({ settings, updateSetting }) {
           </div>
 
           <div>
-            <label className="label">Default Domain TLD</label>
+            <label htmlFor={defaultTldSelectId} className="label">Default Domain TLD</label>
             <select
+              id={defaultTldSelectId}
               value={settings.defaultTld || 'test'}
               onChange={(e) => updateSetting('defaultTld', e.target.value)}
               className="select w-full"
@@ -311,7 +316,12 @@ function GeneralSettings({ settings, updateSetting }) {
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Default Editor
         </h3>
+        <label htmlFor={defaultEditorSelectId} className="sr-only">
+          Default Editor
+        </label>
         <select
+          id={defaultEditorSelectId}
+          aria-label="Default Editor"
           value={settings.defaultEditor || 'vscode'}
           onChange={(e) => updateSetting('defaultEditor', e.target.value)}
           className="select w-full"
@@ -334,11 +344,12 @@ function GeneralSettings({ settings, updateSetting }) {
         {/* Custom Editor Command Input */}
         {settings.defaultEditor === 'custom' && (
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor={customEditorInputId} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Custom Editor Command
             </label>
             <div className="flex gap-2">
               <input
+                id={customEditorInputId}
                 type="text"
                 value={settings.customEditorCommand || ''}
                 onChange={(e) => updateSetting('customEditorCommand', e.target.value)}

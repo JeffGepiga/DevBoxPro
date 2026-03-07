@@ -707,25 +707,6 @@ class CompatibilityManager {
   }
 
   /**
-   * Get web server recommendations for a database version
-   * @param {string} dbType - 'mysql' or 'mariadb'
-   * @param {string} dbVersion - Database version
-   * @returns {Object|null} Recommendations
-   */
-  getWebServerRecommendations(dbType, dbVersion) {
-    return this.databaseRecommendations[dbType]?.[dbVersion] || null;
-  }
-
-  /**
-   * Get general web server info
-   * @param {string} webServer - 'nginx' or 'apache'
-   * @returns {Object|null} Server info
-   */
-  getWebServerInfo(webServer) {
-    return this.webServerRecommendations[webServer] || null;
-  }
-
-  /**
    * Check configuration for compatibility issues
    * @param {Object} config - Project configuration
    * @param {string} config.phpVersion - PHP version (e.g., '8.3')

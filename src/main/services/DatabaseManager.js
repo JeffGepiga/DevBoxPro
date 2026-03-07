@@ -2216,15 +2216,6 @@ class DatabaseManager {
     return this.getDbClientPath();
   }
 
-  // Legacy method names for backwards compatibility
-  getMysqlPath() {
-    return this.getDbClientPath();
-  }
-
-  getMysqldumpPath() {
-    return this.getDbDumpPath();
-  }
-
   // ─────────────────────────────────────────────────────────────────
   // PostgreSQL helpers
   // ─────────────────────────────────────────────────────────────────

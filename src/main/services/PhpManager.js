@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs-extra');
-const { spawn, execSync } = require('child_process');
+const { spawn } = require('child_process');
 
 class PhpManager {
   constructor(resourcePath, configStore, managers = {}) {

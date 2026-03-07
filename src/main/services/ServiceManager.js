@@ -803,13 +803,9 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
   }
 
   async restartService(serviceName, version = null) {
-    this.managers.log?.systemInfo(`[DEBUG] restartService: stopping ${serviceName}`);
     await this.stopService(serviceName, version);
-    this.managers.log?.systemInfo(`[DEBUG] restartService: ${serviceName} stopped, waiting 1s`);
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    this.managers.log?.systemInfo(`[DEBUG] restartService: starting ${serviceName}`);
     const result = this.startService(serviceName, version);
-    this.managers.log?.systemInfo(`[DEBUG] restartService: ${serviceName} startService returned`);
     return result;
   }
 
@@ -1329,7 +1325,6 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
   // Reload Nginx configuration without stopping
   async reloadNginx(version = null) {
-    this.managers.log?.systemInfo('[DEBUG] reloadNginx: START');
     // Get version from status if not provided
     if (!version) {
       const status = this.serviceStatus.get('nginx');
@@ -1343,18 +1338,15 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     const confPath = path.join(dataPath, 'nginx', version, 'nginx.conf');
 
     if (!await fs.pathExists(nginxExe)) {
-      this.managers.log?.systemWarn('[DEBUG] reloadNginx: nginx exe not found, returning');
       return;
     }
 
     const status = this.serviceStatus.get('nginx');
     if (status?.status !== 'running') {
-      this.managers.log?.systemWarn(`[DEBUG] reloadNginx: nginx not running (status=${status?.status}), returning`);
       return;
     }
 
     // Validate config before reload to catch errors early
-    this.managers.log?.systemInfo('[DEBUG] reloadNginx: testing config');
 
     // On Windows, ensure the PID file has our tracked process PID before sending
     // the reload signal. Stale nginx processes from previous sessions may have
@@ -1381,7 +1373,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       this.managers.log?.systemError('Nginx config test failed before reload', { error: testResult.error });
       throw new Error(`Nginx config invalid: ${testResult.error}`);
     }
-    this.managers.log?.systemInfo('[DEBUG] reloadNginx: config test passed, sending reload signal');
+
 
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -1394,7 +1386,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       const timeout = setTimeout(() => {
         if (!settled) {
           settled = true;
-          this.managers.log?.systemWarn('[DEBUG] reloadNginx: timed out after 10s, assuming success');
+          this.managers.log?.systemWarn('Nginx reload timed out after 10s, assuming success');
           try { proc.kill(); } catch (e) { /* ignore */ }
           resolve();
         }
@@ -1404,7 +1396,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         clearTimeout(timeout);
         if (settled) return;
         settled = true;
-        this.managers.log?.systemInfo(`[DEBUG] reloadNginx: process closed with code ${code}`);
+
         if (code === 0) {
           resolve();
         } else {
@@ -1417,7 +1409,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         clearTimeout(timeout);
         if (settled) return;
         settled = true;
-        this.managers.log?.systemError('[DEBUG] reloadNginx: process error', { error: error.message });
+        this.managers.log?.systemError('Nginx reload error', { error: error.message });
         reject(error);
       });
     });
@@ -3339,11 +3331,6 @@ ${servers.join('')}
     return path.join(this.resourcePath, 'mailpit', platform);
   }
 
-  getPhpMyAdminPath() {
-    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-    return path.join(this.resourcePath, 'phpmyadmin', platform);
-  }
-
   getPostgresqlPath(version) {
     const v = version || '17';
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
@@ -3726,13 +3713,11 @@ ${servers.join('')}
   async waitForService(serviceName, timeout) {
     const config = this.serviceConfigs[serviceName];
     const startTime = Date.now();
-    this.managers.log?.systemInfo(`[DEBUG] waitForService: waiting for ${serviceName}, timeout=${timeout}ms`);
 
     while (Date.now() - startTime < timeout) {
       try {
         const healthy = await config.healthCheck();
         if (healthy) {
-          this.managers.log?.systemInfo(`[DEBUG] waitForService: ${serviceName} healthy after ${Date.now() - startTime}ms`);
           return true;
         }
       } catch (error) {
@@ -3746,7 +3731,6 @@ ${servers.join('')}
 
   async checkNginxHealth() {
     const port = this.serviceConfigs.nginx.actualHttpPort || this.serviceConfigs.nginx.defaultPort;
-    this.managers.log?.systemInfo(`[DEBUG] checkNginxHealth: checking port ${port} (actualHttpPort=${this.serviceConfigs.nginx.actualHttpPort}, defaultPort=${this.serviceConfigs.nginx.defaultPort})`);
     return this.checkPortOpen(port);
   }
 

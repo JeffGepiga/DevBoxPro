@@ -19,7 +19,7 @@
     "test:coverage": "vitest run --coverage",
     "test:main": "vitest run --project main",
     "test:renderer": "vitest run --project renderer",
-    "test:e2e": "playwright test"
+    "test:e2e": "npm run build:renderer && playwright test"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",

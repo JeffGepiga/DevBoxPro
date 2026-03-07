@@ -30,7 +30,7 @@ DevBox Pro bundles everything you need: PHP 7.4 through 8.5, Node.js 16 through 
 - Run Express, Next.js, Nuxt, or any Node.js framework
 
 ### 🌐 Web Server Options
-- **Nginx 1.26, 1.28** - High-performance, low memory footprint (recommended)
+- **Nginx 1.24, 1.26, 1.28** - High-performance, low memory footprint (recommended)
 - **Apache 2.4** - Full .htaccess support, mod_rewrite included
 - Multi-version support - run different versions per project
 - Automatic virtual host creation
@@ -39,9 +39,9 @@ DevBox Pro bundles everything you need: PHP 7.4 through 8.5, Node.js 16 through 
 ### 📦 Embedded Services
 | Service | Versions | Description |
 |---------|----------|-------------|
-| **MySQL** | 8.0, 8.4 | Powerful relational database |
-| **MariaDB** | 10.11, 11.4 | MySQL-compatible, open source |
-| **Redis** | 7.2, 7.4 | In-memory cache & session storage |
+| **MySQL** | 5.7, 8.0, 8.4 | Powerful relational database |
+| **MariaDB** | 10.6, 10.11, 11.4 | MySQL-compatible, open source |
+| **Redis** | 6.2, 7.2, 7.4 | In-memory cache & session storage |
 | **Mailpit** | Latest | Email testing with SMTP server |
 | **phpMyAdmin** | Latest | Web-based database management |
 | **Node.js** | 16, 18, 20, 22, 24 (LTS) | JavaScript runtime for projects & tooling |
@@ -216,20 +216,26 @@ DevBoxPro/
 ├── src/
 │   ├── main/                    # Electron main process
 │   │   ├── services/
-│   │   │   ├── PhpManager.js        # PHP version management
-│   │   │   ├── ProjectManager.js    # Project lifecycle
-│   │   │   ├── ServiceManager.js    # MySQL, MariaDB, Redis, etc.
-│   │   │   ├── DatabaseManager.js   # Database operations (CRUD, import/export)
-│   │   │   ├── SslManager.js        # SSL certificates
-│   │   │   ├── WebServerManager.js  # Nginx/Apache
-│   │   │   ├── BinaryDownloadManager.js  # Binary downloads
-│   │   │   ├── LogManager.js        # Log management
-│   │   │   ├── SupervisorManager.js # Process supervisor
+│   │   │   ├── BinaryDownloadManager.js  # Binary downloads and archive extraction
+│   │   │   ├── CliManager.js            # External terminal integration
+│   │   │   ├── CompatibilityManager.js  # Version compatibility rules and updates
+│   │   │   ├── DatabaseManager.js       # Database operations (CRUD, import/export)
+│   │   │   ├── GitManager.js            # Git clone and SSH key workflows
+│   │   │   ├── LogManager.js            # Log management
+│   │   │   ├── PhpManager.js            # PHP version management
+│   │   │   ├── ProjectManager.js        # Project lifecycle and vhost generation
+│   │   │   ├── ServiceManager.js        # Web servers, databases, and background services
+│   │   │   ├── SslManager.js            # SSL certificates
+│   │   │   ├── SupervisorManager.js     # Process supervisor
+│   │   │   ├── UpdateManager.js         # App updates
+│   │   │   ├── extractWorker.js         # Worker-thread archive extraction
 │   │   │   └── ...
 │   │   ├── ipc/
 │   │   │   └── handlers.js      # IPC communication
 │   │   ├── utils/
-│   │   │   └── ConfigStore.js   # Configuration storage
+│   │   │   ├── ConfigStore.js   # Configuration storage
+│   │   │   ├── PortUtils.js     # Port probing and process lookup
+│   │   │   └── SpawnUtils.js    # Safer child-process helpers
 │   │   ├── preload.js           # Preload script
 │   │   └── main.js              # Main entry
 │   │

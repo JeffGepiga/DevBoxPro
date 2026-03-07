@@ -10,7 +10,7 @@ test.describe('DevBoxPro Settings Persistence', () => {
         await expect(page.locator('h1:has-text("Settings")').or(page.locator('h2:has-text("Settings")'))).toBeVisible();
 
         // Change Default Editor in General Tab
-        const editorSelect = page.locator('select').first();
+        const editorSelect = page.getByLabel('Default Editor');
         await editorSelect.selectOption({ label: 'Notepad++' });
 
         // Save

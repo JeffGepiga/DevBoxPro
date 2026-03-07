@@ -20,16 +20,11 @@ contextBridge.exposeInMainWorld('devbox', {
     openFolder: (id) => ipcRenderer.invoke('projects:openFolder', id),
     move: (id, newPath) => ipcRenderer.invoke('projects:move', id, newPath),
     switchWebServer: (id, webServer) => ipcRenderer.invoke('projects:switchWebServer', id, webServer),
-    regenerateVhost: (id) => ipcRenderer.invoke('projects:regenerateVhost', id),
     scanUnregistered: () => ipcRenderer.invoke('projects:scanUnregistered'),
     registerExisting: (config) => ipcRenderer.invoke('projects:registerExisting', config),
     detectType: (folderPath) => ipcRenderer.invoke('projects:detectType', folderPath),
     exportConfig: (id) => ipcRenderer.invoke('projects:exportConfig', id),
-    // Service version operations
-    getServiceVersions: (id) => ipcRenderer.invoke('projects:getServiceVersions', id),
-    updateServiceVersions: (id, versions) => ipcRenderer.invoke('projects:updateServiceVersions', id, versions),
     checkCompatibility: (config) => ipcRenderer.invoke('projects:checkCompatibility', config),
-    getCompatibilityRules: () => ipcRenderer.invoke('projects:getCompatibilityRules'),
     // Environment operations
     readEnv: (id) => ipcRenderer.invoke('projects:readEnv', id),
   },
@@ -295,16 +290,6 @@ contextBridge.exposeInMainWorld('devbox', {
       ipcRenderer.on('git:cloneProgress', handler);
       return () => ipcRenderer.removeListener('git:cloneProgress', handler);
     },
-  },
-
-  // Web server operations
-  webServer: {
-    getStatus: () => ipcRenderer.invoke('webserver:getStatus'),
-    setServerType: (type) => ipcRenderer.invoke('webserver:setServerType', type),
-    getServerType: () => ipcRenderer.invoke('webserver:getServerType'),
-    stopProject: (projectId) => ipcRenderer.invoke('webserver:stopProject', projectId),
-    reloadConfig: () => ipcRenderer.invoke('webserver:reloadConfig'),
-    getRunningProjects: () => ipcRenderer.invoke('webserver:getRunningProjects'),
   },
 
   // Event subscriptions

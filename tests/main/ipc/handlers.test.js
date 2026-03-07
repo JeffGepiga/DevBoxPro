@@ -157,9 +157,8 @@ describe('IPC Handlers', () => {
                 'projects:openInEditor', 'projects:openInBrowser', 'projects:openFolder',
                 'projects:scanUnregistered', 'projects:registerExisting',
                 'projects:detectType', 'projects:readEnv', 'projects:exportConfig',
-                'projects:move', 'projects:switchWebServer', 'projects:regenerateVhost',
-                'projects:getServiceVersions', 'projects:updateServiceVersions',
-                'projects:checkCompatibility', 'projects:getCompatibilityRules',
+                'projects:move', 'projects:switchWebServer',
+                'projects:checkCompatibility',
             ];
             for (const channel of projectChannels) {
                 expect(handlers[channel], `Missing handler: ${channel}`).toBeDefined();
@@ -269,6 +268,7 @@ describe('IPC Handlers', () => {
                 expect(handlers[channel], `Missing handler: ${channel}`).toBeDefined();
             }
         });
+
     });
 
     // ═══════════════════════════════════════════════════════════════════
@@ -509,10 +509,6 @@ describe('IPC Handlers', () => {
             expect(mockManagers.php.runCommand).toHaveBeenCalledWith('8.3', '/test', 'echo "hi";');
         });
     });
-
-    // ═══════════════════════════════════════════════════════════════════
-    // Compatibility Handler Routing
-    // ═══════════════════════════════════════════════════════════════════
 
     describe('Compatibility handler routing', () => {
         it('compatibility:checkForUpdates routes to project.checkCompatibilityUpdates', async () => {

@@ -15,7 +15,7 @@
 
 const path = require('path');
 const fs = require('fs-extra');
-const { exec, spawn } = require('child_process');
+const { spawn } = require('child_process');
 const os = require('os');
 
 class CliManager {
@@ -89,6 +89,34 @@ class CliManager {
     } catch (e) {
       return '20';
     }
+  }
+
+  /**
+   * Get the active database type and version from settings.
+   * Uses the global activeDatabaseType/activeDatabaseVersion settings.
+   * @returns {{ dbType: string, version: string }}
+   */
+  getActiveMysqlInfo() {
+    const dbType = this.configStore.getSetting
+      ? this.configStore.getSetting('activeDatabaseType', 'mysql')
+      : this.configStore.get('settings.activeDatabaseType', 'mysql');
+    const defaultVersion = dbType === 'mariadb' ? '11.4' : '8.4';
+    const version = this.configStore.getSetting
+      ? this.configStore.getSetting('activeDatabaseVersion', defaultVersion)
+      : this.configStore.get('settings.activeDatabaseVersion', defaultVersion);
+    return { dbType, version };
+  }
+
+  /**
+   * Get PHP executable path for version.
+   */
+  getPhpPath(version) {
+    if (!this.resourcesPath) return null;
+    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const phpDir = path.join(this.resourcesPath, 'php', version, platform);
+    const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
+    const phpPath = path.join(phpDir, phpExe);
+    return fs.existsSync(phpPath) ? phpPath : null;
   }
 
   /**
@@ -213,33 +241,6 @@ class CliManager {
     return env;
   }
 
-  /**
-   * Get the active database type and version from settings
-   * Uses the global activeDatabaseType/activeDatabaseVersion settings
-   * @returns {{ dbType: string, version: string }}
-   */
-  getActiveMysqlInfo() {
-    const dbType = this.configStore.getSetting
-      ? this.configStore.getSetting('activeDatabaseType', 'mysql')
-      : this.configStore.get('settings.activeDatabaseType', 'mysql');
-    const defaultVersion = dbType === 'mariadb' ? '11.4' : '8.4';
-    const version = this.configStore.getSetting
-      ? this.configStore.getSetting('activeDatabaseVersion', defaultVersion)
-      : this.configStore.get('settings.activeDatabaseVersion', defaultVersion);
-    return { dbType, version };
-  }
-
-  /**
-   * Get PHP executable path for version
-   */
-  getPhpPath(version) {
-    if (!this.resourcesPath) return null;
-    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-    const phpDir = path.join(this.resourcesPath, 'php', version, platform);
-    const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
-    const phpPath = path.join(phpDir, phpExe);
-    return fs.existsSync(phpPath) ? phpPath : null;
-  }
 
   /**
    * Get Node.js executable path for version
