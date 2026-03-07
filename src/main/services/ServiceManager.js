@@ -70,8 +70,10 @@ class ServiceManager extends EventEmitter {
         name: 'Apache',
         defaultPort: DEFAULT_PORTS.apache || 8081,
         sslPort: 443,
-        alternatePort: 8082,
-        alternateSslPort: 8445,
+        // Ports must not overlap with nginx's alternate range (8081-8083 / 8443-8445
+        // for 3 nginx versions with offsets 0-2). Use 8084/8446 to stay clear.
+        alternatePort: 8084,
+        alternateSslPort: 8446,
         healthCheck: this.checkApacheHealth.bind(this),
         versioned: true,
       },
@@ -739,12 +741,15 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       }
     }
 
-    // For Apache on Windows, kill any remaining httpd processes
+    // For Apache on Windows, kill any remaining DevBox httpd processes.
+    // IMPORTANT: Use path-filtered kill to avoid killing external Apache
+    // installations (XAMPP, WAMP, etc.) that may be running on port 80.
     if (serviceName === 'apache' && require('os').platform() === 'win32') {
       try {
-        const { killProcessByName } = require('../utils/SpawnUtils');
-        if (isLastVersion) {
-          await killProcessByName('httpd.exe', true);
+        const { killProcessesByPath, isProcessRunning } = require('../utils/SpawnUtils');
+        if (isLastVersion && isProcessRunning('httpd.exe')) {
+          const apacheResourcesPath = path.join(app.getPath('userData'), 'resources', 'apache');
+          await killProcessesByPath('httpd.exe', apacheResourcesPath);
         }
       } catch (error) {
         this.managers.log?.systemWarn('Error during Apache cleanup', { error: error.message });
@@ -1201,6 +1206,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         const status = this.serviceStatus.get('nginx');
         if (status.status === 'running') {
           status.status = 'stopped';
+          this.runningVersions.get('nginx')?.delete(version);
         }
       });
     } else {
@@ -1229,6 +1235,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         const status = this.serviceStatus.get('nginx');
         if (status.status === 'running') {
           status.status = 'stopped';
+          this.runningVersions.get('nginx')?.delete(version);
         }
       });
     }
@@ -1241,6 +1248,18 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
     // Track this version as running
     this.runningVersions.get('nginx').set(version, { port: httpPort, sslPort, startedAt: new Date() });
+
+    // On Windows, overwrite the PID file with our tracked process PID.
+    // Stale nginx processes from previous sessions may have already written their
+    // PID to the file, preventing nginx -s reload from reaching our new master.
+    if (process.platform === 'win32' && proc.pid) {
+      const pidPath = path.join(versionDataPath, 'nginx.pid');
+      try {
+        await fs.writeFile(pidPath, String(proc.pid));
+      } catch (e) {
+        this.managers.log?.systemWarn(`Could not update nginx PID file after start: ${e.message}`);
+      }
+    }
 
     // Wait for this specific nginx version to be ready on its port.
     // We check the exact port we assigned, NOT config.actualHttpPort, because that
@@ -1331,6 +1350,27 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
     // Validate config before reload to catch errors early
     this.managers.log?.systemInfo('[DEBUG] reloadNginx: testing config');
+
+    // On Windows, ensure the PID file has our tracked process PID before sending
+    // the reload signal. Stale nginx processes from previous sessions may have
+    // written to the PID file, causing nginx -s reload to signal the wrong process.
+    if (process.platform === 'win32') {
+      const processKey = this.getProcessKey('nginx', version);
+      const trackedProcess = this.processes.get(processKey);
+      if (trackedProcess && trackedProcess.pid) {
+        const pidPath = path.join(dataPath, 'nginx', version, 'nginx.pid');
+        try {
+          const currentPid = await fs.readFile(pidPath, 'utf8').catch(() => '');
+          if (currentPid.trim() !== String(trackedProcess.pid)) {
+            this.managers.log?.systemInfo(`Updating nginx ${version} PID file: ${currentPid.trim()} → ${trackedProcess.pid}`);
+            await fs.writeFile(pidPath, String(trackedProcess.pid));
+          }
+        } catch (e) {
+          this.managers.log?.systemWarn(`Could not update nginx PID file: ${e.message}`);
+        }
+      }
+    }
+
     const testResult = await this.testNginxConfig(version);
     if (!testResult.success) {
       this.managers.log?.systemError('Nginx config test failed before reload', { error: testResult.error });
@@ -1401,24 +1441,99 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       return;
     }
 
-    // On Windows, Apache running as a process (not service) cannot use -k graceful
-    // We need to restart it to pick up config changes
+    // On Windows, Apache running as a process (not service) cannot use -k graceful.
+    // We kill our tracked process by PID and re-spawn Apache.
+    // Before re-spawning, we regenerate httpd.conf from the current actual ports
+    // to ensure the Listen directives match reality (ports may have shifted if
+    // another service claimed the old port while Apache was down).
     if (process.platform === 'win32') {
       try {
-        // Preserve port ownership across the stop→start cycle.
-        // Without this, stopService clears standardPortOwner, and startApache
-        // re-checks port availability. Port 80 may still be in TIME_WAIT from
-        // the just-killed process, causing Apache to fall back to port 8082
-        // while vhosts were written for port 80.
-        const savedOwner = this.standardPortOwner;
-        const savedOwnerVersion = this.standardPortOwnerVersion;
-        await this.stopService('apache', version);
-        this.standardPortOwner = savedOwner;
-        this.standardPortOwnerVersion = savedOwnerVersion;
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        await this.startService('apache', version);
+        const processKey = this.getProcessKey('apache', version);
+        const trackedProcess = this.processes.get(processKey);
+
+        if (trackedProcess) {
+          await this.killProcess(trackedProcess);
+          this.processes.delete(processKey);
+        }
+
+        // Wait for process to fully exit so the port is reusable
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        // Determine the correct ports. Use runningVersions if available (same session),
+        // otherwise use actualHttpPort. Verify each port is still available; if not,
+        // fall back to a full startService which re-checks port availability.
+        const versionInfo = this.runningVersions.get('apache')?.get(version);
+        let expectedHttpPort = versionInfo?.port || this.serviceConfigs.apache.actualHttpPort;
+        let expectedSslPort = versionInfo?.sslPort || this.serviceConfigs.apache.actualSslPort;
+
+        if (!expectedHttpPort || !await isPortAvailable(expectedHttpPort) ||
+            !expectedSslPort || !await isPortAvailable(expectedSslPort)) {
+          // Ports are no longer available (e.g., another service took them).
+          // Do a full startService which re-checks port availability.
+          this.managers.log?.systemInfo(`Apache reload: ports ${expectedHttpPort}/${expectedSslPort} no longer available, doing full restart`);
+          this.runningVersions.get('apache')?.delete(version);
+          await this.startService('apache', version);
+          return;
+        }
+
+        // Regenerate httpd.conf with confirmed-available ports before re-spawning.
+        // This ensures Listen directives match reality even if the old config is stale.
+        const dataPathReload = path.join(app.getPath('userData'), 'data');
+        const logsPath = path.join(dataPathReload, 'apache', 'logs');
+        await this.createApacheConfig(apachePath, confPath, logsPath, expectedHttpPort, expectedSslPort);
+
+        // Re-spawn Apache with the freshly regenerated config
+        const proc = spawn(httpdExe, ['-f', confPath], {
+          cwd: apachePath,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: true,
+          windowsHide: true,
+        });
+
+        proc.stdout.on('data', (data) => {
+          this.managers.log?.service('apache', data.toString());
+        });
+        proc.stderr.on('data', (data) => {
+          this.managers.log?.service('apache', data.toString(), 'error');
+        });
+        proc.on('error', (error) => {
+          this.managers.log?.systemError('Apache process error during reload', { error: error.message });
+          const s = this.serviceStatus.get('apache');
+          s.status = 'error';
+          s.error = error.message;
+        });
+        proc.on('exit', (code) => {
+          const s = this.serviceStatus.get('apache');
+          if (s.status === 'running') {
+            s.status = 'stopped';
+            this.runningVersions.get('apache')?.delete(version);
+          }
+        });
+
+        // Update process tracking
+        this.processes.set(processKey, proc);
+        status.pid = proc.pid;
+
+        // Wait for Apache to be ready on its port
+        const startWait = Date.now();
+        let ready = false;
+        while (Date.now() - startWait < 15000) {
+          if (await this.checkPortOpen(expectedHttpPort)) {
+            ready = true;
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        if (ready) {
+          // Restore running status — the old process's exit handler set it to 'stopped'
+          status.status = 'running';
+          status.startedAt = Date.now();
+          this.runningVersions.get('apache').set(version, { port: expectedHttpPort, sslPort: expectedSslPort, startedAt: new Date() });
+        } else {
+          this.managers.log?.systemWarn(`Apache did not become ready on port ${expectedHttpPort} after reload`);
+        }
       } catch (error) {
-        this.managers.log?.systemError('Apache restart failed', { error: error.message });
+        this.managers.log?.systemError('Apache reload failed', { error: error.message });
         throw error;
       }
     } else {
@@ -1780,6 +1895,10 @@ http {
       const status = this.serviceStatus.get('apache');
       if (status.status === 'running') {
         status.status = 'stopped';
+        // Clean up runningVersions so isVersionRunning returns false.
+        // Without this, stale entries cause startProject to take the
+        // "webServerAlreadyRunning" path with stale port info.
+        this.runningVersions.get('apache')?.delete(version);
       }
     });
 
@@ -2014,6 +2133,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
         const status = this.serviceStatus.get('mysql');
         if (status.status === 'running') {
           status.status = 'stopped';
+          this.runningVersions.get('mysql')?.delete(version);
         }
       });
     } else {
@@ -2042,6 +2162,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
         const status = this.serviceStatus.get('mysql');
         if (status.status === 'running') {
           status.status = 'stopped';
+          this.runningVersions.get('mysql')?.delete(version);
         }
       });
     }
@@ -2325,6 +2446,7 @@ FLUSH PRIVILEGES;
       const status = this.serviceStatus.get('mysql');
       if (status.status === 'running') {
         status.status = 'stopped';
+        this.runningVersions.get('mysql')?.delete(version);
       }
     });
 
@@ -2573,6 +2695,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       const status = this.serviceStatus.get('mariadb');
       if (status.status === 'running') {
         status.status = 'stopped';
+        this.runningVersions.get('mariadb')?.delete(version);
       }
     });
 
@@ -2650,6 +2773,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       const status = this.serviceStatus.get('mariadb');
       if (status.status === 'running') {
         status.status = 'stopped';
+        this.runningVersions.get('mariadb')?.delete(version);
       }
     });
 

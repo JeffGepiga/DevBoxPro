@@ -338,13 +338,13 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       if (project.networkPort80Owner === projectId) {
         // This project owns port 80
         return { httpPort: 80, sslPort: webServerPorts.sslPort };
-      } else if (project.networkPort80Owner !== null) {
-        // Another project owns port 80, use this project's unique port
+      } else {
+        // Use project's unique port for network access
         return { httpPort: projectData.port || webServerPorts.httpPort, sslPort: webServerPorts.sslPort };
       }
     }
 
-    // No network access or first project, return web server ports
+    // No network access, return web server ports
     return webServerPorts;
   });
 

@@ -3053,23 +3053,10 @@ class ProjectManager {
       const result = await this.createNginxVhost(project, phpFpmPort, targetVersion);
       this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: nginx vhost created, networkAccess=${result?.networkAccess}, finalHttpPort=${result?.finalHttpPort}, httpPort=${result?.httpPort}`);
 
-      // On Windows, nginx -s reload cannot bind to NEW ports that weren't in the original config.
-      // If this project uses a non-standard port (network access on a secondary project),
-      // we must restart nginx so it re-binds to all ports including the new one.
-      const needsRestart = process.platform === 'win32'
-        && result?.networkAccess
-        && result?.finalHttpPort !== result?.httpPort;
-
       try {
-        if (needsRestart) {
-          this.managers.log?.systemInfo(`Restarting nginx to bind to new network port ${result.finalHttpPort}`);
-          this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: Restarting nginx for new port`);
-          await this.managers.service?.restartService('nginx', targetVersion);
-        } else {
-          this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: Reloading nginx`);
-          await this.managers.service?.reloadNginx(targetVersion);
-          this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: nginx reload complete`);
-        }
+        this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: Reloading nginx`);
+        await this.managers.service?.reloadNginx(targetVersion);
+        this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: nginx reload complete`);
         // On Windows, add a small delay to ensure SSL config is fully applied
         // This fixes issues where nginx serves wrong certificates immediately after reload
         if (process.platform === 'win32') {
