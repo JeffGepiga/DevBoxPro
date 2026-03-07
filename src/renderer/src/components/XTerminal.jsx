@@ -151,7 +151,9 @@ const XTerminal = forwardRef(({
 
     // Handle resize
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
+      if (mountRef.current && mountRef.current.clientWidth > 0) {
+        fitAddon.fit();
+      }
     });
     resizeObserver.observe(mountRef.current);
 
@@ -320,14 +322,14 @@ const XTerminal = forwardRef(({
 
   const writePrompt = (terminal, path) => {
     const shortPath = path ? path.split(/[\\/]/).pop() : 'devbox';
-    terminal.write(`\x1b[1;32m${shortPath}\x1b[0m \x1b[1;34m❯\x1b[0m `);
+    terminal.write(`\x1b[1;32m${shortPath}\x1b[0m \x1b[1;34m>\x1b[0m `);
   };
 
   const clearCurrentLine = (terminal, path) => {
     const shortPath = path ? path.split(/[\\/]/).pop() : 'devbox';
-    const promptLength = shortPath.length + 3 + commandBuffer.current.length; // path + " ❯ " + command
+    const promptLength = shortPath.length + 3 + commandBuffer.current.length; // path + " > " + command
     terminal.write('\r\x1b[K'); // Move to start and clear line
-    terminal.write(`\x1b[1;32m${shortPath}\x1b[0m \x1b[1;34m❯\x1b[0m `);
+    terminal.write(`\x1b[1;32m${shortPath}\x1b[0m \x1b[1;34m>\x1b[0m `);
   };
 
   const executeCommand = async (terminal, command, cwd) => {

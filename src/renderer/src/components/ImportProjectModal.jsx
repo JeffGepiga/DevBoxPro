@@ -13,34 +13,34 @@ function ImportProjectModal({ project, onClose, onImport }) {
         name: project.name || '',
         path: project.path,
         type: project.type || 'custom',
-        phpVersion: '',
-        webServer: 'nginx',
-        webServerVersion: '',
-        documentRoot: '', // Custom document root
-        ssl: true,
-        domain: '',
-        nodePort: 3000,
-        nodeStartCommand: 'npm start',
-        nodeFramework: '',
+        phpVersion: project.phpVersion || '',
+        webServer: project.webServer || 'nginx',
+        webServerVersion: project.webServerVersion || '',
+        documentRoot: project.documentRoot || '',
+        ssl: project.ssl !== false,
+        domain: project.domain || '',
+        nodePort: project.nodePort || 3000,
+        nodeStartCommand: project.nodeStartCommand || 'npm start',
+        nodeFramework: project.nodeFramework || '',
         services: {
-            mysql: false,
-            mysqlVersion: '',
-            mariadb: false,
-            mariadbVersion: '',
-            redis: false,
-            redisVersion: '',
-            nodejs: false,
-            nodejsVersion: '',
-            queue: false,
-            postgresql: false,
-            postgresqlVersion: '',
-            mongodb: false,
-            mongodbVersion: '',
-            minio: false,
-            memcached: false,
-            memcachedVersion: '',
-            python: false,
-            pythonVersion: '',
+            mysql: project.services?.mysql || false,
+            mysqlVersion: project.services?.mysqlVersion || '',
+            mariadb: project.services?.mariadb || false,
+            mariadbVersion: project.services?.mariadbVersion || '',
+            redis: project.services?.redis || false,
+            redisVersion: project.services?.redisVersion || '',
+            nodejs: project.type === 'nodejs' ? true : (project.services?.nodejs || false),
+            nodejsVersion: project.services?.nodejsVersion || project.nodeVersion || '',
+            queue: project.services?.queue || false,
+            postgresql: project.services?.postgresql || false,
+            postgresqlVersion: project.services?.postgresqlVersion || '',
+            mongodb: project.services?.mongodb || false,
+            mongodbVersion: project.services?.mongodbVersion || '',
+            minio: project.services?.minio || false,
+            memcached: project.services?.memcached || false,
+            memcachedVersion: project.services?.memcachedVersion || '',
+            python: project.services?.python || false,
+            pythonVersion: project.services?.pythonVersion || '',
         },
     });
     const [isImporting, setIsImporting] = useState(false);
@@ -90,8 +90,9 @@ function ImportProjectModal({ project, onClose, onImport }) {
         }
 
         // Check Node.js
-        if (project.nodeVersion && !installedNodejs.includes(project.nodeVersion)) {
-            missing.push(`Node.js ${project.nodeVersion}`);
+        const requiredNodeVersion = project.services?.nodejsVersion || project.nodeVersion;
+        if (requiredNodeVersion && !installedNodejs.includes(requiredNodeVersion)) {
+            missing.push(`Node.js ${requiredNodeVersion}`);
         }
 
         return missing;
@@ -220,7 +221,11 @@ function ImportProjectModal({ project, onClose, onImport }) {
                     if (nodejsVersions.length > 0) {
                         setConfig(prev => ({
                             ...prev,
-                            services: { ...prev.services, nodejsVersion: nodejsVersions[0] }
+                            services: {
+                                ...prev.services,
+                                nodejs: prev.type === 'nodejs' ? true : prev.services.nodejs,
+                                nodejsVersion: prev.services.nodejsVersion || nodejsVersions[0]
+                            }
                         }));
                     }
                     if (pythonVersions.length > 0) {

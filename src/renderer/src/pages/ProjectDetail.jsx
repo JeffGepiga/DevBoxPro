@@ -421,7 +421,13 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
       </div>
       {activeTab === 'logs' && <LogsTab logs={logs} onRefresh={loadLogs} projectId={id} />}
       {activeTab === 'workers' && (
-        <WorkersTab processes={processes} projectId={id} onRefresh={loadProcesses} isRunning={project.isRunning} />
+        <WorkersTab
+          processes={processes}
+          projectId={id}
+          onRefresh={loadProcesses}
+          isRunning={project.isRunning}
+          projectType={project.type}
+        />
       )}
       {activeTab === 'environment' && <EnvironmentTab project={project} onRefresh={refreshProjects} />}
 
@@ -664,6 +670,32 @@ function OverviewTab({ project, processes, refreshProjects }) {
     } else {
       setPendingChanges({ ...pendingChanges, phpVersion: newVersion });
     }
+  };
+
+  const handleNodeVersionChange = (newVersion) => {
+    const currentServices = getEffectiveValue('services');
+    const originalVersion = project.services?.nodejsVersion || '20';
+    const nextServices = {
+      ...currentServices,
+      nodejs: true,
+      nodejsVersion: newVersion,
+    };
+
+    const hasServiceChanges = Object.keys(nextServices).some(
+      key => nextServices[key] !== (project.services?.[key] || false)
+    );
+
+    if (!hasServiceChanges || newVersion === originalVersion) {
+      const { services, ...rest } = pendingChanges;
+      if (hasServiceChanges) {
+        setPendingChanges({ ...rest, services: nextServices });
+      } else {
+        setPendingChanges(rest);
+      }
+      return;
+    }
+
+    setPendingChanges({ ...pendingChanges, services: nextServices });
   };
 
   const handleServiceToggle = (serviceName) => {
@@ -947,7 +979,34 @@ function OverviewTab({ project, processes, refreshProjects }) {
               )}
               <div className="flex items-center justify-between py-1">
                 <span className="text-sm text-gray-600 dark:text-gray-400">Node.js Version</span>
-                <span className="text-sm font-medium font-mono text-gray-900 dark:text-white">v{project.services?.nodejsVersion || '20'}</span>
+                <div className="flex items-center gap-1.5">
+                  {(() => {
+                    const currentServices = getEffectiveValue('services') || {};
+                    const currentVersion = currentServices.nodejsVersion || '20';
+                    const installedNodeVersions = versionOptions.nodejs || [];
+                    const isCurrentInstalled = installedNodeVersions.includes(currentVersion);
+                    const displayVersions = isCurrentInstalled
+                      ? installedNodeVersions
+                      : [currentVersion, ...installedNodeVersions];
+
+                    return (
+                      <>
+                        <select
+                          value={currentVersion}
+                          onChange={(e) => handleNodeVersionChange(e.target.value)}
+                          className={clsx('input py-1 px-2 text-sm w-24 font-mono', !isCurrentInstalled && 'border-red-500 dark:border-red-500')}
+                        >
+                          {displayVersions.map((version) => (
+                            <option key={version} value={version}>
+                              {version}{installedNodeVersions.includes(version) ? '' : ' (not installed)'}
+                            </option>
+                          ))}
+                        </select>
+                        {!isCurrentInstalled && <AlertTriangle className="w-4 h-4 text-red-500" title="Node.js version not installed" />}
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
               <div className="flex items-center justify-between py-1">
                 <span className="text-sm text-gray-600 dark:text-gray-400">App Port</span>
@@ -1383,19 +1442,48 @@ function LogsTab({ logs, onRefresh, projectId }) {
   );
 }
 
-function WorkersTab({ processes, projectId, onRefresh, isRunning }) {
+function WorkersTab({ processes, projectId, onRefresh, isRunning, projectType }) {
   const { showConfirm } = useModal();
+  const getDefaultProcess = useCallback(() => {
+    if (projectType === 'nodejs') {
+      return {
+        name: 'node-worker',
+        command: 'npm run worker',
+        numprocs: 1,
+        autostart: true,
+        autorestart: true,
+      };
+    }
+
+    if (projectType === 'laravel') {
+      return {
+        name: 'queue-worker',
+        command: 'php artisan queue:work',
+        numprocs: 1,
+        autostart: true,
+        autorestart: true,
+      };
+    }
+
+    return {
+      name: 'worker',
+      command: 'python worker.py',
+      numprocs: 1,
+      autostart: true,
+      autorestart: true,
+    };
+  }, [projectType]);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newProcess, setNewProcess] = useState({
-    name: '',
-    command: '',
-    numprocs: 1,
-    autostart: true,
-    autorestart: true,
-  });
+  const [newProcess, setNewProcess] = useState(() => getDefaultProcess());
   const [expandedLogs, setExpandedLogs] = useState({});
   const [workerLogs, setWorkerLogs] = useState({});
   const [autoRefresh, setAutoRefresh] = useState(!!isRunning);
+
+  useEffect(() => {
+    if (!showAddForm) {
+      setNewProcess(getDefaultProcess());
+    }
+  }, [getDefaultProcess, showAddForm]);
 
   // Sync autoRefresh with project running state
   useEffect(() => {
@@ -1487,7 +1575,7 @@ function WorkersTab({ processes, projectId, onRefresh, isRunning }) {
       await window.devbox?.supervisor.addProcess(projectId, newProcess);
       setShowAddForm(false);
       const processName = newProcess.name;
-      setNewProcess({ name: '', command: '', numprocs: 1, autostart: true, autorestart: true });
+      setNewProcess(getDefaultProcess());
       await onRefresh();
       // Auto-expand logs for the newly added process
       setTimeout(() => {
@@ -1544,7 +1632,13 @@ function WorkersTab({ processes, projectId, onRefresh, isRunning }) {
             />
             Auto-refresh
           </label>
-          <button onClick={() => setShowAddForm(true)} className="btn-primary btn-sm">
+          <button
+            onClick={() => {
+              setNewProcess(getDefaultProcess());
+              setShowAddForm(true);
+            }}
+            className="btn-primary btn-sm"
+          >
             <Plus className="w-4 h-4" />
             Add Worker
           </button>
@@ -1562,7 +1656,7 @@ function WorkersTab({ processes, projectId, onRefresh, isRunning }) {
                 value={newProcess.name}
                 onChange={(e) => setNewProcess({ ...newProcess, name: e.target.value })}
                 className="input"
-                placeholder="queue-worker"
+                placeholder={projectType === 'nodejs' ? 'node-worker' : projectType === 'laravel' ? 'queue-worker' : 'worker'}
               />
             </div>
             <div>
@@ -1583,8 +1677,11 @@ function WorkersTab({ processes, projectId, onRefresh, isRunning }) {
                 value={newProcess.command}
                 onChange={(e) => setNewProcess({ ...newProcess, command: e.target.value })}
                 className="input"
-                placeholder="php artisan queue:work"
+                placeholder={projectType === 'nodejs' ? 'npm run worker' : projectType === 'laravel' ? 'php artisan queue:work' : 'python worker.py'}
               />
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Bundled runtimes are supported for <span className="font-mono">php</span>, <span className="font-mono">composer</span>, <span className="font-mono">node</span>, <span className="font-mono">npm</span>, <span className="font-mono">npx</span>, <span className="font-mono">python</span>, and <span className="font-mono">pip</span> commands.
+              </p>
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
@@ -1703,10 +1800,16 @@ function WorkersTab({ processes, projectId, onRefresh, isRunning }) {
                       {process.isRunning ? (
                         <>
                           <p>⏳ Waiting for output...</p>
-                          <p className="text-xs text-gray-600 mt-2">
-                            💡 <strong>Tip:</strong> Laravel queue workers may not show output until a job is processed.
-                            <br />Add <code className="bg-gray-800 px-1 rounded text-gray-300">--verbose</code> or <code className="bg-gray-800 px-1 rounded text-gray-300">-vvv</code> flag to see detailed logs.
-                          </p>
+                          {process.command.includes('php artisan') ? (
+                            <p className="text-xs text-gray-600 mt-2">
+                              💡 <strong>Tip:</strong> Laravel queue workers may not show output until a job is processed.
+                              <br />Add <code className="bg-gray-800 px-1 rounded text-gray-300">--verbose</code> or <code className="bg-gray-800 px-1 rounded text-gray-300">-vvv</code> flag to see detailed logs.
+                            </p>
+                          ) : (
+                            <p className="text-xs text-gray-600 mt-2">
+                              💡 <strong>Tip:</strong> If this worker stays quiet, make sure the command writes to stdout/stderr and disables any app-level output buffering.
+                            </p>
+                          )}
                         </>
                       ) : (
                         <p>No logs available. Start the worker to begin logging.</p>
@@ -1723,7 +1826,7 @@ function WorkersTab({ processes, projectId, onRefresh, isRunning }) {
             <Cpu className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
             <p className="text-gray-500 dark:text-gray-400">No workers configured</p>
             <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
-              Add a worker to run background processes like queue workers, schedulers, or Horizon.
+              Add a worker to run background processes like queue workers, npm jobs, Python tasks, schedulers, or Horizon.
             </p>
           </div>
         )}

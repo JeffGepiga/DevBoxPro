@@ -11,7 +11,7 @@ const AdmZip = require('adm-zip');
 const unzipper = require('unzipper');
 const { exec, spawn } = require('child_process');
 const { Worker } = require('worker_threads');
-const { spawnAsync } = require('../utils/SpawnUtils');
+const { spawnAsync, killProcessesByPath } = require('../utils/SpawnUtils');
 
 // Import centralized service configuration
 const { SERVICE_VERSIONS, VERSION_PORT_OFFSETS, DEFAULT_PORTS } = require('../../shared/serviceConfig');
@@ -1059,13 +1059,17 @@ class BinaryDownloadManager {
 
     // Check Node.js versions
     for (const version of this.versionMeta.nodejs) {
-      const nodePath = path.join(this.resourcesPath, 'nodejs', version, platform);
-      const nodeExe = platform === 'win' ? 'node.exe' : 'bin/node';
-      installed.nodejs[version] = await fs.pathExists(path.join(nodePath, nodeExe));
+      installed.nodejs[version] = await this.isNodejsVersionInstalled(version, platform);
     }
     // Also scan for custom Node.js versions using recursive scanner
     const nodeExe = platform === 'win' ? 'node.exe' : 'node';
     await this.scanBinaryVersionsRecursive('nodejs', installed.nodejs, platform, nodeExe);
+
+    for (const [version, isInstalled] of Object.entries(installed.nodejs)) {
+      if (isInstalled) {
+        installed.nodejs[version] = await this.isNodejsVersionInstalled(version, platform);
+      }
+    }
 
     // Check Composer
     const composerPath = path.join(this.resourcesPath, 'composer', 'composer.phar');
@@ -2799,6 +2803,7 @@ AddType application/x-httpd-php-source .phps
       this.emitProgress(id, { status: 'extracting', progress: 50 });
 
       const nodejsPath = path.join(this.resourcesPath, 'nodejs', version, platform);
+        await this.prepareNodejsInstallPath(nodejsPath);
       await fs.ensureDir(nodejsPath);
 
       await this.extractArchive(downloadPath, nodejsPath, id);
@@ -2817,6 +2822,11 @@ AddType application/x-httpd-php-source .phps
 
       // Set up PATH configuration for this Node.js version
       await this.setupNodejsEnvironment(version, nodejsPath);
+
+      if (!await this.isNodejsVersionInstalled(version, platform)) {
+        await fs.remove(nodejsPath);
+        throw new Error(`Node.js ${version} installation is incomplete after extraction. Please try downloading it again.`);
+      }
 
       // Clean up download
       await fs.remove(downloadPath);
@@ -2853,8 +2863,8 @@ AddType application/x-httpd-php-source .phps
       const npxExe = path.join(nodejsPath, 'npx.cmd');
 
       const nodeBat = `@echo off\n"${nodeExe}" %*`;
-      const npmBat = `@echo off\n"${nodeExe}" "${path.join(nodejsPath, 'node_modules', 'npm', 'bin', 'npm-cli.js')}" %*`;
-      const npxBat = `@echo off\n"${nodeExe}" "${path.join(nodejsPath, 'node_modules', 'npm', 'bin', 'npx-cli.js')}" %*`;
+      const npmBat = `@echo off\n"${npmExe}" %*`;
+      const npxBat = `@echo off\n"${npxExe}" %*`;
 
       await fs.writeFile(path.join(binDir, `node${version}.cmd`), nodeBat);
       await fs.writeFile(path.join(binDir, `npm${version}.cmd`), npmBat);
@@ -2878,12 +2888,82 @@ AddType application/x-httpd-php-source .phps
     // Node.js environment set up
   }
 
+  async prepareNodejsInstallPath(nodejsPath) {
+    if (!await fs.pathExists(nodejsPath)) {
+      return;
+    }
+
+    if (process.platform === 'win32') {
+      try {
+        await killProcessesByPath('node.exe', nodejsPath);
+      } catch (error) {
+        this.managers?.log?.systemWarn('Failed to stop existing Node.js processes before reinstall', { error: error.message, nodejsPath });
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    }
+
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await fs.remove(nodejsPath);
+        return;
+      } catch (error) {
+        lastError = error;
+
+        if (process.platform !== 'win32' || !['EPERM', 'EBUSY'].includes(error.code) || attempt === 3) {
+          throw error;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+  }
+
   // Get Node.js executable path
   getNodejsPath(version = '20') {
     const platform = this.getPlatform();
     const nodejsPath = path.join(this.resourcesPath, 'nodejs', version, platform);
     const nodeExe = platform === 'win' ? 'node.exe' : 'bin/node';
     return path.join(nodejsPath, nodeExe);
+  }
+
+  getNodejsInstallPaths(version = '20', platform = this.getPlatform()) {
+    const nodejsPath = path.join(this.resourcesPath, 'nodejs', version, platform);
+
+    return {
+      nodejsPath,
+      nodePath: platform === 'win' ? path.join(nodejsPath, 'node.exe') : path.join(nodejsPath, 'bin', 'node'),
+      npmPath: platform === 'win' ? path.join(nodejsPath, 'npm.cmd') : path.join(nodejsPath, 'bin', 'npm'),
+      npxPath: platform === 'win' ? path.join(nodejsPath, 'npx.cmd') : path.join(nodejsPath, 'bin', 'npx'),
+      npmCliPath: platform === 'win'
+        ? path.join(nodejsPath, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+        : path.join(nodejsPath, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      npxCliPath: platform === 'win'
+        ? path.join(nodejsPath, 'node_modules', 'npm', 'bin', 'npx-cli.js')
+        : path.join(nodejsPath, 'lib', 'node_modules', 'npm', 'bin', 'npx-cli.js'),
+    };
+  }
+
+  async isNodejsVersionInstalled(version = '20', platform = this.getPlatform()) {
+    const paths = this.getNodejsInstallPaths(version, platform);
+    const hasNode = await fs.pathExists(paths.nodePath);
+
+    if (!hasNode) {
+      return false;
+    }
+
+    const hasNpm = await fs.pathExists(paths.npmPath);
+    const hasNpmCli = await fs.pathExists(paths.npmCliPath);
+    const hasNpx = await fs.pathExists(paths.npxPath);
+    const hasNpxCli = await fs.pathExists(paths.npxCliPath);
+
+    return (hasNpm || hasNpmCli) && (hasNpx || hasNpxCli);
   }
 
   // Get npm executable path

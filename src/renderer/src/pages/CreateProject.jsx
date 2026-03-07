@@ -392,6 +392,9 @@ function CreateProject() {
           if (mysqlVersions.length > 0 && !mysqlVersions.includes(formData.services.mysqlVersion)) {
             updates.services = { ...formData.services, mysqlVersion: mysqlVersions[0] };
           }
+          if (nodejsVersions.length > 0 && !nodejsVersions.includes(formData.services.nodejsVersion)) {
+            updates.services = { ...(updates.services || formData.services), nodejsVersion: nodejsVersions[0] };
+          }
           if (nginxVersions.length > 0 && !nginxVersions.includes(formData.webServerVersion) && formData.webServer === 'nginx') {
             updates.webServerVersion = nginxVersions[0];
           }
@@ -444,7 +447,7 @@ function CreateProject() {
           mysqlVersion: formData.services.mysql ? formData.services.mysqlVersion : null,
           mariadbVersion: formData.services.mariadb ? formData.services.mariadbVersion : null,
           redisVersion: formData.services.redis ? formData.services.redisVersion : null,
-          nodeVersion: formData.services.nodejs ? formData.services.nodejsVersion : null,
+          nodeVersion: formData.type === 'nodejs' || formData.services.nodejs ? formData.services.nodejsVersion : null,
           webServer: formData.webServer,
           webServerVersion: formData.webServerVersion,
           projectType: formData.type,
@@ -493,16 +496,19 @@ function CreateProject() {
   };
 
   const canProceed = () => {
+    const isCloneFlow = formData.projectSource === 'clone';
+    const hasCloneConfig = !isCloneFlow || (gitStatus?.available && !!formData.repositoryUrl.trim());
+
     switch (currentStep) {
       case 0:
         return !!formData.type;
       case 1:
         // For Node.js projects, we don't require PHP but do require a project name and path
         if (formData.type === 'nodejs') {
-          return !!formData.name && !!formData.path && binariesStatus.nodejs.length > 0;
+          return !!formData.name && !!formData.path && binariesStatus.nodejs.length > 0 && hasCloneConfig;
         }
         // Require name, path, and at least one PHP version installed
-        return !!formData.name && !!formData.path && binariesStatus.php.length > 0;
+        return !!formData.name && !!formData.path && binariesStatus.php.length > 0 && hasCloneConfig;
       case 2:
         return true;
       case 3:
@@ -532,6 +538,14 @@ function CreateProject() {
     // Guard: path must be set before we hit the backend
     if (!formData.path || !formData.path.trim()) {
       setInstallOutput([{ text: 'Error: Project path is required. Please go back to the Details step and set a project path.', type: 'error' }]);
+      setShowInstallProgress(true);
+      setInstallComplete(true);
+      setInstallError(true);
+      return;
+    }
+
+    if (formData.projectSource === 'clone' && !formData.repositoryUrl.trim()) {
+      setInstallOutput([{ text: 'Error: Repository URL is required when cloning a project.', type: 'error' }]);
       setShowInstallProgress(true);
       setInstallComplete(true);
       setInstallError(true);
@@ -1133,8 +1147,8 @@ function StepDetails({
       </p>
 
       <div className="space-y-6">
-        {/* Project Source Selection - Only for Laravel/custom projects */}
-        {(formData.type === 'laravel' || formData.type === 'custom') && (
+        {/* Project Source Selection - Available for framework and Node.js projects */}
+        {(formData.type === 'laravel' || formData.type === 'custom' || formData.type === 'nodejs') && (
           <div>
             <label className="label">Project Source</label>
             <div className="grid grid-cols-2 gap-4">

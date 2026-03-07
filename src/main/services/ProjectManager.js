@@ -607,6 +607,8 @@ class ProjectManager {
         // For cloned Laravel projects, run composer install
         if (project.type === 'laravel') {
           await this.runPostCloneLaravelSetup(project, mainWindow);
+        } else if (project.type === 'nodejs') {
+          await this.runPostCloneNodeSetup(project, mainWindow);
         }
 
       } else if (project.type === 'laravel') {
@@ -934,6 +936,74 @@ class ProjectManager {
       } catch (e) {
         sendOutput(`npm install skipped: ${e.message}`, 'warning');
       }
+    }
+  }
+
+  async runPostCloneNodeSetup(project, mainWindow) {
+    const sendOutput = (text, type) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:output', {
+          projectId: 'installation',
+          text,
+          type,
+        });
+      }
+    };
+
+    const projectPath = project.path;
+    const nodejsVersion = project.services?.nodejsVersion || '20';
+    const packageJsonPath = path.join(projectPath, 'package.json');
+
+    if (!await fs.pathExists(packageJsonPath)) {
+      sendOutput('No package.json found. Skipping npm install.', 'warning');
+      return;
+    }
+
+    try {
+      sendOutput('Installing npm packages...', 'info');
+      sendOutput('$ npm install', 'command');
+
+      const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+      const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+      const nodeDir = path.join(resourcePath, 'nodejs', nodejsVersion, platform);
+
+      let npmCmd = 'npm';
+
+      if (await fs.pathExists(nodeDir)) {
+        npmCmd = process.platform === 'win32' ? path.join(nodeDir, 'npm.cmd') : path.join(nodeDir, 'bin', 'npm');
+      }
+
+      await new Promise((resolve) => {
+        const npmProc = spawn(npmCmd, ['install'], {
+          cwd: projectPath,
+          shell: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+          env: {
+            ...process.env,
+            PATH: process.platform === 'win32'
+              ? `${nodeDir};${process.env.PATH}`
+              : `${path.join(nodeDir, 'bin')}:${process.env.PATH}`,
+          },
+        });
+
+        npmProc.stdout.on('data', (data) => sendOutput(data.toString(), 'stdout'));
+        npmProc.stderr.on('data', (data) => sendOutput(data.toString(), 'stderr'));
+        npmProc.on('close', (code) => {
+          if (code === 0) {
+            sendOutput('✓ npm packages installed successfully!', 'success');
+          } else {
+            sendOutput(`npm install finished with code ${code} (non-critical)`, 'warning');
+          }
+          resolve();
+        });
+        npmProc.on('error', (err) => {
+          sendOutput(`npm not available: ${err.message} (non-critical)`, 'warning');
+          resolve();
+        });
+      });
+    } catch (error) {
+      sendOutput(`npm install skipped: ${error.message}`, 'warning');
     }
   }
 
@@ -4103,6 +4173,7 @@ server {
     const id = uuidv4();
     const settings = this.configStore.get('settings', {});
     const existingProjects = this.configStore.get('projects', []);
+    const projectServices = config.services || {};
 
     // Find available port
     const usedPorts = existingProjects.map((p) => p.port);
@@ -4123,7 +4194,9 @@ server {
 
     // Generate domain name from folder name
     const defaultTld = settings.defaultTld || 'test';
-    const domainName = `${config.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}.${defaultTld}`;
+    const domainName = config.domain || `${config.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}.${defaultTld}`;
+    const webServer = config.webServer || settings.webServer || 'nginx';
+    const webServerVersion = config.webServerVersion || getDefaultVersion(webServer);
 
     const project = {
       id,
@@ -4131,45 +4204,67 @@ server {
       path: config.path,
       type: projectType,
       phpVersion: config.phpVersion || '8.3',
-      webServer: config.webServer || settings.webServer || 'nginx',
+      webServer,
+      webServerVersion,
       port,
       sslPort,
       domain: domainName,
       domains: [domainName],
-      ssl: true,
-      autoStart: false,
+      ssl: config.ssl !== false,
+      autoStart: config.autoStart || false,
       services: {
-        mysql: config.database === 'mysql',
-        mariadb: config.database === 'mariadb',
-        redis: false,
-        queue: false,
+        mysql: projectServices.mysql || config.database === 'mysql',
+        mysqlVersion: projectServices.mysqlVersion || '8.4',
+        mariadb: projectServices.mariadb || config.database === 'mariadb',
+        mariadbVersion: projectServices.mariadbVersion || '11.4',
+        redis: projectServices.redis || false,
+        redisVersion: projectServices.redisVersion || '7.4',
+        queue: projectServices.queue || false,
+        nodejs: projectType === 'nodejs' ? true : (projectServices.nodejs || false),
+        nodejsVersion: projectServices.nodejsVersion || config.nodeVersion || '20',
+        postgresql: projectServices.postgresql || false,
+        postgresqlVersion: projectServices.postgresqlVersion || '17',
+        mongodb: projectServices.mongodb || false,
+        mongodbVersion: projectServices.mongodbVersion || '8.0',
+        python: projectServices.python || false,
+        pythonVersion: projectServices.pythonVersion || '3.13',
+        memcached: projectServices.memcached || false,
+        memcachedVersion: projectServices.memcachedVersion || '1.6',
+        minio: projectServices.minio || false,
       },
       environment: this.getDefaultEnvironment(projectType, config.name, port),
       supervisor: {
         workers: 1,
         processes: [],
       },
+      documentRoot: config.documentRoot || '',
+      nodePort: projectType === 'nodejs' ? (config.nodePort || 3000) : undefined,
+      nodeStartCommand: projectType === 'nodejs' ? (config.nodeStartCommand || 'npm start') : undefined,
+      nodeFramework: projectType === 'nodejs' ? (config.nodeFramework || '') : undefined,
       createdAt: new Date().toISOString(),
       lastStarted: null,
     };
 
     // Create database for project if database is enabled
-    if (config.database && config.database !== 'none') {
+    if (project.services.mysql || project.services.mariadb) {
       const dbName = this.sanitizeDatabaseName(config.name);
       project.environment.DB_DATABASE = dbName;
 
       try {
-        await this.managers.database?.createDatabase(dbName);
+        const dbVersion = project.services.mariadb ? project.services.mariadbVersion : project.services.mysqlVersion;
+        await this.managers.database?.createDatabase(dbName, dbVersion);
       } catch (error) {
         this.managers.log?.systemWarn('Could not create database', { error: error.message });
       }
     }
 
     // Create SSL certificate
-    try {
-      await this.managers.ssl?.createCertificate(project.domains);
-    } catch (error) {
-      this.managers.log?.systemWarn('Could not create SSL certificate', { error: error.message });
+    if (project.ssl) {
+      try {
+        await this.managers.ssl?.createCertificate(project.domains);
+      } catch (error) {
+        this.managers.log?.systemWarn('Could not create SSL certificate', { error: error.message });
+      }
     }
 
     // Create virtual host configuration
@@ -4184,6 +4279,34 @@ server {
       await this.addToHostsFile(project.domain);
     } catch (error) {
       this.managers.log?.systemWarn('Could not update hosts file', { error: error.message });
+    }
+
+    if (project.services.queue && project.type === 'laravel') {
+      project.supervisor.processes.push({
+        name: 'queue-worker',
+        command: 'php artisan queue:work',
+        autostart: true,
+        autorestart: true,
+        numprocs: project.supervisor.workers,
+      });
+    }
+
+    if (project.type === 'nodejs') {
+      const nodejsVersion = project.services?.nodejsVersion || '20';
+      const nodeResourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+      const nodePlatform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+      const nodeDir = path.join(nodeResourcePath, 'nodejs', nodejsVersion, nodePlatform);
+      project.supervisor.processes.push({
+        name: 'nodejs-app',
+        command: project.nodeStartCommand || 'npm start',
+        autostart: true,
+        autorestart: true,
+        numprocs: 1,
+        environment: {
+          PORT: String(project.nodePort || 3000),
+          NODE_PATH: nodeDir,
+        },
+      });
     }
 
     // Save project
