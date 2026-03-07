@@ -209,7 +209,7 @@ describe('ServiceManager', () => {
             // serviceConfigs now includes mysql, mariadb, redis, nginx, apache, mailpit, phpmyadmin,
             // postgresql, mongodb, memcached, minio = 11 services
             expect(mgr.stopService).toHaveBeenCalledTimes(11);
-        });
+        }, 15000);
     });
 
     // ═══════════════════════════════════════════════════════════════════

@@ -2718,22 +2718,31 @@ class ProjectManager {
         const needsStart = !status || status.status !== 'running';
         const needsDifferentVersion = isVersioned && requestedVersion && runningVersion && runningVersion !== requestedVersion;
 
-        // For web servers, check if we should restart to claim standard ports
+        // For web servers, check if we should restart to claim standard ports (80/443)
         if ((service.name === 'nginx' || service.name === 'apache') &&
           status && status.status === 'running' && !needsDifferentVersion) {
-          // Check if this web server is on alternate ports but could use standard ports
-          const ports = serviceManager.getServicePorts(service.name);
+          const ports = serviceManager.getServicePorts(service.name, requestedVersion);
           const isOnAlternatePorts = ports?.httpPort !== 80 && ports?.httpPort !== 443;
 
-          // Skip the reclaim attempt entirely during project start.
-          // Restarting the web server mid-startup is risky:
-          //   1. isPortAvailable() can give false positives (TIME_WAIT, transient releases)
-          //   2. The restart disrupts all other running projects' vhosts
-          //   3. If port 80 is blocked by an external program, the restart is pointless
-          //      (nginx ends up on 8081 again) and can cause the second project to hang
-          // Users can manually restart the web server from the Services page if needed.
-          if (isOnAlternatePorts) {
-            this.managers.log?.project(project.id, `${service.name} is on alternate ports (${ports?.httpPort}/${ports?.sslPort}), keeping current ports`);
+          if (isOnAlternatePorts && serviceManager.standardPortOwner === null) {
+            // Standard ports are unclaimed. Verify they're actually available before restarting.
+            const { isPortAvailable } = require('../utils/PortUtils');
+            const port80Free = await isPortAvailable(80);
+            const port443Free = await isPortAvailable(443);
+
+            if (port80Free && port443Free) {
+              this.managers.log?.project(project.id, `${service.name} is on alternate ports (${ports?.httpPort}/${ports?.sslPort}) but port 80/443 are now free. Restarting to reclaim standard ports.`);
+              try {
+                await serviceManager.restartService(service.name, requestedVersion);
+                results.started.push(`${service.name}:${requestedVersion}`);
+                continue;
+              } catch (reclaimError) {
+                this.managers.log?.systemWarn(`Failed to reclaim standard ports for ${service.name}`, { error: reclaimError.message });
+                // Fall through to normal start logic
+              }
+            } else {
+              this.managers.log?.project(project.id, `${service.name} is on alternate ports (${ports?.httpPort}/${ports?.sslPort}), port 80/443 still unavailable`);
+            }
           }
         }
 

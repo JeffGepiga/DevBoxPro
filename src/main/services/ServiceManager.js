@@ -761,7 +761,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
     // Release standard ports only if this version owned them
     if ((serviceName === 'nginx' || serviceName === 'apache') && this.standardPortOwner === serviceName) {
-      if (!this.standardPortOwnerVersion || this.standardPortOwnerVersion === version) {
+      if (!version || !this.standardPortOwnerVersion || this.standardPortOwnerVersion === version) {
         this.standardPortOwner = null;
         this.standardPortOwnerVersion = null;
       }
@@ -1284,6 +1284,11 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       status.status = 'error';
       status.error = `Nginx ${version} failed to start properly: ${error.message}`;
       this.runningVersions.get('nginx').delete(version);
+      // Release standard port ownership if this version claimed it
+      if (this.standardPortOwner === 'nginx' && this.standardPortOwnerVersion === version) {
+        this.standardPortOwner = null;
+        this.standardPortOwnerVersion = null;
+      }
       throw error;
     }
   }
@@ -1922,6 +1927,11 @@ http {
       status.status = 'error';
       status.error = `Apache ${version} failed to start properly: ${error.message}`;
       this.runningVersions.get('apache').delete(version);
+      // Release standard port ownership if this version claimed it
+      if (this.standardPortOwner === 'apache' && this.standardPortOwnerVersion === version) {
+        this.standardPortOwner = null;
+        this.standardPortOwnerVersion = null;
+      }
 
       // Attempt cleanup
       try {
@@ -3913,7 +3923,18 @@ ${servers.join('')}
             sslPort: this.webServerPorts.standard.https,
           };
         }
-        // Use version-specific offset from alternate ports
+        if (this.standardPortOwner === null) {
+          // No one owns standard ports yet — predict this version will get them
+          const otherServer = serviceName === 'nginx' ? 'apache' : 'nginx';
+          const otherStatus = this.serviceStatus.get(otherServer);
+          if (otherStatus?.status !== 'running') {
+            return {
+              httpPort: this.webServerPorts.standard.http,
+              sslPort: this.webServerPorts.standard.https,
+            };
+          }
+        }
+        // Another service/version owns standard ports — use version-specific alternate
         const versionOffset = this.versionPortOffsets[serviceName]?.[version] || 0;
         return {
           httpPort: (config.alternatePort || this.webServerPorts.alternate.http) + versionOffset,
