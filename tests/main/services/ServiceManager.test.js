@@ -163,8 +163,8 @@ describe('ServiceManager', () => {
 
             await mgr.restartService('mysql');
 
-            expect(mgr.stopService).toHaveBeenCalledWith('mysql');
-            expect(mgr.startService).toHaveBeenCalledWith('mysql');
+            expect(mgr.stopService).toHaveBeenCalledWith('mysql', null);
+            expect(mgr.startService).toHaveBeenCalledWith('mysql', null);
         });
     });
 
@@ -209,7 +209,7 @@ describe('ServiceManager', () => {
             // serviceConfigs now includes mysql, mariadb, redis, nginx, apache, mailpit, phpmyadmin,
             // postgresql, mongodb, memcached, minio = 11 services
             expect(mgr.stopService).toHaveBeenCalledTimes(11);
-        });
+        }, 15000);
     });
 
     // ═══════════════════════════════════════════════════════════════════

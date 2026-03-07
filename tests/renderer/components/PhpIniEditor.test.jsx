@@ -71,8 +71,11 @@ describe('PhpIniEditor', () => {
             const iniContent = '[PHP]\nmemory_limit=256M\nmax_execution_time=30';
             mockDevbox.binaries.getPhpIni.mockResolvedValue(iniContent);
             renderEditor();
+            // Wait for content to load, then switch to Raw Editor tab
+            await waitFor(() => screen.getByText(/Extensions/));
+            fireEvent.click(screen.getByText('Raw Editor'));
             await waitFor(() => {
-                const textarea = screen.getByRole('textbox');
+                const textarea = document.querySelector('textarea');
                 expect(textarea.value).toContain('memory_limit=256M');
             });
         });
@@ -98,7 +101,7 @@ describe('PhpIniEditor', () => {
         it('Save button is disabled when content is unchanged', async () => {
             mockDevbox.binaries.getPhpIni.mockResolvedValue('[PHP]\n');
             renderEditor();
-            await waitFor(() => screen.getByRole('textbox'));
+            await waitFor(() => screen.getByText(/Extensions/));
             const saveBtn = screen.getByRole('button', { name: /Save Changes/i });
             expect(saveBtn).toBeDisabled();
         });
@@ -106,9 +109,11 @@ describe('PhpIniEditor', () => {
         it('Save button enabled after content change', async () => {
             mockDevbox.binaries.getPhpIni.mockResolvedValue('[PHP]\nmemory_limit=128M');
             renderEditor();
-            await waitFor(() => screen.getByRole('textbox'));
+            await waitFor(() => screen.getByText(/Extensions/));
+            fireEvent.click(screen.getByText('Raw Editor'));
 
-            const textarea = screen.getByRole('textbox');
+            await waitFor(() => document.querySelector('textarea'));
+            const textarea = document.querySelector('textarea');
             fireEvent.change(textarea, { target: { value: '[PHP]\nmemory_limit=512M' } });
 
             const saveBtn = screen.getByRole('button', { name: /Save Changes/i });
@@ -121,8 +126,10 @@ describe('PhpIniEditor', () => {
             mockDevbox.projects.getAll.mockResolvedValue([]);
             renderEditor();
 
-            await waitFor(() => screen.getByRole('textbox'));
-            const textarea = screen.getByRole('textbox');
+            await waitFor(() => screen.getByText(/Extensions/));
+            fireEvent.click(screen.getByText('Raw Editor'));
+            await waitFor(() => document.querySelector('textarea'));
+            const textarea = document.querySelector('textarea');
             fireEvent.change(textarea, { target: { value: '[PHP]\nupdated=true' } });
 
             fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
@@ -138,7 +145,7 @@ describe('PhpIniEditor', () => {
         it('Reset to Default button is visible', async () => {
             mockDevbox.binaries.getPhpIni.mockResolvedValue('[PHP]\n');
             renderEditor();
-            await waitFor(() => screen.getByRole('textbox'));
+            await waitFor(() => screen.getByText(/Extensions/));
             expect(screen.getByRole('button', { name: /Reset to Default/i })).toBeInTheDocument();
         });
     });

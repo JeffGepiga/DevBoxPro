@@ -32,6 +32,7 @@ const mockDevbox = {
     },
     binaries: {
         getStatus: vi.fn().mockResolvedValue({ php: { '8.3': { installed: true } } }),
+        onProgress: vi.fn(() => vi.fn()),
     },
     database: {
         listDatabases: vi.fn().mockResolvedValue([]),
@@ -41,6 +42,14 @@ const mockDevbox = {
     },
     logs: {
         getProjectLogs: vi.fn().mockResolvedValue([]),
+    },
+    services: {
+        getWebServerPorts: vi.fn().mockResolvedValue({ httpPort: 80, sslPort: 443 }),
+        getProjectNetworkPort: vi.fn().mockResolvedValue({ httpPort: 80, sslPort: 443 }),
+    },
+    system: {
+        getLocalIpAddresses: vi.fn().mockResolvedValue([]),
+        openExternal: vi.fn(),
     },
 };
 

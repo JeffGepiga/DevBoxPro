@@ -2043,23 +2043,27 @@ class ProjectManager {
     try {
       // Get expected ports for this project's web server directly from ServiceManager
       const webServer = project.webServer || 'nginx';
-      const webServerPorts = this.managers.service?.getServicePorts(webServer);
+      this.managers.log?.project(id, `[DEBUG] Step 1: Getting service ports for ${webServer}`);
+      const webServerPorts = this.managers.service?.getServicePorts(webServer, project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4'));
       const httpPort = webServerPorts?.httpPort || 80;
       const httpsPort = webServerPorts?.sslPort || 443;
+      this.managers.log?.project(id, `[DEBUG] Step 1 done: ports HTTP=${httpPort}, HTTPS=${httpsPort}`);
 
       const isHttpAvailable = await isPortAvailable(httpPort);
       const isHttpsAvailable = await isPortAvailable(httpsPort);
       const isWebServerRunning = this.managers.service?.serviceStatus?.get(webServer)?.status === 'running';
 
-      // If either port is occupied and DevBoxPro's web server IS NOT running, it means an external program is blocking it
+      // If ports are occupied by an external program, log a warning but don't block startup.
+      // The web server (nginx/apache) has built-in port fallback logic that will automatically
+      // find available alternate ports (e.g., 8081/8443) when standard ports are unavailable.
       if ((!isHttpAvailable || !isHttpsAvailable) && !isWebServerRunning) {
-        const errorMsg = `Port ${httpPort} or ${httpsPort} is already in use by an external program (e.g., XAMPP, Laragon, or another Web Server). Please close it to prevent project conflicts before starting your project.`;
-        this.managers.log?.project(id, `ERROR: ${errorMsg}`);
-        throw new Error(errorMsg);
+        this.managers.log?.project(id, `Port ${httpPort} or ${httpsPort} is in use by another program. The web server will automatically use an alternate port.`);
       }
 
       // Validate required binaries before starting
+      this.managers.log?.project(id, `[DEBUG] Step 2: Validating binaries`);
       const missingBinaries = await this.validateProjectBinaries(project);
+      this.managers.log?.project(id, `[DEBUG] Step 2 done: missing=${missingBinaries.length}`);
       if (missingBinaries.length > 0) {
         const missingErrorMsg = `Missing required binaries: ${missingBinaries.join(', ')}. Please install them from the Binary Manager.`;
         this.managers.log?.project(id, `ERROR: ${missingErrorMsg}`);
@@ -2076,26 +2080,35 @@ class ProjectManager {
       // This is needed before nginx starts so all vhost configs use compatible syntax.
       const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
 
-      // Regenerate virtual host config BEFORE starting services
-      // This ensures the vhost config has correct paths for the current web server version
-      // Note: ports are predicted at this point; they will be verified after the web server starts
-      const predictedPorts = this.managers.service?.getServicePorts(webServer);
-      const predictedHttpPort = predictedPorts?.httpPort || 80;
       const targetVersion = webServerVersion;
-      await this.createVirtualHost(project, phpFpmPort || undefined, targetVersion);
 
-      // Regenerate ALL other vhost configs BEFORE starting services.
-      // All conf files are loaded by a single web server instance, so they must all use
-      // syntax compatible with the version that is about to run. This MUST happen before
-      // the web server starts, otherwise it may crash on incompatible directives in stale confs.
-      if (webServer === 'nginx') {
-        await this.regenerateAllNginxVhosts(id, webServerVersion);
-      } else if (webServer === 'apache') {
-        await this.regenerateAllApacheVhosts(id, webServerVersion);
+      // Check if the web server is already running BEFORE we start services.
+      // This determines whether we can safely create vhost configs now (ports are known)
+      // or must wait until after startup (ports may change due to fallback).
+      const webServerAlreadyRunning = this.managers.service?.isVersionRunning(webServer, webServerVersion);
+      this.managers.log?.project(id, `[DEBUG] Step 3: webServerAlreadyRunning=${webServerAlreadyRunning}`);
+
+      if (webServerAlreadyRunning) {
+        // Web server is already running — ports are known and stable.
+        // Create vhost now so the reload in startProjectServices picks it up.
+        this.managers.log?.project(id, `[DEBUG] Step 3a: Creating vhost (web server already running)`);
+        await this.createVirtualHost(project, phpFpmPort || undefined, targetVersion);
+        this.managers.log?.project(id, `[DEBUG] Step 3a done: vhost created`);
+
+        // Regenerate ALL other vhost configs for version compatibility.
+        if (webServer === 'nginx') {
+          await this.regenerateAllNginxVhosts(id, webServerVersion);
+        } else if (webServer === 'apache') {
+          await this.regenerateAllApacheVhosts(id, webServerVersion);
+        }
       }
+      // When web server is NOT running, we defer ALL vhost creation/regeneration
+      // until after the web server starts with actual ports (see below).
 
       // Start required services (nginx/apache, mysql, redis, etc.)
+      this.managers.log?.project(id, `[DEBUG] Step 4: Starting project services`);
       const serviceResult = await this.startProjectServices(project);
+      this.managers.log?.project(id, `[DEBUG] Step 4 done: success=${serviceResult.success}, started=[${serviceResult.started}], errors=[${serviceResult.errors}]`);
 
       // Check if critical services failed
       if (!serviceResult.success) {
@@ -2105,28 +2118,56 @@ class ProjectManager {
         throw new Error(errorMsg);
       }
 
-      // After services have started, verify the actual web server ports match what was predicted.
-      // If the web server fell back to different ports (e.g., due to port conflicts),
-      // regenerate the vhost config with the correct actual ports.
-      const actualPorts = this.managers.service?.getServicePorts(webServer);
-      const actualHttpPort = actualPorts?.httpPort || 80;
-      if (actualHttpPort !== predictedHttpPort) {
-        this.managers.log?.project(id, `Web server ports changed (predicted: ${predictedHttpPort}, actual: ${actualHttpPort}). Regenerating vhost config.`);
-        await this.createVirtualHost(project, phpFpmPort || undefined, targetVersion);
-        // Reload the web server to pick up the regenerated vhost config
+      this.managers.log?.project(id, `[DEBUG] Step 5: Post-service-start, webServerAlreadyRunning=${webServerAlreadyRunning}`);
+      if (!webServerAlreadyRunning) {
+        // Web server just started — ports are now known (may be alternate like 8081/8443).
+        // Create this project's vhost and regenerate all others with actual ports.
+        const actualPorts = this.managers.service?.getServicePorts(webServer, webServerVersion);
+        this.managers.log?.project(id, `Web server started on ports HTTP=${actualPorts?.httpPort}, HTTPS=${actualPorts?.sslPort}. Creating vhost config.`);
+
+        if (webServer === 'nginx') {
+          await this.createNginxVhost(project, phpFpmPort || undefined, targetVersion);
+          // Also regenerate ALL other projects' vhosts with correct ports & version syntax
+          await this.regenerateAllNginxVhosts(id, webServerVersion);
+        } else if (webServer === 'apache') {
+          await this.createApacheVhost(project, targetVersion);
+          await this.regenerateAllApacheVhosts(id, webServerVersion);
+        }
+
+        // Reload (not restart!) the web server to pick up the new vhost configs.
+        // CRITICAL: Do NOT use restartService() here. On Windows, stopping nginx
+        // puts ports into TCP TIME_WAIT for ~120 seconds. The restarted nginx then
+        // binds to DIFFERENT ports, creating a mismatch with the vhost listen directives.
+        // This triggers nginx's port-bind-error fallback which deletes ALL vhost files,
+        // leaving nginx running with only the SSL catch-all (ssl_reject_handshake on)
+        // which rejects all HTTPS connections → "This site can't be reached."
+        // Reload avoids this entirely — nginx stays running on the same ports and
+        // simply re-reads the config files to pick up the new vhosts.
         try {
-          if (webServer === 'nginx') {
-            await this.managers.service?.reloadNginx();
-          } else if (webServer === 'apache') {
-            await this.managers.service?.reloadApache();
+          if (process.platform === 'win32') {
+            await new Promise(resolve => setTimeout(resolve, 500));
           }
+          this.managers.log?.project(id, `Reloading ${webServer} to apply vhost configuration`);
+          if (webServer === 'nginx') {
+            await this.managers.service?.reloadNginx(targetVersion);
+          } else if (webServer === 'apache') {
+            await this.managers.service?.reloadApache(targetVersion);
+          }
+          this.managers.log?.project(id, `${webServer} reloaded successfully with vhost for ${project.domain}`);
         } catch (reloadError) {
-          this.managers.log?.systemWarn(`Could not reload ${webServer} after port change`, { error: reloadError.message });
+          // Log but do NOT fall back to restart — restart would destroy vhosts on Windows.
+          this.managers.log?.systemWarn(`${webServer} reload failed after vhost creation`, { error: reloadError.message });
+        }
+      } else {
+        // Web server was already running — check if ports changed during service startup
+        // (e.g., startProjectServices may have restarted the web server to reclaim standard ports)
+        const currentPorts = this.managers.service?.getServicePorts(webServer, webServerVersion);
+        const currentHttpPort = currentPorts?.httpPort || 80;
+        if (currentHttpPort !== httpPort) {
+          this.managers.log?.project(id, `Web server ports changed (was: ${httpPort}, now: ${currentHttpPort}). Regenerating vhost config.`);
+          await this.createVirtualHost(project, phpFpmPort || undefined, targetVersion);
         }
       }
-
-      // Note: regenerateAllNginxVhosts / regenerateAllApacheVhosts was already called above
-      // BEFORE startProjectServices to ensure all conf files have compatible syntax.
 
       let phpCgiProcess = null;
       let actualPhpFpmPort = phpFpmPort;
@@ -2135,7 +2176,9 @@ class ProjectManager {
       // Apache uses Action/AddHandler CGI approach - invokes PHP-CGI directly per request
       // Node.js projects don't need PHP-CGI at all
       if (webServer === 'nginx' && project.type !== 'nodejs') {
+        this.managers.log?.project(id, `[DEBUG] Step 6: Starting PHP-CGI on port ${phpFpmPort}`);
         const phpCgiResult = await this.startPhpCgi(project, phpFpmPort);
+        this.managers.log?.project(id, `[DEBUG] Step 6 done: PHP-CGI port=${phpCgiResult.port}`);
         phpCgiProcess = phpCgiResult.process;
         actualPhpFpmPort = phpCgiResult.port;
 
@@ -2156,8 +2199,10 @@ class ProjectManager {
         await this.startSupervisorProcesses(project);
       }
 
+      this.managers.log?.project(id, `[DEBUG] Step 7: Updating hosts file`);
       // Update hosts file for custom domains (if possible)
       await this.updateHostsFile(project);
+      this.managers.log?.project(id, `[DEBUG] Step 7 done`);
 
       // Update last started time
       const projects = this.configStore.get('projects', []);
@@ -2673,18 +2718,31 @@ class ProjectManager {
         const needsStart = !status || status.status !== 'running';
         const needsDifferentVersion = isVersioned && requestedVersion && runningVersion && runningVersion !== requestedVersion;
 
-        // For web servers, check if we should restart to claim standard ports
+        // For web servers, check if we should restart to claim standard ports (80/443)
         if ((service.name === 'nginx' || service.name === 'apache') &&
           status && status.status === 'running' && !needsDifferentVersion) {
-          // Check if this web server is on alternate ports but could use standard ports
-          const ports = serviceManager.getServicePorts(service.name);
+          const ports = serviceManager.getServicePorts(service.name, requestedVersion);
           const isOnAlternatePorts = ports?.httpPort !== 80 && ports?.httpPort !== 443;
-          const standardPortsAvailable = serviceManager.standardPortOwner === null;
 
-          if (isOnAlternatePorts && standardPortsAvailable) {
-            await serviceManager.restartService(service.name, requestedVersion);
-            results.started.push(service.name);
-            continue;
+          if (isOnAlternatePorts && serviceManager.standardPortOwner === null) {
+            // Standard ports are unclaimed. Verify they're actually available before restarting.
+            const { isPortAvailable } = require('../utils/PortUtils');
+            const port80Free = await isPortAvailable(80);
+            const port443Free = await isPortAvailable(443);
+
+            if (port80Free && port443Free) {
+              this.managers.log?.project(project.id, `${service.name} is on alternate ports (${ports?.httpPort}/${ports?.sslPort}) but port 80/443 are now free. Restarting to reclaim standard ports.`);
+              try {
+                await serviceManager.restartService(service.name, requestedVersion);
+                results.started.push(`${service.name}:${requestedVersion}`);
+                continue;
+              } catch (reclaimError) {
+                this.managers.log?.systemWarn(`Failed to reclaim standard ports for ${service.name}`, { error: reclaimError.message });
+                // Fall through to normal start logic
+              }
+            } else {
+              this.managers.log?.project(project.id, `${service.name} is on alternate ports (${ports?.httpPort}/${ports?.sslPort}), port 80/443 still unavailable`);
+            }
           }
         }
 
@@ -2734,32 +2792,12 @@ class ProjectManager {
     if (results.success) {
       this.managers.log?.project(project.id, `Services ready: ${results.started.join(', ')}`);
 
-      // If the web server was already running (not just started), reload it to pick up new vhost config
-      // This ensures new projects are accessible without a full service restart
-      if (webServerWasRunning) {
-        try {
-          // On Windows, if this project uses a non-standard port for network access,
-          // nginx needs a full restart (not just reload) to bind to the new port
-          const needsNginxRestart = process.platform === 'win32'
-            && webServer === 'nginx'
-            && project.networkAccess
-            && this.networkPort80Owner !== project.id
-            && project.port;
-
-          if (webServer === 'nginx') {
-            if (needsNginxRestart) {
-              await serviceManager.restartService('nginx');
-            } else {
-              await serviceManager.reloadNginx();
-            }
-          } else if (webServer === 'apache') {
-            await serviceManager.reloadApache();
-          }
-          this.managers.log?.project(project.id, `Reloaded ${webServer} to pick up new configuration`);
-        } catch (reloadError) {
-          this.managers.log?.systemWarn(`Could not reload ${webServer}`, { error: reloadError.message });
-        }
-      }
+      // NOTE: We intentionally do NOT reload the web server here.
+      // The caller (startProject) manages vhost creation and reload explicitly:
+      // - If web server was already running: createVirtualHost() already reloaded it.
+      // - If web server just started: startProject reloads after creating vhosts.
+      // Doing a redundant reload here causes hangs on Windows where nginx -s reload
+      // can block indefinitely if called too rapidly in succession.
     } else {
       this.managers.log?.systemError(`Critical services failed for project ${project.name}`, { failures: results.criticalFailures });
       this.managers.log?.project(project.id, `Service failures: ${results.errors.join('; ')}`, 'error');
@@ -3017,24 +3055,17 @@ class ProjectManager {
   //   Passed as targetNginxVersion for nginx, targetApacheVersion for apache
   async createVirtualHost(project, phpFpmPort = null, targetVersion = null) {
     const webServer = project.webServer || this.configStore.get('settings.webServer', 'nginx');
+    this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: webServer=${webServer}`);
 
     if (webServer === 'nginx') {
+      this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: Creating nginx vhost`);
       const result = await this.createNginxVhost(project, phpFpmPort, targetVersion);
-
-      // On Windows, nginx -s reload cannot bind to NEW ports that weren't in the original config.
-      // If this project uses a non-standard port (network access on a secondary project),
-      // we must restart nginx so it re-binds to all ports including the new one.
-      const needsRestart = process.platform === 'win32'
-        && result?.networkAccess
-        && result?.finalHttpPort !== result?.httpPort;
+      this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: nginx vhost created, networkAccess=${result?.networkAccess}, finalHttpPort=${result?.finalHttpPort}, httpPort=${result?.httpPort}`);
 
       try {
-        if (needsRestart) {
-          this.managers.log?.systemInfo(`Restarting nginx to bind to new network port ${result.finalHttpPort}`);
-          await this.managers.service?.restartService('nginx');
-        } else {
-          await this.managers.service?.reloadNginx();
-        }
+        this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: Reloading nginx`);
+        await this.managers.service?.reloadNginx(targetVersion);
+        this.managers.log?.project(project.id, `[DEBUG] createVirtualHost: nginx reload complete`);
         // On Windows, add a small delay to ensure SSL config is fully applied
         // This fixes issues where nginx serves wrong certificates immediately after reload
         if (process.platform === 'win32') {
@@ -3059,7 +3090,7 @@ class ProjectManager {
           const dataPath = path.join(require('electron').app.getPath('userData'), 'data');
           const confPath = path.join(dataPath, 'apache', 'httpd.conf');
           const logsPath = path.join(dataPath, 'apache', 'logs');
-          const ports = serviceManager?.getServicePorts('apache');
+          const ports = serviceManager?.getServicePorts('apache', apacheVersion);
           if (apachePath && confPath) {
             await serviceManager.createApacheConfig(
               apachePath, confPath, logsPath,
@@ -3121,11 +3152,16 @@ class ProjectManager {
     const allProjects = this.configStore.get('projects', []);
     const { app } = require('electron');
     const dataPath = path.join(app.getPath('userData'), 'data');
-    const sitesDir = path.join(dataPath, 'nginx', 'sites');
+    const effectiveVersion = targetNginxVersion || '1.28';
+    const sitesDir = path.join(dataPath, 'nginx', effectiveVersion, 'sites');
 
     for (const proj of allProjects) {
       if (proj.id === excludeProjectId) continue;
       if (proj.webServer && proj.webServer !== 'nginx') continue;
+
+      // Only regenerate projects that use this nginx version
+      const projVersion = proj.webServerVersion || '1.28';
+      if (projVersion !== effectiveVersion) continue;
 
       // Only regenerate if a vhost conf file exists for this project
       const confFile = path.join(sitesDir, `${proj.id}.conf`);
@@ -3149,7 +3185,6 @@ class ProjectManager {
     const { app } = require('electron');
     const dataPath = path.join(app.getPath('userData'), 'data');
     const resourcesPath = path.join(app.getPath('userData'), 'resources');
-    const sitesDir = path.join(dataPath, 'nginx', 'sites');
     const sslDir = path.join(dataPath, 'ssl', project.domain);
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     let nginxVersion = project.webServerVersion || '1.28';
@@ -3181,6 +3216,10 @@ class ProjectManager {
 
     const fastcgiParamsPath = path.join(resourcesPath, 'nginx', nginxVersion, platform, 'conf', 'fastcgi_params').replace(/\\/g, '/');
 
+    // Use version-specific sites directory for multi-version nginx support
+    const effectiveVersion = targetNginxVersion || nginxVersion;
+    const sitesDir = path.join(dataPath, 'nginx', effectiveVersion, 'sites');
+
     await fs.ensureDir(sitesDir);
 
     const documentRoot = this.getDocumentRoot(project);
@@ -3193,7 +3232,7 @@ class ProjectManager {
 
     // Get dynamic ports from ServiceManager
     const serviceManager = this.managers.service;
-    const nginxPorts = serviceManager?.getServicePorts('nginx');
+    const nginxPorts = serviceManager?.getServicePorts('nginx', effectiveVersion);
     const httpPort = nginxPorts?.httpPort || 80;
     const httpsPort = nginxPorts?.sslPort || 443;
 
@@ -3441,7 +3480,7 @@ server {
 
     // Get dynamic ports from ServiceManager
     const serviceManager = this.managers.service;
-    const apachePorts = serviceManager?.getServicePorts('apache');
+    const apachePorts = serviceManager?.getServicePorts('apache', effectiveApacheVersion);
     const httpPort = apachePorts?.httpPort || 80;
     const httpsPort = apachePorts?.sslPort || 443;
 
@@ -3533,7 +3572,7 @@ server {
         </IfModule>
     </Directory>
 
-    # PHP Configuration using Action/AddHandler (like Laragon)
+    # PHP Configuration using Action/AddHandler
     ScriptAlias /php-cgi/ "${path.dirname(phpCgiPath).replace(/\\/g, '/')}/"
     <Directory "${path.dirname(phpCgiPath).replace(/\\/g, '/')}">
         AllowOverride None
@@ -3610,7 +3649,7 @@ server {
         </IfModule>
     </Directory>
 
-    # PHP Configuration using Action/AddHandler (like Laragon)
+    # PHP Configuration using Action/AddHandler
     ScriptAlias /php-cgi/ "${path.dirname(phpCgiPath).replace(/\\\\/g, '/')}/"
     <Directory "${path.dirname(phpCgiPath).replace(/\\\\/g, '/')}">
         AllowOverride None

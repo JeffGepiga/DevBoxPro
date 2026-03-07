@@ -43,6 +43,7 @@ class ServiceManager extends EventEmitter {
     // Track which web server owns the standard ports (80/443)
     // First web server to start gets these ports
     this.standardPortOwner = null;
+    this.standardPortOwnerVersion = null; // Track which version of that web server owns standard ports
 
     // Standard and alternate ports for web servers
     this.webServerPorts = {
@@ -69,8 +70,10 @@ class ServiceManager extends EventEmitter {
         name: 'Apache',
         defaultPort: DEFAULT_PORTS.apache || 8081,
         sslPort: 443,
-        alternatePort: 8082,
-        alternateSslPort: 8445,
+        // Ports must not overlap with nginx's alternate range (8081-8083 / 8443-8445
+        // for 3 nginx versions with offsets 0-2). Use 8084/8446 to stay clear.
+        alternatePort: 8084,
+        alternateSslPort: 8446,
         healthCheck: this.checkApacheHealth.bind(this),
         versioned: true,
       },
@@ -698,25 +701,26 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       }
     }
 
+    // Check if other versions of this service are still running
+    const remainingVersions = this.runningVersions.get(serviceName);
+    const isLastVersion = !remainingVersions || remainingVersions.size === 0;
+
     // For Nginx on Windows, also try to stop gracefully and kill any remaining workers
     if (serviceName === 'nginx' && require('os').platform() === 'win32') {
       try {
-        const platform = 'win';
         const nginxVersion = version || '1.28';
         const nginxPath = this.getNginxPath(nginxVersion);
         const nginxExe = path.join(nginxPath, 'nginx.exe');
         const dataPath = path.join(app.getPath('userData'), 'data');
-        const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
+        const confPath = path.join(dataPath, 'nginx', nginxVersion, 'nginx.conf');
 
         if (await fs.pathExists(nginxExe)) {
           const { isProcessRunning, killProcessByName, spawnSyncSafe } = require('../utils/SpawnUtils');
 
-          // First check if nginx is actually running before trying to stop it
           const nginxRunning = isProcessRunning('nginx.exe');
 
-          // Only send stop signal if nginx is actually running
           if (nginxRunning) {
-            // Try graceful stop first
+            // Try graceful stop for this version's config
             try {
               spawnSyncSafe(nginxExe, ['-s', 'stop', '-c', confPath], {
                 cwd: nginxPath,
@@ -726,8 +730,10 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
               // Ignore errors - process may already be dead
             }
 
-            // Kill any remaining nginx processes
-            await killProcessByName('nginx.exe', true);
+            // Only kill ALL nginx.exe processes if this is the last running version
+            if (isLastVersion) {
+              await killProcessByName('nginx.exe', true);
+            }
           }
         }
       } catch (error) {
@@ -735,11 +741,16 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       }
     }
 
-    // For Apache on Windows, kill any remaining httpd processes
+    // For Apache on Windows, kill any remaining DevBox httpd processes.
+    // IMPORTANT: Use path-filtered kill to avoid killing external Apache
+    // installations (XAMPP, WAMP, etc.) that may be running on port 80.
     if (serviceName === 'apache' && require('os').platform() === 'win32') {
       try {
-        const { killProcessByName } = require('../utils/SpawnUtils');
-        await killProcessByName('httpd.exe', true);
+        const { killProcessesByPath, isProcessRunning } = require('../utils/SpawnUtils');
+        if (isLastVersion && isProcessRunning('httpd.exe')) {
+          const apacheResourcesPath = path.join(app.getPath('userData'), 'resources', 'apache');
+          await killProcessesByPath('httpd.exe', apacheResourcesPath);
+        }
       } catch (error) {
         this.managers.log?.systemWarn('Error during Apache cleanup', { error: error.message });
       }
@@ -748,31 +759,58 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     // Wait a moment for ports to be released
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // Release standard ports if this web server owned them
+    // Release standard ports only if this version owned them
     if ((serviceName === 'nginx' || serviceName === 'apache') && this.standardPortOwner === serviceName) {
-      this.standardPortOwner = null;
+      if (!version || !this.standardPortOwnerVersion || this.standardPortOwnerVersion === version) {
+        this.standardPortOwner = null;
+        this.standardPortOwnerVersion = null;
+      }
     }
 
-    // Clear actual port values so they get recalculated on next start
+    // Update actual port values based on remaining versions
     if (serviceName === 'nginx' || serviceName === 'apache') {
-      delete config.actualHttpPort;
-      delete config.actualSslPort;
+      if (isLastVersion) {
+        delete config.actualHttpPort;
+        delete config.actualSslPort;
+      } else {
+        // Update to first remaining version's ports
+        const firstRemaining = remainingVersions.values().next().value;
+        if (firstRemaining) {
+          config.actualHttpPort = firstRemaining.port;
+          config.actualSslPort = firstRemaining.sslPort;
+        }
+      }
     }
 
     const status = this.serviceStatus.get(serviceName);
-    status.status = 'stopped';
-    status.pid = null;
-    status.startedAt = null;
-    status.version = null;
+    if (isLastVersion) {
+      status.status = 'stopped';
+      status.pid = null;
+      status.startedAt = null;
+      status.version = null;
+    } else {
+      // Other versions still running - update status to reflect remaining version
+      const firstEntry = remainingVersions.entries().next().value;
+      if (firstEntry) {
+        status.version = firstEntry[0];
+        status.port = firstEntry[1].port;
+        status.sslPort = firstEntry[1].sslPort;
+      }
+    }
     this.emit('serviceStopped', serviceName, version);
 
     return { success: true, service: serviceName, version };
   }
 
-  async restartService(serviceName) {
-    await this.stopService(serviceName);
+  async restartService(serviceName, version = null) {
+    this.managers.log?.systemInfo(`[DEBUG] restartService: stopping ${serviceName}`);
+    await this.stopService(serviceName, version);
+    this.managers.log?.systemInfo(`[DEBUG] restartService: ${serviceName} stopped, waiting 1s`);
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    return this.startService(serviceName);
+    this.managers.log?.systemInfo(`[DEBUG] restartService: starting ${serviceName}`);
+    const result = this.startService(serviceName, version);
+    this.managers.log?.systemInfo(`[DEBUG] restartService: ${serviceName} startService returned`);
+    return result;
   }
 
   async startAllServices() {
@@ -840,6 +878,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
     // Reset port ownership
     this.standardPortOwner = null;
+    this.standardPortOwnerVersion = null;
 
     return results;
   }
@@ -898,8 +937,9 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     }
 
     const dataPath = path.join(app.getPath('userData'), 'data');
-    const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
-    const logsPath = path.join(dataPath, 'nginx', 'logs');
+    const versionDataPath = path.join(dataPath, 'nginx', version);
+    const confPath = path.join(versionDataPath, 'nginx.conf');
+    const logsPath = path.join(versionDataPath, 'logs');
 
     // Determine which ports to use based on first-come-first-served
     let httpPort, sslPort;
@@ -913,30 +953,38 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     let canUseStandard = false;
 
     if (this.standardPortOwner === null) {
-      // No one owns yet - check actual availability
-      canUseStandard = await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps);
+      // No one owns standard ports yet — but check if the OTHER web server is running.
+      const otherWebServer = 'apache';
+      const otherStatus = this.serviceStatus.get(otherWebServer);
+      const otherIsRunning = otherStatus?.status === 'running';
+
+      if (otherIsRunning) {
+        canUseStandard = false;
+      } else {
+        canUseStandard = await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps);
+      }
 
       if (canUseStandard) {
-        this.standardPortOwner = 'nginx'; // Claim ownership immediately
-
+        this.standardPortOwner = 'nginx';
+        this.standardPortOwnerVersion = version;
       }
     } else if (this.standardPortOwner === 'nginx') {
-      // We already own standard ports
-      canUseStandard = true;
-
+      // Nginx owns standard ports — only the version that claimed them can use them
+      if (this.standardPortOwnerVersion === version) {
+        canUseStandard = true;
+      }
+      // Other nginx versions use alternate/offset ports
     }
     // If standardPortOwner is 'apache', canUseStandard stays false
 
     if (canUseStandard) {
-      // Standard ports are free and we own them
       httpPort = standardHttp;
       sslPort = standardHttps;
-
     } else {
-      // Standard ports blocked or owned by Apache, use Nginx-specific alternates
-      httpPort = this.serviceConfigs.nginx.alternatePort;
-      sslPort = this.serviceConfigs.nginx.alternateSslPort;
-
+      // Use version-specific offset from alternate ports to avoid conflicts between versions
+      const versionOffset = this.versionPortOffsets.nginx?.[version] || 0;
+      httpPort = this.serviceConfigs.nginx.alternatePort + versionOffset;
+      sslPort = this.serviceConfigs.nginx.alternateSslPort + versionOffset;
     }
 
     // Verify chosen ports are available, find alternatives if not
@@ -958,10 +1006,11 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     this.serviceConfigs.nginx.actualHttpPort = httpPort;
     this.serviceConfigs.nginx.actualSslPort = sslPort;
 
-    // Ensure directories exist
-    await fs.ensureDir(path.join(dataPath, 'nginx'));
+    // Ensure directories exist (per-version data directory)
+    await fs.ensureDir(versionDataPath);
     await fs.ensureDir(logsPath);
-    await fs.ensureDir(path.join(dataPath, 'nginx', 'conf.d'));
+    await fs.ensureDir(path.join(versionDataPath, 'sites'));
+    await fs.ensureDir(path.join(versionDataPath, 'conf.d'));
 
     // Ensure nginx temp directories exist (required on Windows)
     await fs.ensureDir(path.join(nginxPath, 'temp', 'client_body_temp'));
@@ -997,6 +1046,33 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     // Always recreate config with current ports
     await this.createNginxConfig(confPath, logsPath, httpPort, sslPort, version);
 
+    // If we're using non-standard ports, clear any existing vhost files that may have
+    // stale "listen 80" or "listen 443" directives from a previous session. These would
+    // prevent nginx from starting because it can't bind to those ports.
+    // The vhosts will be recreated by ProjectManager after nginx is running.
+    if (httpPort !== 80 || sslPort !== 443) {
+      const sitesDir = path.join(versionDataPath, 'sites');
+      try {
+        if (await fs.pathExists(sitesDir)) {
+          const files = await fs.readdir(sitesDir);
+          // Match "listen 80" or "listen 443" exactly (with word boundary), not ports like 8081
+          const stalePortRegex = /listen\s+(80|443)(?:\s|;)/;
+          for (const file of files) {
+            if (file.endsWith('.conf')) {
+              const content = await fs.readFile(path.join(sitesDir, file), 'utf8');
+              // Check if this vhost references ports we can't bind
+              if (stalePortRegex.test(content)) {
+                this.managers.log?.systemInfo(`Removing stale vhost ${file} with port 80/443 (nginx using ${httpPort}/${sslPort})`);
+                await fs.remove(path.join(sitesDir, file));
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // Sites dir may not exist yet
+      }
+    }
+
     // Test Nginx configuration before starting
     // This may fail with port bind errors even if our port check passed (Windows HTTP service, Hyper-V, etc.)
     const testConfig = async () => {
@@ -1026,11 +1102,11 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
     let testResult = await testConfig();
 
-    // If we got a port binding error, try alternate ports
+    // If we got a port binding error, try alternate ports with version-specific offset
     if (!testResult.success && testResult.isPortError) {
-      // Always try alternate ports on port binding errors
-      const newHttpPort = this.webServerPorts.alternate.http;
-      const newSslPort = this.webServerPorts.alternate.https;
+      const versionOffset = this.versionPortOffsets.nginx?.[version] || 0;
+      const newHttpPort = this.webServerPorts.alternate.http + versionOffset;
+      const newSslPort = this.webServerPorts.alternate.https + versionOffset;
 
       // Find available alternate ports
       let altHttpPort = newHttpPort;
@@ -1048,7 +1124,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         sslPort = altSslPort;
 
         // Clear all existing vhost files - they have the old ports hardcoded
-        const sitesDir = path.join(dataPath, 'nginx', 'sites');
+        const sitesDir = path.join(versionDataPath, 'sites');
         try {
           const files = await fs.readdir(sitesDir);
           for (const file of files) {
@@ -1064,23 +1140,30 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         await this.createNginxConfig(confPath, logsPath, httpPort, sslPort, version);
 
         // Update port ownership - we couldn't get standard ports
-        if (this.standardPortOwner === 'nginx') {
+        if (this.standardPortOwner === 'nginx' && this.standardPortOwnerVersion === version) {
           this.standardPortOwner = null;
+          this.standardPortOwnerVersion = null;
         }
 
         // Update actual ports
         this.serviceConfigs.nginx.actualHttpPort = httpPort;
         this.serviceConfigs.nginx.actualSslPort = sslPort;
 
-        // Regenerate vhost configs for all running Nginx projects with the new ports
-        // Without this, vhosts created before the port fallback would have stale ports
+        // Regenerate vhost configs for running projects that use THIS nginx version.
+        // Without this, vhosts created before the port fallback would have stale ports.
+        // IMPORTANT: Use createNginxVhost (write-only) instead of createVirtualHost here.
+        // createVirtualHost would reload/restart nginx, but we're still INSIDE startNginx —
+        // the server hasn't finished starting yet.
         if (this.managers.project) {
           const runningProjects = this.managers.project.runningProjects;
           const allProjects = this.configStore?.get('projects', []) || [];
           for (const proj of allProjects) {
-            if ((proj.webServer === 'nginx' || !proj.webServer) && runningProjects?.has(proj.id)) {
+            const projVersion = proj.webServerVersion || '1.28';
+            if ((proj.webServer === 'nginx' || !proj.webServer) && projVersion === version && runningProjects?.has(proj.id)) {
               try {
-                await this.managers.project.createVirtualHost(proj);
+                const running = runningProjects.get(proj.id);
+                const phpFpmPort = running?.phpFpmPort || null;
+                await this.managers.project.createNginxVhost(proj, phpFpmPort, version);
               } catch (e) {
                 this.managers.log?.systemWarn(`Could not regenerate vhost for ${proj.name} after port fallback`, { error: e.message });
               }
@@ -1123,6 +1206,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         const status = this.serviceStatus.get('nginx');
         if (status.status === 'running') {
           status.status = 'stopped';
+          this.runningVersions.get('nginx')?.delete(version);
         }
       });
     } else {
@@ -1151,6 +1235,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         const status = this.serviceStatus.get('nginx');
         if (status.status === 'running') {
           status.status = 'stopped';
+          this.runningVersions.get('nginx')?.delete(version);
         }
       });
     }
@@ -1164,9 +1249,34 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     // Track this version as running
     this.runningVersions.get('nginx').set(version, { port: httpPort, sslPort, startedAt: new Date() });
 
-    // Wait for Nginx to be ready
+    // On Windows, overwrite the PID file with our tracked process PID.
+    // Stale nginx processes from previous sessions may have already written their
+    // PID to the file, preventing nginx -s reload from reaching our new master.
+    if (process.platform === 'win32' && proc.pid) {
+      const pidPath = path.join(versionDataPath, 'nginx.pid');
+      try {
+        await fs.writeFile(pidPath, String(proc.pid));
+      } catch (e) {
+        this.managers.log?.systemWarn(`Could not update nginx PID file after start: ${e.message}`);
+      }
+    }
+
+    // Wait for this specific nginx version to be ready on its port.
+    // We check the exact port we assigned, NOT config.actualHttpPort, because that
+    // field gets overwritten by each version start and would be unreliable here.
     try {
-      await this.waitForService('nginx', 10000);
+      const startWait = Date.now();
+      let nginxReady = false;
+      while (Date.now() - startWait < 10000) {
+        if (await this.checkPortOpen(httpPort)) {
+          nginxReady = true;
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      if (!nginxReady) {
+        throw new Error(`Nginx ${version} did not open port ${httpPort} within 10s`);
+      }
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
@@ -1174,12 +1284,52 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       status.status = 'error';
       status.error = `Nginx ${version} failed to start properly: ${error.message}`;
       this.runningVersions.get('nginx').delete(version);
+      // Release standard port ownership if this version claimed it
+      if (this.standardPortOwner === 'nginx' && this.standardPortOwnerVersion === version) {
+        this.standardPortOwner = null;
+        this.standardPortOwnerVersion = null;
+      }
       throw error;
+    }
+  }
+
+  // Test Nginx configuration without starting/reloading
+  async testNginxConfig(version = null) {
+    if (!version) {
+      const status = this.serviceStatus.get('nginx');
+      version = status?.version || '1.28';
+    }
+
+    const nginxPath = this.getNginxPath(version);
+    const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'sbin/nginx');
+    const dataPath = path.join(app.getPath('userData'), 'data');
+    const confPath = path.join(dataPath, 'nginx', version, 'nginx.conf');
+
+    if (!await fs.pathExists(nginxExe)) {
+      return { success: false, error: 'Nginx binary not found' };
+    }
+
+    const { execSync } = require('child_process');
+    try {
+      execSync(`"${nginxExe}" -t -c "${confPath}" -p "${nginxPath}"`, {
+        cwd: nginxPath,
+        windowsHide: true,
+        timeout: 10000,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      return { success: true };
+    } catch (error) {
+      const stderr = error.stderr || '';
+      const stdout = error.stdout || '';
+      const errorMsg = `${stderr} ${stdout} ${error.message || ''}`.trim();
+      return { success: false, error: errorMsg };
     }
   }
 
   // Reload Nginx configuration without stopping
   async reloadNginx(version = null) {
+    this.managers.log?.systemInfo('[DEBUG] reloadNginx: START');
     // Get version from status if not provided
     if (!version) {
       const status = this.serviceStatus.get('nginx');
@@ -1190,24 +1340,71 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     const nginxPath = this.getNginxPath(version);
     const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'sbin/nginx');
     const dataPath = path.join(app.getPath('userData'), 'data');
-    const confPath = path.join(dataPath, 'nginx', 'nginx.conf');
+    const confPath = path.join(dataPath, 'nginx', version, 'nginx.conf');
 
     if (!await fs.pathExists(nginxExe)) {
+      this.managers.log?.systemWarn('[DEBUG] reloadNginx: nginx exe not found, returning');
       return;
     }
 
     const status = this.serviceStatus.get('nginx');
     if (status?.status !== 'running') {
+      this.managers.log?.systemWarn(`[DEBUG] reloadNginx: nginx not running (status=${status?.status}), returning`);
       return;
     }
 
+    // Validate config before reload to catch errors early
+    this.managers.log?.systemInfo('[DEBUG] reloadNginx: testing config');
+
+    // On Windows, ensure the PID file has our tracked process PID before sending
+    // the reload signal. Stale nginx processes from previous sessions may have
+    // written to the PID file, causing nginx -s reload to signal the wrong process.
+    if (process.platform === 'win32') {
+      const processKey = this.getProcessKey('nginx', version);
+      const trackedProcess = this.processes.get(processKey);
+      if (trackedProcess && trackedProcess.pid) {
+        const pidPath = path.join(dataPath, 'nginx', version, 'nginx.pid');
+        try {
+          const currentPid = await fs.readFile(pidPath, 'utf8').catch(() => '');
+          if (currentPid.trim() !== String(trackedProcess.pid)) {
+            this.managers.log?.systemInfo(`Updating nginx ${version} PID file: ${currentPid.trim()} → ${trackedProcess.pid}`);
+            await fs.writeFile(pidPath, String(trackedProcess.pid));
+          }
+        } catch (e) {
+          this.managers.log?.systemWarn(`Could not update nginx PID file: ${e.message}`);
+        }
+      }
+    }
+
+    const testResult = await this.testNginxConfig(version);
+    if (!testResult.success) {
+      this.managers.log?.systemError('Nginx config test failed before reload', { error: testResult.error });
+      throw new Error(`Nginx config invalid: ${testResult.error}`);
+    }
+    this.managers.log?.systemInfo('[DEBUG] reloadNginx: config test passed, sending reload signal');
+
     return new Promise((resolve, reject) => {
+      let settled = false;
       const proc = spawn(nginxExe, ['-s', 'reload', '-c', confPath, '-p', nginxPath], {
         windowsHide: true,
         cwd: nginxPath,
       });
 
+      // Timeout to prevent indefinite hang if nginx -s reload never exits
+      const timeout = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          this.managers.log?.systemWarn('[DEBUG] reloadNginx: timed out after 10s, assuming success');
+          try { proc.kill(); } catch (e) { /* ignore */ }
+          resolve();
+        }
+      }, 10000);
+
       proc.on('close', (code) => {
+        clearTimeout(timeout);
+        if (settled) return;
+        settled = true;
+        this.managers.log?.systemInfo(`[DEBUG] reloadNginx: process closed with code ${code}`);
         if (code === 0) {
           resolve();
         } else {
@@ -1217,7 +1414,10 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       });
 
       proc.on('error', (error) => {
-        this.managers.log?.systemError('Nginx reload error', { error: error.message });
+        clearTimeout(timeout);
+        if (settled) return;
+        settled = true;
+        this.managers.log?.systemError('[DEBUG] reloadNginx: process error', { error: error.message });
         reject(error);
       });
     });
@@ -1246,13 +1446,99 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       return;
     }
 
-    // On Windows, Apache running as a process (not service) cannot use -k graceful
-    // We need to restart it to pick up config changes
+    // On Windows, Apache running as a process (not service) cannot use -k graceful.
+    // We kill our tracked process by PID and re-spawn Apache.
+    // Before re-spawning, we regenerate httpd.conf from the current actual ports
+    // to ensure the Listen directives match reality (ports may have shifted if
+    // another service claimed the old port while Apache was down).
     if (process.platform === 'win32') {
       try {
-        await this.restartService('apache');
+        const processKey = this.getProcessKey('apache', version);
+        const trackedProcess = this.processes.get(processKey);
+
+        if (trackedProcess) {
+          await this.killProcess(trackedProcess);
+          this.processes.delete(processKey);
+        }
+
+        // Wait for process to fully exit so the port is reusable
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        // Determine the correct ports. Use runningVersions if available (same session),
+        // otherwise use actualHttpPort. Verify each port is still available; if not,
+        // fall back to a full startService which re-checks port availability.
+        const versionInfo = this.runningVersions.get('apache')?.get(version);
+        let expectedHttpPort = versionInfo?.port || this.serviceConfigs.apache.actualHttpPort;
+        let expectedSslPort = versionInfo?.sslPort || this.serviceConfigs.apache.actualSslPort;
+
+        if (!expectedHttpPort || !await isPortAvailable(expectedHttpPort) ||
+            !expectedSslPort || !await isPortAvailable(expectedSslPort)) {
+          // Ports are no longer available (e.g., another service took them).
+          // Do a full startService which re-checks port availability.
+          this.managers.log?.systemInfo(`Apache reload: ports ${expectedHttpPort}/${expectedSslPort} no longer available, doing full restart`);
+          this.runningVersions.get('apache')?.delete(version);
+          await this.startService('apache', version);
+          return;
+        }
+
+        // Regenerate httpd.conf with confirmed-available ports before re-spawning.
+        // This ensures Listen directives match reality even if the old config is stale.
+        const dataPathReload = path.join(app.getPath('userData'), 'data');
+        const logsPath = path.join(dataPathReload, 'apache', 'logs');
+        await this.createApacheConfig(apachePath, confPath, logsPath, expectedHttpPort, expectedSslPort);
+
+        // Re-spawn Apache with the freshly regenerated config
+        const proc = spawn(httpdExe, ['-f', confPath], {
+          cwd: apachePath,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: true,
+          windowsHide: true,
+        });
+
+        proc.stdout.on('data', (data) => {
+          this.managers.log?.service('apache', data.toString());
+        });
+        proc.stderr.on('data', (data) => {
+          this.managers.log?.service('apache', data.toString(), 'error');
+        });
+        proc.on('error', (error) => {
+          this.managers.log?.systemError('Apache process error during reload', { error: error.message });
+          const s = this.serviceStatus.get('apache');
+          s.status = 'error';
+          s.error = error.message;
+        });
+        proc.on('exit', (code) => {
+          const s = this.serviceStatus.get('apache');
+          if (s.status === 'running') {
+            s.status = 'stopped';
+            this.runningVersions.get('apache')?.delete(version);
+          }
+        });
+
+        // Update process tracking
+        this.processes.set(processKey, proc);
+        status.pid = proc.pid;
+
+        // Wait for Apache to be ready on its port
+        const startWait = Date.now();
+        let ready = false;
+        while (Date.now() - startWait < 15000) {
+          if (await this.checkPortOpen(expectedHttpPort)) {
+            ready = true;
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        if (ready) {
+          // Restore running status — the old process's exit handler set it to 'stopped'
+          status.status = 'running';
+          status.startedAt = Date.now();
+          this.runningVersions.get('apache').set(version, { port: expectedHttpPort, sslPort: expectedSslPort, startedAt: new Date() });
+        } else {
+          this.managers.log?.systemWarn(`Apache did not become ready on port ${expectedHttpPort} after reload`);
+        }
       } catch (error) {
-        this.managers.log?.systemError('Apache restart failed', { error: error.message });
+        this.managers.log?.systemError('Apache reload failed', { error: error.message });
         throw error;
       }
     } else {
@@ -1286,14 +1572,14 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     const nginxPath = this.getNginxPath(version);
     const mimeTypesPath = path.join(nginxPath, 'conf', 'mime.types').replace(/\\/g, '/');
 
-    // WebServerManager stores sites in userData/data/nginx/sites, so we need to match that path
+    // Per-version data paths for multi-version nginx support
     const webServerDataPath = dataPath;
-    const sitesPath = path.join(webServerDataPath, 'nginx', 'sites').replace(/\\/g, '/');
-    const pidPath = path.join(webServerDataPath, 'nginx', 'nginx.pid').replace(/\\/g, '/');
+    const sitesPath = path.join(webServerDataPath, 'nginx', version, 'sites').replace(/\\/g, '/');
+    const pidPath = path.join(webServerDataPath, 'nginx', version, 'nginx.pid').replace(/\\/g, '/');
 
-    // Ensure sites directory exists
-    await fs.ensureDir(path.join(webServerDataPath, 'nginx', 'sites'));
-    await fs.ensureDir(path.join(webServerDataPath, 'nginx', 'logs'));
+    // Ensure version-specific directories exist
+    await fs.ensureDir(path.join(webServerDataPath, 'nginx', version, 'sites'));
+    await fs.ensureDir(path.join(webServerDataPath, 'nginx', version, 'logs'));
 
     const config = `worker_processes 1;
 pid ${pidPath};
@@ -1403,12 +1689,24 @@ http {
     let canUseStandard = false;
 
     if (this.standardPortOwner === null) {
-      // No one owns yet - check actual availability
-      canUseStandard = await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps);
+      // No one owns standard ports yet — but check if the OTHER web server is running.
+      // Even if it's on alternate ports (e.g., nginx on 8081 because port 80 was blocked),
+      // we should NOT steal port 80 from under it. Let each web server manage its own ports.
+      const otherWebServer = 'nginx';
+      const otherStatus = this.serviceStatus.get(otherWebServer);
+      const otherIsRunning = otherStatus?.status === 'running';
+
+      if (otherIsRunning) {
+        // Another web server is running — use alternate ports to avoid conflicts
+        canUseStandard = false;
+      } else {
+        // No one owns yet and no other web server is running - check actual availability
+        canUseStandard = await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps);
+      }
 
       if (canUseStandard) {
         this.standardPortOwner = 'apache'; // Claim ownership immediately
-
+        this.standardPortOwnerVersion = version;
       }
     } else if (this.standardPortOwner === 'apache') {
       // We already own standard ports
@@ -1452,6 +1750,31 @@ http {
 
     // Always recreate config with current ports
     await this.createApacheConfig(apachePath, confPath, logsPath, httpPort, httpsPort);
+
+    // If we're using non-standard ports, clear any existing vhost files that may have
+    // stale port 80/443 directives from a previous session. These would prevent Apache
+    // from starting. The vhosts will be recreated by ProjectManager after Apache is running.
+    if (httpPort !== 80 || httpsPort !== 443) {
+      const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
+      try {
+        if (await fs.pathExists(vhostsDir)) {
+          const files = await fs.readdir(vhostsDir);
+          // Match exactly port 80 or 443 in VirtualHost or Listen directives
+          const stalePortRegex = /:(80|443)>|Listen\s+(80|443)(?:\s|$)/;
+          for (const file of files) {
+            if (file.endsWith('.conf')) {
+              const content = await fs.readFile(path.join(vhostsDir, file), 'utf8');
+              if (stalePortRegex.test(content)) {
+                this.managers.log?.systemInfo(`Removing stale Apache vhost ${file} with port 80/443 (using ${httpPort}/${httpsPort})`);
+                await fs.remove(path.join(vhostsDir, file));
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // Vhosts dir may not exist yet
+      }
+    }
 
     // Test Apache config before starting
     // This may fail with port bind errors even if our port check passed (Windows HTTP service, Hyper-V, etc.)
@@ -1523,15 +1846,18 @@ http {
         this.serviceConfigs.apache.actualHttpPort = httpPort;
         this.serviceConfigs.apache.actualSslPort = httpsPort;
 
-        // Regenerate vhost configs for all running Apache projects with the new ports
-        // Without this, vhosts created before the port fallback would have stale ports
+        // Regenerate vhost configs for all running Apache projects with the new ports.
+        // Without this, vhosts created before the port fallback would have stale ports.
+        // IMPORTANT: Use createApacheVhost (write-only) instead of createVirtualHost here.
+        // createVirtualHost would reload/restart apache, but we're still INSIDE startApache —
+        // the server hasn't finished starting yet.
         if (this.managers.project) {
           const runningProjects = this.managers.project.runningProjects;
           const allProjects = this.configStore?.get('projects', []) || [];
           for (const proj of allProjects) {
             if (proj.webServer === 'apache' && runningProjects?.has(proj.id)) {
               try {
-                await this.managers.project.createVirtualHost(proj);
+                await this.managers.project.createApacheVhost(proj, version);
               } catch (e) {
                 this.managers.log?.systemWarn(`Could not regenerate vhost for ${proj.name} after port fallback`, { error: e.message });
               }
@@ -1574,6 +1900,10 @@ http {
       const status = this.serviceStatus.get('apache');
       if (status.status === 'running') {
         status.status = 'stopped';
+        // Clean up runningVersions so isVersionRunning returns false.
+        // Without this, stale entries cause startProject to take the
+        // "webServerAlreadyRunning" path with stale port info.
+        this.runningVersions.get('apache')?.delete(version);
       }
     });
 
@@ -1597,6 +1927,11 @@ http {
       status.status = 'error';
       status.error = `Apache ${version} failed to start properly: ${error.message}`;
       this.runningVersions.get('apache').delete(version);
+      // Release standard port ownership if this version claimed it
+      if (this.standardPortOwner === 'apache' && this.standardPortOwnerVersion === version) {
+        this.standardPortOwner = null;
+        this.standardPortOwnerVersion = null;
+      }
 
       // Attempt cleanup
       try {
@@ -1808,6 +2143,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
         const status = this.serviceStatus.get('mysql');
         if (status.status === 'running') {
           status.status = 'stopped';
+          this.runningVersions.get('mysql')?.delete(version);
         }
       });
     } else {
@@ -1836,6 +2172,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
         const status = this.serviceStatus.get('mysql');
         if (status.status === 'running') {
           status.status = 'stopped';
+          this.runningVersions.get('mysql')?.delete(version);
         }
       });
     }
@@ -2119,6 +2456,7 @@ FLUSH PRIVILEGES;
       const status = this.serviceStatus.get('mysql');
       if (status.status === 'running') {
         status.status = 'stopped';
+        this.runningVersions.get('mysql')?.delete(version);
       }
     });
 
@@ -2367,6 +2705,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       const status = this.serviceStatus.get('mariadb');
       if (status.status === 'running') {
         status.status = 'stopped';
+        this.runningVersions.get('mariadb')?.delete(version);
       }
     });
 
@@ -2444,6 +2783,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       const status = this.serviceStatus.get('mariadb');
       if (status.status === 'running') {
         status.status = 'stopped';
+        this.runningVersions.get('mariadb')?.delete(version);
       }
     });
 
@@ -3386,11 +3726,13 @@ ${servers.join('')}
   async waitForService(serviceName, timeout) {
     const config = this.serviceConfigs[serviceName];
     const startTime = Date.now();
+    this.managers.log?.systemInfo(`[DEBUG] waitForService: waiting for ${serviceName}, timeout=${timeout}ms`);
 
     while (Date.now() - startTime < timeout) {
       try {
         const healthy = await config.healthCheck();
         if (healthy) {
+          this.managers.log?.systemInfo(`[DEBUG] waitForService: ${serviceName} healthy after ${Date.now() - startTime}ms`);
           return true;
         }
       } catch (error) {
@@ -3404,6 +3746,7 @@ ${servers.join('')}
 
   async checkNginxHealth() {
     const port = this.serviceConfigs.nginx.actualHttpPort || this.serviceConfigs.nginx.defaultPort;
+    this.managers.log?.systemInfo(`[DEBUG] checkNginxHealth: checking port ${port} (actualHttpPort=${this.serviceConfigs.nginx.actualHttpPort}, defaultPort=${this.serviceConfigs.nginx.defaultPort})`);
     return this.checkPortOpen(port);
   }
 
@@ -3552,13 +3895,55 @@ ${servers.join('')}
    * @param {string} serviceName - The name of the service
    * @returns {Object} - Object with httpPort and sslPort
    */
-  getServicePorts(serviceName) {
+  getServicePorts(serviceName, version = null) {
     const config = this.serviceConfigs[serviceName];
     if (!config) {
       return null;
     }
 
-    // If actual ports are set, use those
+    // If a specific version is requested, check runningVersions first
+    if (version) {
+      const versions = this.runningVersions.get(serviceName);
+      if (versions && versions.has(version)) {
+        const versionInfo = versions.get(version);
+        return {
+          httpPort: versionInfo.port,
+          sslPort: versionInfo.sslPort,
+        };
+      }
+
+      // Version not running yet — use version-aware prediction instead of falling
+      // through to config.actualHttpPort (which belongs to the last-started version,
+      // not necessarily the requested one).
+      if (config.versioned && (serviceName === 'nginx' || serviceName === 'apache')) {
+        if (this.standardPortOwner === serviceName && this.standardPortOwnerVersion === version) {
+          // This version owns standard ports
+          return {
+            httpPort: this.webServerPorts.standard.http,
+            sslPort: this.webServerPorts.standard.https,
+          };
+        }
+        if (this.standardPortOwner === null) {
+          // No one owns standard ports yet — predict this version will get them
+          const otherServer = serviceName === 'nginx' ? 'apache' : 'nginx';
+          const otherStatus = this.serviceStatus.get(otherServer);
+          if (otherStatus?.status !== 'running') {
+            return {
+              httpPort: this.webServerPorts.standard.http,
+              sslPort: this.webServerPorts.standard.https,
+            };
+          }
+        }
+        // Another service/version owns standard ports — use version-specific alternate
+        const versionOffset = this.versionPortOffsets[serviceName]?.[version] || 0;
+        return {
+          httpPort: (config.alternatePort || this.webServerPorts.alternate.http) + versionOffset,
+          sslPort: (config.alternateSslPort || this.webServerPorts.alternate.https) + versionOffset,
+        };
+      }
+    }
+
+    // If actual ports are set, use those (for unversioned services or no-version calls)
     if (config.actualHttpPort) {
       // If actualSslPort is set, use it. Otherwise check if we're on alternate ports
       let sslPort = config.actualSslPort;
@@ -3595,10 +3980,19 @@ ${servers.join('')}
           sslPort: this.webServerPorts.standard.https,
         };
       } else if (this.standardPortOwner === serviceName) {
-        // We own standard ports
+        // This service owns standard ports - check if this specific version owns them
+        if (!version || this.standardPortOwnerVersion === version) {
+          return {
+            httpPort: this.webServerPorts.standard.http,
+            sslPort: this.webServerPorts.standard.https,
+          };
+        }
+        // Another version of this service owns standard ports - use offset from alternate
+        const { VERSION_PORT_OFFSETS } = require('../../shared/serviceConfig');
+        const versionOffset = VERSION_PORT_OFFSETS?.[serviceName]?.[version] || 0;
         return {
-          httpPort: this.webServerPorts.standard.http,
-          sslPort: this.webServerPorts.standard.https,
+          httpPort: (config.alternatePort || this.webServerPorts.alternate.http) + versionOffset,
+          sslPort: (config.alternateSslPort || this.webServerPorts.alternate.https) + versionOffset,
         };
       } else {
         // Other server owns standard ports, we get alternate

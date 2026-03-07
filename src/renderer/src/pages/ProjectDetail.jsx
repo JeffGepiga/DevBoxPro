@@ -105,7 +105,8 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
       const fetchWebServerPorts = async () => {
         try {
           const webServer = foundProject.webServer || 'nginx';
-          const ports = await window.devbox?.services?.getWebServerPorts(webServer);
+          const webServerVersion = foundProject.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
+          const ports = await window.devbox?.services?.getWebServerPorts(webServer, webServerVersion);
           if (ports) {
             setWebServerPorts(ports);
           }
