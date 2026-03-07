@@ -2151,7 +2151,7 @@ class ProjectManager {
           if (webServer === 'nginx') {
             await this.managers.service?.reloadNginx(targetVersion);
           } else if (webServer === 'apache') {
-            await this.managers.service?.reloadApache();
+            await this.managers.service?.reloadApache(targetVersion);
           }
           this.managers.log?.project(id, `${webServer} reloaded successfully with vhost for ${project.domain}`);
         } catch (reloadError) {
@@ -2161,7 +2161,7 @@ class ProjectManager {
       } else {
         // Web server was already running — check if ports changed during service startup
         // (e.g., startProjectServices may have restarted the web server to reclaim standard ports)
-        const currentPorts = this.managers.service?.getServicePorts(webServer);
+        const currentPorts = this.managers.service?.getServicePorts(webServer, webServerVersion);
         const currentHttpPort = currentPorts?.httpPort || 80;
         if (currentHttpPort !== httpPort) {
           this.managers.log?.project(id, `Web server ports changed (was: ${httpPort}, now: ${currentHttpPort}). Regenerating vhost config.`);
@@ -3094,7 +3094,7 @@ class ProjectManager {
           const dataPath = path.join(require('electron').app.getPath('userData'), 'data');
           const confPath = path.join(dataPath, 'apache', 'httpd.conf');
           const logsPath = path.join(dataPath, 'apache', 'logs');
-          const ports = serviceManager?.getServicePorts('apache');
+          const ports = serviceManager?.getServicePorts('apache', apacheVersion);
           if (apachePath && confPath) {
             await serviceManager.createApacheConfig(
               apachePath, confPath, logsPath,
@@ -3484,7 +3484,7 @@ server {
 
     // Get dynamic ports from ServiceManager
     const serviceManager = this.managers.service;
-    const apachePorts = serviceManager?.getServicePorts('apache');
+    const apachePorts = serviceManager?.getServicePorts('apache', effectiveApacheVersion);
     const httpPort = apachePorts?.httpPort || 80;
     const httpsPort = apachePorts?.sslPort || 443;
 

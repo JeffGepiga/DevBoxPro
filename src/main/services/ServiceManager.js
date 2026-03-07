@@ -1097,11 +1097,11 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
     let testResult = await testConfig();
 
-    // If we got a port binding error, try alternate ports
+    // If we got a port binding error, try alternate ports with version-specific offset
     if (!testResult.success && testResult.isPortError) {
-      // Always try alternate ports on port binding errors
-      const newHttpPort = this.webServerPorts.alternate.http;
-      const newSslPort = this.webServerPorts.alternate.https;
+      const versionOffset = this.versionPortOffsets.nginx?.[version] || 0;
+      const newHttpPort = this.webServerPorts.alternate.http + versionOffset;
+      const newSslPort = this.webServerPorts.alternate.https + versionOffset;
 
       // Find available alternate ports
       let altHttpPort = newHttpPort;
@@ -1405,7 +1405,18 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     // We need to restart it to pick up config changes
     if (process.platform === 'win32') {
       try {
-        await this.restartService('apache');
+        // Preserve port ownership across the stop→start cycle.
+        // Without this, stopService clears standardPortOwner, and startApache
+        // re-checks port availability. Port 80 may still be in TIME_WAIT from
+        // the just-killed process, causing Apache to fall back to port 8082
+        // while vhosts were written for port 80.
+        const savedOwner = this.standardPortOwner;
+        const savedOwnerVersion = this.standardPortOwnerVersion;
+        await this.stopService('apache', version);
+        this.standardPortOwner = savedOwner;
+        this.standardPortOwnerVersion = savedOwnerVersion;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await this.startService('apache', version);
       } catch (error) {
         this.managers.log?.systemError('Apache restart failed', { error: error.message });
         throw error;
@@ -1575,7 +1586,7 @@ http {
 
       if (canUseStandard) {
         this.standardPortOwner = 'apache'; // Claim ownership immediately
-
+        this.standardPortOwnerVersion = version;
       }
     } else if (this.standardPortOwner === 'apache') {
       // We already own standard ports
