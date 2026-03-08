@@ -1244,7 +1244,7 @@ class BinaryDownloadManager {
   }
 
 
-  async downloadFile(url, destPath, id, retryWithoutVerify = false) {
+  async downloadFile(url, destPath, id, options = {}) {
     // Ensure the directory exists before downloading
     await fs.ensureDir(path.dirname(destPath));
 
@@ -1270,8 +1270,13 @@ class BinaryDownloadManager {
       // Add SSL fallback agent for Windows certificate issues
       if (url.startsWith('https')) {
         requestOptions.agent = new https.Agent({
-          rejectUnauthorized: !retryWithoutVerify
+          rejectUnauthorized: !options.retryWithoutVerify
         });
+      }
+
+      // Force IPv4 if specified
+      if (options.forceIPv4) {
+        requestOptions.family = 4;
       }
 
       const request = protocol.get(url, requestOptions, (response) => {
@@ -1282,7 +1287,7 @@ class BinaryDownloadManager {
           const redirectUrl = response.headers.location.startsWith('http')
             ? response.headers.location
             : new URL(response.headers.location, url).toString();
-          return this.downloadFile(redirectUrl, destPath, id)
+          return this.downloadFile(redirectUrl, destPath, id, options)
             .then(resolve)
             .catch(reject);
         }
@@ -1347,10 +1352,24 @@ class BinaryDownloadManager {
             err.message.includes('certificate') ||
             err.message.includes('SSL');
 
-          if (!retryWithoutVerify && isSSLError) {
+          if (!options.retryWithoutVerify && isSSLError) {
             this.managers?.log?.systemWarn(`SSL certificate error for ${id}, retrying without verification`, { error: err.message });
             // Retry download without SSL verification
-            this.downloadFile(url, destPath, id, true)
+            this.downloadFile(url, destPath, id, { ...options, retryWithoutVerify: true })
+              .then(resolve)
+              .catch(reject);
+            return;
+          }
+
+          // Check if IPv6 timeout or reachability error, retry with IPv4
+          const isNetworkError = err.code === 'ETIMEDOUT' || 
+                                 err.code === 'ESOCKETTIMEDOUT' || 
+                                 err.code === 'ENETUNREACH';
+          
+          if (!options.forceIPv4 && isNetworkError) {
+            this.managers?.log?.systemWarn(`Network error (${err.code}) for ${id}, retrying with IPv4 forced`, { error: err.message });
+            // Retry download forcing IPv4
+            this.downloadFile(url, destPath, id, { ...options, forceIPv4: true })
               .then(resolve)
               .catch(reject);
             return;

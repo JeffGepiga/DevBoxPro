@@ -1654,7 +1654,6 @@ function BinaryManager() {
           installed.nginx?.['1.28'] &&
           installed.mysql?.['8.4'] &&
           installed.redis?.['7.4'] &&
-          installed.mailpit &&
           installed.phpmyadmin &&
           installed.nodejs?.['24'] &&
           installed.composer;
@@ -1671,7 +1670,7 @@ function BinaryManager() {
                 {isCoreInstalled ? "Core Stack Installed" : "Download Core Stack"}
               </h3>
               <p className={clsx("text-xs mt-0.5", isCoreInstalled ? "text-green-600 dark:text-green-400" : "text-gray-500 dark:text-gray-400")}>
-                PHP 8.4, Nginx 1.28, MySQL 8.4, Redis 7.4, Mailpit, phpMyAdmin, Node.js 24 & Composer
+                PHP 8.4, Nginx 1.28, MySQL 8.4, Redis 7.4, phpMyAdmin, Node.js 24 & Composer
               </p>
             </div>
             {isCoreInstalled ? (
@@ -1686,7 +1685,6 @@ function BinaryManager() {
                   if (!installed.nginx?.['1.28']) handleDownloadService('nginx', '1.28');
                   if (!installed.mysql?.['8.4']) handleDownloadService('mysql', '8.4');
                   if (!installed.redis?.['7.4']) handleDownloadService('redis', '7.4');
-                  if (!installed.mailpit) handleDownloadService('mailpit');
                   if (!installed.phpmyadmin) handleDownloadService('phpmyadmin');
                   if (!installed.nodejs?.['24']) handleDownloadNodejs('24');
                   if (!installed.composer) handleDownloadService('composer');
