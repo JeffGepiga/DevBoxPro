@@ -5,7 +5,7 @@
  */
 
 const { autoUpdater } = require('electron-updater');
-const { app } = require('electron');
+const { app, shell } = require('electron');
 
 class UpdateManager {
     constructor(managers) {
@@ -360,8 +360,22 @@ class UpdateManager {
                                     });
                                     child.unref();
                                 } else if (process.platform === 'darwin') {
-                                    const { shell } = require('electron');
                                     shell.openPath(destPath);
+                                } else if (process.platform === 'linux') {
+                                    if (destPath.toLowerCase().endsWith('.appimage')) {
+                                        fs.chmodSync(destPath, 0o755);
+                                        const child = spawn(destPath, [], {
+                                            detached: true,
+                                            stdio: 'ignore',
+                                        });
+                                        child.unref();
+                                    } else {
+                                        const child = spawn('xdg-open', [destPath], {
+                                            detached: true,
+                                            stdio: 'ignore',
+                                        });
+                                        child.unref();
+                                    }
                                 }
                             } catch (spawnErr) {
                                 this.managers?.log?.systemError?.(`Failed to launch installer: ${spawnErr.message}`);

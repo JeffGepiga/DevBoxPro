@@ -2,14 +2,51 @@
  * @type {import('electron-builder').Configuration}
  * @see https://www.electron.build/configuration/configuration
  */
+const lifecycleEvent = process.env.npm_lifecycle_event || '';
+
+const targetPlatformFromScript = lifecycleEvent === 'build:win'
+  ? 'win32'
+  : lifecycleEvent === 'build:mac'
+    ? 'darwin'
+    : lifecycleEvent === 'build:linux'
+      ? 'linux'
+      : lifecycleEvent === 'build:all'
+        ? 'all'
+        : lifecycleEvent === 'dist'
+          ? process.platform
+          : null;
+
+const shouldUseLocalElectronDist =
+  targetPlatformFromScript !== 'all' &&
+  targetPlatformFromScript !== null &&
+  targetPlatformFromScript === process.platform;
+
+const linuxTargets = process.platform === 'win32'
+  ? [
+      {
+        target: 'tar.gz',
+        arch: ['x64'],
+      },
+    ]
+  : [
+      {
+        target: 'AppImage',
+        arch: ['x64'],
+      },
+      {
+        target: 'deb',
+        arch: ['x64'],
+      },
+    ];
+
 module.exports = {
   appId: 'com.devbox.pro',
   productName: 'DevBox Pro',
   copyright: 'Copyright © 2024 DevBox Pro',
   asar: true,
-  // Use the Electron binary already downloaded by `npm install` (node_modules/electron/dist)
-  // This avoids re-downloading 138MB from GitHub during every build.
-  electronDist: './node_modules/electron/dist',
+  // Reuse the host Electron bundle only for same-platform packaging.
+  // Cross-platform targets need electron-builder to fetch the correct runtime.
+  electronDist: shouldUseLocalElectronDist ? './node_modules/electron/dist' : undefined,
   directories: {
     output: 'dist',
     buildResources: 'resources',
@@ -17,6 +54,7 @@ module.exports = {
   files: [
     'src/main/**/*',
     'src/shared/**/*',
+    'config/**/*',
     '!src/main/**/*.map',
     {
       from: 'src/renderer/dist',
@@ -123,18 +161,10 @@ module.exports = {
     },
   },
   linux: {
-    target: [
-      {
-        target: 'AppImage',
-        arch: ['x64'],
-      },
-      {
-        target: 'deb',
-        arch: ['x64'],
-      },
-    ],
-    icon: 'resources/icons',
+    target: linuxTargets,
+    icon: 'build/icon.png',
     category: 'Development',
+    maintainer: 'DevBox Pro Team <jeffreygepiga27@gmail.com>',
     artifactName: '${productName}-${version}-${os}-${arch}.${ext}',
   },
   publish: {

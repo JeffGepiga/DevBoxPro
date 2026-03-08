@@ -108,7 +108,9 @@ DevBox Pro bundles everything you need: PHP 7.4 through 8.5, Node.js 16 through 
 
 1. **Download** the latest release for your platform:
    - Windows: `DevBox-Pro-Setup-x.x.x.exe`
-   - macOS: `DevBox-Pro-x.x.x.dmg`
+  - Windows portable: `DevBox-Pro-x.x.x.exe`
+  - Linux AppImage: `DevBox Pro-x.x.x-linux-x64.AppImage`
+  - Linux Debian package: `DevBox Pro-x.x.x-linux-x64.deb`
 
 2. **Install** the application
 
@@ -182,11 +184,14 @@ npm install
 # Start development server
 npm run dev
 
-# Build for production
+# Build the renderer bundle
 npm run build
 
-# Create distribution package
+# Create a package for the current host OS
 npm run dist
+
+# Build an explicit Linux package
+npm run build:linux
 ```
 
 ### Testing

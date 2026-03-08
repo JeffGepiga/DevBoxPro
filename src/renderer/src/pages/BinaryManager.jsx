@@ -30,7 +30,7 @@ import { useModal } from '../context/ModalContext';
 
 // ── Module-level sub-components (must NOT be defined inside BinaryManager) ──
 
-const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLatest, isCustom, requiresManual, onDownload, onRemove, onManualOpen, onImport, isPhp, getProgressDisplay, setPhpIniEditor }) => (
+const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLatest, isCustom, requiresManual, manualLabel, onDownload, onRemove, onManualOpen, onImport, isPhp, getProgressDisplay, setPhpIniEditor }) => (
   <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/40 border-b last:border-b-0 border-gray-100 dark:border-gray-700/50">
     <div className="flex items-center gap-2.5 min-w-0">
       <span className={clsx(
@@ -66,7 +66,7 @@ const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLat
       ) : requiresManual ? (
         <>
           <button onClick={onManualOpen} className="btn-secondary text-xs px-2 py-1 flex items-center gap-1" title="Open download page">
-            <ExternalLink className="w-3 h-3" /> Get
+            <ExternalLink className="w-3 h-3" /> {manualLabel || 'Get'}
           </button>
           <button onClick={onImport} className="btn-primary text-xs px-2 py-1 flex items-center gap-1" title="Import ZIP">
             <Upload className="w-3 h-3" /> Import
@@ -152,6 +152,9 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
             const isInstalled = installed[service.id]?.[version];
             const isDownloading = downloading[id] || progress?.[id]?.status === 'error';
             const isCustom = service.predefinedVersions && !service.predefinedVersions.includes(version);
+            const versionSource = downloadSources[service.id]?.[version] || {};
+            const requiresManual = service.requiresManualDownload || versionSource.requiresBuild || !versionSource.url;
+            const manualLabel = versionSource.requiresBuild ? 'Source' : 'Get';
 
             return (
               <VersionRow
@@ -164,7 +167,8 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
                 size={service.sizes?.[version]}
                 isLatest={!isCustom && version === service.defaultVersion}
                 isCustom={isCustom}
-                requiresManual={service.requiresManualDownload}
+                requiresManual={requiresManual}
+                manualLabel={manualLabel}
                 onDownload={() => onDownload(service.id, version)}
                 onRemove={() => onRemove(service.id, version)}
                 onManualOpen={() => onManualOpen?.(service.id, version)}
@@ -488,6 +492,19 @@ function BinaryManager() {
 
   const handleDownloadService = async (service, version = null) => {
     const id = version ? `${service}-${version}` : service;
+    const versionSource = version ? downloadUrls[service]?.[version] : downloadUrls[service];
+
+    if (versionSource?.requiresBuild) {
+      showAlert({
+        title: 'Manual Build Required',
+        message: `${service === 'nginx' ? 'Nginx' : service} ${version || ''} is only available as source on Linux.`.trim(),
+        detail: versionSource.altInstall
+          ? `DevBox Pro does not yet automate building this package from source. Use the manual link or install it with: ${versionSource.altInstall}`
+          : 'DevBox Pro does not yet automate building this package from source on Linux. Use the manual link for the source archive or import a prebuilt binary.',
+        type: 'warning',
+      });
+      return;
+    }
 
     // Don't start if already downloading
     if (downloading[id]) return;
@@ -620,11 +637,20 @@ function BinaryManager() {
     }
   };
 
-  const handleOpenApacheDownloadPage = async () => {
+  const handleOpenManualDownload = async (service, version = null) => {
+    const versionInfo = version ? downloadUrls[service]?.[version] : null;
+    const manualUrl =
+      versionInfo?.manualDownloadUrl ||
+      versionInfo?.downloadPage ||
+      versionInfo?.url ||
+      downloadSources[service]?.url;
+
+    if (!manualUrl) return;
+
     try {
-      await window.devbox?.binaries.openApacheDownloadPage();
+      await window.devbox?.system.openExternal(manualUrl);
     } catch (error) {
-      // Error opening Apache download page
+      // Error opening manual download page
     }
   };
 
@@ -1549,7 +1575,7 @@ function BinaryManager() {
               onDownload={(s, v) => handleDownloadService(s, v)}
               onRemove={(s, v) => handleRemove(s, v)}
               onImport={(s) => s === 'apache' ? null : handleImportBinary(s)}
-              onManualOpen={() => handleOpenApacheDownloadPage()}
+              onManualOpen={(s, v) => handleOpenManualDownload(s, v)}
             />
           ))}
         </div>

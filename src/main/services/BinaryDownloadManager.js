@@ -785,7 +785,12 @@ class BinaryDownloadManager {
         const targetKey = versionData.all ? 'all' : platform;
         this.downloads[serviceName][version][targetKey] = {
           url: remotePlatformData.url,
-          filename: remotePlatformData.filename
+          filename: remotePlatformData.filename,
+          requiresBuild: remotePlatformData.requiresBuild || false,
+          altInstall: remotePlatformData.altInstall || null,
+          downloadPage: remotePlatformData.downloadPage || null,
+          manualDownloadUrl: remotePlatformData.manualDownloadUrl || remotePlatformData.downloadPage || null,
+          manualDownloadNote: remotePlatformData.manualDownloadNote || null,
         };
 
         if (versionData.label) {

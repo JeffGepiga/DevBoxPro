@@ -180,21 +180,19 @@ mysqldump -u root mydb > backup.sql  # Dump with the active DB version
 |------|-------------|
 | **DevBox-Pro-Setup-1.0.4.exe** | Installer version (recommended) |
 | **DevBox-Pro-1.0.4.exe** | Portable version – no installation required |
+| **DevBox Pro-1.0.4-linux-x64.AppImage** | Linux portable package for most distributions |
+| **DevBox Pro-1.0.4-linux-x64.deb** | Linux package for Debian/Ubuntu-based distributions |
 
-### System Requirements (Windows)
-- **OS**: Windows 10/11 (64-bit)
+### System Requirements
+- **OS**: Windows 10/11 (64-bit) or a modern 64-bit Linux distribution
 - **RAM**: 4GB minimum, 8GB recommended
 - **Disk**: 2GB for app + space for binaries
-
-### 🍎 macOS Support
-
-> macOS builds coming in a future release. Stay tuned!
 
 ---
 
 ## 🚀 Getting Started
 
-1. **Download** the installer or portable version
+1. **Download** the Windows installer, Windows portable build, or Linux package that matches your system
 2. **Run** DevBox Pro
 3. Open **Binary Manager** and download the components you need
 4. Click **"+ New Project"** to create your first project

@@ -15,24 +15,72 @@ async function updateDownloadLinks() {
     const data = await response.json();
     
     if (data && data.assets) {
-      const setupAsset = data.assets.find(a => a.name.includes('Setup') && a.name.endsWith('.exe'));
-      const portableAsset = data.assets.find(a => !a.name.includes('Setup') && a.name.endsWith('.exe'));
-      
-      if (setupAsset) {
+      const platform = detectPlatform();
+      const assets = pickPlatformAssets(data.assets, platform);
+
+      if (assets.primary) {
         document.querySelectorAll('.download-setup-btn').forEach(btn => {
-          btn.href = setupAsset.browser_download_url;
+          btn.href = assets.primary.browser_download_url;
+          btn.textContent = assets.primaryLabel;
         });
       }
-      
-      if (portableAsset) {
+
+      if (assets.secondary) {
         document.querySelectorAll('.download-portable-btn').forEach(btn => {
-          btn.href = portableAsset.browser_download_url;
+          btn.href = assets.secondary.browser_download_url;
+          btn.textContent = assets.secondaryLabel;
         });
       }
     }
   } catch (err) {
     console.error('Failed to fetch latest release:', err);
   }
+}
+
+function detectPlatform() {
+  const platform = (navigator.platform || '').toLowerCase();
+  const userAgent = (navigator.userAgent || '').toLowerCase();
+
+  if (platform.includes('win')) return 'win';
+  if (platform.includes('mac') || platform.includes('darwin')) return 'mac';
+  if (platform.includes('linux') || userAgent.includes('linux') || platform.includes('x11')) return 'linux';
+  return 'other';
+}
+
+function pickPlatformAssets(assets, platform) {
+  if (platform === 'win') {
+    return {
+      primary: assets.find(a => a.name.includes('Setup') && a.name.endsWith('.exe')) || assets.find(a => a.name.endsWith('.exe')),
+      secondary: assets.find(a => !a.name.includes('Setup') && a.name.endsWith('.exe')),
+      primaryLabel: 'Download Setup',
+      secondaryLabel: 'Download Portable',
+    };
+  }
+
+  if (platform === 'mac') {
+    return {
+      primary: assets.find(a => a.name.endsWith('.dmg')),
+      secondary: assets.find(a => a.name.endsWith('.zip')),
+      primaryLabel: 'Download DMG',
+      secondaryLabel: 'Download ZIP',
+    };
+  }
+
+  if (platform === 'linux') {
+    return {
+      primary: assets.find(a => a.name.endsWith('.AppImage')),
+      secondary: assets.find(a => a.name.endsWith('.deb')),
+      primaryLabel: 'Download AppImage',
+      secondaryLabel: 'Download DEB',
+    };
+  }
+
+  return {
+    primary: null,
+    secondary: null,
+    primaryLabel: 'Download Latest',
+    secondaryLabel: 'More Downloads',
+  };
 }
 
 
