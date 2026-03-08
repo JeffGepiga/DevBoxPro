@@ -919,6 +919,12 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return managers.binaryDownload.checkForUpdates();
   });
 
+  // Check for updates to unversioned services (like Composer, phpMyAdmin)
+  ipcMain.handle('binaries:checkForServiceUpdates', async () => {
+    if (!managers.binaryDownload) return { composer: { updateAvailable: false }, phpmyadmin: { updateAvailable: false } };
+    return managers.binaryDownload.checkForServiceUpdates();
+  });
+
   // Apply updates from remote config
   ipcMain.handle('binaries:applyUpdates', async () => {
     if (!managers.binaryDownload) throw new Error('Binary manager not initialized yet');

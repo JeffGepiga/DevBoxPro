@@ -181,7 +181,7 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
   );
 };
 
-const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst, size, onDownload, onRemove, onImport, sourceKey, importLabel, downloading, progress, downloadSources, getProgressDisplay }) => {
+const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst, size, onDownload, onRemove, onImport, sourceKey, importLabel, downloading, progress, downloadSources, getProgressDisplay, hasUpdate, onCheckUpdate, checkingUpdate }) => {
   const isDownloading = downloading[id] || progress?.[id]?.status === 'error';
   const hasSource = !!downloadSources[sourceKey]?.url;
 
@@ -196,8 +196,14 @@ const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst
         )}>
           {emoji ? emoji : <Icon className="w-4 h-4" />}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex items-center gap-2 flex-wrap">
           <p className="text-sm font-medium text-gray-900 dark:text-white">{name}</p>
+          {inst && hasUpdate && (
+            <span className="shrink-0 text-[10px] leading-tight font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
+              Update Available
+            </span>
+          )}
+          <div className="w-full basis-full mt-[-2px]"></div>
           <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{description}{size ? ` · ${size}` : ''}</p>
         </div>
       </div>
@@ -205,6 +211,25 @@ const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst
         {isDownloading ? getProgressDisplay(id) : inst ? (
           <>
             <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium"><Check className="w-3 h-3" /> Installed</span>
+            
+            {onCheckUpdate && !hasUpdate && (
+              <button 
+                onClick={onCheckUpdate} 
+                disabled={checkingUpdate}
+                className="btn-secondary text-xs px-2 py-1 flex items-center gap-1 disabled:opacity-50" 
+                title={`Check for ${name} updates`}
+              >
+                {checkingUpdate ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} 
+                Check Updates
+              </button>
+            )}
+
+            {hasUpdate && onDownload && (
+              <button onClick={onDownload} className="btn-primary text-xs px-2.5 py-1 flex items-center gap-1">
+                <Download className="w-3 h-3" /> Update
+              </button>
+            )}
+
             <button onClick={onRemove} className="btn-icon text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>
           </>
         ) : (
@@ -310,6 +335,8 @@ function BinaryManager() {
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [updateResult, setUpdateResult] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [serviceUpdates, setServiceUpdates] = useState({ composer: false, phpmyadmin: false });
+  const [checkingServiceUpdate, setCheckingServiceUpdate] = useState({ composer: false, phpmyadmin: false });
 
   // Import modal state
   const [importModal, setImportModal] = useState({
@@ -533,6 +560,28 @@ function BinaryManager() {
       clearDownload(id);
     } catch (error) {
       // Error cancelling download
+    }
+  };
+
+  // Check for updates on a specific unversioned service (composer, phpmyadmin)
+  const handleCheckServiceUpdate = async (service) => {
+    setCheckingServiceUpdate(prev => ({ ...prev, [service]: true }));
+    try {
+      const result = await window.devbox?.binaries.checkForServiceUpdates();
+      if (result) {
+        setServiceUpdates(prev => ({
+          ...prev,
+          composer: result.composer?.updateAvailable ?? prev.composer,
+          phpmyadmin: result.phpmyadmin?.updateAvailable ?? prev.phpmyadmin,
+        }));
+        if (!result[service]?.updateAvailable) {
+          showAlert({ title: 'Up to Date', message: `${service === 'phpmyadmin' ? 'phpMyAdmin' : 'Composer'} is already up to date.`, type: 'success' });
+        }
+      }
+    } catch (error) {
+      // Silently ignore
+    } finally {
+      setCheckingServiceUpdate(prev => ({ ...prev, [service]: false }));
     }
   };
 
@@ -1476,6 +1525,9 @@ function BinaryManager() {
             emoji="🎼"
             isInstalled={installed.composer}
             size="~2.5 MB"
+            hasUpdate={serviceUpdates.composer}
+            onCheckUpdate={() => handleCheckServiceUpdate('composer')}
+            checkingUpdate={checkingServiceUpdate.composer}
             sourceKey="composer"
             {...sharedSimpleProps}
             onDownload={() => handleDownloadService('composer')}
@@ -1575,6 +1627,9 @@ function BinaryManager() {
             icon={HardDrive}
             isInstalled={installed.phpmyadmin}
             size="~15 MB"
+            hasUpdate={serviceUpdates.phpmyadmin}
+            onCheckUpdate={() => handleCheckServiceUpdate('phpmyadmin')}
+            checkingUpdate={checkingServiceUpdate.phpmyadmin}
             sourceKey="phpmyadmin"
             {...sharedSimpleProps}
             onDownload={() => handleDownloadService('phpmyadmin')}

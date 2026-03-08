@@ -243,6 +243,7 @@ contextBridge.exposeInMainWorld('devbox', {
     getServiceConfig: () => ipcRenderer.invoke('binaries:getServiceConfig'),
     getDownloadUrls: () => ipcRenderer.invoke('binaries:getDownloadUrls'),
     checkForUpdates: () => ipcRenderer.invoke('binaries:checkForUpdates'),
+    checkForServiceUpdates: () => ipcRenderer.invoke('binaries:checkForServiceUpdates'),
     applyUpdates: () => ipcRenderer.invoke('binaries:applyUpdates'),
     downloadPhp: (version) => ipcRenderer.invoke('binaries:downloadPhp', version),
     downloadMysql: (version) => ipcRenderer.invoke('binaries:downloadMysql', version),

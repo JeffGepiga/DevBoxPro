@@ -1409,16 +1409,96 @@ class BinaryDownloadManager {
         file.close();
         this.activeDownloads.delete(id);
         fs.unlink(destPath, () => { });
-        // Don't reject if this was a user-initiated cancellation
         if (this.cancelledDownloads.has(id)) {
           this.cancelledDownloads.delete(id);
           const cancelError = new Error('Download cancelled');
           cancelError.cancelled = true;
           reject(cancelError);
         } else {
+          // Always reject on write stream errors (prevents silent hangs)
           reject(err);
         }
       });
+    });
+  }
+
+  // Save metadata about a downloaded service (useful for tracking updates for "latest" urls)
+  async saveServiceMetadata(serviceName, data) {
+    try {
+      let targetPath;
+      if (serviceName === 'composer') {
+        targetPath = path.join(this.resourcesPath, 'composer');
+      } else if (serviceName === 'phpmyadmin') {
+        targetPath = path.join(this.resourcesPath, 'phpmyadmin');
+      } else {
+        return; // Only implemented for unversioned "latest" services currently
+      }
+
+      await fs.ensureDir(targetPath);
+      await fs.writeFile(
+        path.join(targetPath, '.version-info.json'), 
+        JSON.stringify({ ...data, downloadedAt: new Date().toISOString() }, null, 2)
+      );
+    } catch (err) {
+      this.managers?.log?.systemWarn(`Failed to save metadata for ${serviceName}`, { error: err.message });
+    }
+  }
+
+  // Read local metadata
+  async getLocalServiceMetadata(serviceName) {
+    try {
+      let targetPath;
+      if (serviceName === 'composer') {
+        targetPath = path.join(this.resourcesPath, 'composer');
+      } else if (serviceName === 'phpmyadmin') {
+        targetPath = path.join(this.resourcesPath, 'phpmyadmin');
+      } else {
+        return null;
+      }
+
+      const infoPath = path.join(targetPath, '.version-info.json');
+      if (await fs.pathExists(infoPath)) {
+        const content = await fs.readFile(infoPath, 'utf8');
+        return JSON.parse(content);
+      }
+    } catch (err) {
+      // Ignore read errors
+    }
+    return null;
+  }
+
+  // Fetch remote HEAD metadata to check for updates
+  fetchRemoteMetadata(urlStr) {
+    return new Promise((resolve, reject) => {
+      const parsedUrl = new URL(urlStr);
+      const protocol = urlStr.startsWith('https') ? https : http;
+      
+      const options = {
+        method: 'HEAD',
+        family: 4, // Force IPv4 to prevent hanging on dual-stack CDN issues
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) DevBoxPro/1.0',
+        }
+      };
+
+      const req = protocol.request(parsedUrl, options, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          // Follow redirects
+          const redirectUrl = res.headers.location.startsWith('http') 
+            ? res.headers.location 
+            : new URL(res.headers.location, urlStr).toString();
+          
+          this.fetchRemoteMetadata(redirectUrl).then(resolve).catch(reject);
+        } else {
+          resolve({
+            lastModified: res.headers['last-modified'] || res.headers['date'],
+            etag: res.headers.etag
+          });
+        }
+      });
+
+      req.on('error', reject);
+      req.end();
     });
   }
 
@@ -2097,8 +2177,14 @@ ${extensionLines.join('\n')}
       await this.checkCancelled(id, downloadPath);
       await this.extractArchive(downloadPath, extractPath, id);
 
-      // Create config file
-      await this.createPhpMyAdminConfig(extractPath);
+      // Track metadata if headers are available
+      try {
+        const meta = await this.fetchRemoteMetadata(downloadInfo.url);
+        await this.saveServiceMetadata('phpmyadmin', meta);
+      } catch (metaErr) {
+        // Non-critical, just log
+        this.managers?.log?.systemWarn('Failed to fetch phpmyadmin metadata', { error: metaErr.message });
+      }
 
       await fs.remove(downloadPath);
 
@@ -2677,6 +2763,18 @@ AddType application/x-httpd-php-source .phps
         await fs.ensureDir(composerPath);
         const destPath = path.join(composerPath, 'composer.phar');
         await fs.copy(filePath, destPath);
+
+        // Track metadata if headers are available (mostly valid for initial download, not arbitrary import, but we'll try to find the canonical url)
+        try {
+          const dlInfo = this.downloads.composer?.all;
+          if (dlInfo) {
+            const meta = await this.fetchRemoteMetadata(dlInfo.url);
+            await this.saveServiceMetadata('composer', meta);
+          }
+        } catch (metaErr) {
+          // Ignore
+        }
+
         this.emitProgress(id, { status: 'completed', progress: 100 });
         return { success: true, version: 'latest', path: composerPath };
       }
@@ -2764,6 +2862,46 @@ AddType application/x-httpd-php-source .phps
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }
+  }
+
+  // Check for updates for "latest" services (composer, phpmyadmin)
+  async checkForServiceUpdates() {
+    const updates = {
+      composer: { updateAvailable: false },
+      phpmyadmin: { updateAvailable: false },
+      lastChecked: new Date().toISOString()
+    };
+
+    try {
+      // Check Composer
+      const composerMeta = await this.getLocalServiceMetadata('composer');
+      if (composerMeta?.lastModified) {
+        const dlInfo = this.downloads.composer?.all;
+        if (dlInfo) {
+          const remoteMeta = await this.fetchRemoteMetadata(dlInfo.url).catch(() => null);
+          if (remoteMeta?.lastModified && remoteMeta.lastModified !== composerMeta.lastModified) {
+            // ETag or LastModified drifted = Update Available!
+            updates.composer.updateAvailable = true;
+          }
+        }
+      }
+
+      // Check phpMyAdmin
+      const pmaMeta = await this.getLocalServiceMetadata('phpmyadmin');
+      if (pmaMeta?.lastModified) {
+        const dlInfo = this.downloads.phpmyadmin?.all;
+        if (dlInfo) {
+          const remoteMeta = await this.fetchRemoteMetadata(dlInfo.url).catch(() => null);
+          if (remoteMeta?.lastModified && remoteMeta.lastModified !== pmaMeta.lastModified) {
+            updates.phpmyadmin.updateAvailable = true;
+          }
+        }
+      }
+    } catch (err) {
+      this.managers?.log?.systemWarn('Error during service update check', { error: err.message });
+    }
+
+    return updates;
   }
 
   // Normalize extracted folder structure (handle nested folders)
@@ -3001,9 +3139,16 @@ AddType application/x-httpd-php-source .phps
       this.emitProgress(id, { status: 'starting', progress: 0 });
 
       const downloadPath = path.join(this.resourcesPath, 'downloads', 'composer.phar');
-      await this.downloadFile(this.downloads.composer.all.url, downloadPath, id);
+      await fs.ensureDir(path.dirname(downloadPath));
+      // Force IPv4 — getcomposer.org CDN can hang on IPv6 without triggering a timeout error
+      await this.downloadFile(this.downloads.composer.all.url, downloadPath, id, { forceIPv4: true });
 
       this.emitProgress(id, { status: 'installing', progress: 60 });
+
+      // Guard: ensure the download landed on disk before copying
+      if (!await fs.pathExists(downloadPath)) {
+        throw new Error('Download did not complete — file not found after download.');
+      }
 
       // Move to composer directory
       const composerDir = path.join(this.resourcesPath, 'composer');
@@ -3012,6 +3157,14 @@ AddType application/x-httpd-php-source .phps
 
       // Create wrapper scripts
       await this.setupComposerEnvironment(composerDir);
+
+      // Save metadata for future update checks
+      try {
+        const meta = await this.fetchRemoteMetadata(this.downloads.composer.all.url);
+        await this.saveServiceMetadata('composer', meta);
+      } catch (metaErr) {
+        // Non-fatal — update checks will just not work until next download
+      }
 
       // Clean up
       await fs.remove(downloadPath);
