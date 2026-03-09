@@ -2201,15 +2201,27 @@ class ProjectManager {
       const webServerAlreadyRunning = this.managers.service?.isVersionRunning(webServer, webServerVersion);
 
       if (webServerAlreadyRunning) {
-        // Web server is already running — ports are known and stable.
-        // Create vhost now so the reload in startProjectServices picks it up.
-        await this.createVirtualHost(project, phpFpmPort || undefined, targetVersion);
-
-        // Regenerate ALL other vhost configs for version compatibility.
         if (webServer === 'nginx') {
+          // When nginx is already running, regenerate all same-version vhosts first,
+          // then do a single reload so the running process sees the complete config set.
+          await this.createNginxVhost(project, phpFpmPort || undefined, targetVersion);
           await this.regenerateAllNginxVhosts(id, webServerVersion);
+          try {
+            await this.managers.service?.reloadNginx(targetVersion);
+          } catch (error) {
+            this.managers.log?.systemWarn('Could not reload/restart nginx', { error: error.message });
+          }
         } else if (webServer === 'apache') {
+          await this.createApacheVhost(project, targetVersion);
           await this.regenerateAllApacheVhosts(id, webServerVersion);
+          try {
+            await this.managers.service?.reloadApache(targetVersion);
+          } catch (error) {
+            this.managers.log?.systemWarn('Could not reload Apache', { error: error.message });
+          }
+        } else {
+          // Non-web-server paths keep the existing behavior.
+          await this.createVirtualHost(project, phpFpmPort || undefined, targetVersion);
         }
       }
       // When web server is NOT running, we defer ALL vhost creation/regeneration
@@ -2931,8 +2943,9 @@ class ProjectManager {
 
     // Get actual port from ServiceManager based on web server type
     const webServer = project.webServer || 'nginx';
+    const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
     const serviceManager = this.managers.service;
-    const ports = serviceManager?.getServicePorts(webServer);
+    const ports = serviceManager?.getServicePorts(webServer, webServerVersion);
 
     // Determine which port to use based on SSL setting
     // All projects on same web server share the SSL port (SNI handles certificate selection)
@@ -3192,7 +3205,8 @@ class ProjectManager {
           if (apachePath && confPath) {
             await serviceManager.createApacheConfig(
               apachePath, confPath, logsPath,
-              ports?.httpPort || 80, ports?.sslPort || 443
+              ports?.httpPort || 80, ports?.sslPort || 443,
+              [result.finalHttpPort]
             );
             this.managers.log?.systemInfo(`Regenerated httpd.conf to include Listen for port ${result.finalHttpPort}`);
           }

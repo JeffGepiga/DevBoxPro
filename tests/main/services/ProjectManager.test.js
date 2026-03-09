@@ -315,6 +315,60 @@ describe('ProjectManager', () => {
         });
     });
 
+    describe('URL generation', () => {
+        it('uses the project web server version when building URLs', () => {
+            managers.service.getServicePorts.mockImplementation((serviceName, version) => {
+                if (serviceName === 'nginx' && version === '1.28') {
+                    return { httpPort: 8081, sslPort: 8443 };
+                }
+
+                if (serviceName === 'nginx' && version === '1.26') {
+                    return { httpPort: 8082, sslPort: 8444 };
+                }
+
+                return { httpPort: 80, sslPort: 443 };
+            });
+
+            const project128 = {
+                id: 'nginx128',
+                domain: 'second.test',
+                domains: ['second.test'],
+                ssl: true,
+                webServer: 'nginx',
+                webServerVersion: '1.28',
+            };
+            const project126 = {
+                id: 'nginx126',
+                domain: 'third.test',
+                domains: ['third.test'],
+                ssl: true,
+                webServer: 'nginx',
+                webServerVersion: '1.26',
+            };
+
+            expect(mgr.getProjectUrl(project128)).toBe('https://second.test:8443');
+            expect(mgr.getProjectUrl(project126)).toBe('https://third.test:8444');
+        });
+
+        it('uses the project network port for HTTP when port 80 belongs to another project', () => {
+            managers.service.getServicePorts.mockReturnValue({ httpPort: 8081, sslPort: 8443 });
+            mgr.networkPort80Owner = 'other-project';
+
+            const project = {
+                id: 'proj-http',
+                domain: 'fourth.test',
+                domains: ['fourth.test'],
+                ssl: false,
+                webServer: 'nginx',
+                webServerVersion: '1.28',
+                networkAccess: true,
+                port: 8005,
+            };
+
+            expect(mgr.getProjectUrl(project)).toBe('http://fourth.test:8005');
+        });
+    });
+
     describe('detectProjectType', () => {
         it('identifies laravel when artisan is present', async () => {
             vi.spyOn(fs, 'pathExists').mockImplementation(async (p) => p.endsWith('composer.json'));

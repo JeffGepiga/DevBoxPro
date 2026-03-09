@@ -50,6 +50,22 @@ describe('isPortAvailable()', () => {
             await new Promise((resolve) => server.close(resolve));
         }
     });
+
+    it('returns false for a port bound on all interfaces', async () => {
+        const net = require('net');
+        const server = net.createServer();
+
+        await new Promise((resolve) => {
+            server.listen(59435, '0.0.0.0', resolve);
+        });
+
+        try {
+            const result = await isPortAvailable(59435);
+            expect(result).toBe(false);
+        } finally {
+            await new Promise((resolve) => server.close(resolve));
+        }
+    });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

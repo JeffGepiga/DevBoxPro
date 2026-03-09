@@ -163,26 +163,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     const projectData = project.getProject(id);
     if (!projectData) throw new Error('Project not found');
 
-    const webServer = projectData.webServer || 'nginx';
-    const webServerVersion = projectData.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
-
-    // Get dynamic ports from service manager for the project's web server version
-    // Multi-version nginx/apache runs on different ports per version
-    const ports = service?.getServicePorts(webServer, webServerVersion);
-
-    const httpPort = ports?.httpPort || 80;
-    const sslPort = ports?.sslPort || 443;
-
-
-    // Build URL with appropriate port
-    let url;
-    if (projectData.ssl) {
-      const portSuffix = sslPort === 443 ? '' : `:${sslPort}`;
-      url = `https://${projectData.domain}${portSuffix}`;
-    } else {
-      const portSuffix = httpPort === 80 ? '' : `:${httpPort}`;
-      url = `http://${projectData.domain}${portSuffix}`;
-    }
+    const url = project.getProjectUrl(projectData);
 
     await shell.openExternal(url);
     return true;

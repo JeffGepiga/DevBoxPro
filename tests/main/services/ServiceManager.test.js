@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
+import { readFile, unlink } from 'fs/promises';
 
 vi.mock('child_process', () => {
     const stdout = { on: vi.fn() };
@@ -14,6 +15,8 @@ vi.mock('child_process', () => {
         pid: 1234,
         stdout,
         stderr,
+        kill: vi.fn(),
+        killed: false,
         on: vi.fn((event, cb) => {
             // we won't auto-trigger exit/close so processes appear "running"
         }),
@@ -22,7 +25,8 @@ vi.mock('child_process', () => {
     return {
         spawn: vi.fn(() => mockProcess),
         exec: vi.fn((cmd, cb) => cb(null, { stdout: '', stderr: '' })),
-        execFile: vi.fn((file, args, cb) => cb(null, { stdout: '', stderr: '' }))
+        execFile: vi.fn((file, args, cb) => cb(null, { stdout: '', stderr: '' })),
+        execSync: vi.fn(() => 'Syntax OK')
     };
 });
 
@@ -100,7 +104,6 @@ describe('ServiceManager', () => {
         vi.spyOn(mgr, 'startMariaDB').mockResolvedValue(true);
         vi.spyOn(mgr, 'startRedis').mockResolvedValue(true);
         vi.spyOn(mgr, 'startNginx').mockResolvedValue(true);
-        vi.spyOn(mgr, 'startApache').mockResolvedValue(true);
         vi.spyOn(mgr, 'startMailpit').mockResolvedValue(true);
         vi.spyOn(mgr, 'startPhpMyAdmin').mockResolvedValue(true);
     });
@@ -242,6 +245,45 @@ describe('ServiceManager', () => {
             expect(all.get('mysql').has('8.4')).toBe(true);
             expect(all.has('nginx')).toBe(true);
             expect(all.get('nginx').has('1.28')).toBe(true);
+        });
+    });
+
+    describe('createApacheConfig', () => {
+        it('only includes extra Listen directives for running Apache projects', async () => {
+            configStore.get.mockImplementation((key, def) => {
+                if (key === 'projects') {
+                    return [
+                        { id: 'apache-running', webServer: 'apache', networkAccess: true, port: 8001 },
+                        { id: 'apache-stopped', webServer: 'apache', networkAccess: true, port: 8003 },
+                        { id: 'nginx-running', webServer: 'nginx', networkAccess: true, port: 8004 },
+                    ];
+                }
+
+                return def;
+            });
+
+            managers.project = {
+                networkPort80Owner: null,
+                runningProjects: new Map([
+                    ['apache-running', { startedAt: new Date() }],
+                    ['nginx-running', { startedAt: new Date() }],
+                ]),
+            };
+
+            const confPath = path.join(process.cwd(), 'test-results', 'service-manager-httpd.conf');
+
+            await mgr.createApacheConfig('/apache', confPath, '/logs', 8084, 8446, [8005]);
+
+            const config = await readFile(confPath, 'utf8');
+
+            expect(config).toContain('Listen 0.0.0.0:8084');
+            expect(config).toContain('Listen 0.0.0.0:8446');
+            expect(config).toContain('Listen 0.0.0.0:8001');
+            expect(config).toContain('Listen 0.0.0.0:8005');
+            expect(config).not.toContain('Listen 0.0.0.0:8003');
+            expect(config).not.toContain('Listen 0.0.0.0:8004');
+
+            await unlink(confPath);
         });
     });
 });

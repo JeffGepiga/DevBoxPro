@@ -101,12 +101,10 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
     if (foundProject) {
       loadLogs();
       loadProcesses();
-      // Fetch actual web server ports for network access URLs
+      // Fetch actual runtime ports for this specific project so fallback ports are reflected in the UI.
       const fetchWebServerPorts = async () => {
         try {
-          const webServer = foundProject.webServer || 'nginx';
-          const webServerVersion = foundProject.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
-          const ports = await window.devbox?.services?.getWebServerPorts(webServer, webServerVersion);
+          const ports = await window.devbox?.services?.getProjectNetworkPort(foundProject.id);
           if (ports) {
             setWebServerPorts(ports);
           }
@@ -116,8 +114,7 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
       };
       fetchWebServerPorts();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, loadLogs, loadProcesses]);
+  }, [id, projects, loadLogs, loadProcesses]);
 
   const handleStart = async () => {
     setProjectLoading(id, 'starting');

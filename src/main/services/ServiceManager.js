@@ -715,7 +715,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         const confPath = path.join(dataPath, 'nginx', nginxVersion, 'nginx.conf');
 
         if (await fs.pathExists(nginxExe)) {
-          const { isProcessRunning, killProcessByName, spawnSyncSafe } = require('../utils/SpawnUtils');
+          const { isProcessRunning, killProcessesByPath, spawnSyncSafe } = require('../utils/SpawnUtils');
 
           const nginxRunning = isProcessRunning('nginx.exe');
 
@@ -732,7 +732,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
             // Only kill ALL nginx.exe processes if this is the last running version
             if (isLastVersion) {
-              await killProcessByName('nginx.exe', true);
+              await killProcessesByPath('nginx.exe', nginxPath);
             }
           }
         }
@@ -748,8 +748,8 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       try {
         const { killProcessesByPath, isProcessRunning } = require('../utils/SpawnUtils');
         if (isLastVersion && isProcessRunning('httpd.exe')) {
-          const apacheResourcesPath = path.join(app.getPath('userData'), 'resources', 'apache');
-          await killProcessesByPath('httpd.exe', apacheResourcesPath);
+          const apachePath = this.getApachePath(version || '2.4');
+          await killProcessesByPath('httpd.exe', apachePath);
         }
       } catch (error) {
         this.managers.log?.systemWarn('Error during Apache cleanup', { error: error.message });
@@ -1928,8 +1928,12 @@ http {
       // Attempt cleanup
       try {
         if (process.platform === 'win32') {
-          const { killProcessByName } = require('../utils/SpawnUtils');
-          await killProcessByName('httpd.exe', true);
+          const { killProcessByPid, killProcessesByPath } = require('../utils/SpawnUtils');
+          if (proc?.pid) {
+            await killProcessByPid(proc.pid, true);
+          } else {
+            await killProcessesByPath('httpd.exe', apachePath);
+          }
         }
         if (proc && !proc.killed) {
           proc.kill();
@@ -1942,7 +1946,7 @@ http {
     }
   }
 
-  async createApacheConfig(apachePath, confPath, logsPath, httpPort = 8081, httpsPort = 8444) {
+  async createApacheConfig(apachePath, confPath, logsPath, httpPort = 8081, httpsPort = 8444, additionalListenPorts = []) {
     const dataPath = path.join(app.getPath('userData'), 'data');
     const mimeTypesPath = path.join(apachePath, 'conf', 'mime.types').replace(/\\/g, '/');
 
@@ -1975,9 +1979,14 @@ http {
     const listenSet = new Set([`Listen 0.0.0.0:${httpPort}`, `Listen 0.0.0.0:${httpsPort}`]);
 
     const allProjects = this.configStore?.get('projects', []) || [];
-    const networkApacheProjects = allProjects.filter(p =>
-      p.networkAccess && p.webServer === 'apache'
-    );
+    const runningApacheProjects = this.managers.project?.runningProjects;
+    const networkApacheProjects = allProjects.filter((project) => {
+      if (!project.networkAccess || project.webServer !== 'apache') {
+        return false;
+      }
+
+      return runningApacheProjects?.has(project.id);
+    });
 
     networkApacheProjects.forEach(p => {
       if (p.id === networkPort80OwnerId) {
@@ -1993,6 +2002,12 @@ http {
         }
       }
     });
+
+    additionalListenPorts
+      .filter((port) => Number.isInteger(port) && port > 0 && port !== 80 && port !== httpPort)
+      .forEach((port) => {
+        listenSet.add(`Listen 0.0.0.0:${port}`);
+      });
 
     const listenDirectives = Array.from(listenSet).join('\n');
 

@@ -3,10 +3,10 @@ const net = require('net');
 /**
  * Check if a port is available
  * @param {number} port - The port to check
- * @param {string} host - The host to check (default: '127.0.0.1')
+ * @param {string|null} host - Specific host to check. When omitted, checks whether the port is free on any interface.
  * @returns {Promise<boolean>} - True if port is available
  */
-async function isPortAvailable(port, host = '127.0.0.1') {
+async function canBindPort(port, host) {
   return new Promise((resolve) => {
     const server = net.createServer();
 
@@ -29,14 +29,38 @@ async function isPortAvailable(port, host = '127.0.0.1') {
   });
 }
 
+async function isPortAvailable(port, host = null) {
+  if (host) {
+    return canBindPort(port, host);
+  }
+
+  const processInfo = await getProcessOnPort(port);
+  if (processInfo) {
+    return false;
+  }
+
+  const hostsToCheck = process.platform === 'win32'
+    ? ['0.0.0.0', '127.0.0.1']
+    : ['0.0.0.0', '127.0.0.1', '::'];
+
+  for (const candidateHost of hostsToCheck) {
+    const available = await canBindPort(port, candidateHost);
+    if (!available) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 /**
  * Find an available port starting from a given port
  * @param {number} startPort - The port to start searching from
  * @param {number} maxAttempts - Maximum number of ports to try (default: 100)
- * @param {string} host - The host to check (default: '127.0.0.1')
+ * @param {string|null} host - Specific host to check. When omitted, checks whether the port is free on any interface.
  * @returns {Promise<number|null>} - The first available port, or null if none found
  */
-async function findAvailablePort(startPort, maxAttempts = 100, host = '127.0.0.1') {
+async function findAvailablePort(startPort, maxAttempts = 100, host = null) {
   for (let i = 0; i < maxAttempts; i++) {
     const port = startPort + i;
     if (await isPortAvailable(port, host)) {
@@ -51,10 +75,10 @@ async function findAvailablePort(startPort, maxAttempts = 100, host = '127.0.0.1
  * @param {number} startPort - The port to start searching from
  * @param {number} count - Number of ports needed
  * @param {number} maxAttempts - Maximum number of ports to try per port needed
- * @param {string} host - The host to check
+ * @param {string|null} host - Specific host to check. When omitted, checks whether the port is free on any interface.
  * @returns {Promise<number[]>} - Array of available ports
  */
-async function findAvailablePorts(startPort, count, maxAttempts = 100, host = '127.0.0.1') {
+async function findAvailablePorts(startPort, count, maxAttempts = 100, host = null) {
   const ports = [];
   let currentPort = startPort;
 
