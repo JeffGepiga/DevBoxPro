@@ -135,6 +135,20 @@ describe('ServiceManager', () => {
         it('throws an error for unknown service', async () => {
             await expect(mgr.startService('unknownservice')).rejects.toThrow('Unknown service');
         });
+
+        it('quotes file paths in generated nginx config', async () => {
+            configStore.getDataPath = vi.fn(() => 'C:/DevBox Pro/data');
+            mgr.getNginxPath = vi.fn(() => 'C:/DevBox Pro/resources-user/nginx/1.28/win');
+            const writeFileSpy = vi.spyOn(require('fs-extra'), 'writeFile');
+
+            await mgr.createNginxConfig('C:/DevBox Pro/data/nginx/1.28/nginx.conf', 'C:/DevBox Pro/data/nginx/1.28/logs', 80, 443, '1.28');
+
+            expect(writeFileSpy).toHaveBeenCalled();
+            const [, config] = writeFileSpy.mock.calls.at(-1);
+            expect(config).toContain('include       "C:/DevBox Pro/resources-user/nginx/1.28/win/conf/mime.types";');
+            expect(config).toContain('include "C:/DevBox Pro/data/nginx/1.28/sites/*.conf";');
+            expect(config).toContain('root "C:/DevBox Pro/data/www";');
+        });
     });
 
     describe('stopService', () => {

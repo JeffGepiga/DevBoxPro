@@ -22,8 +22,12 @@ const BinaryDownloadManager = require('./services/BinaryDownloadManager');
 const CliManager = require('./services/CliManager');
 const { GitManager } = require('./services/GitManager');
 const { UpdateManager } = require('./services/UpdateManager');
+const { MigrationManager } = require('./services/MigrationManager');
 const { ConfigStore } = require('./utils/ConfigStore');
+const pathResolver = require('./utils/PathResolver');
 const { setupIpcHandlers } = require('./ipc/handlers');
+
+const GENERATED_CONFIG_SCHEMA_VERSION = 2;
 
 // Single instance lock - prevent multiple instances of the app
 const isPlaywright = process.env.PLAYWRIGHT_TEST === 'true';
@@ -62,8 +66,62 @@ const managers = {};
 const isDev = (process.env.NODE_ENV === 'development' || !app.isPackaged) && !process.env.PLAYWRIGHT_TEST;
 
 function getResourcePath() {
-  // Always use userData path for resources to match BinaryDownloadManager
-  return path.join(app.getPath('userData'), 'resources');
+  return pathResolver.getResourcesPath(app);
+}
+
+async function checkAndRegenerateMigratedConfigs() {
+  const migration = new MigrationManager(pathResolver, app);
+  if (!(await migration.needsConfigRegeneration())) {
+    return;
+  }
+
+  try {
+    await migration.regenerateConfigs(managers);
+  } catch (error) {
+    managers.log?.systemWarn('Failed to regenerate migrated configs', { error: error.message });
+  }
+}
+
+async function checkAndRepairGeneratedConfigs() {
+  const currentVersion = Number(managers.config?.get('internal.generatedConfigSchemaVersion', 0) || 0);
+  if (currentVersion >= GENERATED_CONFIG_SCHEMA_VERSION) {
+    return;
+  }
+
+  try {
+    const repair = new MigrationManager(pathResolver, app);
+    await repair.regenerateConfigs(managers);
+    managers.config?.set('internal.generatedConfigSchemaVersion', GENERATED_CONFIG_SCHEMA_VERSION);
+  } catch (error) {
+    managers.log?.systemWarn('Failed to repair generated web server configs after update', { error: error.message });
+  }
+}
+
+async function checkAndMigrate() {
+  const migration = new MigrationManager(pathResolver, app);
+
+  await migration.migrateLegacyInstallData();
+
+  if (!(await migration.needsMigration())) {
+    return;
+  }
+
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    title: 'Previous Installation Found',
+    message: 'DevBox Pro found data from a previous installation.\n\nWould you like to copy your existing projects, settings, and downloaded binaries into this portable folder?',
+    detail: 'Please stop services in your previous DevBox Pro installation before continuing. Database data cannot be moved automatically and will start fresh.\n\n"Start Fresh" begins with an empty portable installation.',
+    buttons: ['Copy & Migrate', 'Start Fresh'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+
+  if (response === 0) {
+    await migration.migrate();
+    return;
+  }
+
+  await migration.markDone();
 }
 
 async function createWindow() {
@@ -324,8 +382,13 @@ async function startup() {
   try {
     const startTime = Date.now();
 
+    await checkAndMigrate();
+
     // Initialize critical managers only (fast)
     await initializeManagers();
+
+    await checkAndRegenerateMigratedConfigs();
+    await checkAndRepairGeneratedConfigs();
 
     // Create main window immediately so user sees the app
     await createWindow();
@@ -458,7 +521,7 @@ async function forceKillAllProcesses() {
   }
 
   // Kill PHP and Node processes running from our resources path only
-  const userDataPath = app.getPath('userData');
+  const userDataPath = path.dirname(getResourcePath());
 
   try {
     await killProcessesByPath('php.exe', userDataPath);

@@ -14,10 +14,7 @@ class SslManager {
   }
 
   async initialize() {
-
-    // Use the same data path as ProjectManager (app.getPath('userData')/data)
-    const { app } = require('electron');
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.configStore.getDataPath();
     this.certsPath = path.join(dataPath, 'ssl', 'certs');
     this.caPath = path.join(dataPath, 'ssl', 'ca');
 

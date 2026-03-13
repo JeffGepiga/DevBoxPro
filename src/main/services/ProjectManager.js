@@ -38,6 +38,55 @@ class ProjectManager {
     this.networkPort80Owner = null;
   }
 
+  getDataPath() {
+    if (typeof this.configStore.getDataPath === 'function') {
+      return this.configStore.getDataPath();
+    }
+
+    if (typeof this.configStore.get === 'function') {
+      const configuredDataPath = this.configStore.get('dataPath');
+      if (configuredDataPath) {
+        return configuredDataPath;
+      }
+    }
+
+    const { app } = require('electron');
+    return path.join(app.getPath('userData'), 'data');
+  }
+
+  getResourcesPath() {
+    if (typeof this.configStore.getResourcesPath === 'function') {
+      return this.configStore.getResourcesPath();
+    }
+
+    if (typeof this.configStore.get === 'function') {
+      const configuredResourcePath = this.configStore.get('resourcePath');
+      if (configuredResourcePath) {
+        return configuredResourcePath;
+      }
+    }
+
+    const { app } = require('electron');
+    return path.join(app.getPath('userData'), 'resources');
+  }
+
+  getPhpFpmPort(project) {
+    const projectId = String(project?.id || '');
+    const parsedInt = parseInt(projectId.slice(-4), 16);
+
+    if (!Number.isNaN(parsedInt)) {
+      return 9000 + (parsedInt % 1000);
+    }
+
+    let hash = 0;
+    for (const char of projectId) {
+      hash = ((hash << 5) - hash) + char.charCodeAt(0);
+      hash |= 0;
+    }
+
+    return 9000 + (Math.abs(hash) % 1000);
+  }
+
   async initialize() {
     // Ensure projects array exists in config
     if (!this.configStore.get('projects')) {
@@ -57,8 +106,7 @@ class ProjectManager {
    * as well as the apache/vhosts/ directory.
    */
   async cleanupOrphanedConfigs() {
-    const { app } = require('electron');
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const projects = this.configStore.get('projects', []);
     const validIds = new Set(projects.map(p => p.id));
 
@@ -302,8 +350,7 @@ class ProjectManager {
     // Detect project type early (needed for conditional PHP check)
     const projectType = config.type || (await this.detectProjectType(config.path));
 
-    const { app } = require('electron');
-    const resourcePath = this.configStore.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
+    const resourcePath = this.getResourcesPath();
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
 
     // Validate that required PHP version is installed before creating project.
@@ -500,7 +547,7 @@ class ProjectManager {
     // Set up Node.js start process for nodejs-type projects
     if (project.type === 'nodejs') {
       const nodejsVersion = project.services?.nodejsVersion || '20';
-      const nodeResourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+      const nodeResourcePath = this.getResourcesPath();
       const nodePlatform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
       const nodeDir = path.join(nodeResourcePath, 'nodejs', nodejsVersion, nodePlatform);
       const nodeExe = process.platform === 'win32'
@@ -670,7 +717,7 @@ class ProjectManager {
 
           const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
           const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-          const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+          const resourcePath = this.getResourcesPath();
           const phpDir = path.join(resourcePath, 'php', project.phpVersion, platform);
           const phpPath = path.join(phpDir, phpExe);
 
@@ -854,7 +901,7 @@ class ProjectManager {
 
       const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
       const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-      const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+      const resourcePath = this.getResourcesPath();
       const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
       const phpPath = path.join(phpDir, phpExe);
 
@@ -895,7 +942,7 @@ class ProjectManager {
           sendOutput('$ npm install', 'command');
 
           const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-          const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+          const resourcePath = this.getResourcesPath();
           const nodeDir = path.join(resourcePath, 'nodejs', nodejsVersion, platform);
 
           let npmCmd = 'npm';
@@ -965,7 +1012,7 @@ class ProjectManager {
       sendOutput('$ npm install', 'command');
 
       const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-      const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+      const resourcePath = this.getResourcesPath();
       const nodeDir = path.join(resourcePath, 'nodejs', nodejsVersion, platform);
 
       let npmCmd = 'npm';
@@ -1028,7 +1075,7 @@ class ProjectManager {
     const framework = project.nodeFramework || '';
 
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-    const resourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+    const resourcePath = this.getResourcesPath();
     const nodeDir = path.join(resourcePath, 'nodejs', nodejsVersion, platform);
 
     // Resolve npm/npx paths from managed Node.js binary
@@ -1322,7 +1369,7 @@ class ProjectManager {
 
       const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
       const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-      const resourcePath = this.configStore.get('resourcePath') || require('path').join(require('electron').app.getPath('userData'), 'resources');
+      const resourcePath = this.getResourcesPath();
       const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
       const phpPath = path.join(phpDir, phpExe);
 
@@ -1372,7 +1419,7 @@ class ProjectManager {
 
           // Use selected Node.js version
           const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-          const resourcePath = this.configStore.get('resourcePath') || require('path').join(require('electron').app.getPath('userData'), 'resources');
+          const resourcePath = this.getResourcesPath();
           const nodeDir = path.join(resourcePath, 'nodejs', nodejsVersion, platform);
 
           let npmCmd = 'npm';
@@ -2187,7 +2234,7 @@ class ProjectManager {
       // Calculate PHP-CGI port (unique per project) - needed for vhost config
       // Only needed for non-nodejs projects
       const phpFpmPort = project.type !== 'nodejs'
-        ? 9000 + (parseInt(project.id.slice(-4), 16) % 1000)
+        ? this.getPhpFpmPort(project)
         : 0;
 
       // Determine the nginx version that WILL be running.
@@ -2351,8 +2398,7 @@ class ProjectManager {
     }
 
     const missing = [];
-    const { app } = require('electron');
-    const resourcePath = this.configStore.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
+    const resourcePath = this.getResourcesPath();
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
 
     // Check PHP version - check filesystem directly for both php and php-cgi
@@ -2440,8 +2486,7 @@ class ProjectManager {
     }
 
     const phpVersion = project.phpVersion || '8.3';
-    const { app } = require('electron');
-    const resourcePath = this.configStore.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
+    const resourcePath = this.getResourcesPath();
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
 
     // Check if PHP version is available - check filesystem directly
@@ -3199,7 +3244,7 @@ class ProjectManager {
           const serviceManager = this.managers.service;
           const apacheVersion = serviceManager?.serviceStatus?.get('apache')?.version || '2.4';
           const apachePath = serviceManager?.getApachePath(apacheVersion);
-          const dataPath = path.join(require('electron').app.getPath('userData'), 'data');
+          const dataPath = this.getDataPath();
           const confPath = path.join(dataPath, 'apache', 'httpd.conf');
           const logsPath = path.join(dataPath, 'apache', 'logs');
           const ports = serviceManager?.getServicePorts('apache', apacheVersion);
@@ -3234,8 +3279,7 @@ class ProjectManager {
    */
   async regenerateAllApacheVhosts(excludeProjectId = null, targetApacheVersion = null) {
     const allProjects = this.configStore.get('projects', []);
-    const { app } = require('electron');
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
 
     for (const proj of allProjects) {
@@ -3263,8 +3307,7 @@ class ProjectManager {
    */
   async regenerateAllNginxVhosts(excludeProjectId = null, targetNginxVersion = null) {
     const allProjects = this.configStore.get('projects', []);
-    const { app } = require('electron');
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const effectiveVersion = targetNginxVersion || '1.28';
     const sitesDir = path.join(dataPath, 'nginx', effectiveVersion, 'sites');
 
@@ -3295,9 +3338,8 @@ class ProjectManager {
   // @param {string|null} targetNginxVersion - If provided, use this version for http2 syntax decision
   //   instead of reading from serviceStatus. This is critical when called BEFORE nginx starts.
   async createNginxVhost(project, overridePhpFpmPort = null, targetNginxVersion = null) {
-    const { app } = require('electron');
-    const dataPath = path.join(app.getPath('userData'), 'data');
-    const resourcesPath = path.join(app.getPath('userData'), 'resources');
+    const dataPath = this.getDataPath();
+    const resourcesPath = this.getResourcesPath();
     const sslDir = path.join(dataPath, 'ssl', project.domain);
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     let nginxVersion = project.webServerVersion || '1.28';
@@ -3341,7 +3383,7 @@ class ProjectManager {
     await fs.ensureDir(documentRoot);
 
     // Use override port if provided, otherwise calculate default
-    const phpFpmPort = overridePhpFpmPort || (9000 + (parseInt(project.id.slice(-4), 16) % 1000));
+    const phpFpmPort = overridePhpFpmPort || this.getPhpFpmPort(project);
 
     // Get dynamic ports from ServiceManager
     const serviceManager = this.managers.service;
@@ -3455,7 +3497,7 @@ server {
         fastcgi_pass 127.0.0.1:${phpFpmPort};
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-        include ${fastcgiParamsPath};
+      include "${fastcgiParamsPath}";
         fastcgi_hide_header X-Powered-By;
         fastcgi_read_timeout 300;
     }
@@ -3529,7 +3571,7 @@ server {
         fastcgi_pass 127.0.0.1:${phpFpmPort};
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-        include ${fastcgiParamsPath};
+      include "${fastcgiParamsPath}";
         fastcgi_hide_header X-Powered-By;
         fastcgi_read_timeout 300;
     }
@@ -3558,8 +3600,7 @@ server {
   // @param {string|null} targetApacheVersion - If provided, use this version for version-specific
   //   config decisions instead of reading from serviceStatus. Mirrors targetNginxVersion.
   async createApacheVhost(project, targetApacheVersion = null) {
-    const { app } = require('electron');
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
     const sslDir = path.join(dataPath, 'ssl', project.domain).replace(/\\/g, '/');
 
@@ -3577,10 +3618,7 @@ server {
     // Ensure document root exists
     await fs.ensureDir(documentRoot);
 
-    const idSlice = project.id.slice(-4);
-    const parsedInt = parseInt(idSlice, 16);
-    const modResult = parsedInt % 1000;
-    let phpFpmPort = 9000 + modResult;
+    let phpFpmPort = this.getPhpFpmPort(project);
 
     // Ensure port is a valid number and convert to string explicitly
     if (isNaN(phpFpmPort) || phpFpmPort < 9000 || phpFpmPort > 9999) {
@@ -3651,7 +3689,7 @@ server {
     // Get PHP-CGI path for this PHP version
     const phpVersion = project.phpVersion || '8.4';
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-    const resourcesPath = path.join(app.getPath('userData'), 'resources');
+    const resourcesPath = this.getResourcesPath();
     const phpCgiPath = path.join(resourcesPath, 'php', phpVersion, platform, 'php-cgi.exe').replace(/\\/g, '/');
 
     // Generate Apache config with both HTTP and HTTPS
@@ -4004,8 +4042,7 @@ server {
 
   // Remove virtual host when project is deleted
   async removeVirtualHost(project) {
-    const { app } = require('electron');
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
 
     // Remove nginx config
     const nginxConfig = path.join(dataPath, 'nginx', 'sites', `${project.id}.conf`);
@@ -4308,7 +4345,7 @@ server {
 
     if (project.type === 'nodejs') {
       const nodejsVersion = project.services?.nodejsVersion || '20';
-      const nodeResourcePath = this.configStore.get('resourcePath') || path.join(require('electron').app.getPath('userData'), 'resources');
+      const nodeResourcePath = this.getResourcesPath();
       const nodePlatform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
       const nodeDir = path.join(nodeResourcePath, 'nodejs', nodejsVersion, nodePlatform);
       project.supervisor.processes.push({

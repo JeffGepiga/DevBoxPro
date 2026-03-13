@@ -136,6 +136,21 @@ class ServiceManager extends EventEmitter {
     };
   }
 
+  getDataPath() {
+    if (typeof this.configStore.getDataPath === 'function') {
+      return this.configStore.getDataPath();
+    }
+
+    if (typeof this.configStore.get === 'function') {
+      const configuredDataPath = this.configStore.get('dataPath');
+      if (configuredDataPath) {
+        return configuredDataPath;
+      }
+    }
+
+    return path.join(app.getPath('userData'), 'data');
+  }
+
   // Get process key for Map storage
   getProcessKey(serviceName, version) {
     if (version) {
@@ -181,7 +196,7 @@ class ServiceManager extends EventEmitter {
     }
 
     // Ensure data directories exist for versioned services
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
 
     // MySQL version directories
     for (const version of (SERVICE_VERSIONS.mysql || [])) {
@@ -371,7 +386,7 @@ class ServiceManager extends EventEmitter {
       this.processes.delete(processKey);
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mysql', version, 'data');
 
     // Use the same port detection as normal start
@@ -577,7 +592,7 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
       this.processes.delete(processKey);
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mariadb', version, 'data');
 
     const defaultPort = this.getVersionPort('mariadb', version, this.serviceConfigs.mariadb.defaultPort);
@@ -711,7 +726,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         const nginxVersion = version || '1.28';
         const nginxPath = this.getNginxPath(nginxVersion);
         const nginxExe = path.join(nginxPath, 'nginx.exe');
-        const dataPath = path.join(app.getPath('userData'), 'data');
+        const dataPath = this.getDataPath();
         const confPath = path.join(dataPath, 'nginx', nginxVersion, 'nginx.conf');
 
         if (await fs.pathExists(nginxExe)) {
@@ -932,7 +947,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const versionDataPath = path.join(dataPath, 'nginx', version);
     const confPath = path.join(versionDataPath, 'nginx.conf');
     const logsPath = path.join(versionDataPath, 'logs');
@@ -1027,7 +1042,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         try {
           const { killProcessesByPath, isProcessRunning } = require('../utils/SpawnUtils');
           if (isProcessRunning('nginx.exe')) {
-            const nginxResourcesPath = path.join(app.getPath('userData'), 'resources', 'nginx');
+            const nginxResourcesPath = path.join(this.resourcePath, 'nginx');
             this.managers.log?.systemInfo('Killing stale DevBox nginx processes before start');
             await killProcessesByPath('nginx.exe', nginxResourcesPath);
             // Brief pause for ports to be released
@@ -1298,7 +1313,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
     const nginxPath = this.getNginxPath(version);
     const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'sbin/nginx');
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const confPath = path.join(dataPath, 'nginx', version, 'nginx.conf');
 
     if (!await fs.pathExists(nginxExe)) {
@@ -1334,7 +1349,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const nginxPath = this.getNginxPath(version);
     const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'sbin/nginx');
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const confPath = path.join(dataPath, 'nginx', version, 'nginx.conf');
 
     if (!await fs.pathExists(nginxExe)) {
@@ -1426,7 +1441,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const apachePath = this.getApachePath(version);
     const httpdExe = path.join(apachePath, 'bin', process.platform === 'win32' ? 'httpd.exe' : 'httpd');
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const confPath = path.join(dataPath, 'apache', 'httpd.conf');
 
     if (!await fs.pathExists(httpdExe)) {
@@ -1475,7 +1490,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
         // Regenerate httpd.conf with confirmed-available ports before re-spawning.
         // This ensures Listen directives match reality even if the old config is stale.
-        const dataPathReload = path.join(app.getPath('userData'), 'data');
+        const dataPathReload = this.getDataPath();
         const logsPath = path.join(dataPathReload, 'apache', 'logs');
         await this.createApacheConfig(apachePath, confPath, logsPath, expectedHttpPort, expectedSslPort);
 
@@ -1501,6 +1516,13 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         });
         proc.on('exit', (code) => {
           const s = this.serviceStatus.get('apache');
+          const benignWindowsDetach = process.platform === 'win32' && code === 0 && s.status === 'running';
+          if (benignWindowsDetach) {
+            this.processes.delete(processKey);
+            s.pid = null;
+            return;
+          }
+
           if (s.status === 'running') {
             s.status = 'stopped';
             this.runningVersions.get('apache')?.delete(version);
@@ -1558,52 +1580,55 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
   }
 
   async createNginxConfig(confPath, logsPath, httpPort = 80, sslPort = 443, version = '1.28') {
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     // Use getNginxPath to get the correct versioned path
     const nginxPath = this.getNginxPath(version);
     const mimeTypesPath = path.join(nginxPath, 'conf', 'mime.types').replace(/\\/g, '/');
+    const fastcgiParamsPath = path.join(nginxPath, 'conf', 'fastcgi_params').replace(/\\/g, '/');
 
     // Per-version data paths for multi-version nginx support
     const webServerDataPath = dataPath;
     const sitesPath = path.join(webServerDataPath, 'nginx', version, 'sites').replace(/\\/g, '/');
     const pidPath = path.join(webServerDataPath, 'nginx', version, 'nginx.pid').replace(/\\/g, '/');
+    const normalizedLogsPath = logsPath.replace(/\\/g, '/');
+    const normalizedDataPath = dataPath.replace(/\\/g, '/');
 
     // Ensure version-specific directories exist
     await fs.ensureDir(path.join(webServerDataPath, 'nginx', version, 'sites'));
     await fs.ensureDir(path.join(webServerDataPath, 'nginx', version, 'logs'));
 
     const config = `worker_processes 1;
-pid ${pidPath};
-error_log ${logsPath.replace(/\\/g, '/')}/error.log;
+  pid "${pidPath}";
+  error_log "${normalizedLogsPath}/error.log";
 
 events {
     worker_connections 1024;
 }
 
 http {
-    include       ${mimeTypesPath};
+    include       "${mimeTypesPath}";
     default_type  application/octet-stream;
     sendfile      on;
     keepalive_timeout 65;
     client_max_body_size 128M;
     server_names_hash_bucket_size 128;
     
-    access_log ${logsPath.replace(/\\/g, '/')}/access.log;
-    error_log ${logsPath.replace(/\\/g, '/')}/http_error.log;
+    access_log "${normalizedLogsPath}/access.log";
+    error_log "${normalizedLogsPath}/http_error.log";
 
     # FastCGI params
-    include ${path.join(nginxPath, 'conf', 'fastcgi_params').replace(/\\/g, '/')};
+    include "${fastcgiParamsPath}";
 
     # Include virtual host configs from sites directory
-    include ${sitesPath}/*.conf;
+    include "${sitesPath}/*.conf";
 
     # Fallback server for unmatched requests
     # Project vhosts with network access use default_server to claim IP-based traffic
     server {
         listen ${httpPort};
         server_name localhost;
-        root ${dataPath.replace(/\\/g, '/')}/www;
+      root "${normalizedDataPath}/www";
         index index.html index.php;
         
         location / {
@@ -1638,7 +1663,7 @@ http {
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const confPath = path.join(dataPath, 'apache', 'httpd.conf');
     const logsPath = path.join(dataPath, 'apache', 'logs');
 
@@ -1658,7 +1683,7 @@ http {
         try {
           const { killProcessesByPath, isProcessRunning } = require('../utils/SpawnUtils');
           if (isProcessRunning('httpd.exe')) {
-            const apacheResourcesPath = path.join(app.getPath('userData'), 'resources', 'apache');
+            const apacheResourcesPath = path.join(this.resourcePath, 'apache');
             this.managers.log?.systemInfo('Killing stale DevBox Apache processes before start');
             await killProcessesByPath('httpd.exe', apacheResourcesPath);
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -1777,11 +1802,15 @@ http {
           cwd: apachePath,
           windowsHide: true,
           timeout: 10000,
-          encoding: 'utf8'
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe']
         });
         return { success: true };
       } catch (configError) {
-        const errorMsg = configError.stderr || configError.message || '';
+        const stderr = configError.stderr || '';
+        const stdout = configError.stdout || '';
+        const message = configError.message || '';
+        const errorMsg = `${stderr} ${stdout} ${message}`.trim();
         // Check for port binding errors (Windows error 10013 = permission denied, 10048 = already in use)
         const portBindError = errorMsg.includes('10013') || errorMsg.includes('10048') ||
           errorMsg.includes('could not bind') || errorMsg.includes('Address already in use') ||
@@ -1890,11 +1919,18 @@ http {
 
     proc.on('exit', (code) => {
       const status = this.serviceStatus.get('apache');
+
+      // On Windows, httpd.exe can detach and let the launcher process exit with
+      // code 0 while the real Apache workers keep serving. In that case keep the
+      // tracked port/version state so callers do not fall back to predictive ports.
+      if (process.platform === 'win32' && code === 0 && status.status === 'running') {
+        this.processes.delete(this.getProcessKey('apache', version));
+        status.pid = null;
+        return;
+      }
+
       if (status.status === 'running') {
         status.status = 'stopped';
-        // Clean up runningVersions so isVersionRunning returns false.
-        // Without this, stale entries cause startProject to take the
-        // "webServerAlreadyRunning" path with stale port info.
         this.runningVersions.get('apache')?.delete(version);
       }
     });
@@ -1947,7 +1983,7 @@ http {
   }
 
   async createApacheConfig(apachePath, confPath, logsPath, httpPort = 8081, httpsPort = 8444, additionalListenPorts = []) {
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const mimeTypesPath = path.join(apachePath, 'conf', 'mime.types').replace(/\\/g, '/');
 
     // Default SSL catch-all: Apache falls back to the first defined SSL VirtualHost when
@@ -2078,7 +2114,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mysql', version, 'data');
 
     // Find available port dynamically based on version
@@ -2287,7 +2323,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
   // Create init file for MySQL credential reset
   async createMySQLCredentialResetInitFile(user, password) {
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const initFile = path.join(dataPath, 'mysql_credential_reset.sql');
 
     const escapedPassword = password.replace(/'/g, "''");
@@ -2313,7 +2349,7 @@ FLUSH PRIVILEGES;
    * 3. No authentication is needed - it's internal server execution
    */
   async createCredentialsInitFile(serviceName, version) {
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const initFile = path.join(dataPath, serviceName, version, 'credentials_init.sql');
 
     // Get credentials from ConfigStore (the source of truth)
@@ -2413,7 +2449,7 @@ FLUSH PRIVILEGES;
       throw new Error(`MySQL ${version} binary not found`);
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mysql', version, 'data');
     const configPath = path.join(dataPath, 'mysql', version, 'my.cnf');
 
@@ -2654,7 +2690,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mariadb', version, 'data');
 
     // Find available port dynamically based on version
@@ -2748,7 +2784,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       throw new Error(`MariaDB ${version} binary not found`);
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mariadb', version, 'data');
     const configPath = path.join(dataPath, 'mariadb', version, 'my.cnf');
 
@@ -2908,7 +2944,7 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'redis', version, 'data');
 
     // Ensure data directory exists
@@ -3386,7 +3422,7 @@ ${servers.join('')}
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'postgresql', version, 'data');
     await fs.ensureDir(dataDir);
 
@@ -3501,7 +3537,7 @@ ${servers.join('')}
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mongodb', version, 'data');
     const logFile = path.join(dataPath, 'logs', `mongodb-${version}.log`);
     await fs.ensureDir(dataDir);
@@ -3613,7 +3649,7 @@ ${servers.join('')}
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const minioDataDir = path.join(dataPath, 'minio', 'data');
     await fs.ensureDir(minioDataDir);
 
@@ -3909,6 +3945,19 @@ ${servers.join('')}
           httpPort: versionInfo.port,
           sslPort: versionInfo.sslPort,
         };
+      }
+
+      // Apache on Windows can detach worker processes and let the launcher exit,
+      // which makes runningVersions stale even though the server is still up.
+      // In that case prefer the live status ports over predictive ownership logic.
+      if (serviceName === 'apache') {
+        const status = this.serviceStatus.get(serviceName);
+        if (status?.status === 'running' && status.version === version && status.port) {
+          return {
+            httpPort: status.port,
+            sslPort: status.sslPort,
+          };
+        }
       }
 
       // Version not running yet — use version-aware prediction instead of falling

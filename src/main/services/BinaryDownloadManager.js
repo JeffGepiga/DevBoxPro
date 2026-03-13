@@ -12,6 +12,7 @@ const unzipper = require('unzipper');
 const { exec, spawn } = require('child_process');
 const { Worker } = require('worker_threads');
 const { spawnAsync, killProcessesByPath } = require('../utils/SpawnUtils');
+const { getResourcesPath, getAppCachePath } = require('../utils/PathResolver');
 
 // Import centralized service configuration
 const { SERVICE_VERSIONS, VERSION_PORT_OFFSETS, DEFAULT_PORTS } = require('../../shared/serviceConfig');
@@ -21,7 +22,7 @@ const REMOTE_CONFIG_URL = 'https://raw.githubusercontent.com/JeffGepiga/DevBoxPr
 
 class BinaryDownloadManager {
   constructor() {
-    this.resourcesPath = path.join(app.getPath('userData'), 'resources');
+    this.resourcesPath = getResourcesPath(app);
     this.downloadProgress = new Map();
     this.listeners = new Set();
 
@@ -505,7 +506,7 @@ class BinaryDownloadManager {
     this.configVersion = 'built-in'; // Track current config version
 
     // Local config cache path - persists updates between app restarts
-    this.localConfigPath = path.join(app.getPath('userData'), 'binaries-config.json');
+    this.localConfigPath = getAppCachePath(app, 'binaries-config.json');
   }
 
   getPlatform() {

@@ -2,19 +2,24 @@ const Store = require('electron-store');
 const path = require('path');
 const os = require('os');
 const fs = require('fs-extra');
+const { app } = require('electron');
+const { getDataPath, getResourcesPath, getAppCachePath, getPortableRoot } = require('./PathResolver');
 
 class ConfigStore {
   constructor() {
     try {
       const defaultData = this.getDefaults();
+      this.resolvedDataPath = defaultData.dataPath;
       this.store = new Store({
         name: 'devbox-pro-config',
         defaults: defaultData,
         cwd: defaultData.dataPath
       });
 
+      this.normalizeDataPath();
+
       // Ensure data directory exists
-      const dataPath = this.get('dataPath');
+      const dataPath = this.getDataPath();
       try {
         fs.ensureDirSync(dataPath);
       } catch (err) {
@@ -24,13 +29,33 @@ class ConfigStore {
       // Failed to initialize store - this is a critical error but we can't log to system yet
       // Create a fallback in-memory store
       this._fallbackData = this.getDefaults();
+      this.resolvedDataPath = this._fallbackData.dataPath;
       this.store = null;
+    }
+  }
+
+  normalizeDataPath() {
+    if (!this.resolvedDataPath) {
+      this.resolvedDataPath = this.getDefaults().dataPath;
+    }
+
+    if (!this.store) {
+      if (this._fallbackData) {
+        this._fallbackData.dataPath = this.resolvedDataPath;
+      }
+      return;
+    }
+
+    const storedDataPath = this.store.get('dataPath');
+    if (storedDataPath !== this.resolvedDataPath) {
+      this.store.set('dataPath', this.resolvedDataPath);
     }
   }
 
   getDefaults() {
     let dataPath;
     let defaultProjectsPath;
+    const portableDataPath = getPortableRoot(app) ? getDataPath(app) : null;
 
     // Accept both env var (set by test runner) and CLI arg (set by main.js from --playwright-e2e)
     const isTestEnv = process.env.PLAYWRIGHT_TEST === 'true'
@@ -38,12 +63,17 @@ class ConfigStore {
       || process.env.NODE_ENV === 'test'
       || process.env.VITEST === 'true';
 
-    if (isTestEnv) {
+    if (portableDataPath) {
+      dataPath = portableDataPath;
+      defaultProjectsPath = process.platform === 'win32'
+        ? 'C:/Projects'
+        : path.join(os.homedir(), 'Projects');
+    } else if (isTestEnv) {
       const baseDir = process.env.TEST_USER_DATA_DIR || os.tmpdir();
       dataPath = path.join(baseDir, '.devbox-pro-test');
       defaultProjectsPath = path.join(dataPath, 'Projects');
     } else {
-      dataPath = path.join(os.homedir(), '.devbox-pro');
+      dataPath = getDataPath(app);
       defaultProjectsPath = process.platform === 'win32'
         ? 'C:/Projects'
         : path.join(os.homedir(), 'Projects');
@@ -202,35 +232,59 @@ class ConfigStore {
 
   // Path helpers
   getDataPath() {
-    return this.get('dataPath');
+    if (!this.resolvedDataPath) {
+      this.resolvedDataPath = this.getDefaults().dataPath;
+    }
+
+    return this.resolvedDataPath;
+  }
+
+  getResourcesPath() {
+    return getResourcesPath(app);
+  }
+
+  getAppCachePath(...segments) {
+    return getAppCachePath(app, ...segments);
+  }
+
+  getBinaryConfigPath() {
+    return this.getAppCachePath('binaries-config.json');
+  }
+
+  getCliPath() {
+    return path.join(this.getDataPath(), 'cli');
+  }
+
+  getSshPath() {
+    return path.join(this.getDataPath(), 'ssh');
   }
 
   getLogsPath() {
-    return path.join(this.get('dataPath'), 'logs');
+    return path.join(this.getDataPath(), 'logs');
   }
 
   getMysqlDataPath() {
-    return path.join(this.get('dataPath'), 'mysql', 'data');
+    return path.join(this.getDataPath(), 'mysql', 'data');
   }
 
   getRedisDataPath() {
-    return path.join(this.get('dataPath'), 'redis');
+    return path.join(this.getDataPath(), 'redis');
   }
 
   getPostgresqlDataPath(version = '17') {
-    return path.join(this.get('dataPath'), 'postgresql', version, 'data');
+    return path.join(this.getDataPath(), 'postgresql', version, 'data');
   }
 
   getMongodbDataPath(version = '8.0') {
-    return path.join(this.get('dataPath'), 'mongodb', version, 'data');
+    return path.join(this.getDataPath(), 'mongodb', version, 'data');
   }
 
   getMinioDataPath() {
-    return path.join(this.get('dataPath'), 'minio', 'data');
+    return path.join(this.getDataPath(), 'minio', 'data');
   }
 
   getSslPath() {
-    return path.join(this.get('dataPath'), 'ssl');
+    return path.join(this.getDataPath(), 'ssl');
   }
 }
 

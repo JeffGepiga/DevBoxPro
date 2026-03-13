@@ -2,7 +2,6 @@ const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const net = require('net');
-const { app } = require('electron');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
 const { Transform } = require('stream');
@@ -73,7 +72,7 @@ class DatabaseManager {
     // Note: Actual per-version data directories (e.g., data/mysql/8.4/data) 
     // are created by ServiceManager when starting each version.
     // We just ensure the base backup directories exist here.
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.configStore.getDataPath();
     await fs.ensureDir(path.join(dataPath, 'mysql', 'backups'));
     await fs.ensureDir(path.join(dataPath, 'mariadb', 'backups'));
     await fs.ensureDir(path.join(dataPath, 'postgresql', 'backups'));
@@ -298,7 +297,7 @@ class DatabaseManager {
   // Security: File is created with restrictive permissions and auto-deleted
   async createCredentialResetInitFile(newUser, newPassword) {
     const dbType = this.getActiveDatabaseType();
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.configStore.getDataPath();
     const initFilePath = path.join(dataPath, dbType, 'credential_reset.sql');
 
     // Security: Escape password for SQL - escape single quotes and backslashes

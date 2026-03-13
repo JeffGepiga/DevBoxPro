@@ -11,13 +11,14 @@ const https = require('https');
 const fs = require('fs-extra');
 const path = require('path');
 const { app } = require('electron');
+const { getAppCachePath } = require('../utils/PathResolver');
 
 const REMOTE_COMPATIBILITY_URL = 'https://raw.githubusercontent.com/JeffGepiga/DevBoxPro/main/config/compatibility.json';
 
 class CompatibilityManager {
   constructor() {
     // Local config cache path
-    this.localConfigPath = path.join(app.getPath('userData'), 'compatibility-config.json');
+    this.localConfigPath = getAppCachePath(app, 'compatibility-config.json');
 
     // Remote config state
     this.remoteConfig = null;

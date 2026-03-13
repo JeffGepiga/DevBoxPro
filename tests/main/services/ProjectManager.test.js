@@ -300,6 +300,41 @@ describe('ProjectManager', () => {
         });
     });
 
+    describe('Nginx vhost generation', () => {
+        it('quotes fastcgi include paths in generated vhost configs', async () => {
+            const project = {
+                id: 'proj-nginx',
+                name: 'ProjNginx',
+                type: 'laravel',
+                path: 'C:/Sites/My App',
+                domain: 'proj-nginx.test',
+                domains: ['proj-nginx.test'],
+                phpVersion: '8.3',
+                webServer: 'nginx',
+                webServerVersion: '1.28',
+                ssl: false,
+                networkAccess: false,
+                services: {},
+                supervisor: { processes: [] }
+            };
+
+            configStore.get.mockImplementation((key, def) => {
+                if (key === 'projects' || key === 'devbox.projects') return [project];
+                if (key === 'resourcePath') return 'C:/Users/Test User/AppData/Roaming/devbox-pro/resources';
+                if (key === 'settings') return { webServer: 'nginx' };
+                return def;
+            });
+            configStore.getDataPath = vi.fn(() => 'C:/Users/Test User/.devbox-pro');
+            configStore.getResourcesPath = vi.fn(() => 'C:/Users/Test User/AppData/Roaming/devbox-pro/resources');
+            managers.service.getServicePorts.mockReturnValue({ httpPort: 80, sslPort: 443 });
+
+            await mgr.createNginxVhost(project, 9000, '1.28');
+
+            const [, config] = fs.writeFile.mock.calls.at(-1);
+            expect(config).toContain('include "C:/Users/Test User/AppData/Roaming/devbox-pro/resources/nginx/1.28/win/conf/fastcgi_params";');
+        });
+    });
+
     // ═══════════════════════════════════════════════════════════════════
     // Helpers (Env, VHost, Detection)
     // ═══════════════════════════════════════════════════════════════════

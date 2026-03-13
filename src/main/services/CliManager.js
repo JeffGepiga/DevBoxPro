@@ -53,7 +53,9 @@ class CliManager {
    * Get the path where CLI scripts should be installed
    */
   getCliPath() {
-    const dataPath = this.configStore.get('dataPath');
+    const dataPath = typeof this.configStore.getDataPath === 'function'
+      ? this.configStore.getDataPath()
+      : this.configStore.get('dataPath');
     return path.join(dataPath, 'cli');
   }
 

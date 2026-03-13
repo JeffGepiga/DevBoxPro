@@ -9,6 +9,11 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
+import os from 'os';
+import fs from 'fs';
+
+require('../../helpers/mockElectronCjs');
+const { mockApp } = require('../../helpers/mockElectronCjs');
 
 const { ConfigStore } = require('../../../src/main/utils/ConfigStore');
 
@@ -343,6 +348,34 @@ describe('ConfigStore', () => {
     describe('path helpers', () => {
         it('getDataPath() returns a string', () => {
             expect(typeof store.getDataPath()).toBe('string');
+        });
+
+        it('normalizes stored dataPath to the resolved portable path', () => {
+            const installRoot = path.join(os.tmpdir(), `devboxpro-portable-${Date.now()}`);
+            fs.mkdirSync(installRoot, { recursive: true });
+            fs.writeFileSync(path.join(installRoot, 'portable.flag'), '');
+
+            const originalGetPath = mockApp.getPath;
+            mockApp.getPath = (name) => {
+                if (name === 'exe') {
+                    return path.join(installRoot, 'DevBox Pro.exe');
+                }
+                return originalGetPath(name);
+            };
+
+            try {
+                const portableStore = new ConfigStore();
+                portableStore.set('dataPath', path.join(os.homedir(), '.devbox-pro'));
+
+                const normalizedPath = path.join(installRoot, 'data');
+                portableStore.normalizeDataPath();
+
+                expect(portableStore.getDataPath()).toBe(normalizedPath);
+                expect(portableStore.get('dataPath')).toBe(normalizedPath);
+            } finally {
+                mockApp.getPath = originalGetPath;
+                fs.rmSync(installRoot, { recursive: true, force: true });
+            }
         });
 
         it('getLogsPath() contains logs', () => {
