@@ -443,14 +443,15 @@ function CreateProject() {
     const checkCompat = async () => {
       try {
         const config = {
+          type: formData.type,
+          installFresh: formData.installFresh,
           phpVersion: formData.phpVersion,
           mysqlVersion: formData.services.mysql ? formData.services.mysqlVersion : null,
           mariadbVersion: formData.services.mariadb ? formData.services.mariadbVersion : null,
           redisVersion: formData.services.redis ? formData.services.redisVersion : null,
-          nodeVersion: formData.type === 'nodejs' || formData.services.nodejs ? formData.services.nodejsVersion : null,
+          nodejsVersion: formData.type === 'nodejs' || formData.services.nodejs ? formData.services.nodejsVersion : null,
           webServer: formData.webServer,
           webServerVersion: formData.webServerVersion,
-          projectType: formData.type,
         };
         const result = await window.devbox?.projects.checkCompatibility(config);
         if (result?.warnings) {
@@ -463,7 +464,7 @@ function CreateProject() {
       }
     };
     checkCompat();
-  }, [formData.phpVersion, formData.services, formData.type]);
+  }, [formData.phpVersion, formData.services, formData.type, formData.installFresh, formData.wordpressVersion, formData.webServer, formData.webServerVersion]);
 
   // Check if required binaries are available
   const hasRequiredBinaries = () => {

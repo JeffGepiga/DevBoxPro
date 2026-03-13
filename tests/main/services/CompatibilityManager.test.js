@@ -156,6 +156,21 @@ describe('CompatibilityManager', () => {
             expect(cm.evaluateCondition('7.4', { min: '8.0', max: '8.3' })).toBe(false);
         });
 
+        it('uses semantic comparison for patch-style max bounds', () => {
+            expect(cm.evaluateCondition('8.1', { max: '8.1.99' })).toBe(true);
+            expect(cm.evaluateCondition('8.2', { max: '8.1.99' })).toBe(false);
+        });
+
+        it('supports explicit less-than comparisons', () => {
+            expect(cm.evaluateCondition('8.1', { lt: '8.2' })).toBe(true);
+            expect(cm.evaluateCondition('8.2', { lt: '8.2' })).toBe(false);
+        });
+
+        it('supports explicit greater-than-or-equal comparisons', () => {
+            expect(cm.evaluateCondition('8.2', { gte: '8.2' })).toBe(true);
+            expect(cm.evaluateCondition('8.1', { gte: '8.2' })).toBe(false);
+        });
+
         it('returns false when value is null with min/max', () => {
             expect(cm.evaluateCondition(null, { min: '8.0' })).toBe(false);
         });
@@ -174,6 +189,7 @@ describe('CompatibilityManager', () => {
             phpVersion: '8.3',
             nodeVersion: '20',
             type: 'laravel',
+            frameworkVersion: '11',
             webServer: 'nginx',
             webServerVersion: '1.26',
             services: { mysql: '8.4', redis: '7.2' },
@@ -203,8 +219,40 @@ describe('CompatibilityManager', () => {
             expect(cm.getConfigValue(config, 'projectType')).toBe('laravel');
         });
 
+        it('returns frameworkVersion for framework rules', () => {
+            expect(cm.getConfigValue(config, 'frameworkVersion')).toBe('11');
+        });
+
         it('returns undefined for missing service', () => {
             expect(cm.getConfigValue(config, 'mariadb')).toBeUndefined();
+        });
+
+        it('supports flattened compatibility payloads', () => {
+            const flatConfig = {
+                projectType: 'laravel',
+                mysqlVersion: '8.4',
+                nodejsVersion: '22',
+            };
+
+            expect(cm.getConfigValue(flatConfig, 'projectType')).toBe('laravel');
+            expect(cm.getConfigValue(flatConfig, 'mysql')).toBe('8.4');
+            expect(cm.getConfigValue(flatConfig, 'nodejs')).toBe('22');
+        });
+
+        it('infers fresh framework version in normalized config', () => {
+            cm.frameworkRequirements = {
+                laravel: {
+                    '10': { phpMin: '8.1' },
+                    '11': { phpMin: '8.2' },
+                },
+            };
+
+            const normalized = cm.normalizeConfig({
+                projectType: 'laravel',
+                installFresh: true,
+            });
+
+            expect(normalized.frameworkVersion).toBe('11');
         });
     });
 
@@ -266,7 +314,7 @@ describe('CompatibilityManager', () => {
     });
 
     // ═══════════════════════════════════════════════════════════════════
-    // checkCompatibility() — built-in rules
+    // checkCompatibility() — bundled config rules
     // ═══════════════════════════════════════════════════════════════════
 
     describe('checkCompatibility()', () => {
@@ -313,11 +361,24 @@ describe('CompatibilityManager', () => {
             const result = cm.checkCompatibility({
                 phpVersion: '8.1',
                 type: 'laravel',
+                installFresh: true,
                 services: {},
             });
-            const laravel = result.warnings.find((w) => w.id === 'laravel-php-version');
+            const laravel = result.warnings.find((w) => w.id === 'laravel11-php-version');
             expect(laravel).toBeDefined();
             expect(laravel.message).toContain('Laravel 11 requires PHP 8.2');
+        });
+
+        it('normalizes flattened compatibility payloads before checking rules', () => {
+            const result = cm.checkCompatibility({
+                phpVersion: '8.1',
+                projectType: 'laravel',
+                mysqlVersion: '5.7',
+                installFresh: true,
+            });
+
+            expect(result.warnings.some((w) => w.id === 'laravel11-php-version')).toBe(true);
+            expect(result.warnings.some((w) => w.id === 'php8-mysql57-auth')).toBe(true);
         });
 
         it('detects Redis PHP extension note', () => {
@@ -398,6 +459,17 @@ describe('CompatibilityManager', () => {
         });
     });
 
+    describe('loadBundledConfig()', () => {
+        it('loads framework metadata from bundled compatibility config', async () => {
+            const loaded = await cm.loadBundledConfig();
+
+            expect(loaded).toBe(true);
+            expect(cm.getFrameworkRequirements('laravel', '11')).toEqual(
+                expect.objectContaining({ phpMin: '8.2' })
+            );
+        });
+    });
+
     describe('loadCachedConfig()', () => {
         it('loads saved config and applies rules', async () => {
             const config = {
@@ -427,6 +499,46 @@ describe('CompatibilityManager', () => {
             await fs.writeFile(cm.localConfigPath, 'not json!!!');
             expect(await cm.loadCachedConfig()).toBe(false);
         });
+
+        it('applies framework-specific remote rules with normalized payloads', async () => {
+            const config = {
+                version: '2.0.0',
+                frameworkRequirements: {
+                    laravel: {
+                        '10': { phpMin: '8.1', recommended: '8.2' },
+                        '11': { phpMin: '8.2', recommended: '8.3' },
+                    },
+                },
+                rules: [
+                    {
+                        id: 'laravel11-php-version',
+                        name: 'Laravel 11 PHP Requirements',
+                        enabled: true,
+                        conditions: {
+                            projectType: { exact: 'laravel' },
+                            frameworkVersion: { exact: '11' },
+                            phpVersion: { lt: '8.2' },
+                        },
+                        result: {
+                            level: 'warning',
+                            message: 'Laravel 11 requires PHP 8.2 or higher. PHP {phpVersion} will work with Laravel 10 or earlier.',
+                            suggestion: 'Use PHP 8.2+ for Laravel 11, or PHP 8.1+ for Laravel 10.',
+                        },
+                    },
+                ],
+            };
+
+            await fs.writeJson(cm.localConfigPath, { config }, { spaces: 2 });
+            await cm.loadCachedConfig();
+
+            const result = cm.checkCompatibility({
+                phpVersion: '8.1',
+                projectType: 'laravel',
+                installFresh: true,
+            });
+
+            expect(result.warnings.some((w) => w.id === 'laravel11-php-version')).toBe(true);
+        });
     });
 
     // ═══════════════════════════════════════════════════════════════════
@@ -440,20 +552,28 @@ describe('CompatibilityManager', () => {
             expect(info).toHaveProperty('ruleCount');
             expect(info).toHaveProperty('lastCheck');
             expect(info).toHaveProperty('hasRemoteConfig');
-            expect(info.version).toBe('built-in');
+            expect(info.version).toBe('1.1.0');
             expect(info.ruleCount).toBeGreaterThan(0);
         });
     });
 
     describe('getDeprecationInfo()', () => {
-        it('returns null when no deprecation info', () => {
-            expect(cm.getDeprecationInfo('php', '8.3')).toBeNull();
+        it('returns version metadata from bundled config', () => {
+            expect(cm.getDeprecationInfo('php', '8.3')).toEqual(
+                expect.objectContaining({ status: 'active' })
+            );
         });
     });
 
     describe('getFrameworkRequirements()', () => {
-        it('returns null when no framework requirements', () => {
-            expect(cm.getFrameworkRequirements('laravel', '11')).toBeNull();
+        it('returns bundled framework requirements', () => {
+            expect(cm.getFrameworkRequirements('laravel', '11')).toEqual(
+                expect.objectContaining({ phpMin: '8.2' })
+            );
+        });
+
+        it('returns null for unknown framework version', () => {
+            expect(cm.getFrameworkRequirements('laravel', '99')).toBeNull();
         });
     });
 

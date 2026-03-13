@@ -23,315 +23,69 @@ class CompatibilityManager {
     this.remoteConfig = null;
     this.lastRemoteCheck = null;
 
-    // Define built-in compatibility rules as fallback
-    // These are used when remote config is unavailable
-    this.builtInRules = [
-      {
-        id: 'php8-mysql57-auth',
-        name: 'PHP 8.x + MySQL 5.7 Authentication',
-        check: (config) => {
-          const phpMajor = this.getMajorVersion(config.phpVersion);
-          const mysqlVersion = config.services?.mysql;
-          if (phpMajor >= 8 && mysqlVersion && this.compareVersions(mysqlVersion, '8.0') < 0) {
-            return {
-              level: 'warning',
-              message: `MySQL ${mysqlVersion} uses legacy authentication (mysql_native_password). You may need to configure MySQL to use mysql_native_password for PHP ${config.phpVersion} compatibility.`,
-              suggestion: 'Consider using MySQL 8.0+ or configure mysql_native_password in MySQL settings.',
-            };
-          }
-          return null;
-        },
-      },
-      {
-        id: 'php74-mysql84-features',
-        name: 'PHP 7.4 + MySQL 8.4 Features',
-        check: (config) => {
-          const phpMajor = this.getMajorVersion(config.phpVersion);
-          const mysqlVersion = config.services?.mysql;
-          if (phpMajor < 8 && mysqlVersion && this.compareVersions(mysqlVersion, '8.4') >= 0) {
-            return {
-              level: 'info',
-              message: `Some MySQL 8.4 features may not be fully supported with PHP ${config.phpVersion}. Consider upgrading PHP for full compatibility.`,
-              suggestion: 'Upgrade to PHP 8.x for best MySQL 8.4 compatibility.',
-            };
-          }
-          return null;
-        },
-      },
-      {
-        id: 'mysql-mariadb-conflict',
-        name: 'MySQL + MariaDB Port Conflict',
-        check: (config) => {
-          if (config.services?.mysql && config.services?.mariadb) {
-            return {
-              level: 'warning',
-              message: 'Running both MySQL and MariaDB simultaneously may cause port conflicts. Each will use a different port automatically.',
-              suggestion: 'DevBox Pro assigns different ports to each database version automatically.',
-            };
-          }
-          return null;
-        },
-      },
-      {
-        id: 'legacy-php-modern-node',
-        name: 'Legacy PHP + Modern Node.js',
-        check: (config) => {
-          const phpMajor = this.getMajorVersion(config.phpVersion);
-          const nodeVersion = config.nodeVersion;
-          if (phpMajor < 8 && nodeVersion && parseInt(nodeVersion) >= 20) {
-            return {
-              level: 'info',
-              message: `Node.js ${nodeVersion} build tools are designed for modern workflows. Some older Laravel/PHP tools may expect older Node.js versions.`,
-              suggestion: 'This is usually fine, but if you encounter build issues, try Node.js 18 or 16.',
-            };
-          }
-          return null;
-        },
-      },
-      {
-        id: 'php74-deprecated',
-        name: 'PHP 7.4 End of Life',
-        check: (config) => {
-          if (config.phpVersion === '7.4') {
-            return {
-              level: 'info',
-              message: 'PHP 7.4 reached end-of-life in November 2022 and no longer receives security updates.',
-              suggestion: 'Consider upgrading to PHP 8.x for security and performance improvements.',
-            };
-          }
-          return null;
-        },
-      },
-      {
-        id: 'php80-deprecated',
-        name: 'PHP 8.0 End of Life',
-        check: (config) => {
-          if (config.phpVersion === '8.0') {
-            return {
-              level: 'info',
-              message: 'PHP 8.0 reached end-of-life in November 2023 and no longer receives security updates.',
-              suggestion: 'Consider upgrading to PHP 8.1+ for security updates.',
-            };
-          }
-          return null;
-        },
-      },
-      {
-        id: 'redis-php-extension',
-        name: 'Redis PHP Extension',
-        check: (config) => {
-          if (config.services?.redis) {
-            return {
-              level: 'info',
-              message: 'Make sure the PHP Redis extension (phpredis) is enabled in php.ini for your selected PHP version.',
-              suggestion: 'Check Binary Manager to configure PHP extensions.',
-            };
-          }
-          return null;
-        },
-      },
-      {
-        id: 'laravel-php-version',
-        name: 'Laravel PHP Version Requirements',
-        check: (config) => {
-          if (config.type === 'laravel') {
-            const phpVersion = parseFloat(config.phpVersion);
-            // Laravel 11 requires PHP 8.2+
-            if (phpVersion < 8.2) {
-              return {
-                level: 'warning',
-                message: `Laravel 11 requires PHP 8.2 or higher. PHP ${config.phpVersion} will work with Laravel 10 or earlier.`,
-                suggestion: 'Use PHP 8.2+ for Laravel 11, or PHP 8.1+ for Laravel 10.',
-              };
-            }
-          }
-          return null;
-        },
-      },
-      {
-        id: 'wordpress-php-version',
-        name: 'WordPress PHP Version',
-        check: (config) => {
-          if (config.type === 'wordpress') {
-            const phpVersion = parseFloat(config.phpVersion);
-            if (phpVersion < 7.4) {
-              return {
-                level: 'warning',
-                message: `WordPress recommends PHP 7.4 or higher. PHP ${config.phpVersion} may cause compatibility issues.`,
-                suggestion: 'Upgrade to PHP 7.4+ for best WordPress compatibility.',
-              };
-            }
-          }
-          return null;
-        },
-      },
-      {
-        id: 'mariadb-mysql-syntax',
-        name: 'MariaDB vs MySQL Syntax',
-        check: (config) => {
-          if (config.services?.mariadb && config.type === 'laravel') {
-            return {
-              level: 'info',
-              message: 'MariaDB is MySQL-compatible but may have minor syntax differences in edge cases.',
-              suggestion: 'Laravel works great with MariaDB. Just ensure your database driver is set correctly.',
-            };
-          }
-          return null;
-        },
-      },
-      {
-        id: 'nginx-old-mysql84',
-        name: 'Old Nginx + MySQL 8.4',
-        check: (config) => {
-          const nginxVersion = config.webServerVersion || config.services?.nginx;
-          const mysqlVersion = config.services?.mysql;
-          if (nginxVersion && mysqlVersion) {
-            const nginx = parseFloat(nginxVersion);
-            const mysql = parseFloat(mysqlVersion);
-            if (nginx < 1.25 && mysql >= 8.4) {
-              return {
-                level: 'warning',
-                message: `Nginx ${nginxVersion} may have connection handling issues with MySQL 8.4's improved connection protocol.`,
-                suggestion: 'Consider upgrading to Nginx 1.26+ for better compatibility with MySQL 8.4.',
-              };
-            }
-          }
-          return null;
-        },
-      },
-      {
-        id: 'apache-old-mysql84',
-        name: 'Old Apache + MySQL 8.4',
-        check: (config) => {
-          const apacheVersion = config.services?.apache || (config.webServer === 'apache' ? config.webServerVersion : null);
-          const mysqlVersion = config.services?.mysql;
-          if (apacheVersion && mysqlVersion) {
-            const mysql = parseFloat(mysqlVersion);
-            if (mysql >= 8.4) {
-              return {
-                level: 'info',
-                message: `Apache works with MySQL 8.4 but newer Apache versions have better performance.`,
-                suggestion: 'Consider updating Apache to 2.4.58+ for optimal performance with MySQL 8.4.',
-              };
-            }
-          }
-          return null;
-        },
-      },
-      {
-        id: 'nginx-old-php84',
-        name: 'Old Nginx + PHP 8.4',
-        check: (config) => {
-          const nginxVersion = config.webServerVersion || config.services?.nginx;
-          const phpVersion = parseFloat(config.phpVersion);
-          if (nginxVersion && phpVersion >= 8.4) {
-            const nginx = parseFloat(nginxVersion);
-            if (nginx < 1.25) {
-              return {
-                level: 'info',
-                message: `Nginx ${nginxVersion} works with PHP 8.4 but Nginx 1.26+ has better FastCGI handling.`,
-                suggestion: 'Upgrade to Nginx 1.26+ for improved PHP-FPM performance and HTTP/2 support.',
-              };
-            }
-          }
-          return null;
-        },
-      },
-      {
-        id: 'nginx-mariadb-114',
-        name: 'Old Nginx + MariaDB 11.4',
-        check: (config) => {
-          const nginxVersion = config.webServerVersion || config.services?.nginx;
-          const mariadbVersion = config.services?.mariadb;
-          if (nginxVersion && mariadbVersion) {
-            const nginx = parseFloat(nginxVersion);
-            const mariadb = parseFloat(mariadbVersion);
-            if (nginx < 1.25 && mariadb >= 11.4) {
-              return {
-                level: 'info',
-                message: `MariaDB 11.4 works with Nginx ${nginxVersion}, but newer Nginx versions offer better upstream handling.`,
-                suggestion: 'Consider Nginx 1.26+ for improved connection pooling with MariaDB 11.4.',
-              };
-            }
-          }
-          return null;
-        },
-      },
-      {
-        id: 'php-postgresql-extension',
-        name: 'PHP + PostgreSQL Extension',
-        check: (config) => {
-          if (config.services?.postgresql) {
-            return {
-              level: 'info',
-              message: 'PostgreSQL requires the pgsql or pdo_pgsql PHP extension. Make sure it is enabled in your php.ini.',
-              suggestion: 'Enable extension=pgsql and extension=pdo_pgsql in your PHP configuration.',
-            };
-          }
-          return null;
-        },
-      },
-      {
-        id: 'php-mongodb-extension',
-        name: 'PHP + MongoDB Extension',
-        check: (config) => {
-          if (config.services?.mongodb) {
-            return {
-              level: 'info',
-              message: 'MongoDB requires the mongodb PHP extension (pecl). It is not included in the base PHP build.',
-              suggestion: 'Install the extension with: pecl install mongodb, then add extension=mongodb.so to php.ini.',
-            };
-          }
-          return null;
-        },
-      },
-      {
-        id: 'mongodb-avx-requirement',
-        name: 'MongoDB 5.0+ AVX requirement',
-        check: (config) => {
-          const mongoVersion = config.services?.mongodbVersion || config.services?.mongodb;
-          if (mongoVersion && parseFloat(mongoVersion) >= 5.0) {
-            return {
-              level: 'warning',
-              message: `MongoDB ${mongoVersion} requires a CPU with AVX instructions. Older hardware (pre-2011) may not support this.`,
-              suggestion: 'If MongoDB fails to start, your CPU may not support AVX. Use MongoDB 4.4 or earlier as a fallback.',
-            };
-          }
-          return null;
-        },
-      },
-      {
-        id: 'python-windows-pip',
-        name: 'Python Windows Embeddable + pip',
-        check: (config) => {
-          if (config.services?.python && process.platform === 'win32') {
-            return {
-              level: 'info',
-              message: 'The Windows embeddable Python package requires manual pip setup. DevBox Pro enables import site automatically during download.',
-              suggestion: 'pip should be available after installation. Run pip install --upgrade pip to ensure it is current.',
-            };
-          }
-          return null;
-        },
-      },
-    ];
-
-    // Active rules (either from remote config or built-in)
-    this.rules = [...this.builtInRules];
+    // Active rules come from the bundled compatibility config and may later be
+    // overridden by a cached remote config.
+    this.rules = [];
 
     // Remote config data
     this.deprecatedServices = {};
     this.frameworkRequirements = {};
     this.webServerRecommendations = {};
     this.databaseRecommendations = {};
-    this.configVersion = 'built-in';
+    this.configVersion = 'uninitialized';
+
+    this.loadBundledConfigSync();
   }
 
   /**
    * Initialize the compatibility manager and load cached config
    */
   async initialize() {
+    if (this.rules.length === 0) {
+      await this.loadBundledConfig();
+    }
     await this.loadCachedConfig();
+  }
+
+  getBundledConfigPath() {
+    const appPath = typeof app.getAppPath === 'function' ? app.getAppPath() : process.cwd();
+    return path.join(appPath, 'config', 'compatibility.json');
+  }
+
+  loadBundledConfigSync() {
+    try {
+      const bundledConfigPath = this.getBundledConfigPath();
+
+      if (fs.pathExistsSync(bundledConfigPath)) {
+        const bundledConfig = fs.readJsonSync(bundledConfigPath);
+        this.applyConfigData(bundledConfig, bundledConfig.version || 'bundled');
+        return true;
+      }
+    } catch (error) {
+      this.managers?.log?.systemWarn('Failed to synchronously load bundled compatibility config', { error: error.message });
+    }
+
+    return false;
+  }
+
+  /**
+   * Load bundled config/compatibility.json from the app directory.
+   * This is the service-owned source of truth before any cached remote override.
+   */
+  async loadBundledConfig() {
+    try {
+      const bundledConfigPath = this.getBundledConfigPath();
+
+      if (await fs.pathExists(bundledConfigPath)) {
+        const bundledConfig = await fs.readJson(bundledConfigPath);
+        this.applyConfigData(bundledConfig, bundledConfig.version || 'bundled');
+        return true;
+      }
+    } catch (error) {
+      this.managers?.log?.systemWarn('Failed to load bundled compatibility config', { error: error.message });
+    }
+
+    return false;
   }
 
   /**
@@ -440,11 +194,7 @@ class CompatibilityManager {
     // Find removed rules (rules that exist locally but not in remote)
     for (const rule of this.rules) {
       if (!remoteRuleIds.has(rule.id)) {
-        // Only mark as removed if it's not a built-in rule
-        const isBuiltIn = this.builtInRules.some(b => b.id === rule.id);
-        if (!isBuiltIn) {
-          removedRules.push({ id: rule.id, name: rule.name });
-        }
+        removedRules.push({ id: rule.id, name: rule.name });
       }
     }
 
@@ -465,15 +215,7 @@ class CompatibilityManager {
     }
 
     try {
-      // Convert remote rules to executable functions
-      this.applyRemoteRules(this.remoteConfig);
-
-      // Update metadata
-      this.deprecatedServices = this.remoteConfig.deprecatedServices || {};
-      this.frameworkRequirements = this.remoteConfig.frameworkRequirements || {};
-      this.webServerRecommendations = this.remoteConfig.webServerRecommendations || {};
-      this.databaseRecommendations = this.remoteConfig.databaseRecommendations || {};
-      this.configVersion = this.remoteConfig.version;
+      this.applyConfigData(this.remoteConfig, this.remoteConfig.version);
 
       // Save to local cache
       await this.saveCachedConfig(this.remoteConfig);
@@ -504,17 +246,16 @@ class CompatibilityManager {
       });
     }
 
-    // Merge with built-in rules (built-in takes precedence for same ID)
-    const builtInIds = new Set(this.builtInRules.map(r => r.id));
-    const mergedRules = [...this.builtInRules];
+    this.rules = newRules;
+  }
 
-    for (const rule of newRules) {
-      if (!builtInIds.has(rule.id)) {
-        mergedRules.push(rule);
-      }
-    }
-
-    this.rules = mergedRules;
+  applyConfigData(config, version = config?.version || 'bundled') {
+    this.applyRemoteRules(config);
+    this.deprecatedServices = config.deprecatedServices || {};
+    this.frameworkRequirements = config.frameworkRequirements || {};
+    this.webServerRecommendations = config.webServerRecommendations || {};
+    this.databaseRecommendations = config.databaseRecommendations || {};
+    this.configVersion = version;
   }
 
   /**
@@ -548,6 +289,64 @@ class CompatibilityManager {
   }
 
   /**
+   * Normalize compatibility config so callers can pass either saved-project
+   * shape or flattened UI payloads.
+   */
+  normalizeConfig(config = {}) {
+    const services = { ...(config.services || {}) };
+    const projectType = config.type || config.projectType;
+
+    const getServiceVersion = (serviceName) => {
+      const flatVersionKey = `${serviceName}Version`;
+
+      if (config[flatVersionKey] !== undefined && config[flatVersionKey] !== null) {
+        return config[flatVersionKey];
+      }
+
+      if (services[flatVersionKey] !== undefined && services[flatVersionKey] !== null) {
+        return services[flatVersionKey];
+      }
+
+      if (typeof services[serviceName] === 'string') {
+        return services[serviceName];
+      }
+
+      return null;
+    };
+
+    for (const serviceName of ['mysql', 'mariadb', 'redis', 'postgresql', 'mongodb', 'python', 'memcached', 'minio']) {
+      const version = getServiceVersion(serviceName);
+      if (version !== null) {
+        services[serviceName] = version;
+      }
+    }
+
+    return {
+      ...config,
+      type: projectType,
+      projectType: config.projectType || config.type,
+      nodeVersion: config.nodeVersion || config.nodejsVersion || getServiceVersion('nodejs'),
+      frameworkVersion: config.frameworkVersion || config.projectVersion || this.getFreshFrameworkVersion(projectType, config.installFresh),
+      services,
+    };
+  }
+
+  getFreshFrameworkVersion(projectType, installFresh) {
+    if (!installFresh || !projectType) {
+      return null;
+    }
+
+    const knownVersions = this.frameworkRequirements?.[projectType];
+    const configuredVersions = knownVersions ? Object.keys(knownVersions) : [];
+
+    if (configuredVersions.length > 0) {
+      return configuredVersions.sort((left, right) => this.compareVersions(right, left))[0];
+    }
+
+    return null;
+  }
+
+  /**
    * Get a value from config by key
    */
   getConfigValue(config, key) {
@@ -556,13 +355,19 @@ class CompatibilityManager {
         return config.phpVersion;
       case 'nodeVersion':
       case 'nodejs':
-        return config.nodeVersion;
+        return config.nodeVersion || config.nodejsVersion;
       case 'mysql':
-        return config.services?.mysql;
+        return config.services?.mysql || config.mysqlVersion;
       case 'mariadb':
-        return config.services?.mariadb;
+        return config.services?.mariadb || config.mariadbVersion;
       case 'redis':
-        return config.services?.redis;
+        return config.services?.redis || config.redisVersion;
+      case 'postgresql':
+        return config.services?.postgresql || config.postgresqlVersion;
+      case 'mongodb':
+        return config.services?.mongodb || config.mongodbVersion;
+      case 'python':
+        return config.services?.python || config.pythonVersion;
       case 'nginx':
         return config.webServer === 'nginx' ? config.webServerVersion : config.services?.nginx;
       case 'apache':
@@ -572,7 +377,9 @@ class CompatibilityManager {
       case 'webServerVersion':
         return config.webServerVersion;
       case 'projectType':
-        return config.type;
+        return config.type || config.projectType;
+      case 'frameworkVersion':
+        return config.frameworkVersion || config.projectVersion;
       default:
         return config[key] || config.services?.[key];
     }
@@ -592,20 +399,44 @@ class CompatibilityManager {
       return value === condition.exact;
     }
 
+    // Handle explicit version comparisons
+    if (
+      condition.gt !== undefined
+      || condition.gte !== undefined
+      || condition.lt !== undefined
+      || condition.lte !== undefined
+    ) {
+      if (!value) return false;
+
+      if (condition.gt !== undefined && this.compareVersions(value, condition.gt) <= 0) {
+        return false;
+      }
+
+      if (condition.gte !== undefined && this.compareVersions(value, condition.gte) < 0) {
+        return false;
+      }
+
+      if (condition.lt !== undefined && this.compareVersions(value, condition.lt) >= 0) {
+        return false;
+      }
+
+      if (condition.lte !== undefined && this.compareVersions(value, condition.lte) > 0) {
+        return false;
+      }
+
+      return true;
+    }
+
     // Handle version comparisons
     if (condition.min !== undefined || condition.max !== undefined) {
       if (!value) return false;
 
-      const numValue = parseFloat(value);
-
       if (condition.min !== undefined) {
-        const minValue = parseFloat(condition.min);
-        if (numValue < minValue) return false;
+        if (this.compareVersions(value, condition.min) < 0) return false;
       }
 
       if (condition.max !== undefined) {
-        const maxValue = parseFloat(condition.max);
-        if (numValue > maxValue) return false;
+        if (this.compareVersions(value, condition.max) > 0) return false;
       }
 
       return true;
@@ -646,12 +477,7 @@ class CompatibilityManager {
           // Loading cached compatibility config
 
           this.remoteConfig = cachedData.config;
-          this.applyRemoteRules(cachedData.config);
-          this.deprecatedServices = cachedData.config.deprecatedServices || {};
-          this.frameworkRequirements = cachedData.config.frameworkRequirements || {};
-          this.webServerRecommendations = cachedData.config.webServerRecommendations || {};
-          this.databaseRecommendations = cachedData.config.databaseRecommendations || {};
-          this.configVersion = cachedData.config.version;
+          this.applyConfigData(cachedData.config, cachedData.config.version);
 
           return true;
         }
@@ -721,12 +547,13 @@ class CompatibilityManager {
    * @returns {Object} - { valid: boolean, warnings: Array, errors: Array }
    */
   checkCompatibility(config) {
+    const normalizedConfig = this.normalizeConfig(config);
     const warnings = [];
     const errors = [];
 
     for (const rule of this.rules) {
       try {
-        const result = rule.check(config);
+        const result = rule.check(normalizedConfig);
         if (result) {
           const item = {
             id: rule.id,

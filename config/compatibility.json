@@ -116,7 +116,8 @@
       "enabled": true,
       "conditions": {
         "projectType": { "exact": "laravel" },
-        "phpVersion": { "max": "8.19" }
+        "frameworkVersion": { "exact": "11" },
+        "phpVersion": { "lt": "8.2" }
       },
       "result": {
         "level": "warning",
@@ -186,7 +187,8 @@
       "enabled": true,
       "conditions": {
         "projectType": { "exact": "symfony" },
-        "phpVersion": { "max": "8.19" }
+        "frameworkVersion": { "exact": "7" },
+        "phpVersion": { "lt": "8.2" }
       },
       "result": {
         "level": "warning",

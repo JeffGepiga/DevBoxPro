@@ -425,7 +425,8 @@ class ProjectManager {
       mariadbVersion: project.services.mariadb ? project.services.mariadbVersion : null,
       redisVersion: project.services.redis ? project.services.redisVersion : null,
       nodejsVersion: project.services.nodejs ? project.services.nodejsVersion : null,
-      projectType: project.type,
+      type: project.type,
+      installFresh: config.installFresh || false,
     };
 
     const compatibility = this.compatibilityManager.checkCompatibility(compatibilityConfig);
