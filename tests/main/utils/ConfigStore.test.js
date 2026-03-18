@@ -378,6 +378,78 @@ describe('ConfigStore', () => {
             }
         });
 
+        it('defaults portable projects into the install folder', () => {
+            const installRoot = path.join(os.tmpdir(), `devboxpro-portable-projects-${Date.now()}`);
+            fs.mkdirSync(installRoot, { recursive: true });
+            fs.writeFileSync(path.join(installRoot, 'portable.flag'), '');
+
+            const originalGetPath = mockApp.getPath;
+            mockApp.getPath = (name) => {
+                if (name === 'exe') {
+                    return path.join(installRoot, 'DevBox Pro.exe');
+                }
+                return originalGetPath(name);
+            };
+
+            try {
+                const portableStore = new ConfigStore();
+                expect(portableStore.getSetting('defaultProjectsPath')).toBe(path.join(installRoot, 'Projects'));
+            } finally {
+                mockApp.getPath = originalGetPath;
+                fs.rmSync(installRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('migrates the old portable default projects path into the install folder', () => {
+            const installRoot = path.join(os.tmpdir(), `devboxpro-portable-migrate-${Date.now()}`);
+            fs.mkdirSync(installRoot, { recursive: true });
+            fs.writeFileSync(path.join(installRoot, 'portable.flag'), '');
+
+            const originalGetPath = mockApp.getPath;
+            mockApp.getPath = (name) => {
+                if (name === 'exe') {
+                    return path.join(installRoot, 'DevBox Pro.exe');
+                }
+                return originalGetPath(name);
+            };
+
+            try {
+                const portableStore = new ConfigStore();
+                portableStore.set('settings.defaultProjectsPath', process.platform === 'win32' ? 'C:/Projects' : path.join(os.homedir(), 'Projects'));
+                portableStore.normalizeDataPath();
+
+                expect(portableStore.getSetting('defaultProjectsPath')).toBe(path.join(installRoot, 'Projects'));
+            } finally {
+                mockApp.getPath = originalGetPath;
+                fs.rmSync(installRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('preserves a custom portable projects path', () => {
+            const installRoot = path.join(os.tmpdir(), `devboxpro-portable-custom-${Date.now()}`);
+            fs.mkdirSync(installRoot, { recursive: true });
+            fs.writeFileSync(path.join(installRoot, 'portable.flag'), '');
+
+            const originalGetPath = mockApp.getPath;
+            mockApp.getPath = (name) => {
+                if (name === 'exe') {
+                    return path.join(installRoot, 'DevBox Pro.exe');
+                }
+                return originalGetPath(name);
+            };
+
+            try {
+                const portableStore = new ConfigStore();
+                portableStore.set('settings.defaultProjectsPath', 'D:/MyProjects');
+                portableStore.normalizeDataPath();
+
+                expect(portableStore.getSetting('defaultProjectsPath')).toBe('D:/MyProjects');
+            } finally {
+                mockApp.getPath = originalGetPath;
+                fs.rmSync(installRoot, { recursive: true, force: true });
+            }
+        });
+
         it('getLogsPath() contains logs', () => {
             expect(store.getLogsPath()).toContain('logs');
         });

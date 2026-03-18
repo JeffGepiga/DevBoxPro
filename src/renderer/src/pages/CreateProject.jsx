@@ -1413,7 +1413,7 @@ function StepDetails({
           </div>
           {!defaultProjectsPath && (
             <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
-              Tip: Set a default projects directory in Settings to auto-generate paths
+              Tip: Set a default projects directory in Settings to auto-generate paths. Portable installs can use the app's Projects folder.
             </p>
           )}
         </div>

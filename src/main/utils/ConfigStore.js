@@ -50,33 +50,91 @@ class ConfigStore {
     if (storedDataPath !== this.resolvedDataPath) {
       this.store.set('dataPath', this.resolvedDataPath);
     }
+
+    this.normalizeDefaultProjectsPath();
+  }
+
+  normalizeDefaultProjectsPath() {
+    const normalizedProjectsPath = this.getNormalizedDefaultProjectsPath();
+    if (!normalizedProjectsPath) {
+      return;
+    }
+
+    if (!this.store) {
+      if (this._fallbackData?.settings) {
+        this._fallbackData.settings.defaultProjectsPath = normalizedProjectsPath;
+      }
+      return;
+    }
+
+    const currentProjectsPath = this.store.get('settings.defaultProjectsPath');
+    if (currentProjectsPath !== normalizedProjectsPath) {
+      this.store.set('settings.defaultProjectsPath', normalizedProjectsPath);
+    }
+  }
+
+  isTestEnvironment() {
+    return process.env.PLAYWRIGHT_TEST === 'true'
+      || process.argv.includes('--playwright-e2e')
+      || process.env.NODE_ENV === 'test'
+      || process.env.VITEST === 'true';
+  }
+
+  getPlatformDefaultProjectsPath() {
+    return process.platform === 'win32'
+      ? 'C:/Projects'
+      : path.join(os.homedir(), 'Projects');
+  }
+
+  getNormalizedDefaultProjectsPath() {
+    const portableRoot = getPortableRoot(app);
+    if (!portableRoot) {
+      return null;
+    }
+
+    const portableProjectsPath = path.join(portableRoot, 'Projects');
+    const currentProjectsPath = this.store
+      ? this.store.get('settings.defaultProjectsPath')
+      : this._fallbackData?.settings?.defaultProjectsPath;
+
+    if (!currentProjectsPath) {
+      return portableProjectsPath;
+    }
+
+    if (currentProjectsPath === portableProjectsPath) {
+      return portableProjectsPath;
+    }
+
+    const legacyPortableDefault = this.getPlatformDefaultProjectsPath();
+    const defaultData = this.getDefaults();
+    const legacyTestDefault = path.join(defaultData.dataPath, 'Projects');
+
+    if (currentProjectsPath === legacyPortableDefault || currentProjectsPath === legacyTestDefault) {
+      return portableProjectsPath;
+    }
+
+    return currentProjectsPath;
   }
 
   getDefaults() {
     let dataPath;
     let defaultProjectsPath;
-    const portableDataPath = getPortableRoot(app) ? getDataPath(app) : null;
+    const portableRoot = getPortableRoot(app);
+    const portableDataPath = portableRoot ? getDataPath(app) : null;
 
     // Accept both env var (set by test runner) and CLI arg (set by main.js from --playwright-e2e)
-    const isTestEnv = process.env.PLAYWRIGHT_TEST === 'true'
-      || process.argv.includes('--playwright-e2e')
-      || process.env.NODE_ENV === 'test'
-      || process.env.VITEST === 'true';
+    const isTestEnv = this.isTestEnvironment();
 
     if (portableDataPath) {
       dataPath = portableDataPath;
-      defaultProjectsPath = process.platform === 'win32'
-        ? 'C:/Projects'
-        : path.join(os.homedir(), 'Projects');
+      defaultProjectsPath = path.join(portableRoot, 'Projects');
     } else if (isTestEnv) {
       const baseDir = process.env.TEST_USER_DATA_DIR || os.tmpdir();
       dataPath = path.join(baseDir, '.devbox-pro-test');
       defaultProjectsPath = path.join(dataPath, 'Projects');
     } else {
       dataPath = getDataPath(app);
-      defaultProjectsPath = process.platform === 'win32'
-        ? 'C:/Projects'
-        : path.join(os.homedir(), 'Projects');
+      defaultProjectsPath = this.getPlatformDefaultProjectsPath();
     }
 
     return {
