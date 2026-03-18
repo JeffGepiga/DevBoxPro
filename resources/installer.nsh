@@ -1,4 +1,14 @@
 ; DevBox Pro NSIS Installer Script
+Var /GLOBAL wasPortableInstall
+
+!macro customInit
+  StrCpy $wasPortableInstall 0
+
+  ${If} ${FileExists} "$INSTDIR\portable.flag"
+    StrCpy $wasPortableInstall 1
+  ${EndIf}
+!macroend
+
 !macro customInstall
   ; Register devbox:// protocol handler
   WriteRegStr HKCR "devbox" "" "URL:DevBox Pro Protocol"
@@ -6,10 +16,12 @@
   WriteRegStr HKCR "devbox\DefaultIcon" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
   WriteRegStr HKCR "devbox\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "%1"'
 
-  ; Mark only fresh non-default installations as portable.
-  ; Updates must preserve the prior install mode instead of silently switching
-  ; existing custom-path users into portable mode.
-  ${ifNot} ${isUpdated}
+  ; Preserve portable mode across updates, and only infer portability from the
+  ; install path for fresh installs.
+  ${If} $wasPortableInstall == 1
+    FileOpen $1 "$INSTDIR\portable.flag" w
+    FileClose $1
+  ${Else}
     ; Treat both the machine-wide and per-user electron-builder defaults as standard.
     StrCpy $0 "$PROGRAMFILES64\${APP_FILENAME}"
     StrCpy $2 "$LOCALAPPDATA\Programs\${APP_FILENAME}"
@@ -29,7 +41,7 @@
       FileOpen $1 "$INSTDIR\portable.flag" w
       FileClose $1
     ${EndIf}
-  ${endif}
+  ${EndIf}
 !macroend
 
 !macro customUnInstall
