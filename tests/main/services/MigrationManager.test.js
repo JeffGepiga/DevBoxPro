@@ -140,4 +140,57 @@ describe('MigrationManager legacy install migration', () => {
 
         expect(await migration.needsLegacyInstallMigration()).toBe(false);
     });
+
+    it('skips versioned database data when migrating into a portable install', async () => {
+        const tempRoot = path.join(os.tmpdir(), `devboxpro-portable-migration-${Date.now()}`);
+        tempRoots.push(tempRoot);
+
+        const oldDataPath = path.join(tempRoot, 'legacy-home', '.devbox-pro');
+        const oldResourcesPath = path.join(tempRoot, 'Roaming', 'devbox-pro', 'resources');
+        const portableRoot = path.join(tempRoot, 'Portable', 'DevBox Pro');
+        const newDataPath = path.join(portableRoot, 'data');
+        const newResourcesPath = path.join(portableRoot, 'resources-user');
+
+        await fs.outputFile(path.join(oldDataPath, 'devbox-pro-config.json'), '{"projects":[]}');
+        await fs.outputFile(path.join(oldDataPath, 'mysql', '8.4', 'my.ini'), 'mysql-config');
+        await fs.outputFile(path.join(oldDataPath, 'mysql', '8.4', 'data', 'ibdata1'), 'mysql-data');
+        await fs.outputFile(path.join(oldDataPath, 'mariadb', '11.4', 'my.ini'), 'mariadb-config');
+        await fs.outputFile(path.join(oldDataPath, 'mariadb', '11.4', 'data', 'ibdata1'), 'mariadb-data');
+        await fs.outputFile(path.join(oldDataPath, 'postgresql', '17', 'data', 'PG_VERSION'), '17');
+        await fs.outputFile(path.join(oldDataPath, 'mongodb', '8.0', 'data', 'WiredTiger'), 'mongo-data');
+        await fs.outputFile(path.join(oldResourcesPath, 'nginx', '1.28', 'win', 'nginx.exe'), 'binary');
+
+        const fakeApp = {
+            getPath(name) {
+                if (name === 'exe') {
+                    return path.join(portableRoot, 'DevBox Pro.exe');
+                }
+                if (name === 'userData') {
+                    return path.join(tempRoot, 'Roaming', 'devbox-pro');
+                }
+                return tempRoot;
+            }
+        };
+
+        const pathResolver = {
+            getPortableRoot: () => portableRoot,
+            getDataPath: () => newDataPath,
+            getResourcesPath: () => newResourcesPath,
+        };
+
+        const migration = new MigrationManager(pathResolver, fakeApp);
+        migration.oldDataPath = oldDataPath;
+        migration.oldResourcesPath = oldResourcesPath;
+
+        await migration.migrate();
+
+        expect(await fs.pathExists(path.join(newDataPath, 'devbox-pro-config.json'))).toBe(true);
+        expect(await fs.pathExists(path.join(newDataPath, 'mysql', '8.4', 'my.ini'))).toBe(true);
+        expect(await fs.pathExists(path.join(newDataPath, 'mariadb', '11.4', 'my.ini'))).toBe(true);
+        expect(await fs.pathExists(path.join(newDataPath, 'mysql', '8.4', 'data', 'ibdata1'))).toBe(false);
+        expect(await fs.pathExists(path.join(newDataPath, 'mariadb', '11.4', 'data', 'ibdata1'))).toBe(false);
+        expect(await fs.pathExists(path.join(newDataPath, 'postgresql', '17', 'data', 'PG_VERSION'))).toBe(false);
+        expect(await fs.pathExists(path.join(newDataPath, 'mongodb', '8.0', 'data', 'WiredTiger'))).toBe(false);
+        expect(await fs.pathExists(path.join(newResourcesPath, 'nginx', '1.28', 'win', 'nginx.exe'))).toBe(true);
+    });
 });

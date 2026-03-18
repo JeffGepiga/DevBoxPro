@@ -154,12 +154,10 @@ class MigrationManager {
     await fs.ensureDir(this.newDataPath);
     await fs.ensureDir(this.newResourcesPath);
 
-    const skippedDbDirs = ['mysql/data', 'postgresql', 'mongodb'];
-
     onProgress?.('Copying configuration and project data...');
     await fs.copy(this.oldDataPath, this.newDataPath, {
       overwrite: false,
-      filter: (sourcePath) => !skippedDbDirs.some((dir) => sourcePath.includes(dir)),
+      filter: (sourcePath) => this.shouldMigratePortableDataPath(sourcePath),
     });
 
     if (await fs.pathExists(this.oldResourcesPath)) {
@@ -277,6 +275,34 @@ class MigrationManager {
     }
 
     await this.markConfigRegenerated();
+  }
+
+  shouldMigratePortableDataPath(sourcePath) {
+    const relativePath = path.relative(this.oldDataPath, sourcePath);
+
+    if (!relativePath || relativePath === '.') {
+      return true;
+    }
+
+    if (relativePath.startsWith('..')) {
+      return true;
+    }
+
+    const segments = relativePath.split(/[\\/]+/).filter(Boolean);
+    if (segments.length === 0) {
+      return true;
+    }
+
+    const [serviceRoot] = segments;
+    if (serviceRoot === 'postgresql' || serviceRoot === 'mongodb') {
+      return false;
+    }
+
+    if ((serviceRoot === 'mysql' || serviceRoot === 'mariadb') && segments.includes('data')) {
+      return false;
+    }
+
+    return true;
   }
 }
 
