@@ -3681,10 +3681,12 @@ server {
       `*.${project.domain}`,  // Wildcard allows any subdomain (e.g. api.myproject.test)
       ...(project.domains?.filter(d => d !== project.domain) || []),
     ])];
+    const httpApacheDomains = [...allApacheDomains];
     if (networkAccess && canUsePort80) {
-      allApacheDomains.push('*');  // Catch-all for IP-based access
+      httpApacheDomains.push('*');  // Catch-all for IP-based HTTP access only
     }
-    const serverAlias = allApacheDomains.join(' ');
+    const httpServerAlias = httpApacheDomains.join(' ');
+    const httpsServerAlias = allApacheDomains.join(' ');
 
     // Get PHP-CGI path for this PHP version
     const phpVersion = project.phpVersion || '8.4';
@@ -3705,7 +3707,7 @@ server {
 # HTTP Virtual Host
 <VirtualHost ${listenAddress}:${finalHttpPort}>
     ServerName ${project.domain}
-    ServerAlias ${serverAlias}
+  ServerAlias ${httpServerAlias}
     DocumentRoot "${documentRoot}"
     
     <Directory "${documentRoot}">
@@ -3768,7 +3770,7 @@ server {
 # HTTPS Virtual Host (SSL) - Port ${httpsPort}
 <VirtualHost ${listenAddressSsl}:${httpsPort}>
     ServerName ${project.domain}
-    ServerAlias ${serverAlias}
+  ServerAlias ${httpsServerAlias}
     DocumentRoot "${documentRoot}"
     
     # SSL Configuration

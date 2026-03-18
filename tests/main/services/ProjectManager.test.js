@@ -333,6 +333,45 @@ describe('ProjectManager', () => {
             const [, config] = fs.writeFile.mock.calls.at(-1);
             expect(config).toContain('include "C:/Users/Test User/AppData/Roaming/devbox-pro/resources/nginx/1.28/win/conf/fastcgi_params";');
         });
+
+        it('does not turn the first apache SSL vhost into a wildcard catch-all', async () => {
+            const project = {
+                id: 'proj-apache',
+                name: 'ProjApache',
+                type: 'laravel',
+                path: 'C:/Sites/Apache App',
+                domain: 'proj-apache.test',
+                domains: ['proj-apache.test'],
+                phpVersion: '8.3',
+                webServer: 'apache',
+                webServerVersion: '2.4',
+                ssl: true,
+                networkAccess: true,
+                services: {},
+                supervisor: { processes: [] }
+            };
+
+            configStore.get.mockImplementation((key, def) => {
+                if (key === 'projects' || key === 'devbox.projects') return [project];
+                if (key === 'resourcePath') return 'C:/Users/Test User/AppData/Roaming/devbox-pro/resources';
+                if (key === 'settings') return { webServer: 'apache' };
+                return def;
+            });
+            configStore.getDataPath = vi.fn(() => 'C:/Users/Test User/.devbox-pro');
+            configStore.getResourcesPath = vi.fn(() => 'C:/Users/Test User/AppData/Roaming/devbox-pro/resources');
+            managers.service.getServicePorts.mockReturnValue({ httpPort: 80, sslPort: 443 });
+            managers.service.standardPortOwner = 'apache';
+
+            mgr.networkPort80Owner = project.id;
+
+            await mgr.createApacheVhost(project, '2.4');
+
+            const [, config] = fs.writeFile.mock.calls.at(-1);
+            expect(config).toContain('ServerAlias www.proj-apache.test *.proj-apache.test *');
+            expect(config).toContain('<VirtualHost 0.0.0.0:443>');
+            expect(config).toContain('ServerAlias www.proj-apache.test *.proj-apache.test');
+            expect(config).not.toContain('ServerAlias www.proj-apache.test *.proj-apache.test *\n    DocumentRoot "C:/Sites/Apache App/public"');
+        });
     });
 
     // ═══════════════════════════════════════════════════════════════════
