@@ -36,6 +36,11 @@ module.exports = {
   ],
   extraResources: [
     {
+      from: 'vcredist',
+      to: 'vcredist',
+      filter: ['**/*'],
+    },
+    {
       from: 'resources/php',
       to: 'php',
       filter: ['**/*'],

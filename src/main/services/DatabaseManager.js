@@ -369,6 +369,8 @@ class DatabaseManager {
       throw new Error(`MySQL client not found at ${clientPath}. Please install the database binary.`);
     }
 
+    await this.ensureDbBinaryRuntime(clientPath);
+
     return new Promise((resolve, reject) => {
       // Use TCP connection - skip-grant-tables mode allows root without password
       const args = [
@@ -388,10 +390,9 @@ class DatabaseManager {
 
       // Running no-auth query
 
-      const proc = spawn(clientPath, args, {
+      const proc = spawn(clientPath, args, this.buildBinarySpawnOptions(clientPath, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-      });
+      }));
 
       let stdout = '';
       let stderr = '';
@@ -406,7 +407,14 @@ class DatabaseManager {
 
       proc.on('close', (code) => {
         if (code !== 0) {
-          this.managers.log?.systemWarn(`[runDbQueryNoAuth] Query warning`, { stderr });
+          const details = stderr.trim() || stdout.trim() || `exit code ${code}`;
+          this.managers.log?.systemWarn(`[runDbQueryNoAuth] Query warning`, {
+            dbType,
+            clientPath,
+            port,
+            query,
+            details,
+          });
           // Don't reject for warnings, only for errors
           if (stderr.includes('ERROR')) {
             reject(new Error(`Query failed: ${stderr}`));
@@ -1922,6 +1930,8 @@ class DatabaseManager {
       throw new Error(`Database client not found at ${clientPath}. Please install the database binary from the Binaries page.`);
     }
 
+    await this.ensureDbBinaryRuntime(clientPath);
+
     // Running database query
 
     return new Promise((resolve, reject) => {
@@ -1948,10 +1958,9 @@ class DatabaseManager {
         args.push(database);
       }
 
-      const proc = spawn(clientPath, args, {
+      const proc = spawn(clientPath, args, this.buildBinarySpawnOptions(clientPath, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-      });
+      }));
 
       let stdout = '';
       let stderr = '';
@@ -1984,6 +1993,16 @@ class DatabaseManager {
 
           resolve(rows);
         } else {
+          const details = stderr.trim() || stdout.trim() || `exit code ${code}`;
+          this.managers.log?.systemError('Database query failed', {
+            dbType,
+            user,
+            port,
+            clientPath,
+            database,
+            query,
+            details,
+          });
           // Provide helpful error message for access denied errors
           if (stderr.includes('Access denied') || stderr.includes('1045')) {
             const hint = password
@@ -1991,12 +2010,21 @@ class DatabaseManager {
               : 'The database may have a password set but none is configured in settings.';
             reject(new Error(`Database access denied for user '${user}'. ${hint} You may need to restart the database or check Settings > Network.`));
           } else {
-            reject(new Error(`Query failed: ${stderr}`));
+            reject(new Error(`Query failed: ${details}`));
           }
         }
       });
 
       proc.on('error', (error) => {
+        this.managers.log?.systemError('Database client process error', {
+          dbType,
+          user,
+          port,
+          clientPath,
+          database,
+          query,
+          error: error.message,
+        });
         reject(error);
       });
     });
@@ -2195,6 +2223,33 @@ class DatabaseManager {
     if (dbType === 'mongodb')    return this._getBinaryPath('mongosh');
     // mysql / mariadb
     return this._getBinaryPath('mysql');
+  }
+
+  getBinaryRuntimeDir(binaryPath) {
+    return path.dirname(path.dirname(binaryPath));
+  }
+
+  async ensureDbBinaryRuntime(binaryPath) {
+    const dbType = this.getActiveDatabaseType();
+    if (process.platform !== 'win32' || (dbType !== 'mysql' && dbType !== 'mariadb')) {
+      return;
+    }
+
+    await this.managers.service?.ensureWindowsRuntimeDlls?.(
+      this.getBinaryRuntimeDir(binaryPath),
+      `${dbType} client`
+    );
+  }
+
+  buildBinarySpawnOptions(binaryPath, extraOptions = {}) {
+    const dbType = this.getActiveDatabaseType();
+    const runtimeDir = this.getBinaryRuntimeDir(binaryPath);
+
+    return {
+      ...extraOptions,
+      windowsHide: true,
+      cwd: (dbType === 'mysql' || dbType === 'mariadb') ? runtimeDir : extraOptions.cwd,
+    };
   }
 
   // Get the dump path based on active database type

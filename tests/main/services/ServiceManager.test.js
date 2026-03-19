@@ -6,7 +6,6 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
-import { readFile, unlink } from 'fs/promises';
 
 vi.mock('child_process', () => {
     const stdout = { on: vi.fn() };
@@ -42,6 +41,8 @@ const fs = require('fs-extra');
 vi.mock('fs-extra', () => ({
     ensureDir: vi.fn().mockResolvedValue(),
     ensureDirSync: vi.fn(),
+    emptyDir: vi.fn().mockResolvedValue(),
+    readdir: vi.fn().mockResolvedValue([]),
     pathExists: vi.fn().mockResolvedValue(true),
     pathExistsSync: vi.fn().mockReturnValue(true),
     readFile: vi.fn().mockResolvedValue('user=root\npassword=root'),
@@ -87,6 +88,12 @@ describe('ServiceManager', () => {
                 getAvailableVersions: vi.fn().mockReturnValue(['8.3', '8.2']),
                 getDefaultVersion: vi.fn().mockReturnValue('8.3'),
                 getPhpBinaryPath: vi.fn().mockReturnValue('/path/to/php')
+            },
+            log: {
+                systemInfo: vi.fn(),
+                systemWarn: vi.fn(),
+                systemError: vi.fn(),
+                service: vi.fn()
             }
         };
 
@@ -119,6 +126,18 @@ describe('ServiceManager', () => {
             // When no version is provided, it uses default string logic
             expect(mgr.getProcessKey('mailpit', null)).toBe('mailpit');
         });
+
+        it('keeps a bounded process output snippet for system-log diagnostics', () => {
+            const first = mgr.appendProcessOutputSnippet('', 'first line');
+            const second = mgr.appendProcessOutputSnippet(first, 'second line', 30);
+            const third = mgr.appendProcessOutputSnippet(second, 'third line that is longer', 30);
+
+            expect(first).toBe('first line');
+            expect(second).toContain('first line');
+            expect(second).toContain('second line');
+            expect(third.length).toBeLessThanOrEqual(30);
+            expect(third).toContain('third line');
+        });
     });
 
     describe('startService', () => {
@@ -148,6 +167,71 @@ describe('ServiceManager', () => {
             expect(config).toContain('include       "C:/DevBox Pro/resources-user/nginx/1.28/win/conf/mime.types";');
             expect(config).toContain('include "C:/DevBox Pro/data/nginx/1.28/sites/*.conf";');
             expect(config).toContain('root "C:/DevBox Pro/data/www";');
+        });
+
+        it('quotes file paths in generated MySQL config', async () => {
+            mgr.getMySQLPath = vi.fn(() => 'C:/DevBox Pro/resources-user/mysql/8.4/win');
+            configStore.get.mockImplementation((key, def) => {
+                if (key === 'settings') return { serverTimezone: 'UTC' };
+                return def;
+            });
+            fs.writeFile.mockResolvedValue();
+
+            await mgr.createMySQLConfig(
+                'C:/DevBox Pro/data/mysql/8.4/my.cnf',
+                'C:/DevBox Pro/data/mysql/8.4/data',
+                3306,
+                '8.4',
+                'C:/DevBox Pro/data/mysql/8.4/credentials_init.sql'
+            );
+
+            expect(fs.writeFile).toHaveBeenCalled();
+            const [, config] = fs.writeFile.mock.calls.at(-1);
+            expect(config).toContain('basedir="C:/DevBox Pro/resources-user/mysql/8.4/win"');
+            expect(config).toContain('datadir="C:/DevBox Pro/data/mysql/8.4/data"');
+            expect(config).toContain('init-file="C:/DevBox Pro/data/mysql/8.4/credentials_init.sql"');
+            expect(config).toContain('pid-file="C:/DevBox Pro/data/mysql/8.4/data/mysql.pid"');
+            expect(config).toContain('log-error="C:/DevBox Pro/data/mysql/8.4/data/error.log"');
+        });
+
+        it('fails early when MySQL share assets are missing during initialization', async () => {
+            vi.spyOn(require('fs-extra'), 'pathExists').mockResolvedValue(false);
+
+            await expect(
+                mgr.initializeMySQLData(
+                    'C:/DevBox Pro/resources-user/mysql/8.4/win',
+                    'C:/DevBox Pro/data/mysql/8.4/data',
+                    '8.4'
+                )
+            ).rejects.toThrow('missing share/messages_to_error_log.txt');
+        });
+
+        it('adopts legacy MySQL data from the old userData path when current data is empty', async () => {
+            const legacyDataDir = mgr.getLegacyMySQLDataDir('8.4');
+            const currentDataDir = 'C:/DevBox Pro/data/mysql/8.4/data';
+            const currentMysqlDir = path.join(currentDataDir, 'mysql');
+            const legacyMysqlDir = path.join(legacyDataDir, 'mysql');
+            const fsExtra = require('fs-extra');
+
+            vi.spyOn(fsExtra, 'pathExists').mockImplementation(async (targetPath) => {
+                if (targetPath === currentMysqlDir) return false;
+                if (targetPath === legacyMysqlDir) return true;
+                return true;
+            });
+            vi.spyOn(fsExtra, 'readdir').mockResolvedValue([]);
+            vi.spyOn(fsExtra, 'copy').mockResolvedValue();
+
+            const adopted = await mgr.maybeAdoptLegacyMySQLData('8.4', currentDataDir);
+
+            expect(adopted).toBe(true);
+            expect(fs.copy).toHaveBeenCalledWith(legacyDataDir, currentDataDir, {
+                overwrite: false,
+                errorOnExist: false,
+            });
+            expect(managers.log.systemInfo).toHaveBeenCalledWith(
+                'Adopted legacy MySQL 8.4 data directory',
+                expect.objectContaining({ from: legacyDataDir, to: currentDataDir })
+            );
         });
     });
 
@@ -288,7 +372,8 @@ describe('ServiceManager', () => {
 
             await mgr.createApacheConfig('/apache', confPath, '/logs', 8084, 8446, [8005]);
 
-            const config = await readFile(confPath, 'utf8');
+            expect(fs.writeFile).toHaveBeenCalled();
+            const [, config] = fs.writeFile.mock.calls.at(-1);
 
             expect(config).toContain('Listen 0.0.0.0:8084');
             expect(config).toContain('Listen 0.0.0.0:8446');
@@ -296,8 +381,6 @@ describe('ServiceManager', () => {
             expect(config).toContain('Listen 0.0.0.0:8005');
             expect(config).not.toContain('Listen 0.0.0.0:8003');
             expect(config).not.toContain('Listen 0.0.0.0:8004');
-
-            await unlink(confPath);
         });
     });
 });

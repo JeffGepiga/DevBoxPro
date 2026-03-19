@@ -151,6 +151,135 @@ class ServiceManager extends EventEmitter {
     return path.join(app.getPath('userData'), 'data');
   }
 
+  getLegacyUserDataPath() {
+    return path.join(app.getPath('userData'), 'data');
+  }
+
+  getLegacyMySQLDataDir(version = '8.4') {
+    return path.join(this.getLegacyUserDataPath(), 'mysql', version, 'data');
+  }
+
+  getBundledVCRedistDirs() {
+    const appPath = typeof app.getAppPath === 'function' ? app.getAppPath() : process.cwd();
+    return [
+      process.resourcesPath ? path.join(process.resourcesPath, 'vcredist') : null,
+      path.join(appPath, 'vcredist'),
+      path.resolve(__dirname, '../../../vcredist'),
+    ].filter(Boolean);
+  }
+
+  quoteConfigPath(value) {
+    return `"${String(value).replace(/\\/g, '/')}"`;
+  }
+
+  async maybeAdoptLegacyMySQLData(version, dataDir) {
+    const legacyDataDir = this.getLegacyMySQLDataDir(version);
+
+    if (path.resolve(legacyDataDir) === path.resolve(dataDir)) {
+      return false;
+    }
+
+    const currentInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
+    if (currentInitialized) {
+      return false;
+    }
+
+    const legacyInitialized = await fs.pathExists(path.join(legacyDataDir, 'mysql'));
+    if (!legacyInitialized) {
+      return false;
+    }
+
+    let targetEntries = [];
+    try {
+      targetEntries = await fs.readdir(dataDir);
+    } catch (_error) {
+      targetEntries = [];
+    }
+
+    if (targetEntries.length > 0) {
+      this.managers.log?.systemWarn(`Skipped adopting legacy MySQL ${version} data because the target directory is not empty`, {
+        dataDir,
+        legacyDataDir,
+        entries: targetEntries,
+      });
+      return false;
+    }
+
+    await fs.copy(legacyDataDir, dataDir, { overwrite: false, errorOnExist: false });
+    this.managers.log?.systemInfo(`Adopted legacy MySQL ${version} data directory`, {
+      from: legacyDataDir,
+      to: dataDir,
+    });
+    return true;
+  }
+
+  async ensureWindowsRuntimeDlls(targetDir, label = 'runtime') {
+    if (process.platform !== 'win32') {
+      return;
+    }
+
+    const requiredDlls = ['vcruntime140.dll', 'msvcp140.dll', 'vcruntime140_1.dll'];
+    const missingDlls = [];
+
+    for (const dll of requiredDlls) {
+      if (!await fs.pathExists(path.join(targetDir, dll))) {
+        missingDlls.push(dll);
+      }
+    }
+
+    if (missingDlls.length === 0) {
+      return;
+    }
+
+    const sourceDirs = [
+      path.join(process.env.SystemRoot || 'C:\\Windows', 'System32'),
+      ...this.getBundledVCRedistDirs(),
+    ];
+
+    for (const dll of missingDlls) {
+      const destPath = path.join(targetDir, dll);
+      let copied = false;
+
+      for (const sourceDir of sourceDirs) {
+        const sourcePath = path.join(sourceDir, dll);
+        try {
+          if (!await fs.pathExists(sourcePath)) {
+            continue;
+          }
+
+          await fs.copy(sourcePath, destPath, { overwrite: true });
+          this.managers.log?.systemInfo(`Provisioned ${dll} for ${label}`, { sourcePath, destPath });
+          copied = true;
+          break;
+        } catch (error) {
+          this.managers.log?.systemWarn(`Failed to provision ${dll} for ${label}`, {
+            sourcePath,
+            destPath,
+            error: error.message,
+          });
+        }
+      }
+
+      if (!copied) {
+        this.managers.log?.systemWarn(`Could not find ${dll} for ${label}`, { targetDir });
+      }
+    }
+  }
+
+  appendProcessOutputSnippet(existingOutput, chunk, maxLength = 4000) {
+    const normalizedChunk = String(chunk || '').trim();
+    if (!normalizedChunk) {
+      return existingOutput || '';
+    }
+
+    const combined = existingOutput ? `${existingOutput}\n${normalizedChunk}` : normalizedChunk;
+    return combined.length > maxLength ? combined.slice(-maxLength) : combined;
+  }
+
+  logServiceStartupFailure(serviceLabel, version, details = {}) {
+    this.managers.log?.systemError(`${serviceLabel} ${version} startup failure`, details);
+  }
+
   // Get process key for Map storage
   getProcessKey(serviceName, version) {
     if (version) {
@@ -374,6 +503,8 @@ class ServiceManager extends EventEmitter {
     const mysqlPath = this.getMySQLPath(version);
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
 
+    await this.ensureWindowsRuntimeDlls(mysqlPath, `MySQL ${version}`);
+
     if (!await fs.pathExists(mysqldPath)) {
       throw new Error(`MySQL ${version} binary not found`);
     }
@@ -532,19 +663,19 @@ class ServiceManager extends EventEmitter {
     const isWindows = process.platform === 'win32';
 
     // Build init-file line if provided
-    const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
+    const initFileLine = initFile ? `init-file=${this.quoteConfigPath(initFile)}\n` : '';
 
     let config;
     if (isWindows) {
       config = `[mysqld]
-basedir=${mysqlPath.replace(/\\/g, '/')}
-datadir=${dataDir.replace(/\\/g, '/')}
+    basedir=${this.quoteConfigPath(mysqlPath)}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=0.0.0.0
 enable-named-pipe=ON
 socket=MYSQL_${version.replace(/\./g, '')}_SKIP
-pid-file=${path.join(dataDir, 'mysql_skip.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mysql_skip.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error_skip.log'))}
 skip-grant-tables
 skip-networking=0
 ${initFileLine}innodb_buffer_pool_size=128M
@@ -558,17 +689,17 @@ port=${port}
 `;
     } else {
       config = `[mysqld]
-datadir=${dataDir.replace(/\\/g, '/')}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=127.0.0.1
-socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
-pid-file=${path.join(dataDir, 'mysql_skip.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mysql_skip.sock'))}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mysql_skip.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error_skip.log'))}
 skip-grant-tables
 ${initFileLine}
 [client]
 port=${port}
-socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mysql_skip.sock'))}
 `;
     }
 
@@ -579,6 +710,8 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
   async startMariaDBWithSkipGrant(version = '11.4', initFile = null) {
     const mariadbPath = this.getMariaDBPath(version);
     const mariadbd = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
+
+    await this.ensureWindowsRuntimeDlls(mariadbPath, `MariaDB ${version}`);
 
     if (!await fs.pathExists(mariadbd)) {
       throw new Error(`MariaDB ${version} binary not found`);
@@ -647,19 +780,19 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
     const isWindows = process.platform === 'win32';
 
     // Build init-file line if provided
-    const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
+    const initFileLine = initFile ? `init-file=${this.quoteConfigPath(initFile)}\n` : '';
 
     let config;
     if (isWindows) {
       config = `[mysqld]
-basedir=${mariadbPath.replace(/\\/g, '/')}
-datadir=${dataDir.replace(/\\/g, '/')}
+    basedir=${this.quoteConfigPath(mariadbPath)}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=0.0.0.0
 enable-named-pipe=ON
 socket=MARIADB_${version.replace(/\./g, '')}_SKIP
-pid-file=${path.join(dataDir, 'mariadb_skip.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mariadb_skip.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error_skip.log'))}
 skip-grant-tables
 ${initFileLine}innodb_buffer_pool_size=128M
 max_connections=100
@@ -669,17 +802,17 @@ port=${port}
 `;
     } else {
       config = `[mysqld]
-datadir=${dataDir.replace(/\\/g, '/')}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=127.0.0.1
-socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
-pid-file=${path.join(dataDir, 'mariadb_skip.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mariadb_skip.sock'))}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mariadb_skip.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error_skip.log'))}
 skip-grant-tables
 ${initFileLine}
 [client]
 port=${port}
-socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mariadb_skip.sock'))}
 `;
     }
 
@@ -2098,6 +2231,8 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     const mysqlPath = this.getMySQLPath(version);
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
 
+    await this.ensureWindowsRuntimeDlls(mysqlPath, `MySQL ${version}`);
+
     // Check if MySQL binary exists
     if (!await fs.pathExists(mysqldPath)) {
       this.managers.log?.systemError(`MySQL ${version} binary not found. Please download MySQL from the Binary Manager.`);
@@ -2116,6 +2251,9 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
     const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mysql', version, 'data');
+    const configPath = path.join(dataPath, 'mysql', version, 'my.cnf');
+    const legacyDataDir = this.getLegacyMySQLDataDir(version);
+    const shareMessagesPath = path.join(mysqlPath, 'share', 'messages_to_error_log.txt');
 
     // Find available port dynamically based on version
     const defaultPort = this.getVersionPort('mysql', version, this.serviceConfigs.mysql.defaultPort);
@@ -2134,12 +2272,26 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     // Ensure data directory exists
     await fs.ensureDir(dataDir);
 
+    const adoptedLegacyData = await this.maybeAdoptLegacyMySQLData(version, dataDir);
+
     // Check if MySQL data directory needs initialization
     const isInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
 
+    this.managers.log?.systemInfo(`MySQL ${version} startup context`, {
+      mysqlPath,
+      mysqldPath,
+      dataPath,
+      dataDir,
+      legacyDataDir,
+      configPath,
+      shareMessagesPath,
+      adoptedLegacyData,
+      isInitialized,
+    });
+
     if (!isInitialized) {
       try {
-        await this.initializeMySQLData(mysqlPath, dataDir);
+        await this.initializeMySQLData(mysqlPath, dataDir, version);
       } catch (error) {
         this.managers.log?.systemError('MySQL initialization failed', { error: error.message });
         const status = this.serviceStatus.get('mysql');
@@ -2148,8 +2300,6 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
         return;
       }
     }
-
-    const configPath = path.join(dataPath, 'mysql', version, 'my.cnf');
 
     // Create init-file with credentials from ConfigStore (source of truth)
     // This runs on every startup to ensure credentials match ConfigStore
@@ -2160,6 +2310,8 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     await this.createMySQLConfig(configPath, dataDir, port, version, initFile);
 
     let proc;
+    let startupStdout = '';
+    let startupStderr = '';
     if (process.platform === 'win32') {
       // On Windows, use spawnHidden to run without console window
       proc = spawnHidden(mysqldPath, [`--defaults-file=${configPath}`], {
@@ -2168,15 +2320,25 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       });
 
       proc.stdout?.on('data', (data) => {
+        startupStdout = this.appendProcessOutputSnippet(startupStdout, data);
         this.managers.log?.service('mysql', data.toString());
       });
 
       proc.stderr?.on('data', (data) => {
+        startupStderr = this.appendProcessOutputSnippet(startupStderr, data);
         this.managers.log?.service('mysql', data.toString(), 'error');
       });
 
       proc.on('error', (error) => {
         this.managers.log?.systemError('MySQL process error', { error: error.message });
+        this.logServiceStartupFailure('MySQL', version, {
+          error: error.message,
+          configPath,
+          mysqlPath,
+          dataDir,
+          stdout: startupStdout,
+          stderr: startupStderr,
+        });
         const status = this.serviceStatus.get('mysql');
         status.status = 'error';
         status.error = error.message;
@@ -2184,6 +2346,16 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
       proc.on('exit', (code) => {
         const status = this.serviceStatus.get('mysql');
+        if (code !== 0 || (status.status !== 'running' && (startupStdout || startupStderr))) {
+          this.logServiceStartupFailure('MySQL', version, {
+            code,
+            configPath,
+            mysqlPath,
+            dataDir,
+            stdout: startupStdout,
+            stderr: startupStderr,
+          });
+        }
         if (status.status === 'running') {
           status.status = 'stopped';
           this.runningVersions.get('mysql')?.delete(version);
@@ -2197,15 +2369,25 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       });
 
       proc.stdout.on('data', (data) => {
+        startupStdout = this.appendProcessOutputSnippet(startupStdout, data);
         this.managers.log?.service('mysql', data.toString());
       });
 
       proc.stderr.on('data', (data) => {
+        startupStderr = this.appendProcessOutputSnippet(startupStderr, data);
         this.managers.log?.service('mysql', data.toString(), 'error');
       });
 
       proc.on('error', (error) => {
         this.managers.log?.systemError('MySQL process error', { error: error.message });
+        this.logServiceStartupFailure('MySQL', version, {
+          error: error.message,
+          configPath,
+          mysqlPath,
+          dataDir,
+          stdout: startupStdout,
+          stderr: startupStderr,
+        });
         const status = this.serviceStatus.get('mysql');
         status.status = 'error';
         status.error = error.message;
@@ -2213,6 +2395,16 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
       proc.on('exit', (code) => {
         const status = this.serviceStatus.get('mysql');
+        if (code !== 0 || (status.status !== 'running' && (startupStdout || startupStderr))) {
+          this.logServiceStartupFailure('MySQL', version, {
+            code,
+            configPath,
+            mysqlPath,
+            dataDir,
+            stdout: startupStdout,
+            stderr: startupStderr,
+          });
+        }
         if (status.status === 'running') {
           status.status = 'stopped';
           this.runningVersions.get('mysql')?.delete(version);
@@ -2445,6 +2637,8 @@ FLUSH PRIVILEGES;
     const mysqlPath = this.getMySQLPath(version);
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
 
+    await this.ensureWindowsRuntimeDlls(mysqlPath, `MySQL ${version}`);
+
     if (!await fs.pathExists(mysqldPath)) {
       throw new Error(`MySQL ${version} binary not found`);
     }
@@ -2486,17 +2680,40 @@ FLUSH PRIVILEGES;
       });
     }
 
+    let startupStdout = '';
+    let startupStderr = '';
+
     proc.stdout?.on('data', (data) => {
+      startupStdout = this.appendProcessOutputSnippet(startupStdout, data);
       this.managers.log?.service('mysql', data.toString());
     });
     proc.stderr?.on('data', (data) => {
+      startupStderr = this.appendProcessOutputSnippet(startupStderr, data);
       this.managers.log?.service('mysql', data.toString(), 'error');
     });
     proc.on('error', (error) => {
       this.managers.log?.systemError('MySQL process error', { error: error.message });
+      this.logServiceStartupFailure('MySQL', version, {
+        error: error.message,
+        configPath,
+        mysqlPath,
+        dataDir,
+        stdout: startupStdout,
+        stderr: startupStderr,
+      });
     });
     proc.on('exit', (code) => {
       const status = this.serviceStatus.get('mysql');
+      if (code !== 0 || (status.status !== 'running' && (startupStdout || startupStderr))) {
+        this.logServiceStartupFailure('MySQL', version, {
+          code,
+          configPath,
+          mysqlPath,
+          dataDir,
+          stdout: startupStdout,
+          stderr: startupStderr,
+        });
+      }
       if (status.status === 'running') {
         status.status = 'stopped';
         this.runningVersions.get('mysql')?.delete(version);
@@ -2518,27 +2735,65 @@ FLUSH PRIVILEGES;
 
   async initializeMySQLData(mysqlPath, dataDir, version = '8.4') {
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
+    const shareDir = path.join(mysqlPath, 'share');
+    const shareMessagesFile = path.join(shareDir, 'messages_to_error_log.txt');
+
+    await this.ensureWindowsRuntimeDlls(mysqlPath, `MySQL ${version}`);
+
+    if (!await fs.pathExists(shareMessagesFile)) {
+      throw new Error(`MySQL ${version} installation is incomplete (missing share/messages_to_error_log.txt). Please re-download from Binary Manager.`);
+    }
 
     // Ensure data directory is empty before initialization
     await fs.emptyDir(dataDir);
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(mysqldPath, ['--initialize-insecure', `--datadir=${dataDir}`], {
+      const args = [
+        '--initialize-insecure',
+        `--basedir=${mysqlPath}`,
+        `--datadir=${dataDir}`,
+        '--console'
+      ];
+
+      const proc = spawn(mysqldPath, args, {
         cwd: mysqlPath,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       });
 
+      let stdout = '';
       let stderr = '';
+      let settled = false;
+
+      proc.stdout?.on('data', (data) => {
+        stdout += data.toString();
+      });
+
       proc.stderr.on('data', (data) => {
         stderr += data.toString();
       });
 
+      proc.on('error', (error) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        reject(new Error(`MySQL initialization failed to launch: ${error.message}`));
+      });
+
       proc.on('exit', (code) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
         if (code === 0) {
           resolve();
         } else {
-          reject(new Error(`MySQL initialization failed: ${stderr}`));
+          const details = [stderr.trim(), stdout.trim()].filter(Boolean).join(' | ');
+          const suffix = details ? `: ${details}` : ` (exit code ${code}, no output captured)`;
+          reject(new Error(`MySQL initialization failed${suffix}`));
         }
       });
     });
@@ -2549,7 +2804,7 @@ FLUSH PRIVILEGES;
     const mysqlPath = this.getMySQLPath(version);
 
     // Build init-file line if provided (for applying credentials from ConfigStore)
-    const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
+    const initFileLine = initFile ? `init-file=${this.quoteConfigPath(initFile)}\n` : '';
 
     // Get timezone from settings and convert to UTC offset for MySQL compatibility
     const settings = this.configStore?.get('settings', {}) || {};
@@ -2562,14 +2817,14 @@ FLUSH PRIVILEGES;
       // Note: skip-grant-tables causes skip_networking=ON in MySQL 8.4, so we don't use it
       // Instead, we use init-file to apply credentials from ConfigStore on every startup
       config = `[mysqld]
-basedir=${mysqlPath.replace(/\\/g, '/')}
-datadir=${dataDir.replace(/\\/g, '/')}
+    basedir=${this.quoteConfigPath(mysqlPath)}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=0.0.0.0
 enable-named-pipe=ON
 socket=MYSQL_${version.replace(/\./g, '')}
-pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mysql.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error.log'))}
 default-time-zone='${timezoneOffset}'
 ${initFileLine}innodb_buffer_pool_size=128M
 innodb_redo_log_capacity=100M
@@ -2583,17 +2838,17 @@ port=${port}
     } else {
       // Unix/macOS config with socket
       config = `[mysqld]
-datadir=${dataDir.replace(/\\/g, '/')}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=127.0.0.1
-socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
-pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mysql.sock'))}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mysql.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error.log'))}
 default-time-zone='${timezoneOffset}'
 ${initFileLine}
 [client]
 port=${port}
-socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mysql.sock'))}
 `;
     }
 
@@ -2674,6 +2929,8 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     const mariadbPath = this.getMariaDBPath(version);
     const mariadbd = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
 
+    await this.ensureWindowsRuntimeDlls(mariadbPath, `MariaDB ${version}`);
+
     // Check if MariaDB binary exists
     if (!await fs.pathExists(mariadbd)) {
       this.managers.log?.systemError(`MariaDB ${version} binary not found. Please download MariaDB from the Binary Manager.`);
@@ -2729,16 +2986,29 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       windowsHide: true,
     });
 
+    let startupStdout = '';
+    let startupStderr = '';
+
     proc.stdout.on('data', (data) => {
+      startupStdout = this.appendProcessOutputSnippet(startupStdout, data);
       this.managers.log?.service('mariadb', data.toString());
     });
 
     proc.stderr.on('data', (data) => {
+      startupStderr = this.appendProcessOutputSnippet(startupStderr, data);
       this.managers.log?.service('mariadb', data.toString(), 'error');
     });
 
     proc.on('error', (error) => {
       this.managers.log?.systemError('MariaDB process error', { error: error.message });
+      this.logServiceStartupFailure('MariaDB', version, {
+        error: error.message,
+        configPath,
+        mariadbPath,
+        dataDir,
+        stdout: startupStdout,
+        stderr: startupStderr,
+      });
       const status = this.serviceStatus.get('mariadb');
       status.status = 'error';
       status.error = error.message;
@@ -2746,6 +3016,16 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 
     proc.on('exit', (code) => {
       const status = this.serviceStatus.get('mariadb');
+      if (code !== 0 || (status.status !== 'running' && (startupStdout || startupStderr))) {
+        this.logServiceStartupFailure('MariaDB', version, {
+          code,
+          configPath,
+          mariadbPath,
+          dataDir,
+          stdout: startupStdout,
+          stderr: startupStderr,
+        });
+      }
       if (status.status === 'running') {
         status.status = 'stopped';
         this.runningVersions.get('mariadb')?.delete(version);
@@ -2877,7 +3157,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     const mariadbPath = this.getMariaDBPath(version);
 
     // Build init-file line if provided (for applying credentials from ConfigStore)
-    const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
+    const initFileLine = initFile ? `init-file=${this.quoteConfigPath(initFile)}\n` : '';
 
     // Get timezone from settings and convert to UTC offset for compatibility
     const settings = this.configStore?.get('settings', {}) || {};
@@ -2890,14 +3170,14 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       // Use unique named pipe name to avoid conflict with MySQL
       // Credentials are applied via init-file from ConfigStore
       config = `[mysqld]
-basedir=${mariadbPath.replace(/\\/g, '/')}
-datadir=${dataDir.replace(/\\/g, '/')}
+    basedir=${this.quoteConfigPath(mariadbPath)}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=127.0.0.1
 enable_named_pipe=ON
 socket=MARIADB_${version.replace(/\./g, '')}
-pid-file=${path.join(dataDir, 'mariadb.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mariadb.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error.log'))}
 default-time-zone='${timezoneOffset}'
 ${initFileLine}innodb_buffer_pool_size=128M
 max_connections=100
@@ -2910,17 +3190,17 @@ socket=MARIADB_${version.replace(/\./g, '')}
       // Unix/macOS config with socket
       // Credentials are applied via init-file from ConfigStore
       config = `[mysqld]
-datadir=${dataDir.replace(/\\/g, '/')}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=127.0.0.1
-socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
-pid-file=${path.join(dataDir, 'mariadb.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mariadb.sock'))}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mariadb.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error.log'))}
 default-time-zone='${timezoneOffset}'
 ${initFileLine}
 [client]
 port=${port}
-socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mariadb.sock'))}
 `;
     }
 
