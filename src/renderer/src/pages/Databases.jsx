@@ -37,6 +37,7 @@ function Databases() {
   const [servicesStatus, setServicesStatus] = useState({});
   const [startingVersion, setStartingVersion] = useState(null); // 'mysql-8.4' or null
   const [stoppingVersion, setStoppingVersion] = useState(null);
+  const [phpMyAdminLoading, setPhpMyAdminLoading] = useState(false);
   const [serviceError, setServiceError] = useState(null);
   const [showImportModal, setShowImportModal] = useState(null); // { dbName, filePath } or null
   const loadingDatabasesRef = useRef(false); // prevents concurrent loadDatabases calls
@@ -326,9 +327,18 @@ function Databases() {
   };
 
   const openPhpMyAdmin = async () => {
-    const url = await window.devbox?.database.getPhpMyAdminUrl();
-    if (url) {
-      window.devbox?.system.openExternal(url);
+    if (!selectedDatabase || phpMyAdminLoading) {
+      return;
+    }
+
+    setPhpMyAdminLoading(true);
+    try {
+      const url = await window.devbox?.database.getPhpMyAdminUrl(selectedDatabase.type, selectedDatabase.version);
+      if (url) {
+        await window.devbox?.system.openExternal(url);
+      }
+    } finally {
+      setPhpMyAdminLoading(false);
     }
   };
 
@@ -391,10 +401,19 @@ function Databases() {
           <button
             onClick={openPhpMyAdmin}
             className="btn-secondary"
-            disabled={!isSelectedRunning}
+            disabled={!isSelectedRunning || phpMyAdminLoading}
           >
-            <ExternalLink className="w-4 h-4" />
-            phpMyAdmin
+            {phpMyAdminLoading ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Starting phpMyAdmin...
+              </>
+            ) : (
+              <>
+                <ExternalLink className="w-4 h-4" />
+                phpMyAdmin
+              </>
+            )}
           </button>
           <button
             onClick={() => setShowCreateModal(true)}

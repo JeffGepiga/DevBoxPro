@@ -280,6 +280,56 @@ class ServiceManager extends EventEmitter {
     this.managers.log?.systemError(`${serviceLabel} ${version} startup failure`, details);
   }
 
+  async readMySQLErrorLog(dataDir) {
+    const errorLogPath = path.join(dataDir, 'error.log');
+
+    try {
+      if (!await fs.pathExists(errorLogPath)) {
+        return '';
+      }
+
+      return await fs.readFile(errorLogPath, 'utf8');
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  async getMySQLErrorLogTail(dataDir, maxLines = 25) {
+    const logContent = await this.readMySQLErrorLog(dataDir);
+    if (!logContent) {
+      return '';
+    }
+
+    const lines = logContent
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    return lines.slice(-maxLines).join('\n');
+  }
+
+  async hasRecoverableMySQLRedoCorruption(dataDir) {
+    const errorLogTail = await this.getMySQLErrorLogTail(dataDir, 40);
+    return /Missing redo log file .*#ib_redo\d+/i.test(errorLogTail);
+  }
+
+  async recoverCorruptMySQLRedoLogs(version, dataDir) {
+    const redoDir = path.join(dataDir, '#innodb_redo');
+    if (!await fs.pathExists(redoDir)) {
+      return false;
+    }
+
+    const backupDir = path.join(dataDir, `#innodb_redo.corrupt-${Date.now()}`);
+    await fs.move(redoDir, backupDir, { overwrite: false });
+
+    this.managers.log?.systemWarn(`Recovered corrupt MySQL ${version} redo logs`, {
+      redoDir,
+      backupDir,
+    });
+
+    return true;
+  }
+
   // Get process key for Map storage
   getProcessKey(serviceName, version) {
     if (version) {
@@ -2227,7 +2277,8 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
   }
 
   // MySQL
-  async startMySQL(version = '8.4') {
+  async startMySQL(version = '8.4', startupOptions = {}) {
+    const { attemptedRedoRecovery = false } = startupOptions;
     const mysqlPath = this.getMySQLPath(version);
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
 
@@ -2346,6 +2397,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
       proc.on('exit', (code) => {
         const status = this.serviceStatus.get('mysql');
+        this.processes.delete(processKey);
         if (code !== 0 || (status.status !== 'running' && (startupStdout || startupStderr))) {
           this.logServiceStartupFailure('MySQL', version, {
             code,
@@ -2395,6 +2447,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
       proc.on('exit', (code) => {
         const status = this.serviceStatus.get('mysql');
+        this.processes.delete(processKey);
         if (code !== 0 || (status.status !== 'running' && (startupStdout || startupStderr))) {
           this.logServiceStartupFailure('MySQL', version, {
             code,
@@ -2427,9 +2480,33 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       status.startedAt = Date.now();
       // Credentials are applied via init-file before MySQL accepts connections
     } catch (error) {
-      this.managers.log?.systemError(`MySQL ${version} failed to start`, { error: error.message });
+      const errorLogTail = await this.getMySQLErrorLogTail(dataDir);
+
+      if (!attemptedRedoRecovery && await this.hasRecoverableMySQLRedoCorruption(dataDir)) {
+        try {
+          await this.recoverCorruptMySQLRedoLogs(version, dataDir);
+          this.runningVersions.get('mysql').delete(version);
+          status.status = 'stopped';
+          status.error = null;
+          status.startedAt = null;
+          status.pid = null;
+          return this.startMySQL(version, { attemptedRedoRecovery: true });
+        } catch (recoveryError) {
+          this.managers.log?.systemError(`MySQL ${version} redo recovery failed`, {
+            error: recoveryError.message,
+            dataDir,
+          });
+        }
+      }
+
+      this.managers.log?.systemError(`MySQL ${version} failed to start`, {
+        error: error.message,
+        errorLogTail: errorLogTail || undefined,
+      });
       status.status = 'error';
-      status.error = 'Failed to start within timeout. Check logs for details.';
+      status.error = errorLogTail
+        ? `Failed to start. ${errorLogTail.split('\n').at(-1)}`
+        : 'Failed to start within timeout. Check logs for details.';
       // Clean up the runningVersions entry on failure
       this.runningVersions.get('mysql').delete(version);
     }

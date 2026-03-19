@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor, cleanup, act } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 afterEach(cleanup);
@@ -20,6 +20,10 @@ const MOCK_PROJECT = {
     phpVersion: '8.3',
     isRunning: true,
     port: 8080,
+    services: {
+        mysql: true,
+        mysqlVersion: '8.4',
+    },
 };
 
 const mockDevbox = {
@@ -36,6 +40,7 @@ const mockDevbox = {
     },
     database: {
         listDatabases: vi.fn().mockResolvedValue([]),
+        getPhpMyAdminUrl: vi.fn().mockResolvedValue('http://localhost:8080/index.php?server=1'),
     },
     supervisor: {
         getProcesses: vi.fn().mockResolvedValue([]),
@@ -126,6 +131,29 @@ describe('ProjectDetail', () => {
             renderProjectDetail('nonexistent-id');
             await act(async () => { });
             expect(document.body.textContent.toLowerCase()).toMatch(/not found|404|no project/i);
+        });
+    });
+
+    describe('phpMyAdmin launch', () => {
+        it('shows a loading state while phpMyAdmin is starting', async () => {
+            let resolvePhpMyAdminUrl;
+            mockDevbox.database.getPhpMyAdminUrl.mockImplementation(() => new Promise((resolve) => {
+                resolvePhpMyAdminUrl = resolve;
+            }));
+
+            renderProjectDetail();
+
+            const openButton = await screen.findByRole('button', { name: /Open phpMyAdmin/i });
+            fireEvent.click(openButton);
+
+            expect(screen.getByRole('button', { name: /Starting phpMyAdmin/i })).toBeDisabled();
+            expect(mockDevbox.database.getPhpMyAdminUrl).toHaveBeenCalledWith('mysql', '8.4');
+
+            resolvePhpMyAdminUrl('http://localhost:8080/index.php?server=1');
+
+            await waitFor(() => {
+                expect(mockDevbox.system.openExternal).toHaveBeenCalledWith('http://localhost:8080/index.php?server=1');
+            });
         });
     });
 });

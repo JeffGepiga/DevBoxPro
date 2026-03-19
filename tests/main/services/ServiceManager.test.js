@@ -50,6 +50,7 @@ vi.mock('fs-extra', () => ({
     writeFile: vi.fn().mockResolvedValue(),
     writeFileSync: vi.fn(),
     copy: vi.fn().mockResolvedValue(),
+    move: vi.fn().mockResolvedValue(),
     remove: vi.fn().mockResolvedValue()
 }));
 
@@ -232,6 +233,39 @@ describe('ServiceManager', () => {
                 'Adopted legacy MySQL 8.4 data directory',
                 expect.objectContaining({ from: legacyDataDir, to: currentDataDir })
             );
+        });
+
+        it('detects recoverable MySQL redo corruption from the error log', async () => {
+            const fsExtra = require('fs-extra');
+
+            vi.spyOn(fsExtra, 'pathExists').mockResolvedValue(true);
+            vi.spyOn(fsExtra, 'readFile').mockResolvedValue([
+                '2026-03-19T07:45:56.897977Z 1 [ERROR] [MY-013882] [InnoDB] Missing redo log file .\\#innodb_redo\\#ib_redo6 (with start_lsn = 19656704).',
+                '2026-03-19T07:45:56.898594Z 1 [ERROR] [MY-012930] [InnoDB] Plugin initialization aborted with error Generic error.',
+            ].join('\n'));
+
+            await expect(mgr.hasRecoverableMySQLRedoCorruption('C:/DevBox Pro/data/mysql/8.4/data')).resolves.toBe(true);
+        });
+
+        it('archives corrupt MySQL redo logs before retrying startup', async () => {
+            const fsExtra = require('fs-extra');
+
+            vi.spyOn(fsExtra, 'pathExists').mockResolvedValue(true);
+            vi.spyOn(fsExtra, 'move').mockResolvedValue();
+
+            const recovered = await mgr.recoverCorruptMySQLRedoLogs('8.4', 'C:/DevBox Pro/data/mysql/8.4/data');
+
+            expect(recovered).toBe(true);
+            const [sourcePath, backupPath, moveOptions] = fsExtra.move.mock.calls.at(-1);
+            expect(sourcePath.replace(/\\/g, '/')).toBe('C:/DevBox Pro/data/mysql/8.4/data/#innodb_redo');
+            expect(backupPath.replace(/\\/g, '/')).toContain('C:/DevBox Pro/data/mysql/8.4/data/#innodb_redo.corrupt-');
+            expect(moveOptions).toEqual({ overwrite: false });
+            const [, warningDetails] = managers.log.systemWarn.mock.calls.at(-1);
+            expect(managers.log.systemWarn).toHaveBeenCalledWith(
+                'Recovered corrupt MySQL 8.4 redo logs',
+                expect.any(Object)
+            );
+            expect(warningDetails.redoDir.replace(/\\/g, '/')).toBe('C:/DevBox Pro/data/mysql/8.4/data/#innodb_redo');
         });
     });
 
