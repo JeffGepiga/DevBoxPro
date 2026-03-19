@@ -1461,7 +1461,7 @@ port=${port}
     try {
       const startWait = Date.now();
       let nginxReady = false;
-      while (Date.now() - startWait < 10000) {
+      while (Date.now() - startWait < 15000) {
         if (await this.checkPortOpen(httpPort)) {
           nginxReady = true;
           break;
@@ -1469,7 +1469,7 @@ port=${port}
         await new Promise(resolve => setTimeout(resolve, 500));
       }
       if (!nginxReady) {
-        throw new Error(`Nginx ${version} did not open port ${httpPort} within 10s`);
+        throw new Error(`Nginx ${version} did not open port ${httpPort} within 15s`);
       }
       status.status = 'running';
       status.startedAt = Date.now();
@@ -2130,7 +2130,7 @@ http {
 
     // Wait for Apache to be ready
     try {
-      await this.waitForService('apache', 20000);
+      await this.waitForService('apache', 30000);
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
