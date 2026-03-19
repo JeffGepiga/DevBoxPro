@@ -16,6 +16,7 @@ require('../../helpers/mockElectronCjs');
 const { mockApp } = require('../../helpers/mockElectronCjs');
 
 const { ConfigStore } = require('../../../src/main/utils/ConfigStore');
+const { __resetForTests } = require('../../../src/main/utils/PathResolver');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -23,7 +24,12 @@ describe('ConfigStore', () => {
     let store;
 
     beforeEach(() => {
+        __resetForTests();
         store = new ConfigStore();
+    });
+
+    afterEach(() => {
+        __resetForTests();
     });
 
     // ─── constructor ──────────────────────────────────────────────────────
@@ -390,6 +396,7 @@ describe('ConfigStore', () => {
                 }
                 return originalGetPath(name);
             };
+            __resetForTests();
 
             try {
                 const portableStore = new ConfigStore();
@@ -412,6 +419,7 @@ describe('ConfigStore', () => {
                 }
                 return originalGetPath(name);
             };
+            __resetForTests();
 
             try {
                 const portableStore = new ConfigStore();
@@ -437,6 +445,7 @@ describe('ConfigStore', () => {
                 }
                 return originalGetPath(name);
             };
+            __resetForTests();
 
             try {
                 const portableStore = new ConfigStore();
@@ -466,6 +475,7 @@ describe('ConfigStore', () => {
                 }
                 return originalGetPath(name);
             };
+            __resetForTests();
 
             try {
                 const standardStore = new ConfigStore();
@@ -476,6 +486,53 @@ describe('ConfigStore', () => {
                 mockApp.getPath = originalGetPath;
                 process.env.LOCALAPPDATA = originalLocalAppData;
                 fs.rmSync(installRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('normalizes non-portable default projects path back to C:/Projects on Windows', () => {
+            const originalGetPath = mockApp.getPath;
+            mockApp.getPath = (name) => {
+                if (name === 'exe') {
+                    return path.join(os.tmpdir(), 'devboxpro-standard', 'DevBox Pro.exe');
+                }
+                return originalGetPath(name);
+            };
+            __resetForTests();
+
+            try {
+                const standardStore = new ConfigStore();
+                vi.spyOn(standardStore, 'isTestEnvironment').mockReturnValue(false);
+                standardStore.set('settings.defaultProjectsPath', path.join(standardStore.getDataPath(), 'Projects'));
+
+                standardStore.normalizeDefaultProjectsPath();
+
+                const expected = process.platform === 'win32' ? 'C:/Projects' : path.join(os.homedir(), 'Projects');
+                expect(standardStore.getSetting('defaultProjectsPath')).toBe(expected);
+            } finally {
+                mockApp.getPath = originalGetPath;
+            }
+        });
+
+        it('preserves a custom non-portable projects path', () => {
+            const originalGetPath = mockApp.getPath;
+            mockApp.getPath = (name) => {
+                if (name === 'exe') {
+                    return path.join(os.tmpdir(), 'devboxpro-standard-custom', 'DevBox Pro.exe');
+                }
+                return originalGetPath(name);
+            };
+            __resetForTests();
+
+            try {
+                const standardStore = new ConfigStore();
+                vi.spyOn(standardStore, 'isTestEnvironment').mockReturnValue(false);
+                standardStore.set('settings.defaultProjectsPath', 'D:/MyProjects');
+
+                standardStore.normalizeDefaultProjectsPath();
+
+                expect(standardStore.getSetting('defaultProjectsPath')).toBe('D:/MyProjects');
+            } finally {
+                mockApp.getPath = originalGetPath;
             }
         });
 

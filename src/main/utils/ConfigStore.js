@@ -86,16 +86,42 @@ class ConfigStore {
       : path.join(os.homedir(), 'Projects');
   }
 
-  getNormalizedDefaultProjectsPath() {
-    const portableRoot = getPortableRoot(app);
-    if (!portableRoot) {
-      return null;
+  getResolvedStandardProjectsPath() {
+    if (this.isTestEnvironment()) {
+      const baseDir = process.env.TEST_USER_DATA_DIR || os.tmpdir();
+      return path.join(baseDir, '.devbox-pro-test', 'Projects');
     }
 
-    const portableProjectsPath = path.join(portableRoot, 'Projects');
+    return this.getPlatformDefaultProjectsPath();
+  }
+
+  getNormalizedDefaultProjectsPath() {
+    const portableRoot = getPortableRoot(app);
     const currentProjectsPath = this.store
       ? this.store.get('settings.defaultProjectsPath')
       : this._fallbackData?.settings?.defaultProjectsPath;
+
+    if (!portableRoot) {
+      const standardProjectsPath = this.getResolvedStandardProjectsPath();
+      const currentDataPath = this.getDataPath();
+      const legacyDataProjectsPath = path.join(currentDataPath, 'Projects');
+
+      if (!currentProjectsPath) {
+        return standardProjectsPath;
+      }
+
+      if (currentProjectsPath === standardProjectsPath) {
+        return standardProjectsPath;
+      }
+
+      if (currentProjectsPath === legacyDataProjectsPath) {
+        return standardProjectsPath;
+      }
+
+      return currentProjectsPath;
+    }
+
+    const portableProjectsPath = path.join(portableRoot, 'Projects');
 
     if (!currentProjectsPath) {
       return portableProjectsPath;

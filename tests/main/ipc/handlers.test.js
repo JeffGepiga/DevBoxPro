@@ -41,6 +41,9 @@ describe('IPC Handlers', () => {
                 set: vi.fn(),
                 getAll: vi.fn(() => ({ settings: {} })),
                 reset: vi.fn(),
+                getAppCachePath: vi.fn(() => '/app-cache'),
+                getResourcesPath: vi.fn(() => '/app-cache/resources'),
+                getDataPath: vi.fn(() => '/runtime-data'),
             },
             project: {
                 getAllProjects: vi.fn(async () => []),
@@ -437,6 +440,15 @@ describe('IPC Handlers', () => {
         it('settings:reset routes to config.reset', async () => {
             await handlers['settings:reset'](fakeEvent);
             expect(mockManagers.config.reset).toHaveBeenCalled();
+        });
+    });
+
+    describe('System handler routing', () => {
+        it('system:getAppDataPath routes to config.getAppCachePath', async () => {
+            const result = await handlers['system:getAppDataPath'](fakeEvent);
+
+            expect(mockManagers.config.getAppCachePath).toHaveBeenCalled();
+            expect(result).toBe('/app-cache');
         });
     });
 

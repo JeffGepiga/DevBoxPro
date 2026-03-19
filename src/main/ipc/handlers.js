@@ -578,6 +578,14 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('system:getAppDataPath', async () => {
+    if (typeof config.getAppCachePath === 'function') {
+      return config.getAppCachePath();
+    }
+
+    if (typeof config.getResourcesPath === 'function') {
+      return path.dirname(config.getResourcesPath());
+    }
+
     return config.getDataPath();
   });
 

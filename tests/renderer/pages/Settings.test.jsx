@@ -64,6 +64,11 @@ describe('Settings', () => {
             cli: {
                 getStatus: vi.fn().mockResolvedValue({ installed: true, inPath: true }),
                 getDirectShimsEnabled: vi.fn().mockResolvedValue(false),
+            },
+            system: {
+                getAppDataPath: vi.fn().mockResolvedValue('C:\\Users\\Jeffrey\\AppData\\Roaming\\devbox-pro'),
+                openPath: vi.fn().mockResolvedValue(true),
+                getAppVersion: vi.fn().mockResolvedValue('1.0.0'),
             }
         };
     });
@@ -132,6 +137,22 @@ describe('Settings', () => {
             expect(mockShowConfirm).toHaveBeenCalled();
             expect(window.devbox.settings.reset).toHaveBeenCalled();
             expect(mockRefreshSettings).toHaveBeenCalled();
+        });
+    });
+
+    it('opens the app storage root from Advanced settings', async () => {
+        render(<Settings />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+
+        const locationButton = await screen.findByTitle('Click to open folder');
+        expect(await screen.findByText('C:\\Users\\Jeffrey\\AppData\\Roaming\\devbox-pro')).toBeInTheDocument();
+
+        fireEvent.click(locationButton);
+
+        await waitFor(() => {
+            expect(window.devbox.system.getAppDataPath).toHaveBeenCalled();
+            expect(window.devbox.system.openPath).toHaveBeenCalledWith('C:\\Users\\Jeffrey\\AppData\\Roaming\\devbox-pro');
         });
     });
 });
