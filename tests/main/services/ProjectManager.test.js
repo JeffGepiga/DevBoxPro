@@ -205,6 +205,40 @@ describe('ProjectManager', () => {
             expect(updated.phpVersion).toBe('8.3');
         });
 
+        it('removes stale configs and regenerates the vhost when web server version changes', async () => {
+            const project = {
+                id: 'abc1234',
+                name: 'OldName',
+                type: 'static',
+                phpVersion: '8.2',
+                path: '/foo/old',
+                domain: 'versioned.test',
+                domains: ['versioned.test'],
+                webServer: 'nginx',
+                webServerVersion: '1.24',
+                ssl: false,
+                networkAccess: false,
+                services: {},
+            };
+            configStore.set('projects', [project]);
+
+            mgr.createVirtualHost = vi.fn().mockResolvedValue();
+            mgr.removeVirtualHost = vi.fn().mockResolvedValue();
+
+            const updated = await mgr.updateProject('abc1234', { webServerVersion: '1.28' });
+
+            expect(updated.webServerVersion).toBe('1.28');
+            expect(mgr.removeVirtualHost).toHaveBeenCalledWith(
+                expect.objectContaining({ id: 'abc1234', webServer: 'nginx', webServerVersion: '1.24' }),
+                { reloadIfRunning: true }
+            );
+            expect(mgr.createVirtualHost).toHaveBeenCalledWith(
+                expect.objectContaining({ id: 'abc1234', webServerVersion: '1.28' }),
+                null,
+                '1.28'
+            );
+        });
+
         it('deletes a project and its vhost', async () => {
             const project = { id: 'abc1234', name: 'ToDelete', type: 'static', path: '/foo/delete', domain: 'todelete.test' };
             configStore.set('projects', [project]);
@@ -301,6 +335,40 @@ describe('ProjectManager', () => {
     });
 
     describe('Nginx vhost generation', () => {
+        it('removes stale nginx configs from all versioned directories', async () => {
+            const project = {
+                id: 'proj-nginx-clean',
+                domain: 'proj-nginx-clean.test',
+                webServer: 'nginx',
+                webServerVersion: '1.28',
+            };
+            const nginxRoot = path.join('/mock/data', 'nginx');
+            const nginx124Config = path.join('/mock/data', 'nginx', '1.24', 'sites', 'proj-nginx-clean.conf');
+            const nginx128Config = path.join('/mock/data', 'nginx', '1.28', 'sites', 'proj-nginx-clean.conf');
+
+            configStore.getDataPath = vi.fn(() => '/mock/data');
+            vi.spyOn(fs, 'pathExists').mockImplementation(async (targetPath) => (
+                targetPath === nginxRoot
+                || targetPath === nginx124Config
+                || targetPath === nginx128Config
+            ));
+            vi.spyOn(fs, 'readdir').mockImplementation(async (targetPath, options) => {
+                if (targetPath === nginxRoot && options?.withFileTypes) {
+                    return [
+                        { name: '1.24', isDirectory: () => true },
+                        { name: '1.28', isDirectory: () => true },
+                    ];
+                }
+
+                return [];
+            });
+
+            await mgr.removeVirtualHost(project);
+
+            expect(fs.remove).toHaveBeenCalledWith(nginx124Config);
+            expect(fs.remove).toHaveBeenCalledWith(nginx128Config);
+        });
+
         it('quotes fastcgi include paths in generated vhost configs', async () => {
             const project = {
                 id: 'proj-nginx',
@@ -435,6 +503,37 @@ describe('ProjectManager', () => {
             expect(secondConfig).toContain('<VirtualHost 0.0.0.0:8446>');
             expect(secondConfig).toContain('ServerAlias www.second-apache.test *.second-apache.test');
             expect(secondConfig).not.toContain('ServerAlias www.second-apache.test *.second-apache.test *');
+        });
+
+        it('switches web servers with the requested target version', async () => {
+            const project = {
+                id: 'proj-switch',
+                name: 'ProjSwitch',
+                type: 'static',
+                path: '/foo/switch',
+                domain: 'switch.test',
+                webServer: 'apache',
+                webServerVersion: '2.4',
+                services: {},
+                supervisor: { processes: [] }
+            };
+            configStore.set('projects', [project]);
+
+            mgr.createVirtualHost = vi.fn().mockResolvedValue();
+            mgr.removeVirtualHost = vi.fn().mockResolvedValue();
+
+            const result = await mgr.switchWebServer('proj-switch', 'nginx', '1.24');
+
+            expect(result.webServerVersion).toBe('1.24');
+            expect(mgr.removeVirtualHost).toHaveBeenCalledWith(
+                expect.objectContaining({ id: 'proj-switch', webServer: 'apache', webServerVersion: '2.4' }),
+                { reloadIfRunning: true }
+            );
+            expect(mgr.createVirtualHost).toHaveBeenCalledWith(
+                expect.objectContaining({ id: 'proj-switch', webServer: 'nginx', webServerVersion: '1.24' }),
+                null,
+                '1.24'
+            );
         });
     });
 

@@ -5,6 +5,7 @@ const { spawn, exec } = require('child_process');
 const http = require('http');
 const os = require('os');
 const { isPortAvailable, findAvailablePort } = require('../utils/PortUtils');
+const { getDefaultVersion } = require('../../shared/serviceConfig');
 const CompatibilityManager = require('./CompatibilityManager');
 
 // Helper function to spawn a process hidden on Windows
@@ -85,6 +86,69 @@ class ProjectManager {
     }
 
     return 9000 + (Math.abs(hash) % 1000);
+  }
+
+  getDefaultWebServerVersion(webServer = 'nginx') {
+    return getDefaultVersion(webServer);
+  }
+
+  getEffectiveWebServer(project) {
+    return project?.webServer || 'nginx';
+  }
+
+  getEffectiveWebServerVersion(project, webServer = null) {
+    const effectiveWebServer = webServer || this.getEffectiveWebServer(project);
+    return project?.webServerVersion || this.getDefaultWebServerVersion(effectiveWebServer);
+  }
+
+  getProjectDomains(project) {
+    const domains = project?.domains?.length ? project.domains : (project?.domain ? [project.domain] : []);
+    return [...new Set(domains.filter(Boolean))].sort();
+  }
+
+  getComparableVhostState(project) {
+    const webServer = this.getEffectiveWebServer(project);
+
+    return JSON.stringify({
+      domain: project?.domain || '',
+      domains: this.getProjectDomains(project),
+      path: project?.path || '',
+      documentRoot: project?.documentRoot || '',
+      phpVersion: project?.phpVersion || '',
+      ssl: Boolean(project?.ssl),
+      networkAccess: Boolean(project?.networkAccess),
+      type: project?.type || '',
+      port: project?.port || null,
+      nodePort: project?.nodePort || null,
+      webServer,
+      webServerVersion: this.getEffectiveWebServerVersion(project, webServer),
+    });
+  }
+
+  hasVhostConfigChanges(previousProject, nextProject) {
+    return this.getComparableVhostState(previousProject) !== this.getComparableVhostState(nextProject);
+  }
+
+  async reloadWebServerConfigIfRunning(webServer, version = null) {
+    const serviceManager = this.managers.service;
+    if (!serviceManager?.isVersionRunning) {
+      return;
+    }
+
+    const effectiveVersion = version || this.getDefaultWebServerVersion(webServer);
+    if (!serviceManager.isVersionRunning(webServer, effectiveVersion)) {
+      return;
+    }
+
+    try {
+      if (webServer === 'nginx') {
+        await serviceManager.reloadNginx(effectiveVersion);
+      } else if (webServer === 'apache') {
+        await serviceManager.reloadApache(effectiveVersion);
+      }
+    } catch (error) {
+      this.managers.log?.systemWarn(`Could not reload ${webServer} after removing stale vhost config`, { error: error.message });
+    }
   }
 
   async initialize() {
@@ -395,9 +459,10 @@ class ProjectManager {
       }
     }
 
-    // Determine default web server version from installed versions
-    let defaultWebServerVersion = '1.28';
     const webServer = config.webServer || settings.webServer || 'nginx';
+
+    // Determine default web server version from installed versions
+    let defaultWebServerVersion = this.getDefaultWebServerVersion(webServer);
     const webServerDir = path.join(resourcePath, webServer);
     if (await fs.pathExists(webServerDir)) {
       const installedVersions = (await fs.readdir(webServerDir))
@@ -1824,6 +1889,7 @@ class ProjectManager {
 
     const isRunning = this.runningProjects.has(id);
     const oldProject = { ...projects[index] };
+    const oldDomains = this.getProjectDomains(oldProject);
 
     if (isRunning) {
       await this.stopProject(id);
@@ -1843,45 +1909,73 @@ class ProjectManager {
     };
 
     this.configStore.set('projects', projects);
+    const updatedProject = projects[index];
+    const newDomains = this.getProjectDomains(updatedProject);
+    const previousWebServer = this.getEffectiveWebServer(oldProject);
+    const nextWebServer = this.getEffectiveWebServer(updatedProject);
+    const previousWebServerVersion = this.getEffectiveWebServerVersion(oldProject, previousWebServer);
+    const nextWebServerVersion = this.getEffectiveWebServerVersion(updatedProject, nextWebServer);
+    const domainsChanged = JSON.stringify(oldDomains) !== JSON.stringify(newDomains);
+    const webServerTargetChanged = previousWebServer !== nextWebServer || previousWebServerVersion !== nextWebServerVersion;
+    const vhostConfigChanged = this.hasVhostConfigChanges(oldProject, updatedProject);
 
     // Sync CLI projects file
     await this.syncCliProjectsFile();
 
     // If environment was updated, sync to .env file for Laravel projects
-    if (updates.environment && projects[index].type === 'laravel') {
+    if (updates.environment && updatedProject.type === 'laravel') {
       try {
-        await this.syncEnvFile(projects[index]);
+        await this.syncEnvFile(updatedProject);
       } catch (error) {
-        this.managers.log?.systemWarn('Could not sync .env file', { project: projects[index].name, error: error.message });
+        this.managers.log?.systemWarn('Could not sync .env file', { project: updatedProject.name, error: error.message });
       }
     }
 
-    // If domains changed, update hosts file, regenerate vhosts and SSL cert
-    if (updates.domains || updates.domain) {
+    // If domains changed, update hosts file and regenerate SSL certificates.
+    if (domainsChanged) {
       // Remove old domains from hosts file
-      const oldDomains = oldProject.domains?.length ? oldProject.domains : (oldProject.domain ? [oldProject.domain] : []);
       for (const d of oldDomains) {
         try { await this.removeFromHostsFile(d); } catch { /* ignore */ }
       }
+
       // Add new domains to hosts file
       try {
-        await this.updateHostsFile(projects[index]);
+        await this.updateHostsFile(updatedProject);
       } catch (error) {
         this.managers.log?.systemWarn('Could not update hosts file after domain change', { error: error.message });
       }
-      // Regenerate virtual host config
-      try {
-        await this.createVirtualHost(projects[index]);
-      } catch (error) {
-        this.managers.log?.systemWarn('Could not regenerate virtual host after domain change', { error: error.message });
-      }
-      // Regenerate SSL certificate for new domains
-      if (projects[index].ssl) {
+
+      if (updatedProject.ssl) {
         try {
-          await this.managers.ssl?.createCertificate(projects[index].domains || [projects[index].domain]);
+          await this.managers.ssl?.createCertificate(updatedProject.domains || [updatedProject.domain]);
         } catch (error) {
           this.managers.log?.systemWarn('Could not regenerate SSL certificate after domain change', { error: error.message });
         }
+      }
+    }
+
+    if (webServerTargetChanged) {
+      try {
+        await this.removeVirtualHost({
+          ...oldProject,
+          webServer: previousWebServer,
+          webServerVersion: previousWebServerVersion,
+        }, { reloadIfRunning: true });
+      } catch (error) {
+        this.managers.log?.systemWarn('Could not remove old virtual host after web server change', { error: error.message });
+      }
+    }
+
+    if (vhostConfigChanged) {
+      try {
+        await this.createVirtualHost(updatedProject, null, nextWebServerVersion);
+      } catch (error) {
+        const reason = webServerTargetChanged
+          ? 'web server change'
+          : domainsChanged
+            ? 'domain change'
+            : 'project settings change';
+        this.managers.log?.systemWarn(`Could not regenerate virtual host after ${reason}`, { error: error.message });
       }
     }
 
@@ -2208,7 +2302,8 @@ class ProjectManager {
     try {
       // Get expected ports for this project's web server directly from ServiceManager
       const webServer = project.webServer || 'nginx';
-      const webServerPorts = this.managers.service?.getServicePorts(webServer, project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4'));
+      const webServerVersion = this.getEffectiveWebServerVersion(project, webServer);
+      const webServerPorts = this.managers.service?.getServicePorts(webServer, webServerVersion);
       const httpPort = webServerPorts?.httpPort || 80;
       const httpsPort = webServerPorts?.sslPort || 443;
 
@@ -2239,8 +2334,6 @@ class ProjectManager {
 
       // Determine the nginx version that WILL be running.
       // This is needed before nginx starts so all vhost configs use compatible syntax.
-      const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
-
       const targetVersion = webServerVersion;
 
       // Check if the web server is already running BEFORE we start services.
@@ -2414,7 +2507,7 @@ class ProjectManager {
 
     // Check web server - auto-fix if configured version doesn't exist
     const webServer = project.webServer || 'nginx';
-    let webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
+    let webServerVersion = this.getEffectiveWebServerVersion(project, webServer);
     const webServerPath = path.join(resourcePath, webServer, webServerVersion, platform);
 
     if (!await fs.pathExists(webServerPath)) {
@@ -2651,7 +2744,7 @@ class ProjectManager {
 
     // Web server
     const webServer = project.webServer || 'nginx';
-    const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
+    const webServerVersion = this.getEffectiveWebServerVersion(project, webServer);
     services.push({ name: webServer, version: webServerVersion });
 
     // Database
@@ -2815,7 +2908,7 @@ class ProjectManager {
 
     // Web server is critical - project cannot run without it
     const webServer = project.webServer || 'nginx';
-    const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
+    const webServerVersion = this.getEffectiveWebServerVersion(project, webServer);
 
     // Track if web server was already running before we start
     // This is needed to know if we should reload config for new vhosts
@@ -2989,7 +3082,7 @@ class ProjectManager {
 
     // Get actual port from ServiceManager based on web server type
     const webServer = project.webServer || 'nginx';
-    const webServerVersion = project.webServerVersion || (webServer === 'nginx' ? '1.28' : '2.4');
+    const webServerVersion = this.getEffectiveWebServerVersion(project, webServer);
     const serviceManager = this.managers.service;
     const ports = serviceManager?.getServicePorts(webServer, webServerVersion);
 
@@ -3242,7 +3335,7 @@ class ProjectManager {
       if (needsConfigRegen) {
         try {
           const serviceManager = this.managers.service;
-          const apacheVersion = serviceManager?.serviceStatus?.get('apache')?.version || '2.4';
+          const apacheVersion = serviceManager?.serviceStatus?.get('apache')?.version || this.getDefaultWebServerVersion('apache');
           const apachePath = serviceManager?.getApachePath(apacheVersion);
           const dataPath = this.getDataPath();
           const confPath = path.join(dataPath, 'apache', 'httpd.conf');
@@ -3308,7 +3401,7 @@ class ProjectManager {
   async regenerateAllNginxVhosts(excludeProjectId = null, targetNginxVersion = null) {
     const allProjects = this.configStore.get('projects', []);
     const dataPath = this.getDataPath();
-    const effectiveVersion = targetNginxVersion || '1.28';
+    const effectiveVersion = targetNginxVersion || this.getDefaultWebServerVersion('nginx');
     const sitesDir = path.join(dataPath, 'nginx', effectiveVersion, 'sites');
 
     for (const proj of allProjects) {
@@ -3316,7 +3409,7 @@ class ProjectManager {
       if (proj.webServer && proj.webServer !== 'nginx') continue;
 
       // Only regenerate projects that use this nginx version
-      const projVersion = proj.webServerVersion || '1.28';
+      const projVersion = this.getEffectiveWebServerVersion(proj, 'nginx');
       if (projVersion !== effectiveVersion) continue;
 
       // Only regenerate if a vhost conf file exists for this project
@@ -3342,7 +3435,7 @@ class ProjectManager {
     const resourcesPath = this.getResourcesPath();
     const sslDir = path.join(dataPath, 'ssl', project.domain);
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-    let nginxVersion = project.webServerVersion || '1.28';
+    let nginxVersion = this.getEffectiveWebServerVersion(project, 'nginx');
 
     // Validate that the nginx version exists, fall back to available version if not
     const nginxVersionPath = path.join(resourcesPath, 'nginx', nginxVersion, platform);
@@ -3606,7 +3699,7 @@ server {
 
     // Determine the effective Apache version for any version-specific config decisions.
     // Priority: explicitly passed targetApacheVersion > running version from serviceStatus > project version
-    const apacheVersion = project.webServerVersion || '2.4';
+    const apacheVersion = this.getEffectiveWebServerVersion(project, 'apache');
     const effectiveApacheVersion = targetApacheVersion
       || this.managers.service?.serviceStatus?.get('apache')?.version
       || apacheVersion;
@@ -4043,35 +4136,79 @@ server {
   }
 
   // Remove virtual host when project is deleted
-  async removeVirtualHost(project) {
+  async removeVirtualHost(project, options = {}) {
     const dataPath = this.getDataPath();
+    const { reloadIfRunning = false } = options;
+    const removedNginxVersions = new Set();
 
-    // Remove nginx config
-    const nginxConfig = path.join(dataPath, 'nginx', 'sites', `${project.id}.conf`);
-    if (await fs.pathExists(nginxConfig)) {
-      await fs.remove(nginxConfig);
+    const nginxConfigPaths = [path.join(dataPath, 'nginx', 'sites', `${project.id}.conf`)];
+    const nginxDataDir = path.join(dataPath, 'nginx');
+
+    try {
+      if (await fs.pathExists(nginxDataDir)) {
+        const entries = await fs.readdir(nginxDataDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue;
+          nginxConfigPaths.push(path.join(nginxDataDir, entry.name, 'sites', `${project.id}.conf`));
+        }
+      }
+    } catch {
+      // Ignore errors while scanning nginx config directories.
+    }
+
+    for (const nginxConfigPath of [...new Set(nginxConfigPaths)]) {
+      if (!await fs.pathExists(nginxConfigPath)) {
+        continue;
+      }
+
+      await fs.remove(nginxConfigPath);
+
+      const relativePath = path.relative(path.join(dataPath, 'nginx'), nginxConfigPath);
+      const relativeSegments = relativePath.split(path.sep);
+      if (relativeSegments[1] === 'sites') {
+        removedNginxVersions.add(relativeSegments[0]);
+      }
     }
 
     // Remove apache config
     const apacheConfig = path.join(dataPath, 'apache', 'vhosts', `${project.id}.conf`);
+    let apacheRemoved = false;
     if (await fs.pathExists(apacheConfig)) {
       await fs.remove(apacheConfig);
+      apacheRemoved = true;
     }
 
     // Try to remove from hosts file
     await this.removeFromHostsFile(project.domain);
 
+    if (reloadIfRunning) {
+      for (const version of removedNginxVersions) {
+        await this.reloadWebServerConfigIfRunning('nginx', version);
+      }
+
+      if (apacheRemoved) {
+        await this.reloadWebServerConfigIfRunning('apache', this.getEffectiveWebServerVersion(project, 'apache'));
+      }
+    }
+
     // Virtual host removed
   }
 
   // Switch web server for a project
-  async switchWebServer(projectId, newWebServer) {
+  async switchWebServer(projectId, newWebServer, newWebServerVersion = null) {
     const project = this.getProject(projectId);
     if (!project) {
       throw new Error('Project not found');
     }
 
     const oldWebServer = project.webServer || 'nginx';
+    const oldWebServerVersion = this.getEffectiveWebServerVersion(project, oldWebServer);
+    const targetWebServerVersion = newWebServerVersion || this.getDefaultWebServerVersion(newWebServer);
+    const oldProjectSnapshot = {
+      ...project,
+      webServer: oldWebServer,
+      webServerVersion: oldWebServerVersion,
+    };
 
     // If same web server, nothing to do
     if (oldWebServer === newWebServer) {
@@ -4086,7 +4223,7 @@ server {
     }
 
     // Remove old vhost config from OLD web server
-    await this.removeVirtualHost(project);
+    await this.removeVirtualHost(oldProjectSnapshot, { reloadIfRunning: true });
 
     // Check if any other projects are still using the old web server
     const allProjects = this.configStore.get('projects', []);
@@ -4117,21 +4254,23 @@ server {
       projects[index] = {
         ...projects[index],
         webServer: newWebServer,
+        webServerVersion: targetWebServerVersion,
         updatedAt: new Date().toISOString(),
       };
       this.configStore.set('projects', projects);
     }
     project.webServer = newWebServer;
+    project.webServerVersion = targetWebServerVersion;
 
     // Create new vhost config BEFORE starting the new web server
-    await this.createVirtualHost(project);
+    await this.createVirtualHost(project, null, targetWebServerVersion);
 
     // Restart if was running
     if (wasRunning) {
       await this.startProject(projectId);
     }
 
-    return { success: true, webServer: newWebServer };
+    return { success: true, webServer: newWebServer, webServerVersion: targetWebServerVersion };
   }
 
   /**

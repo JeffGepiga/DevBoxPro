@@ -19,7 +19,7 @@ contextBridge.exposeInMainWorld('devbox', {
     openInBrowser: (id) => ipcRenderer.invoke('projects:openInBrowser', id),
     openFolder: (id) => ipcRenderer.invoke('projects:openFolder', id),
     move: (id, newPath) => ipcRenderer.invoke('projects:move', id, newPath),
-    switchWebServer: (id, webServer) => ipcRenderer.invoke('projects:switchWebServer', id, webServer),
+    switchWebServer: (id, webServer, webServerVersion) => ipcRenderer.invoke('projects:switchWebServer', id, webServer, webServerVersion),
     scanUnregistered: () => ipcRenderer.invoke('projects:scanUnregistered'),
     registerExisting: (config) => ipcRenderer.invoke('projects:registerExisting', config),
     detectType: (folderPath) => ipcRenderer.invoke('projects:detectType', folderPath),

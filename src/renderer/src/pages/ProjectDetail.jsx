@@ -797,11 +797,18 @@ function OverviewTab({ project, processes, refreshProjects }) {
     try {
       // If web server is changing, use switchWebServer API
       if (pendingChanges.webServer) {
-        await window.devbox?.projects.switchWebServer(project.id, pendingChanges.webServer);
+        await window.devbox?.projects.switchWebServer(
+          project.id,
+          pendingChanges.webServer,
+          pendingChanges.webServerVersion
+        );
       }
 
       // Update other project settings
       const { webServer, ...otherChanges } = pendingChanges;
+      if (pendingChanges.webServer) {
+        delete otherChanges.webServerVersion;
+      }
       if (Object.keys(otherChanges).length > 0) {
         await window.devbox?.projects.update(project.id, otherChanges);
       }
