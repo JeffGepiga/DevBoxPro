@@ -1,11 +1,12 @@
 ; DevBox Pro NSIS Installer Script
-Var /GLOBAL wasPortableInstall
+; Use a general-purpose register to persist portable install detection between
+; customInit and customInstall without introducing an extra NSIS user variable.
 
 !macro customInit
-  StrCpy $wasPortableInstall 0
+  StrCpy $R9 0
 
   ${If} ${FileExists} "$INSTDIR\portable.flag"
-    StrCpy $wasPortableInstall 1
+    StrCpy $R9 1
   ${EndIf}
 !macroend
 
@@ -18,7 +19,7 @@ Var /GLOBAL wasPortableInstall
 
   ; Preserve portable mode across updates, and only infer portability from the
   ; install path for fresh installs.
-  ${If} $wasPortableInstall == 1
+  ${If} $R9 == 1
     FileOpen $1 "$INSTDIR\portable.flag" w
     FileClose $1
   ${Else}

@@ -50,4 +50,32 @@ describe('PathResolver', () => {
         expect(pathResolver.getResourcesPath(app)).toBe(path.join(exeDir, 'resources-user'));
         expect(pathResolver.getAppCachePath(app, 'binaries-config.json')).toBe(path.join(exeDir, 'binaries-config.json'));
     });
+
+    it('ignores stale portable.flag files in the standard Windows install directory', () => {
+        const originalLocalAppData = process.env.LOCALAPPDATA;
+        const standardInstallRoot = path.join(os.tmpdir(), 'devboxpro-standard-install-root');
+        const standardExeDir = path.join(standardInstallRoot, 'Programs', 'DevBox Pro', 'DevBoxPro');
+        const standardExePath = path.join(standardExeDir, 'DevBoxPro.exe');
+        const standardApp = {
+            getPath(name) {
+                if (name === 'exe') return standardExePath;
+                if (name === 'userData') return userDataPath;
+                throw new Error(`Unexpected path request: ${name}`);
+            },
+        };
+
+        process.env.LOCALAPPDATA = standardInstallRoot;
+        fs.mkdirSync(standardExeDir, { recursive: true });
+        fs.writeFileSync(path.join(standardExeDir, 'portable.flag'), '');
+        pathResolver.__resetForTests();
+
+        try {
+            expect(pathResolver.getPortableRoot(standardApp)).toBeNull();
+            expect(pathResolver.getDataPath(standardApp)).toBe(path.join(os.homedir(), '.devbox-pro'));
+        } finally {
+            process.env.LOCALAPPDATA = originalLocalAppData;
+            fs.rmSync(standardInstallRoot, { recursive: true, force: true });
+            pathResolver.__resetForTests();
+        }
+    });
 });

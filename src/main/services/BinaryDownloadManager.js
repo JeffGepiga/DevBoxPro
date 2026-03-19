@@ -57,10 +57,10 @@ class BinaryDownloadManager {
             filename: 'php-8.3.29-nts-Win32-vs16-x64.zip',
           },
           mac: {
-            url: 'https://github.com/shivammathur/php-builder/releases/download/8.3.29/php-8.3.29-darwin-arm64.tar.gz',
-            filename: 'php-8.3.29-darwin-arm64.tar.gz',
+            url: 'https://github.com/shivammathur/php-builder/releases/download/8.3.30/php-8.3.30-darwin-arm64.tar.gz',
+            filename: 'php-8.3.30-darwin-arm64.tar.gz',
           },
-          label: 'LTS',
+          label: 'Security Only',
         },
         '8.2': {
           win: {
@@ -744,9 +744,10 @@ class BinaryDownloadManager {
   // Save config to local cache
   async saveCachedConfig(config) {
     try {
+      const normalizedConfig = this.cloneDownloadConfig(config);
       const cacheData = {
         savedAt: new Date().toISOString(),
-        config: config
+        config: normalizedConfig
       };
       await fs.writeJson(this.localConfigPath, cacheData, { spaces: 2 });
       // Saved binary config to cache
@@ -757,12 +758,116 @@ class BinaryDownloadManager {
     }
   }
 
+  cloneDownloadConfig(config) {
+    if (!config || typeof config !== 'object') {
+      return config;
+    }
+
+    return JSON.parse(JSON.stringify(config));
+  }
+
+  isVersionProbeEligibleError(error) {
+    const message = error?.message || '';
+    return /status 403|status 404|returned HTML|invalid|not found/i.test(message);
+  }
+
+  buildPatchFallbackCandidates(downloadInfo, maxOffset = 5) {
+    if (!downloadInfo?.url || !downloadInfo?.filename) {
+      return [];
+    }
+
+    const urlMatch = downloadInfo.url.match(/(\d+\.\d+\.\d+)/);
+    const filenameMatch = downloadInfo.filename.match(/(\d+\.\d+\.\d+)/);
+    const baseVersion = urlMatch?.[1] || filenameMatch?.[1];
+
+    if (!baseVersion) {
+      return [];
+    }
+
+    const [major, minor, patch] = baseVersion.split('.').map((value) => parseInt(value, 10));
+    if ([major, minor, patch].some(Number.isNaN)) {
+      return [];
+    }
+
+    const candidates = [];
+    const seenVersions = new Set([baseVersion]);
+    const patchOffsets = [
+      ...Array.from({ length: maxOffset }, (_, index) => index + 1),
+      ...Array.from({ length: maxOffset }, (_, index) => -(index + 1)),
+    ];
+
+    for (const offset of patchOffsets) {
+      const nextPatch = patch + offset;
+      if (nextPatch < 0) {
+        continue;
+      }
+
+      const nextVersion = `${major}.${minor}.${nextPatch}`;
+      if (seenVersions.has(nextVersion)) {
+        continue;
+      }
+
+      seenVersions.add(nextVersion);
+      candidates.push({
+        ...downloadInfo,
+        url: downloadInfo.url.replace(baseVersion, nextVersion),
+        filename: downloadInfo.filename.replace(baseVersion, nextVersion),
+        resolvedVersion: nextVersion,
+      });
+    }
+
+    return candidates;
+  }
+
+  async downloadWithVersionProbe(serviceName, version, id, downloadInfo) {
+    const platform = this.getPlatform();
+    const attempts = [downloadInfo];
+    let lastError = null;
+
+    for (let index = 0; index < attempts.length; index++) {
+      const attempt = attempts[index];
+      const downloadPath = path.join(this.resourcesPath, 'downloads', attempt.filename);
+
+      try {
+        await this.downloadFile(attempt.url, downloadPath, id);
+
+        if (index > 0) {
+          this.managers?.log?.systemWarn(`Recovered ${serviceName} ${version} download using alternate patch asset`, {
+            requestedUrl: downloadInfo.url,
+            resolvedUrl: attempt.url,
+          });
+
+          if (this.downloads?.[serviceName]?.[version]?.[platform]) {
+            this.downloads[serviceName][version][platform] = {
+              ...this.downloads[serviceName][version][platform],
+              url: attempt.url,
+              filename: attempt.filename,
+            };
+          }
+        }
+
+        return { downloadPath, downloadInfo: attempt };
+      } catch (error) {
+        lastError = error;
+        await fs.remove(downloadPath).catch(() => { });
+
+        if (index === 0 && this.isVersionProbeEligibleError(error)) {
+          attempts.push(...this.buildPatchFallbackCandidates(downloadInfo));
+          continue;
+        }
+      }
+    }
+
+    throw lastError || new Error(`Failed to download ${serviceName} ${version}`);
+  }
+
   // Apply config object to downloads (shared logic for load and apply)
   async applyConfigToDownloads(config) {
+    const normalizedConfig = this.cloneDownloadConfig(config);
     const platform = this.getPlatform();
     let appliedCount = 0;
 
-    for (const [serviceName, serviceData] of Object.entries(config)) {
+    for (const [serviceName, serviceData] of Object.entries(normalizedConfig)) {
       if (serviceName === 'version' || serviceName === 'lastUpdated') continue;
 
       if (!this.downloads[serviceName]) {
@@ -1713,15 +1818,14 @@ class BinaryDownloadManager {
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
 
-      const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
       const extractPath = path.join(this.resourcesPath, 'php', version, platform);
 
       // Clean existing installation
       await fs.remove(extractPath);
       await fs.ensureDir(extractPath);
 
-      // Download
-      await this.downloadFile(downloadInfo.url, downloadPath, id);
+      // Download, probing nearby patch versions if the configured asset is gone.
+      const { downloadPath } = await this.downloadWithVersionProbe('php', version, id, downloadInfo);
 
       // Check if cancelled before extraction
       await this.checkCancelled(id, downloadPath);
@@ -2551,16 +2655,28 @@ AddType application/x-httpd-php-source .phps
     const projectManager = this.managers?.project;
     const serviceManager = this.managers?.service;
 
-    // Project-level conflicts: PHP and Node.js binaries are used per-project
+    // Project-level conflicts: PHP and Node.js binaries are used per-project.
+    // Guard against deleting versions that are still referenced by saved projects,
+    // not just currently running ones.
     if ((type === 'php' || type === 'nodejs') && projectManager) {
-      const runningIds = Array.from(projectManager.runningProjects.keys());
-      for (const id of runningIds) {
-        const proj = projectManager.getProject(id);
-        if (!proj) continue;
-        if (type === 'php' && proj.phpVersion === version) {
-          items.push({ kind: 'project', id, name: proj.name, reason: `Uses PHP ${version}` });
-        } else if (type === 'nodejs' && proj.nodeVersion === version) {
-          items.push({ kind: 'project', id, name: proj.name, reason: `Uses Node.js ${version}` });
+      const projects = typeof projectManager.getAllProjects === 'function'
+        ? projectManager.getAllProjects()
+        : [];
+
+      for (const proj of projects) {
+        if (!proj?.id) continue;
+
+        const matchesPhp = type === 'php' && proj.phpVersion === version;
+        const matchesNode = type === 'nodejs' && proj.nodeVersion === version;
+
+        if (matchesPhp || matchesNode) {
+          const runtimeLabel = type === 'php' ? `PHP ${version}` : `Node.js ${version}`;
+          items.push({
+            kind: 'project',
+            id: proj.id,
+            name: proj.name,
+            reason: proj.isRunning ? `Running project uses ${runtimeLabel}` : `Project is configured to use ${runtimeLabel}`,
+          });
         }
       }
     }
@@ -2572,12 +2688,12 @@ AddType application/x-httpd-php-source .phps
       if (runningMap) {
         if (version) {
           if (runningMap.has(version)) {
-            items.push({ kind: 'service', name: `${type} ${version}`, reason: 'Service is currently running' });
+            items.push({ kind: 'service', version, name: `${type} ${version}`, reason: 'Service is currently running' });
           }
         } else {
           // No version key (mailpit, minio) – flag any running entry
           for (const [v] of runningMap) {
-            items.push({ kind: 'service', name: `${type}${v ? ` ${v}` : ''}`, reason: 'Service is currently running' });
+            items.push({ kind: 'service', version: v || null, name: `${type}${v ? ` ${v}` : ''}`, reason: 'Service is currently running' });
           }
         }
       }
@@ -2587,15 +2703,23 @@ AddType application/x-httpd-php-source .phps
   }
 
   async removeBinary(type, version = null, force = false) {
+    const conflicts = await this.getRunningConflicts(type, version);
+
+    if (conflicts.hasConflicts && !force) {
+      const error = new Error(`${type}${version ? ` ${version}` : ''} is currently in use. Stop the project or service using it, then try deleting the binary again.`);
+      error.code = 'BINARY_IN_USE';
+      error.conflicts = conflicts.items;
+      throw error;
+    }
+
     if (force) {
       // Stop any running conflicts before removing so file handles are released
-      const conflicts = await this.getRunningConflicts(type, version);
       for (const item of conflicts.items) {
         try {
           if (item.kind === 'project') {
             await this.managers?.project?.stopProject(item.id);
           } else if (item.kind === 'service') {
-            await this.managers?.service?.stopService(type, version);
+            await this.managers?.service?.stopService(type, item.version ?? version ?? null);
           }
         } catch (err) {
           this.managers?.log?.systemWarn(`Could not stop ${item.name} before removal`, { error: err.message });
@@ -2628,8 +2752,40 @@ AddType application/x-httpd-php-source .phps
       targetPath = path.join(this.resourcesPath, type, platform);
     }
 
+    await this.assertBinaryFolderDeletable(targetPath, type, version);
     await fs.remove(targetPath);
     return { success: true };
+  }
+
+  async assertBinaryFolderDeletable(targetPath, type, version = null) {
+    if (!await fs.pathExists(targetPath)) {
+      return;
+    }
+
+    const tempPath = `${targetPath}.delete-check-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    let moved = false;
+
+    try {
+      // Renaming the whole folder is an inexpensive preflight that fails on Windows
+      // when files inside the binary directory are still held by another process.
+      await fs.move(targetPath, tempPath, { overwrite: false });
+      moved = true;
+      await fs.move(tempPath, targetPath, { overwrite: false });
+    } catch (error) {
+      if (moved) {
+        await fs.move(tempPath, targetPath, { overwrite: false }).catch(() => { });
+      }
+
+      if (['EBUSY', 'EPERM', 'EACCES'].includes(error.code)) {
+        const label = `${type}${version ? ` ${version}` : ''}`;
+        const lockedError = new Error(`${label} cannot be deleted because one or more files inside its binary folder are currently in use by another process. Close the app or process using those files, then try deleting the binary again.`);
+        lockedError.code = 'BINARY_FILES_IN_USE';
+        lockedError.originalError = error.message;
+        throw lockedError;
+      }
+
+      throw error;
+    }
   }
 
   getDownloadUrls() {
@@ -2954,8 +3110,7 @@ AddType application/x-httpd-php-source .phps
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
 
-      const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
-      await this.downloadFile(downloadInfo.url, downloadPath, id);
+      const { downloadPath } = await this.downloadWithVersionProbe('nodejs', version, id, downloadInfo);
 
       await this.checkCancelled(id, downloadPath);
       this.emitProgress(id, { status: 'extracting', progress: 50 });

@@ -1,6 +1,6 @@
 {
-  "version": "1.1.0",
-  "lastUpdated": "2026-02-26",
+  "version": "1.1.1",
+  "lastUpdated": "2026-03-19",
   "php": {
     "versions": [
       "8.5",
@@ -44,8 +44,8 @@
       },
       "8.3": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.3.30-nts-Win32-vs16-x64.zip",
-          "filename": "php-8.3.30-nts-Win32-vs16-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.3.29-nts-Win32-vs16-x64.zip",
+          "filename": "php-8.3.29-nts-Win32-vs16-x64.zip"
         },
         "mac": {
           "url": "https://github.com/shivammathur/php-builder/releases/download/8.3.30/php-8.3.30-darwin-arm64.tar.gz",

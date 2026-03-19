@@ -88,7 +88,16 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
   const hasInstalled = installedCount > 0;
   const isExpanded = expandedSections[service.id];
   const hasSource = !!downloadSources[service.id]?.url;
-  const hasImport = !service.noImport;
+  const hasImport = !service.noImport && (service.id === 'apache' ? !!handleImportApache : !!onImport);
+
+  const handleHeaderImport = () => {
+    if (service.id === 'apache') {
+      handleImportApache?.(service.defaultVersion || service.versions?.[0] || '2.4');
+      return;
+    }
+
+    onImport?.(service.id);
+  };
 
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-800/50">
@@ -136,7 +145,7 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
             </button>
           )}
           {hasImport && (
-            <button onClick={() => onImport(service.id)} className="btn-secondary text-xs px-2 py-1 flex items-center gap-1" title={`Import ${service.name} from a local ZIP file`}>
+            <button onClick={handleHeaderImport} className="btn-secondary text-xs px-2 py-1 flex items-center gap-1" title={`Import ${service.name} from a local ZIP file`}>
               <Upload className="w-3 h-3" /> Import ZIP
             </button>
           )}
@@ -424,6 +433,31 @@ function BinaryManager() {
       }
     });
   }, [installed, downloading, clearDownload]);
+
+  useEffect(() => {
+    const activeDownloadIds = Object.entries(downloading)
+      .filter(([, isActive]) => isActive)
+      .map(([id]) => id);
+
+    if (activeDownloadIds.length === 0) {
+      return;
+    }
+
+    let disposed = false;
+
+    const refreshInstalledState = async () => {
+      if (disposed) return;
+      await forceRefreshInstalled();
+    };
+
+    refreshInstalledState();
+    const intervalId = setInterval(refreshInstalledState, 1500);
+
+    return () => {
+      disposed = true;
+      clearInterval(intervalId);
+    };
+  }, [downloading, forceRefreshInstalled]);
 
   useEffect(() => {
     const init = async () => {
@@ -844,35 +878,55 @@ function BinaryManager() {
       // If check fails, continue with normal removal
     }
 
-    let confirmed;
     if (conflicts.hasConflicts) {
       const itemLines = conflicts.items
         .map(item => `• ${item.name} — ${item.reason}`)
         .join('\n');
-      confirmed = await showConfirm({
-        title: 'Stop and Remove?',
-        message: `${label} is currently in use`,
-        detail: `The following must be stopped before removal:\n${itemLines}\n\nThey will be stopped automatically. You\'ll need to re-download the binary to use it again.`,
-        confirmText: 'Stop and Remove',
-        confirmStyle: 'danger',
+      await showAlert({
+        title: 'Binary In Use',
+        message: `${label} is currently in use.`,
+        detail: `Stop the project or service that uses it, then delete the binary again.\n\nCurrently using it:\n${itemLines}`,
         type: 'warning',
       });
-    } else {
-      confirmed = await showConfirm({
-        title: 'Remove Binary',
-        message: `Remove ${label}?`,
-        detail: "You'll need to re-download it to use it again.",
-        confirmText: 'Remove',
-        confirmStyle: 'danger',
-        type: 'warning',
-      });
+      return;
     }
+
+    const confirmed = await showConfirm({
+      title: 'Remove Binary',
+      message: `Remove ${label}?`,
+      detail: "You'll need to re-download it to use it again.",
+      confirmText: 'Remove',
+      confirmStyle: 'danger',
+      type: 'warning',
+    });
     if (!confirmed) return;
 
     try {
-      await window.devbox?.binaries.remove(type, version, conflicts.hasConflicts);
+      await window.devbox?.binaries.remove(type, version, false);
       await forceRefreshInstalled();
     } catch (error) {
+      const isBinaryInUse = error?.code === 'BINARY_IN_USE' || /currently in use|used by/i.test(error?.message || '');
+      const isBinaryFilesInUse = error?.code === 'BINARY_FILES_IN_USE' || /files inside .*binary folder are currently in use/i.test(error?.message || '');
+      if (isBinaryInUse) {
+        showAlert({
+          title: 'Binary In Use',
+          message: `${label} is currently used by another project or service.`,
+          detail: error.message || 'Stop the project or service using it, then delete the binary again.',
+          type: 'warning',
+        });
+        return;
+      }
+
+      if (isBinaryFilesInUse) {
+        showAlert({
+          title: 'Files Still In Use',
+          message: `${label} cannot be deleted yet.`,
+          detail: error.message || 'Some files in this binary folder are still open in another process. Close that process, then try again.',
+          type: 'warning',
+        });
+        return;
+      }
+
       showAlert({
         title: 'Remove Failed',
         message: `Failed to remove ${label}`,

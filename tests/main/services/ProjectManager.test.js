@@ -372,6 +372,70 @@ describe('ProjectManager', () => {
             expect(config).toContain('ServerAlias www.proj-apache.test *.proj-apache.test');
             expect(config).not.toContain('ServerAlias www.proj-apache.test *.proj-apache.test *\n    DocumentRoot "C:/Sites/Apache App/public"');
         });
+
+        it('keeps alternate-port apache SSL projects isolated when port 80 is unavailable', async () => {
+            const firstProject = {
+                id: 'proj-apache-first',
+                name: 'ProjApacheFirst',
+                type: 'laravel',
+                path: 'C:/Sites/Apache First',
+                domain: 'first-apache.test',
+                domains: ['first-apache.test'],
+                phpVersion: '8.3',
+                webServer: 'apache',
+                webServerVersion: '2.4',
+                ssl: true,
+                networkAccess: true,
+                services: {},
+                supervisor: { processes: [] },
+                port: 8005,
+            };
+            const secondProject = {
+                id: 'proj-apache-second',
+                name: 'ProjApacheSecond',
+                type: 'laravel',
+                path: 'C:/Sites/Apache Second',
+                domain: 'second-apache.test',
+                domains: ['second-apache.test'],
+                phpVersion: '8.3',
+                webServer: 'apache',
+                webServerVersion: '2.4',
+                ssl: true,
+                networkAccess: true,
+                services: {},
+                supervisor: { processes: [] },
+                port: 8006,
+            };
+
+            configStore.get.mockImplementation((key, def) => {
+                if (key === 'projects' || key === 'devbox.projects') return [firstProject, secondProject];
+                if (key === 'resourcePath') return 'C:/Users/Test User/AppData/Roaming/devbox-pro/resources';
+                if (key === 'settings') return { webServer: 'apache' };
+                return def;
+            });
+            configStore.getDataPath = vi.fn(() => 'C:/Users/Test User/.devbox-pro');
+            configStore.getResourcesPath = vi.fn(() => 'C:/Users/Test User/AppData/Roaming/devbox-pro/resources');
+            managers.service.getServicePorts.mockReturnValue({ httpPort: 8084, sslPort: 8446 });
+            managers.service.standardPortOwner = null;
+
+            mockPortUtils.isPortAvailable.mockImplementation(async (port) => port !== 80);
+
+            await mgr.createApacheVhost(firstProject, '2.4');
+            const [, firstConfig] = fs.writeFile.mock.calls.at(-1);
+
+            await mgr.createApacheVhost(secondProject, '2.4');
+            const [, secondConfig] = fs.writeFile.mock.calls.at(-1);
+
+            expect(firstConfig).toContain('<VirtualHost 0.0.0.0:8005>');
+            expect(firstConfig).toContain('<VirtualHost 0.0.0.0:8446>');
+            expect(firstConfig).toContain('ServerAlias www.first-apache.test *.first-apache.test');
+            expect(firstConfig).not.toContain('ServerAlias www.first-apache.test *.first-apache.test *');
+
+            expect(secondConfig).toContain('<VirtualHost 0.0.0.0:8006>');
+            expect(secondConfig).toContain('<VirtualHost 0.0.0.0:8446>');
+            expect(secondConfig).toContain('ServerAlias www.second-apache.test *.second-apache.test');
+            expect(secondConfig).not.toContain('ServerAlias www.second-apache.test *.second-apache.test *');
+        });
     });
 
     // ═══════════════════════════════════════════════════════════════════

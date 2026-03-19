@@ -450,6 +450,35 @@ describe('ConfigStore', () => {
             }
         });
 
+        it('normalizes back to the standard data path when a stale portable.flag exists in Local Programs', () => {
+            const originalLocalAppData = process.env.LOCALAPPDATA;
+            const installRoot = path.join(os.tmpdir(), `devboxpro-standard-install-${Date.now()}`);
+            const exeDir = path.join(installRoot, 'Programs', 'DevBox Pro', 'DevBoxPro');
+            fs.mkdirSync(exeDir, { recursive: true });
+            fs.writeFileSync(path.join(exeDir, 'portable.flag'), '');
+
+            process.env.LOCALAPPDATA = installRoot;
+
+            const originalGetPath = mockApp.getPath;
+            mockApp.getPath = (name) => {
+                if (name === 'exe') {
+                    return path.join(exeDir, 'DevBoxPro.exe');
+                }
+                return originalGetPath(name);
+            };
+
+            try {
+                const standardStore = new ConfigStore();
+                const expectedPath = standardStore.getDefaults().dataPath;
+                expect(standardStore.getDataPath()).toBe(expectedPath);
+                expect(standardStore.get('dataPath')).toBe(expectedPath);
+            } finally {
+                mockApp.getPath = originalGetPath;
+                process.env.LOCALAPPDATA = originalLocalAppData;
+                fs.rmSync(installRoot, { recursive: true, force: true });
+            }
+        });
+
         it('getLogsPath() contains logs', () => {
             expect(store.getLogsPath()).toContain('logs');
         });

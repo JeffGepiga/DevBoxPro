@@ -36,6 +36,7 @@ describe('BinaryDownloadManager', () => {
         vi.spyOn(fs, 'readJson').mockResolvedValue({ config: { version: '1.0.0' } });
         vi.spyOn(fs, 'writeJson').mockResolvedValue();
         vi.spyOn(fs, 'remove').mockResolvedValue();
+        vi.spyOn(fs, 'move').mockResolvedValue();
 
         mgr = new BinaryDownloadManager();
         mgr.managers = mockManagers;
@@ -97,6 +98,49 @@ describe('BinaryDownloadManager', () => {
             });
 
             await expect(mgr.fetchRemoteConfig()).rejects.toThrow('HTTP 404');
+        });
+
+        it('builds forward-then-backward patch candidates for dead assets', () => {
+            const candidates = mgr.buildPatchFallbackCandidates({
+                url: 'https://windows.php.net/downloads/releases/php-8.3.30-nts-Win32-vs16-x64.zip',
+                filename: 'php-8.3.30-nts-Win32-vs16-x64.zip'
+            });
+
+            expect(candidates.slice(0, 6).map(candidate => candidate.resolvedVersion)).toEqual([
+                '8.3.31',
+                '8.3.32',
+                '8.3.33',
+                '8.3.34',
+                '8.3.35',
+                '8.3.29'
+            ]);
+        });
+
+        it('probes nearby patch versions for PHP when the configured asset is missing', async () => {
+            vi.spyOn(mgr, 'getPlatform').mockReturnValue('win');
+            const downloadSpy = vi.spyOn(mgr, 'downloadFile').mockImplementation(async (url, destPath) => {
+                if (url.includes('8.3.30') || url.includes('8.3.31') || url.includes('8.3.32') || url.includes('8.3.33') || url.includes('8.3.34') || url.includes('8.3.35')) {
+                    throw new Error('Download failed with status 404');
+                }
+
+                return destPath;
+            });
+
+            const result = await mgr.downloadWithVersionProbe('php', '8.3', 'php-8.3', {
+                url: 'https://windows.php.net/downloads/releases/php-8.3.30-nts-Win32-vs16-x64.zip',
+                filename: 'php-8.3.30-nts-Win32-vs16-x64.zip'
+            });
+
+            expect(result.downloadInfo.url).toContain('8.3.29');
+            expect(downloadSpy.mock.calls.map(call => call[0]).slice(0, 7)).toEqual([
+                'https://windows.php.net/downloads/releases/php-8.3.30-nts-Win32-vs16-x64.zip',
+                'https://windows.php.net/downloads/releases/php-8.3.31-nts-Win32-vs16-x64.zip',
+                'https://windows.php.net/downloads/releases/php-8.3.32-nts-Win32-vs16-x64.zip',
+                'https://windows.php.net/downloads/releases/php-8.3.33-nts-Win32-vs16-x64.zip',
+                'https://windows.php.net/downloads/releases/php-8.3.34-nts-Win32-vs16-x64.zip',
+                'https://windows.php.net/downloads/releases/php-8.3.35-nts-Win32-vs16-x64.zip',
+                'https://windows.php.net/downloads/releases/php-8.3.29-nts-Win32-vs16-x64.zip'
+            ]);
         });
     });
 
@@ -227,6 +271,53 @@ describe('BinaryDownloadManager', () => {
             // Completed status (always passes)
             mgr.emitProgress('dl-prog', { status: 'completed', progress: 100 });
             expect(listener).toHaveBeenCalledTimes(3);
+        });
+    });
+
+    describe('Removal Guards', () => {
+        it('detects saved project usage even when the project is not running', async () => {
+            mgr.managers.project = {
+                getAllProjects: vi.fn(() => ([
+                    { id: 'proj-1', name: 'Shop App', phpVersion: '8.3', isRunning: false },
+                    { id: 'proj-2', name: 'Admin App', phpVersion: '8.4', isRunning: true },
+                ])),
+            };
+
+            const conflicts = await mgr.getRunningConflicts('php', '8.3');
+
+            expect(conflicts).toEqual({
+                hasConflicts: true,
+                items: [{
+                    kind: 'project',
+                    id: 'proj-1',
+                    name: 'Shop App',
+                    reason: 'Project is configured to use PHP 8.3'
+                }]
+            });
+        });
+
+        it('blocks deleting binaries that are currently in use unless forced', async () => {
+            vi.spyOn(mgr, 'getRunningConflicts').mockResolvedValue({
+                hasConflicts: true,
+                items: [{ kind: 'project', id: 'proj-1', name: 'Shop App', reason: 'Uses PHP 8.3' }]
+            });
+
+            await expect(mgr.removeBinary('php', '8.3')).rejects.toMatchObject({
+                code: 'BINARY_IN_USE'
+            });
+
+            expect(fs.remove).not.toHaveBeenCalled();
+        });
+
+        it('does not start deleting when a file inside the binary folder is locked', async () => {
+            vi.spyOn(mgr, 'getRunningConflicts').mockResolvedValue({ hasConflicts: false, items: [] });
+            fs.move.mockRejectedValueOnce(Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' }));
+
+            await expect(mgr.removeBinary('php', '8.3')).rejects.toMatchObject({
+                code: 'BINARY_FILES_IN_USE'
+            });
+
+            expect(fs.remove).not.toHaveBeenCalled();
         });
     });
 });

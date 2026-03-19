@@ -13,6 +13,41 @@ function getExeDir(app) {
   return path.dirname(exePath);
 }
 
+function normalizePathForComparison(targetPath) {
+  if (!targetPath) {
+    return '';
+  }
+
+  const normalized = path.normalize(targetPath);
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function isPathInside(parentPath, childPath) {
+  const normalizedParent = normalizePathForComparison(parentPath);
+  const normalizedChild = normalizePathForComparison(childPath);
+
+  if (!normalizedParent || !normalizedChild) {
+    return false;
+  }
+
+  const relativePath = path.relative(normalizedParent, normalizedChild);
+  return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
+}
+
+function isLikelyStandardInstallDir(exeDir) {
+  if (process.platform !== 'win32') {
+    return false;
+  }
+
+  const candidateRoots = [
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs') : null,
+    process.env.ProgramFiles || null,
+    process.env['ProgramFiles(x86)'] || null,
+  ].filter(Boolean);
+
+  return candidateRoots.some((rootPath) => isPathInside(rootPath, exeDir));
+}
+
 function getPortableRoot(app) {
   const exePath = typeof app?.getPath === 'function' ? app.getPath('exe') : '';
 
@@ -22,9 +57,10 @@ function getPortableRoot(app) {
 
   const exeDir = getExeDir(app);
   const flagPath = path.join(exeDir, 'portable.flag');
+  const hasPortableFlag = fs.existsSync(flagPath);
 
   cachedExePath = exePath;
-  cachedPortableRoot = fs.existsSync(flagPath) ? exeDir : null;
+  cachedPortableRoot = hasPortableFlag && !isLikelyStandardInstallDir(exeDir) ? exeDir : null;
   return cachedPortableRoot;
 }
 
