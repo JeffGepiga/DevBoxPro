@@ -196,6 +196,34 @@ class ProjectManager {
     return project?.port || serviceHttpPort;
   }
 
+  getFrontDoorOwner() {
+    const webServer = this.managers.service?.standardPortOwner;
+    if (!webServer) {
+      return null;
+    }
+
+    return {
+      webServer,
+      version: this.managers.service?.standardPortOwnerVersion || this.getDefaultWebServerVersion(webServer),
+    };
+  }
+
+  frontDoorServesProjectDirectly(project) {
+    const frontDoorOwner = this.getFrontDoorOwner();
+    if (!frontDoorOwner) {
+      return false;
+    }
+
+    const projectWebServer = this.getEffectiveWebServer(project);
+    const projectVersion = this.getEffectiveWebServerVersion(project, projectWebServer);
+
+    return frontDoorOwner.webServer === projectWebServer && frontDoorOwner.version === projectVersion;
+  }
+
+  projectNeedsFrontDoorProxy(project) {
+    return Boolean(this.getFrontDoorOwner()) && !this.frontDoorServesProjectDirectly(project);
+  }
+
   async ensureApacheListenConfig(project, vhostResult, targetApacheVersion = null) {
     const needsConfigRegen = vhostResult?.networkAccess
       && vhostResult?.finalHttpPort !== vhostResult?.httpPort;
@@ -234,17 +262,16 @@ class ProjectManager {
   }
 
   async syncProjectLocalProxy(project) {
-    const frontDoorOwner = this.managers.service?.standardPortOwner;
-    const projectWebServer = this.getEffectiveWebServer(project);
+    const frontDoorOwner = this.getFrontDoorOwner();
 
-    if (!frontDoorOwner || frontDoorOwner === projectWebServer) {
+    if (!frontDoorOwner || !this.projectNeedsFrontDoorProxy(project)) {
       return false;
     }
 
     const backendHttpPort = this.getProjectProxyBackendHttpPort(project);
-    const ownerVersion = this.managers.service?.standardPortOwnerVersion || this.getDefaultWebServerVersion(frontDoorOwner);
+    const ownerVersion = frontDoorOwner.version;
 
-    if (frontDoorOwner === 'nginx') {
+    if (frontDoorOwner.webServer === 'nginx') {
       await this.createProxyNginxVhost(project, backendHttpPort, ownerVersion);
     } else {
       await this.createProxyApacheVhost(project, backendHttpPort, ownerVersion);
@@ -2606,13 +2633,12 @@ class ProjectManager {
           this.managers.log?.project(id, `${webServer} reloaded successfully with vhost for ${project.domain}`);
 
           if (proxyCreated) {
-            const owner = this.managers.service?.standardPortOwner;
-            const ownerVersion = this.managers.service?.standardPortOwnerVersion || this.getDefaultWebServerVersion(owner);
-            if (owner && owner !== webServer) {
-              if (owner === 'nginx') {
-                await this.managers.service?.reloadNginx(ownerVersion);
-              } else if (owner === 'apache') {
-                await this.managers.service?.reloadApache(ownerVersion);
+            const frontDoorOwner = this.getFrontDoorOwner();
+            if (frontDoorOwner && (frontDoorOwner.webServer !== webServer || frontDoorOwner.version !== targetVersion)) {
+              if (frontDoorOwner.webServer === 'nginx') {
+                await this.managers.service?.reloadNginx(frontDoorOwner.version);
+              } else if (frontDoorOwner.webServer === 'apache') {
+                await this.managers.service?.reloadApache(frontDoorOwner.version);
               }
             }
           }
@@ -3566,8 +3592,15 @@ class ProjectManager {
 
       try {
         await this.managers.service?.reloadNginx(targetVersion);
-        if (proxied && this.managers.service?.standardPortOwner === 'apache') {
-          await this.managers.service?.reloadApache(this.managers.service?.standardPortOwnerVersion || null);
+        if (proxied) {
+          const frontDoorOwner = this.getFrontDoorOwner();
+          if (frontDoorOwner && (frontDoorOwner.webServer !== 'nginx' || frontDoorOwner.version !== targetVersion)) {
+            if (frontDoorOwner.webServer === 'apache') {
+              await this.managers.service?.reloadApache(frontDoorOwner.version);
+            } else {
+              await this.managers.service?.reloadNginx(frontDoorOwner.version);
+            }
+          }
         }
         // On Windows, add a small delay to ensure SSL config is fully applied
         // This fixes issues where nginx serves wrong certificates immediately after reload
@@ -3585,8 +3618,15 @@ class ProjectManager {
       // Reload Apache to pick up config changes (on Windows this does a full restart)
       try {
         await this.managers.service?.reloadApache();
-        if (proxied && this.managers.service?.standardPortOwner === 'nginx') {
-          await this.managers.service?.reloadNginx(this.managers.service?.standardPortOwnerVersion || null);
+        if (proxied) {
+          const frontDoorOwner = this.getFrontDoorOwner();
+          if (frontDoorOwner && (frontDoorOwner.webServer !== 'apache' || frontDoorOwner.version !== targetVersion)) {
+            if (frontDoorOwner.webServer === 'nginx') {
+              await this.managers.service?.reloadNginx(frontDoorOwner.version);
+            } else {
+              await this.managers.service?.reloadApache(frontDoorOwner.version);
+            }
+          }
         }
       } catch (error) {
         this.managers.log?.systemWarn('Could not reload Apache', { error: error.message });
@@ -3606,6 +3646,8 @@ class ProjectManager {
     const dataPath = this.getDataPath();
     const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
     const apacheOwnsFrontDoor = this.managers.service?.standardPortOwner === 'apache';
+    const frontDoorOwner = this.getFrontDoorOwner();
+    const apacheFrontDoorVersion = apacheOwnsFrontDoor ? frontDoorOwner?.version : null;
 
     for (const proj of allProjects) {
       if (proj.id === excludeProjectId) continue;
@@ -3614,12 +3656,16 @@ class ProjectManager {
 
       // Only regenerate if a vhost conf file exists for this project
       const confFile = path.join(vhostsDir, `${proj.id}.conf`);
-      if (!await fs.pathExists(confFile) && !(apacheOwnsFrontDoor && webServer === 'nginx' && this.runningProjects.has(proj.id))) continue;
+      const shouldProxyThroughApache = apacheOwnsFrontDoor
+        && apacheFrontDoorVersion === targetApacheVersion
+        && this.runningProjects.has(proj.id)
+        && this.projectNeedsFrontDoorProxy(proj);
+      if (!await fs.pathExists(confFile) && !shouldProxyThroughApache) continue;
 
       try {
         if (webServer === 'apache') {
           await this.createApacheVhost(proj, targetApacheVersion);
-        } else if (apacheOwnsFrontDoor && this.runningProjects.has(proj.id)) {
+        } else if (shouldProxyThroughApache) {
           await this.createProxyApacheVhost(proj, this.getProjectProxyBackendHttpPort(proj), targetApacheVersion);
         }
       } catch (error) {
@@ -3641,6 +3687,8 @@ class ProjectManager {
     const effectiveVersion = targetNginxVersion || this.getDefaultWebServerVersion('nginx');
     const sitesDir = path.join(dataPath, 'nginx', effectiveVersion, 'sites');
     const nginxOwnsFrontDoor = this.managers.service?.standardPortOwner === 'nginx';
+    const frontDoorOwner = this.getFrontDoorOwner();
+    const nginxFrontDoorVersion = nginxOwnsFrontDoor ? frontDoorOwner?.version : null;
 
     for (const proj of allProjects) {
       if (proj.id === excludeProjectId) continue;
@@ -3653,7 +3701,11 @@ class ProjectManager {
 
       // Only regenerate if a vhost conf file exists for this project
       const confFile = path.join(sitesDir, `${proj.id}.conf`);
-      if (!await fs.pathExists(confFile) && !(nginxOwnsFrontDoor && webServer === 'apache' && this.runningProjects.has(proj.id))) continue;
+      const shouldProxyThroughNginx = nginxOwnsFrontDoor
+        && nginxFrontDoorVersion === effectiveVersion
+        && this.runningProjects.has(proj.id)
+        && this.projectNeedsFrontDoorProxy(proj);
+      if (!await fs.pathExists(confFile) && !shouldProxyThroughNginx) continue;
 
       try {
         if (webServer === 'nginx') {
@@ -3661,7 +3713,7 @@ class ProjectManager {
           const running = this.runningProjects.get(proj.id);
           const phpFpmPort = running?.phpFpmPort || null;
           await this.createNginxVhost(proj, phpFpmPort, targetNginxVersion);
-        } else if (nginxOwnsFrontDoor && this.runningProjects.has(proj.id)) {
+        } else if (shouldProxyThroughNginx) {
           await this.createProxyNginxVhost(proj, this.getProjectProxyBackendHttpPort(proj), targetNginxVersion);
         }
       } catch (error) {

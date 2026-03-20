@@ -890,6 +890,62 @@ describe('ProjectManager', () => {
             expect(mgr.createProxyNginxVhost).toHaveBeenCalledWith(project, 8003, '1.28');
         });
 
+        it('proxies nginx projects through the front-door nginx when the version differs', async () => {
+            managers.service.standardPortOwner = 'nginx';
+            managers.service.standardPortOwnerVersion = '1.28';
+            managers.service.getServicePorts.mockImplementation((serviceName, version) => {
+                if (serviceName === 'nginx' && version === '1.24') {
+                    return { httpPort: 8082, sslPort: 8444 };
+                }
+
+                return { httpPort: 80, sslPort: 443 };
+            });
+
+            const project = {
+                id: 'proxy-nginx-version-mismatch',
+                name: 'ProxyNginxVersionMismatch',
+                domain: 'orb.test',
+                domains: ['orb.test'],
+                webServer: 'nginx',
+                webServerVersion: '1.24',
+                ssl: true,
+            };
+
+            mgr.createProxyNginxVhost = vi.fn().mockResolvedValue();
+
+            await mgr.syncProjectLocalProxy(project);
+
+            expect(mgr.createProxyNginxVhost).toHaveBeenCalledWith(project, 8082, '1.28');
+        });
+
+        it('proxies apache projects through the front-door apache when the version differs', async () => {
+            managers.service.standardPortOwner = 'apache';
+            managers.service.standardPortOwnerVersion = '2.4';
+            managers.service.getServicePorts.mockImplementation((serviceName, version) => {
+                if (serviceName === 'apache' && version === '2.2') {
+                    return { httpPort: 8085, sslPort: 8447 };
+                }
+
+                return { httpPort: 80, sslPort: 443 };
+            });
+
+            const project = {
+                id: 'proxy-apache-version-mismatch',
+                name: 'ProxyApacheVersionMismatch',
+                domain: 'legacy-apache.test',
+                domains: ['legacy-apache.test'],
+                webServer: 'apache',
+                webServerVersion: '2.2',
+                ssl: true,
+            };
+
+            mgr.createProxyApacheVhost = vi.fn().mockResolvedValue();
+
+            await mgr.syncProjectLocalProxy(project);
+
+            expect(mgr.createProxyApacheVhost).toHaveBeenCalledWith(project, 8085, '2.4');
+        });
+
         it('proxies network-access nginx projects through apache using the project port', async () => {
             managers.service.standardPortOwner = 'apache';
             managers.service.standardPortOwnerVersion = '2.4';
