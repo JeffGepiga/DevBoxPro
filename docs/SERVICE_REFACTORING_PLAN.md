@@ -15,7 +15,7 @@
 | DatabaseManager.js | 23 | ✅ Refactored — under target |
 | SupervisorManager.js | 24 | ✅ Refactored — under target |
 | GitManager.js | 34 | ✅ Refactored — under target |
-| CompatibilityManager.js | 556 | Moderate — slightly over |
+| CompatibilityManager.js | 38 | ✅ Refactored — under target |
 | SslManager.js | 462 | ✅ OK |
 | PhpManager.js | 443 | ✅ OK |
 | UpdateManager.js | 415 | ✅ OK |
@@ -35,11 +35,24 @@
 - [x] Phase 1 started and validated on real code
 - [x] `ProjectManager.js` reduced below the 400–500 line target
 - [x] Phase 2 (`ServiceManager.js`) structurally split and validated
-- [x] Phase 3 (`BinaryDownloadManager.js`) started
-- [x] Phase 4 (`CliManager.js`) started
+- [x] Phase 3 (`BinaryDownloadManager.js`) structurally split and validated
+- [x] Phase 4 (`CliManager.js`) structurally split and validated
 - [x] Phase 5 (`DatabaseManager.js`) structurally split and validated
 - [x] Phase 6 (`SupervisorManager.js`) structurally split and validated
 - [x] Phase 7 (`GitManager.js`) structurally split and validated
+- [x] Phase 8 (`CompatibilityManager.js`) structurally split and validated
+
+### Latest Broad Validation
+
+- `tests/main/services/ProjectManager.test.js`
+- `tests/main/services/ServiceManager.test.js`
+- `tests/main/services/BinaryDownloadManager.test.js`
+- `tests/main/services/DatabaseManager.test.js`
+- `tests/main/services/SupervisorManager.test.js`
+- `tests/main/services/GitManager.test.js`
+- `tests/main/services/CompatibilityManager.test.js`
+
+Result: `239` tests passed across `7` files.
 
 ### Phase 1 Status: ProjectManager
 
@@ -562,7 +575,7 @@ module.exports = {
 
 ### Phase 3: BinaryDownloadManager.js (4,069 lines → 9 files)
 
-**Current status:** In progress. The manager is still large at `2,125` lines, but the extracted mixins `binary/progress.js`, `binary/config.js`, `binary/installed.js`, `binary/download.js`, `binary/metadata.js`, `binary/extraction.js`, and `binary/php.js` are in place and validated.
+**Current status:** Complete. The manager is now a `156` line facade, with the download, extraction, metadata, catalog, platform-service, runtime-tool, import, and config concerns split into mixins under `src/main/services/binary/`.
 
 | New File | Methods | Est. Lines |
 |----------|---------|-----------|
@@ -601,11 +614,14 @@ module.exports = {
 
 ### Phase 6: Smaller Files
 
-SupervisorManager is now complete. The remaining optional follow-up candidates are:
+SupervisorManager, GitManager, and CompatibilityManager are now complete. CompatibilityManager was reduced to a thin facade, with bundled/remote config lifecycle in `compatibility/config.js` and rule normalization/evaluation logic in `compatibility/rules.js`.
 
-| File | Lines | Action |
-|------|------:|--------|
-| CompatibilityManager.js | 653 | Split into `compatibility/checks.js` + `compatibility/config.js` + facade |
+Latest validation for this slice:
+
+- `tests/main/services/CompatibilityManager.test.js`
+- `tests/main/services/compatibility/rules.test.js`
+
+Result: `73` tests passed across `2` files.
 
 ---
 
@@ -675,7 +691,7 @@ describe('project/crud', () => {
 | 5 | **DatabaseManager.js** split | Low — clean DB engine separation | ~7 new files, 2 test files |
 | 6 | **SupervisorManager.js** split | Very Low — isolated worker/runtime/log concerns | ~6 new files, 1 test file |
 | 7 | **GitManager.js** split | Very Low — clear discovery/clone/SSH/progress boundaries | ~5 new files, 1 test file |
-| 8 | **Remaining smaller files** | Very Low — optional follow-up for Compatibility only | ~3 new files |
+| 8 | **Remaining smaller files** | Completed | N/A |
 
 ### Per-Step Process
 
@@ -747,7 +763,7 @@ src/main/services/
 │   ├── health.js                  (~400 lines)
 │   └── processes.js               (~100 lines)
 │
-├── BinaryDownloadManager.js       (~100 lines - facade)
+├── BinaryDownloadManager.js       (~156 lines - facade)
 ├── binary/
 │   ├── download.js                (~400 lines)
 │   ├── extraction.js              (~200 lines)
@@ -756,7 +772,11 @@ src/main/services/
 │   ├── php.js                     (~400 lines)
 │   ├── metadata.js                (~150 lines)
 │   ├── progress.js                (~200 lines)
-│   └── serviceDownloads.js        (~500 lines)
+│   ├── serviceDownloads.js        (~500 lines)
+│   ├── runtimeTools.js            (~300 lines)
+│   ├── platformServices.js        (~300 lines)
+│   ├── catalog.js                 (~250 lines)
+│   └── imports.js                 (~250 lines)
 │
 ├── CliManager.js                  (~100 lines - facade)
 ├── cli/
@@ -790,7 +810,10 @@ src/main/services/
 │   ├── ssh.js                     (~200 lines)
 │   └── progress.js                (~50 lines)
 │
-├── CompatibilityManager.js        (653 lines - optional split)
+├── CompatibilityManager.js        (~100 lines - facade)
+├── compatibility/
+│   ├── config.js                  (~250 lines)
+│   └── rules.js                   (~300 lines)
 ├── SslManager.js                  (462 lines - ✅ OK)
 ├── PhpManager.js                  (443 lines - ✅ OK)
 ├── UpdateManager.js               (415 lines - ✅ OK)
@@ -799,7 +822,7 @@ src/main/services/
 └── extractWorker.js               (72 lines - ✅ OK)
 ```
 
-**Total new files**: ~52 domain modules + 7 facades = ~59 files
+**Total new files**: The final implementation is slightly more granular than the initial estimate because several phases were split further once real extraction boundaries were visible.
 **Average file size**: ~350 lines (well within 400-500 target)
 **Breaking changes**: Zero — all public APIs remain identical
 
@@ -838,6 +861,9 @@ tests/main/services/
 │   └── health.test.js             (optional follow-up)
 │
 ├── BinaryDownloadManager.test.js  (integration - keep existing)
+├── CompatibilityManager.test.js   (integration - keep existing)
+├── compatibility/
+│   └── rules.test.js
 ├── binary/
 │   ├── download.test.js
 │   ├── extraction.test.js
