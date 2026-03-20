@@ -83,6 +83,15 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return result;
   });
 
+  ipcMain.handle('projects:stopAll', async () => {
+    const result = await project.stopAllProjects();
+    mainWindow?.webContents.send('project:statusChanged', {
+      id: null,
+      status: 'stopped',
+    });
+    return result;
+  });
+
   ipcMain.handle('projects:restart', async (event, id) => {
     await project.stopProject(id);
     return project.startProject(id);
@@ -184,8 +193,8 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return project.moveProject(id, newPath);
   });
 
-  ipcMain.handle('projects:switchWebServer', async (event, id, webServer) => {
-    const result = await project.switchWebServer(id, webServer);
+  ipcMain.handle('projects:switchWebServer', async (event, id, webServer, webServerVersion) => {
+    const result = await project.switchWebServer(id, webServer, webServerVersion);
     mainWindow?.webContents.send('project:webServerChanged', {
       id,
       webServer,
@@ -280,6 +289,15 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   ipcMain.handle('services:getWebServerPorts', async (event, webServerType, version) => {
     const ports = service?.getServicePorts(webServerType, version || null);
     return ports || { httpPort: 80, sslPort: 443 };
+  });
+
+  ipcMain.handle('services:getProjectLocalAccessPorts', async (event, projectId) => {
+    const projectData = project.getProject(projectId);
+    if (!projectData) {
+      return { httpPort: 80, sslPort: 443 };
+    }
+
+    return project.getProjectLocalAccessPorts(projectData);
   });
 
   // Get actual network access port for a specific project
@@ -433,9 +451,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   // Get Root CA path for manual trust instructions
   ipcMain.handle('ssl:getRootCAPath', async () => {
-    const { app } = require('electron');
-    const dataPath = path.join(app.getPath('userData'), 'data');
-    return path.join(dataPath, 'ssl', 'ca', 'rootCA.pem');
+    return path.join(config.getSslPath(), 'ca', 'rootCA.pem');
   });
 
   // ============ SUPERVISOR HANDLERS ============
@@ -580,7 +596,15 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('system:getAppDataPath', async () => {
-    return app.getPath('userData');
+    if (typeof config.getAppCachePath === 'function') {
+      return config.getAppCachePath();
+    }
+
+    if (typeof config.getResourcesPath === 'function') {
+      return path.dirname(config.getResourcesPath());
+    }
+
+    return config.getDataPath();
   });
 
   ipcMain.handle('system:getAppVersion', async () => {
@@ -680,7 +704,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         }
 
         // Kill PHP and Node processes from our path only
-        const userDataPath = app.getPath('userData');
+        const userDataPath = path.dirname(config.getResourcesPath());
         try {
           await killProcessesByPath('php.exe', userDataPath);
         } catch (e) { }
@@ -735,7 +759,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       }
 
       // Clear ALL resources (binaries, configs, everything)
-      const resourcesPath = path.join(app.getPath('userData'), 'resources');
+      const resourcesPath = config.getResourcesPath();
       if (await fs.pathExists(resourcesPath)) {
         try {
           // Remove the entire resources directory
@@ -760,7 +784,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       }
 
       // Clear CLI directory
-      const cliPath = path.join(app.getPath('userData'), 'cli');
+      const cliPath = config.getCliPath();
       if (await fs.pathExists(cliPath)) {
         try {
           await fs.remove(cliPath);
@@ -771,7 +795,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       }
 
       // Clear data directory (database files, web server configs, SSL certs, logs)
-      const dataPath = path.join(app.getPath('userData'), 'data');
+      const dataPath = config.getDataPath();
       if (await fs.pathExists(dataPath)) {
         try {
           await fs.remove(dataPath);
@@ -794,7 +818,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       }
 
       // Clear cached binary config
-      const cachedConfigPath = path.join(app.getPath('userData'), 'binaries-config.json');
+      const cachedConfigPath = config.getBinaryConfigPath();
       if (await fs.pathExists(cachedConfigPath)) {
         try {
           await fs.remove(cachedConfigPath);
@@ -1244,7 +1268,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       // Parse command for PHP/Composer handling
       let cmd, args;
       const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-      const resourcePath = config.get('resourcePath') || path.join(app.getPath('userData'), 'resources');
+      const resourcePath = config.getResourcesPath();
       const phpExe = platform === 'win' ? 'php.exe' : 'php';
       const phpBinary = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
 

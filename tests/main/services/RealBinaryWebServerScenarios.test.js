@@ -216,7 +216,7 @@ function applyWebServerPorts(serviceManager, portPlan) {
     serviceManager.serviceConfigs.apache.alternateSslPort = portPlan.apacheAltHttps;
 }
 
-async function waitForResponse(port, hostHeader, expectedText, timeoutMs = 20000) {
+async function waitForResponse(port, hostHeader, expectedText, timeoutMs = 30000) {
     const start = Date.now();
     let lastError = null;
 
@@ -311,6 +311,62 @@ async function createScenario(projects) {
     return activeScenario;
 }
 
+async function readFileTail(filePath, maxLines = 40) {
+    try {
+        if (!await fs.pathExists(filePath)) {
+            return '[missing]';
+        }
+
+        const content = await fs.readFile(filePath, 'utf8');
+        const lines = content.split(/\r?\n/);
+        const tail = lines.slice(-maxLines).join('\n').trim();
+        return tail || '[empty]';
+    } catch (error) {
+        return `[error reading file: ${error.message}]`;
+    }
+}
+
+async function dumpScenarioDiagnostics(label, scenario, extra = {}) {
+    if (!scenario?.serviceManager) {
+        return;
+    }
+
+    const dataPath = scenario.serviceManager.getDataPath();
+    const apacheHttpPort = scenario.serviceManager.getServicePorts('apache', '2.4')?.httpPort;
+    const apacheSslPort = scenario.serviceManager.getServicePorts('apache', '2.4')?.sslPort;
+    const nginx128HttpPort = scenario.serviceManager.getServicePorts('nginx', '1.28')?.httpPort;
+    const nginx126HttpPort = scenario.serviceManager.getServicePorts('nginx', '1.26')?.httpPort;
+
+    const diagnostics = {
+        label,
+        currentUserDataPath,
+        currentProjectRootPath,
+        currentAppDataPath,
+        dataPath,
+        standardPortOwner: scenario.serviceManager.standardPortOwner,
+        standardPortOwnerVersion: scenario.serviceManager.standardPortOwnerVersion,
+        apacheStatus: scenario.serviceManager.serviceStatus.get('apache'),
+        nginxStatus: scenario.serviceManager.serviceStatus.get('nginx'),
+        runningProjects: Array.from(scenario.projectManager?.runningProjects?.keys?.() || []),
+        apachePorts: { http: apacheHttpPort, https: apacheSslPort },
+        nginxPorts: {
+            '1.28': nginx128HttpPort,
+            '1.26': nginx126HttpPort,
+        },
+        extra,
+        apacheConfigTail: await readFileTail(path.join(dataPath, 'apache', 'httpd.conf')),
+        apacheLogTail: await readFileTail(path.join(dataPath, 'apache', 'logs', 'error.log')),
+        apacheVhosts: await readFileTail(path.join(dataPath, 'apache', 'vhosts', 'apache-fallback-project.conf')),
+        nginx128ConfigTail: await readFileTail(path.join(dataPath, 'nginx', '1.28', 'nginx.conf')),
+        nginx128LogTail: await readFileTail(path.join(dataPath, 'nginx', '1.28', 'logs', 'error.log')),
+        nginx126ConfigTail: await readFileTail(path.join(dataPath, 'nginx', '1.26', 'nginx.conf')),
+        nginx126LogTail: await readFileTail(path.join(dataPath, 'nginx', '1.26', 'logs', 'error.log')),
+    };
+
+    console.error('=== Real Binary Scenario Diagnostics ===');
+    console.error(JSON.stringify(diagnostics, null, 2));
+}
+
 async function stopProjectIfRunning(projectManager, projectId) {
     if (!projectManager.runningProjects.has(projectId)) {
         return;
@@ -350,7 +406,7 @@ describeIfBinariesInstalled('Real Binary Web Server Scenarios', () => {
         if (currentAppDataPath && await fs.pathExists(currentAppDataPath)) {
             await fs.remove(currentAppDataPath);
         }
-    });
+    }, 30000);
 
     it('falls back to alternate Apache ports when the standard port is occupied', async () => {
         const portPlan = await findFreePortPlan();
@@ -387,6 +443,14 @@ describeIfBinariesInstalled('Real Binary Web Server Scenarios', () => {
             expect(apachePorts.httpPort).toBe(portPlan.apacheAltHttp);
             await waitForResponse(apachePorts.httpPort, project.domain, project.name);
             testPassed = true;
+        } catch (error) {
+            await dumpScenarioDiagnostics('apache-fallback-failure', activeScenario, {
+                error: error.message,
+                projectId: project.id,
+                expectedHttpPort: portPlan.apacheAltHttp,
+                occupiedPort: portPlan.standardHttp,
+            });
+            throw error;
         } finally {
             if (!testPassed && process.env.DEVBOX_KEEP_REAL_BINARY_ARTIFACTS === '1') {
                 return;
@@ -495,6 +559,15 @@ describeIfBinariesInstalled('Real Binary Web Server Scenarios', () => {
             await waitForResponse(nginx128Port, nginx128ProjectB.domain, nginx128ProjectB.name);
             await waitForResponse(nginx126Port, nginx126Project.domain, nginx126Project.name);
             testPassed = true;
+        } catch (error) {
+            await dumpScenarioDiagnostics('multi-nginx-failure', activeScenario, {
+                error: error.message,
+                apacheProjectId: apacheProject.id,
+                nginx128ProjectAId: nginx128ProjectA.id,
+                nginx126ProjectId: nginx126Project.id,
+                nginx128ProjectBId: nginx128ProjectB.id,
+            });
+            throw error;
         } finally {
             if (!testPassed && process.env.DEVBOX_KEEP_REAL_BINARY_ARTIFACTS === '1') {
                 return;

@@ -41,6 +41,9 @@ describe('IPC Handlers', () => {
                 set: vi.fn(),
                 getAll: vi.fn(() => ({ settings: {} })),
                 reset: vi.fn(),
+                getAppCachePath: vi.fn(() => '/app-cache'),
+                getResourcesPath: vi.fn(() => '/app-cache/resources'),
+                getDataPath: vi.fn(() => '/runtime-data'),
             },
             project: {
                 getAllProjects: vi.fn(async () => []),
@@ -59,6 +62,7 @@ describe('IPC Handlers', () => {
                 moveProject: vi.fn(async () => ({ success: true })),
                 switchWebServer: vi.fn(async () => ({ success: true })),
                 createVirtualHost: vi.fn(async () => { }),
+                getProjectLocalAccessPorts: vi.fn(() => ({ httpPort: 80, sslPort: 443 })),
                 getProjectServiceVersions: vi.fn(async () => ({})),
                 updateProjectServiceVersions: vi.fn(async () => ({})),
                 checkCompatibility: vi.fn(async () => ({ warnings: [] })),
@@ -170,7 +174,7 @@ describe('IPC Handlers', () => {
                 'services:getStatus', 'services:start', 'services:stop',
                 'services:restart', 'services:startAll', 'services:stopAll',
                 'services:getResourceUsage', 'services:getWebServerPorts',
-                'services:getProjectNetworkPort', 'services:getRunningVersions',
+                'services:getProjectLocalAccessPorts', 'services:getProjectNetworkPort', 'services:getRunningVersions',
                 'services:isVersionRunning',
             ];
             for (const channel of serviceChannels) {
@@ -359,6 +363,15 @@ describe('IPC Handlers', () => {
             await handlers['services:stopAll'](fakeEvent);
             expect(mockManagers.service.stopAllServices).toHaveBeenCalled();
         });
+
+        it('services:getProjectLocalAccessPorts routes to project.getProjectLocalAccessPorts', async () => {
+            await handlers['services:getProjectLocalAccessPorts'](fakeEvent, 'proj-1');
+
+            expect(mockManagers.project.getProject).toHaveBeenCalledWith('proj-1');
+            expect(mockManagers.project.getProjectLocalAccessPorts).toHaveBeenCalledWith(
+                expect.objectContaining({ id: 'proj-1' })
+            );
+        });
     });
 
     // ═══════════════════════════════════════════════════════════════════
@@ -437,6 +450,15 @@ describe('IPC Handlers', () => {
         it('settings:reset routes to config.reset', async () => {
             await handlers['settings:reset'](fakeEvent);
             expect(mockManagers.config.reset).toHaveBeenCalled();
+        });
+    });
+
+    describe('System handler routing', () => {
+        it('system:getAppDataPath routes to config.getAppCachePath', async () => {
+            const result = await handlers['system:getAppDataPath'](fakeEvent);
+
+            expect(mockManagers.config.getAppCachePath).toHaveBeenCalled();
+            expect(result).toBe('/app-cache');
         });
     });
 

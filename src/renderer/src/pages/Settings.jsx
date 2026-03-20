@@ -255,7 +255,7 @@ function GeneralSettings({ settings, updateSetting }) {
                 value={settings.defaultProjectsPath || ''}
                 onChange={(e) => updateSetting('defaultProjectsPath', e.target.value)}
                 className="input flex-1"
-                placeholder="C:\\Users\\YourName\\Projects"
+                placeholder="C:\\Users\\YourName\\Projects or C:\\DevBoxPro\\Projects"
               />
               <button onClick={handleSelectProjectsPath} className="btn-secondary">
                 <Folder className="w-4 h-4" />
@@ -263,7 +263,7 @@ function GeneralSettings({ settings, updateSetting }) {
               </button>
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              New projects will be created in this directory by default
+              New projects will be created in this directory by default. Portable installs default to the app's Projects folder, for example C:/DevBoxPro/Projects.
             </p>
           </div>
 

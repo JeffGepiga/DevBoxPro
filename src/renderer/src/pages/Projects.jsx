@@ -29,6 +29,7 @@ import {
   Mail,
   Cpu,
   Globe,
+  GripVertical,
 } from 'lucide-react';
 import clsx from 'clsx';
 import ImportProjectModal from '../components/ImportProjectModal';
@@ -37,9 +38,11 @@ const VIEW_MODE_KEY = 'devbox_projects_view_mode';
 
 function ServiceBadges({ project, compact = false }) {
   const badges = [];
+  const formatBadgeLabel = (label, version) => (version ? `${label} ${version}` : label);
 
   // Web server
   const wsLabel = project.webServer === 'apache' ? 'Apache' : 'Nginx';
+  const webServerBadgeLabel = formatBadgeLabel(wsLabel, project.webServerVersion);
   badges.push(
     <span
       key="ws"
@@ -48,14 +51,15 @@ function ServiceBadges({ project, compact = false }) {
         compact ? 'text-[10px]' : 'text-xs',
         'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
       )}
-      title={`${wsLabel} ${project.webServerVersion || ''}`}
+      title={webServerBadgeLabel}
     >
       <Globe className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
-      {wsLabel}
+      {webServerBadgeLabel}
     </span>
   );
 
   if (project.services?.mysql) {
+    const mysqlBadgeLabel = formatBadgeLabel('MySQL', project.services.mysqlVersion);
     badges.push(
       <span
         key="mysql"
@@ -64,15 +68,16 @@ function ServiceBadges({ project, compact = false }) {
           compact ? 'text-[10px]' : 'text-xs',
           'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
         )}
-        title={`MySQL ${project.services.mysqlVersion || ''}`}
+        title={mysqlBadgeLabel}
       >
         <Database className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
-        MySQL
+        {mysqlBadgeLabel}
       </span>
     );
   }
 
   if (project.services?.mariadb) {
+    const mariadbBadgeLabel = formatBadgeLabel('MariaDB', project.services.mariadbVersion);
     badges.push(
       <span
         key="mariadb"
@@ -81,15 +86,16 @@ function ServiceBadges({ project, compact = false }) {
           compact ? 'text-[10px]' : 'text-xs',
           'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300'
         )}
-        title={`MariaDB ${project.services.mariadbVersion || ''}`}
+        title={mariadbBadgeLabel}
       >
         <Database className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
-        MariaDB
+        {mariadbBadgeLabel}
       </span>
     );
   }
 
   if (project.services?.redis) {
+    const redisBadgeLabel = formatBadgeLabel('Redis', project.services.redisVersion);
     badges.push(
       <span
         key="redis"
@@ -98,10 +104,10 @@ function ServiceBadges({ project, compact = false }) {
           compact ? 'text-[10px]' : 'text-xs',
           'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
         )}
-        title={`Redis ${project.services.redisVersion || ''}`}
+        title={redisBadgeLabel}
       >
         <Server className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
-        Redis
+        {redisBadgeLabel}
       </span>
     );
   }
@@ -124,6 +130,7 @@ function ServiceBadges({ project, compact = false }) {
   }
 
   if (project.services?.nodejs) {
+    const nodeJsBadgeLabel = formatBadgeLabel('Node.js', project.services.nodejsVersion);
     badges.push(
       <span
         key="nodejs"
@@ -132,15 +139,58 @@ function ServiceBadges({ project, compact = false }) {
           compact ? 'text-[10px]' : 'text-xs',
           'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
         )}
-        title={`Node.js ${project.services.nodejsVersion || ''}`}
+        title={nodeJsBadgeLabel}
       >
         <Cpu className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
-        Node.js
+        {nodeJsBadgeLabel}
       </span>
     );
   }
 
   return <div className="flex flex-wrap gap-1">{badges}</div>;
+}
+
+function ReorderHandle({
+  isDraggable,
+  label,
+  variant = 'card',
+  className = '',
+  onDragStart,
+  onDragEnd,
+}) {
+  const isCardVariant = variant === 'card';
+
+  return (
+    <div
+      draggable={isDraggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      style={isCardVariant ? { clipPath: 'polygon(0 0, 100% 0, 0 100%)' } : undefined}
+      className={clsx(
+        'inline-flex items-center justify-center transition-all duration-200 select-none relative overflow-hidden',
+        isDraggable
+          ? 'cursor-grab active:cursor-grabbing text-gray-300 hover:text-primary-500 dark:text-gray-600 dark:hover:text-primary-400'
+          : 'cursor-not-allowed text-gray-200 dark:text-gray-700',
+        isCardVariant
+          ? 'rounded-none bg-gray-100/95 dark:bg-gray-800/95 hover:bg-primary-50 dark:hover:bg-primary-900/30'
+          : 'rounded-none rounded-r-md bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800/80',
+        className
+      )}
+      title={isDraggable ? label : 'Clear search and filters to reorder projects'}
+      aria-label={label}
+    >
+      <GripVertical
+        className={clsx(
+          'pointer-events-none',
+          isCardVariant ? 'absolute top-0.5 left-0.5 w-2.5 h-2.5' : 'w-3.5 h-3.5'
+        )}
+      />
+    </div>
+  );
 }
 
 function Projects() {
@@ -356,7 +406,11 @@ function Projects() {
       // Refresh projects list
       refreshProjects?.();
     } catch (error) {
-      // Failed to import project
+      await showAlert({
+        title: error?.message?.includes('already registered') ? 'Already Registered' : 'Import Failed',
+        message: error?.message || 'Failed to import project.',
+        type: error?.message?.includes('already registered') ? 'warning' : 'error',
+      });
     }
   };
 
@@ -517,6 +571,16 @@ function Projects() {
             <option value="stopped">Stopped</option>
           </select>
         </div>
+        <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+          <p className="text-gray-500 dark:text-gray-400">
+            {isDraggable
+              ? 'Drag projects using the subtle left-edge handle to reorder them.'
+              : 'Reordering is available when search and filters are cleared.'}
+          </p>
+          <span className="text-gray-400 dark:text-gray-500">
+            Similar to mail-style list reordering
+          </span>
+        </div>
       </div>
 
       {/* Projects Grid / Table */}
@@ -548,14 +612,15 @@ function Projects() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400 w-4"></th>
+                  <th className="text-left pl-2 pr-3 py-3 font-medium text-gray-600 dark:text-gray-400 w-12"></th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Name</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Type</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Runtime</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Services</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Domain</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Actions</th>                </tr>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Actions</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60">
                 {filteredProjects.map((project) => (
@@ -865,15 +930,12 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
   return (
     <Link
       to={`/projects/${project.id}`}
-      draggable={isDraggable}
-      onDragStart={onDragStart}
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      onDragEnd={onDragEnd}
       className={clsx(
-        'card overflow-hidden flex flex-col transition-all duration-200',
-        isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
+        'card group overflow-hidden flex flex-col transition-all duration-200 relative',
+        'cursor-pointer',
         'hover:shadow-lg hover:border-primary-300 dark:hover:border-primary-600',
         'hover:scale-[1.02] active:scale-[0.99]',
         isHovered && !isDragged && !isDragOver && 'ring-2 ring-primary-200 dark:ring-primary-700',
@@ -886,14 +948,30 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
         setShowMenu(false);
       }}
     >
-      <div className="p-6 flex-1">
+      <ReorderHandle
+        isDraggable={isDraggable}
+        label={`Reorder ${project.name}`}
+        variant="card"
+        className={clsx(
+          'absolute left-0 top-0 h-5 w-5 z-20 opacity-0 pointer-events-none',
+          'group-hover:opacity-100 group-hover:pointer-events-auto',
+          isDragged || isDragOver ? 'opacity-100 pointer-events-auto' : ''
+        )}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+      />
+      <div className="px-6 pt-2 pb-6 flex-1">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className={project.isRunning ? 'status-running' : 'status-stopped'} />
-            <span className="text-lg font-semibold text-gray-900 dark:text-white">
-              {project.name}
-            </span>
+          <div className="flex items-start gap-3 min-w-0 pl-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-3">
+                <div className={project.isRunning ? 'status-running' : 'status-stopped'} />
+                <span className="text-lg font-semibold text-gray-900 dark:text-white truncate">
+                  {project.name}
+                </span>
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {/* View Details indicator on hover */}
@@ -1004,7 +1082,7 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
         {project.isRunning && (
           <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
             <p className="text-sm text-green-700 dark:text-green-400">
-              Running on port <strong>{project.port}</strong>
+              Backend port <strong>{project.port}</strong>
             </p>
           </div>
         )}
@@ -1114,22 +1192,27 @@ function ProjectTableRow({ project, onStart, onStop, onDelete, onMove, defaultEd
 
   return (
     <tr
-      draggable={isDraggable}
-      onDragStart={onDragStart}
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      onDragEnd={onDragEnd}
       className={clsx(
         "group hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors",
-        isDraggable && 'cursor-grab active:cursor-grabbing',
         isDragged && 'opacity-40 bg-gray-100 dark:bg-gray-800',
         isDragOver && 'bg-blue-50/50 dark:bg-blue-900/20 outline outline-2 outline-blue-500 outline-offset-[-2px]'
       )}
     >
-      {/* Status dot */}
-      <td className="px-4 py-3">
-        <div className={project.isRunning ? 'status-running' : 'status-stopped'} />
+      <td className="pl-1 pr-3 py-3 align-middle">
+        <div className="flex items-center gap-2">
+          <ReorderHandle
+            isDraggable={isDraggable}
+            label={`Reorder ${project.name}`}
+            variant="table"
+            className="h-9 w-5 -ml-1"
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+          />
+          <div className={project.isRunning ? 'status-running' : 'status-stopped'} />
+        </div>
       </td>
 
       {/* Name */}
@@ -1181,7 +1264,7 @@ function ProjectTableRow({ project, onStart, onStop, onDelete, onMove, defaultEd
         {project.isRunning ? (
           <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            Running {project.port ? `(${project.port})` : ''}
+            Running {project.port ? `(backend ${project.port})` : ''}
           </span>
         ) : (
           <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">

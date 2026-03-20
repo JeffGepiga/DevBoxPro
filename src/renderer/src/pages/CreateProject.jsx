@@ -113,7 +113,8 @@ const WIZARD_STEPS = [
 
 function CreateProject() {
   const navigate = useNavigate();
-  const { createProject, settings, refreshProjects } = useApp();
+  const { projects, settings, refreshProjects } = useApp();
+  const { showAlert } = useModal();
   const [currentStep, setCurrentStep] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
   const [showInstallProgress, setShowInstallProgress] = useState(false);
@@ -863,12 +864,17 @@ function CreateProject() {
           }}
           onImport={async (config) => {
             try {
-              const result = await createProject(config);
+              const result = await window.devbox?.projects?.registerExisting(config);
               if (result?.id) {
+                await refreshProjects?.();
                 navigate('/projects');
               }
             } catch (error) {
-              console.error('Import failed:', error);
+              await showAlert({
+                title: error?.message?.includes('already registered') ? 'Already Registered' : 'Import Failed',
+                message: error?.message || 'Failed to import project.',
+                type: error?.message?.includes('already registered') ? 'warning' : 'error',
+              });
             }
             setShowImportModal(false);
             setImportProjectData(null);
@@ -880,11 +886,24 @@ function CreateProject() {
 }
 
 function StepProjectType({ formData, updateFormData, onImportProject }) {
+  const { projects } = useApp();
+  const { showAlert } = useModal();
+
   const handleImportFolder = async () => {
     try {
       // Open folder picker dialog
       const folderPath = await window.devbox?.system.selectDirectory();
       if (!folderPath) return; // User cancelled
+
+      const existingProject = projects.find((project) => project.path === folderPath);
+      if (existingProject) {
+        await showAlert({
+          title: 'Already Registered',
+          message: `This folder is already registered as project "${existingProject.name}"`,
+          type: 'warning',
+        });
+        return;
+      }
 
       // Detect project type from folder contents
       const projectInfo = await window.devbox?.projects.detectType(folderPath);
@@ -1152,7 +1171,7 @@ function StepDetails({
         {(formData.type === 'laravel' || formData.type === 'custom' || formData.type === 'nodejs') && (
           <div>
             <label className="label">Project Source</label>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={clsx('gap-4', gitStatus?.available || gitStatus?.checking ? 'grid grid-cols-2' : 'grid grid-cols-1')}>
               <button
                 onClick={() => updateFormData({ projectSource: 'new', repositoryUrl: '', authType: 'public' })}
                 className={clsx(
@@ -1168,36 +1187,37 @@ function StepDetails({
                   <p className="text-sm text-gray-500 dark:text-gray-400">Start a fresh project</p>
                 </div>
               </button>
-              <button
-                onClick={() => updateFormData({ projectSource: 'clone', installFresh: false })}
-                disabled={gitStatus?.checking}
-                className={clsx(
-                  'p-4 rounded-xl border-2 text-left transition-all flex items-center gap-3',
-                  formData.projectSource === 'clone'
-                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600',
-                  gitStatus?.checking && 'opacity-50 cursor-not-allowed'
-                )}
-              >
-                <GitBranch className="w-6 h-6 text-green-500" />
-                <div>
-                  <span className="font-medium text-gray-900 dark:text-white">Clone Repository</span>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {gitStatus?.checking ? 'Checking Git...' : 'From GitHub, GitLab, etc.'}
-                  </p>
-                </div>
-              </button>
+              {(gitStatus?.available || gitStatus?.checking) && (
+                <button
+                  onClick={() => updateFormData({ projectSource: 'clone', installFresh: false })}
+                  disabled={gitStatus?.checking}
+                  className={clsx(
+                    'p-4 rounded-xl border-2 text-left transition-all flex items-center gap-3',
+                    formData.projectSource === 'clone'
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600',
+                    gitStatus?.checking && 'opacity-50 cursor-not-allowed'
+                  )}
+                >
+                  <GitBranch className="w-6 h-6 text-green-500" />
+                  <div>
+                    <span className="font-medium text-gray-900 dark:text-white">Clone Repository</span>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {gitStatus?.checking ? 'Checking Git...' : 'From GitHub, GitLab, etc.'}
+                    </p>
+                  </div>
+                </button>
+              )}
             </div>
 
-            {/* Git not available warning */}
-            {formData.projectSource === 'clone' && !gitStatus?.available && !gitStatus?.checking && (
+            {!gitStatus?.available && !gitStatus?.checking && (
               <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
                 <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
                   <AlertTriangle className="w-5 h-5" />
                   <span className="font-medium">Git is not installed</span>
                 </div>
                 <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
-                  Install Git from the Binary Manager or ensure it's in your system PATH.
+                  Clone Repository is hidden until Git is available. Install Portable Git from the <Link to="/binaries" className="underline font-medium">Binary Manager</Link> or add Git to your system PATH.
                 </p>
               </div>
             )}
@@ -1413,7 +1433,7 @@ function StepDetails({
           </div>
           {!defaultProjectsPath && (
             <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
-              Tip: Set a default projects directory in Settings to auto-generate paths
+              Tip: Set a default projects directory in Settings to auto-generate paths. Portable installs can use the app's Projects folder.
             </p>
           )}
         </div>

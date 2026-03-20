@@ -144,6 +144,8 @@ function Services() {
       if (project.services?.mongodb) required.add('mongodb');
       if (project.services?.memcached) required.add('memcached');
       if (project.services?.minio) required.add('minio');
+      if (project.services?.mailpit) required.add('mailpit');
+      if (project.services?.phpmyadmin) required.add('phpmyadmin');
     }
 
     return required;
@@ -355,7 +357,18 @@ function Services() {
       .map(c => c.type === 'version' ? `${c.serviceName}-${c.version}` : c.serviceName);
     setLoadingServices(new Set(runningKeys));
     try {
-      await window.devbox?.services.stopAll();
+      if (runningProjects.length > 0) {
+        await window.devbox?.projects.stopAll();
+
+        const standaloneRunningCards = serviceCards.filter((card) => card.isRunning && !requiredServices.has(card.serviceName));
+        for (const card of standaloneRunningCards) {
+          const version = card.type === 'version' ? card.version : null;
+          await window.devbox?.services.stop(card.serviceName, version);
+        }
+      } else {
+        await window.devbox?.services.stopAll();
+      }
+
       await refreshServices();
       await refreshProjects();  // Also refresh projects since stopAll stops them too
     } finally {

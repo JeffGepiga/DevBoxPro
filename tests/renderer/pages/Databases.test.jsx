@@ -5,21 +5,37 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor, cleanup, act } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 afterEach(cleanup);
 
 const mockDevbox = {
+    binaries: {
+        getStatus: vi.fn().mockResolvedValue({
+            mysql: { '8.4': { installed: true } },
+            mariadb: {},
+            postgresql: {},
+            mongodb: {},
+        }),
+    },
     database: {
         listDatabases: vi.fn().mockResolvedValue([]),
-        getInfo: vi.fn().mockResolvedValue({ type: 'mysql', version: '8.4', host: '127.0.0.1', port: 3306, user: 'root', password: '' }),
-        isServiceRunning: vi.fn().mockReturnValue(true),
+        getDatabaseInfo: vi.fn().mockResolvedValue({ type: 'mysql', version: '8.4', host: '127.0.0.1', port: 3306, user: 'root', password: '' }),
+        getPhpMyAdminUrl: vi.fn().mockResolvedValue('http://localhost:8080/index.php?server=1'),
         getRunningOperations: vi.fn().mockResolvedValue([]),
     },
     services: {
-        getStatus: vi.fn().mockResolvedValue({}),
+        getStatus: vi.fn().mockResolvedValue({
+            mysql: { runningVersions: { '8.4': { pid: 1234 } } },
+            mariadb: { runningVersions: {} },
+            postgresql: { runningVersions: {} },
+            mongodb: { runningVersions: {} },
+        }),
         getRunningVersions: vi.fn().mockResolvedValue({}),
+    },
+    system: {
+        openExternal: vi.fn().mockResolvedValue(true),
     },
 };
 
@@ -27,7 +43,19 @@ beforeEach(() => {
     Object.defineProperty(window, 'devbox', { value: mockDevbox, writable: true, configurable: true });
     vi.clearAllMocks();
     mockDevbox.database.listDatabases.mockResolvedValue([]);
-    mockDevbox.database.getInfo.mockResolvedValue({ type: 'mysql', version: '8.4', host: '127.0.0.1', port: 3306 });
+    mockDevbox.database.getDatabaseInfo.mockResolvedValue({ type: 'mysql', version: '8.4', host: '127.0.0.1', port: 3306 });
+    mockDevbox.binaries.getStatus.mockResolvedValue({
+        mysql: { '8.4': { installed: true } },
+        mariadb: {},
+        postgresql: {},
+        mongodb: {},
+    });
+    mockDevbox.services.getStatus.mockResolvedValue({
+        mysql: { runningVersions: { '8.4': { pid: 1234 } } },
+        mariadb: { runningVersions: {} },
+        postgresql: { runningVersions: {} },
+        mongodb: { runningVersions: {} },
+    });
 });
 
 vi.mock('@/context/AppContext', () => ({
@@ -70,5 +98,30 @@ describe('Databases', () => {
         await act(async () => { });
         // The page should have some database-related text
         expect(document.body.textContent.toLowerCase()).toMatch(/database|mysql|connection/i);
+    });
+
+    it('shows a loading state while phpMyAdmin is starting', async () => {
+        let resolvePhpMyAdminUrl;
+        mockDevbox.database.getPhpMyAdminUrl.mockImplementation(() => new Promise((resolve) => {
+            resolvePhpMyAdminUrl = resolve;
+        }));
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <Databases />
+            </MemoryRouter>
+        );
+
+        const phpMyAdminButton = await screen.findByRole('button', { name: /phpMyAdmin/i });
+        fireEvent.click(phpMyAdminButton);
+
+        expect(screen.getByRole('button', { name: /Starting phpMyAdmin/i })).toBeDisabled();
+        expect(mockDevbox.database.getPhpMyAdminUrl).toHaveBeenCalledWith('mysql', '8.4');
+
+        resolvePhpMyAdminUrl('http://localhost:8080/index.php?server=1');
+
+        await waitFor(() => {
+            expect(mockDevbox.system.openExternal).toHaveBeenCalledWith('http://localhost:8080/index.php?server=1');
+        });
     });
 });

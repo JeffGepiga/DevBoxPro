@@ -11,10 +11,16 @@ class GitManager {
     constructor(configStore, managers) {
         this.configStore = configStore;
         this.managers = managers;
-        this.resourcesPath = path.join(app.getPath('userData'), 'resources');
+        this.resourcesPath = typeof this.configStore.getResourcesPath === 'function'
+            ? this.configStore.getResourcesPath()
+            : typeof this.configStore.get === 'function' && this.configStore.get('resourcePath')
+                ? this.configStore.get('resourcePath')
+            : path.join(app.getPath('userData'), 'resources');
         this.gitPath = null; // Path to git executable
         this.progressListeners = new Set();
-        this.sshKeyPath = path.join(app.getPath('userData'), 'ssh');
+        this.sshKeyPath = typeof this.configStore.getSshPath === 'function'
+            ? this.configStore.getSshPath()
+            : path.join(app.getPath('userData'), 'ssh');
     }
 
     /**

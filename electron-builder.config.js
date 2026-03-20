@@ -36,6 +36,11 @@ module.exports = {
   ],
   extraResources: [
     {
+      from: 'vcredist',
+      to: 'vcredist',
+      filter: ['**/*'],
+    },
+    {
       from: 'resources/php',
       to: 'php',
       filter: ['**/*'],
@@ -62,13 +67,10 @@ module.exports = {
     },
   ],
   win: {
+    executableName: 'DevBoxPro',
     target: [
       {
         target: 'nsis',
-        arch: ['x64'],
-      },
-      {
-        target: 'portable',
         arch: ['x64'],
       },
     ],
@@ -82,9 +84,6 @@ module.exports = {
     shortcutName: 'DevBox Pro',
     include: 'resources/installer.nsh',
     artifactName: 'DevBox-Pro-Setup-${version}.${ext}',
-  },
-  portable: {
-    artifactName: 'DevBox-Pro-${version}.${ext}',
   },
   mac: {
     target: [

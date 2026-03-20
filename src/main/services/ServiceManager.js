@@ -39,6 +39,8 @@ class ServiceManager extends EventEmitter {
     this.processes = new Map(); // key format: 'serviceName' or 'serviceName-version'
     this.serviceStatus = new Map();
     this.runningVersions = new Map(); // Track running versions per service type
+    this.pendingStarts = new Map();
+    this.webServerStartQueue = Promise.resolve();
 
     // Track which web server owns the standard ports (80/443)
     // First web server to start gets these ports
@@ -136,6 +138,200 @@ class ServiceManager extends EventEmitter {
     };
   }
 
+  getDataPath() {
+    if (typeof this.configStore.getDataPath === 'function') {
+      return this.configStore.getDataPath();
+    }
+
+    if (typeof this.configStore.get === 'function') {
+      const configuredDataPath = this.configStore.get('dataPath');
+      if (configuredDataPath) {
+        return configuredDataPath;
+      }
+    }
+
+    return path.join(app.getPath('userData'), 'data');
+  }
+
+  getLegacyUserDataPath() {
+    return path.join(app.getPath('userData'), 'data');
+  }
+
+  getLegacyMySQLDataDir(version = '8.4') {
+    return path.join(this.getLegacyUserDataPath(), 'mysql', version, 'data');
+  }
+
+  getBundledVCRedistDirs() {
+    const appPath = typeof app.getAppPath === 'function' ? app.getAppPath() : process.cwd();
+    return [
+      process.resourcesPath ? path.join(process.resourcesPath, 'vcredist') : null,
+      path.join(appPath, 'vcredist'),
+      path.resolve(__dirname, '../../../vcredist'),
+    ].filter(Boolean);
+  }
+
+  quoteConfigPath(value) {
+    return `"${String(value).replace(/\\/g, '/')}"`;
+  }
+
+  async maybeAdoptLegacyMySQLData(version, dataDir) {
+    const legacyDataDir = this.getLegacyMySQLDataDir(version);
+
+    if (path.resolve(legacyDataDir) === path.resolve(dataDir)) {
+      return false;
+    }
+
+    const currentInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
+    if (currentInitialized) {
+      return false;
+    }
+
+    const legacyInitialized = await fs.pathExists(path.join(legacyDataDir, 'mysql'));
+    if (!legacyInitialized) {
+      return false;
+    }
+
+    let targetEntries = [];
+    try {
+      targetEntries = await fs.readdir(dataDir);
+    } catch (_error) {
+      targetEntries = [];
+    }
+
+    if (targetEntries.length > 0) {
+      this.managers.log?.systemWarn(`Skipped adopting legacy MySQL ${version} data because the target directory is not empty`, {
+        dataDir,
+        legacyDataDir,
+        entries: targetEntries,
+      });
+      return false;
+    }
+
+    await fs.copy(legacyDataDir, dataDir, { overwrite: false, errorOnExist: false });
+    this.managers.log?.systemInfo(`Adopted legacy MySQL ${version} data directory`, {
+      from: legacyDataDir,
+      to: dataDir,
+    });
+    return true;
+  }
+
+  async ensureWindowsRuntimeDlls(targetDir, label = 'runtime') {
+    if (process.platform !== 'win32') {
+      return;
+    }
+
+    const requiredDlls = ['vcruntime140.dll', 'msvcp140.dll', 'vcruntime140_1.dll'];
+    const missingDlls = [];
+
+    for (const dll of requiredDlls) {
+      if (!await fs.pathExists(path.join(targetDir, dll))) {
+        missingDlls.push(dll);
+      }
+    }
+
+    if (missingDlls.length === 0) {
+      return;
+    }
+
+    const sourceDirs = [
+      path.join(process.env.SystemRoot || 'C:\\Windows', 'System32'),
+      ...this.getBundledVCRedistDirs(),
+    ];
+
+    for (const dll of missingDlls) {
+      const destPath = path.join(targetDir, dll);
+      let copied = false;
+
+      for (const sourceDir of sourceDirs) {
+        const sourcePath = path.join(sourceDir, dll);
+        try {
+          if (!await fs.pathExists(sourcePath)) {
+            continue;
+          }
+
+          await fs.copy(sourcePath, destPath, { overwrite: true });
+          this.managers.log?.systemInfo(`Provisioned ${dll} for ${label}`, { sourcePath, destPath });
+          copied = true;
+          break;
+        } catch (error) {
+          this.managers.log?.systemWarn(`Failed to provision ${dll} for ${label}`, {
+            sourcePath,
+            destPath,
+            error: error.message,
+          });
+        }
+      }
+
+      if (!copied) {
+        this.managers.log?.systemWarn(`Could not find ${dll} for ${label}`, { targetDir });
+      }
+    }
+  }
+
+  appendProcessOutputSnippet(existingOutput, chunk, maxLength = 4000) {
+    const normalizedChunk = String(chunk || '').trim();
+    if (!normalizedChunk) {
+      return existingOutput || '';
+    }
+
+    const combined = existingOutput ? `${existingOutput}\n${normalizedChunk}` : normalizedChunk;
+    return combined.length > maxLength ? combined.slice(-maxLength) : combined;
+  }
+
+  logServiceStartupFailure(serviceLabel, version, details = {}) {
+    this.managers.log?.systemError(`${serviceLabel} ${version} startup failure`, details);
+  }
+
+  async readMySQLErrorLog(dataDir) {
+    const errorLogPath = path.join(dataDir, 'error.log');
+
+    try {
+      if (!await fs.pathExists(errorLogPath)) {
+        return '';
+      }
+
+      return await fs.readFile(errorLogPath, 'utf8');
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  async getMySQLErrorLogTail(dataDir, maxLines = 25) {
+    const logContent = await this.readMySQLErrorLog(dataDir);
+    if (!logContent) {
+      return '';
+    }
+
+    const lines = logContent
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    return lines.slice(-maxLines).join('\n');
+  }
+
+  async hasRecoverableMySQLRedoCorruption(dataDir) {
+    const errorLogTail = await this.getMySQLErrorLogTail(dataDir, 40);
+    return /Missing redo log file .*#ib_redo\d+/i.test(errorLogTail);
+  }
+
+  async recoverCorruptMySQLRedoLogs(version, dataDir) {
+    const redoDir = path.join(dataDir, '#innodb_redo');
+    if (!await fs.pathExists(redoDir)) {
+      return false;
+    }
+
+    const backupDir = path.join(dataDir, `#innodb_redo.corrupt-${Date.now()}`);
+    await fs.move(redoDir, backupDir, { overwrite: false });
+
+    this.managers.log?.systemWarn(`Recovered corrupt MySQL ${version} redo logs`, {
+      redoDir,
+      backupDir,
+    });
+
+    return true;
+  }
+
   // Get process key for Map storage
   getProcessKey(serviceName, version) {
     if (version) {
@@ -181,7 +377,7 @@ class ServiceManager extends EventEmitter {
     }
 
     // Ensure data directories exist for versioned services
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
 
     // MySQL version directories
     for (const version of (SERVICE_VERSIONS.mysql || [])) {
@@ -267,61 +463,107 @@ class ServiceManager extends EventEmitter {
     }
 
     const versionSuffix = version ? ` ${version}` : '';
+    const startKey = this.getProcessKey(serviceName, version);
+    const existingStart = this.pendingStarts.get(startKey);
+
+    if (existingStart) {
+      return existingStart;
+    }
+
+    const runStart = async () => {
+      const status = this.serviceStatus.get(serviceName);
+      if (status) {
+        status.status = 'starting';
+        status.error = null;
+        status.version = version;
+      }
+
+      try {
+        switch (serviceName) {
+          case 'nginx':
+            await this.startNginx(version);
+            break;
+          case 'apache':
+            await this.startApache(version);
+            break;
+          case 'mysql':
+            await this.startMySQL(version);
+            break;
+          case 'mariadb':
+            await this.startMariaDB(version);
+            break;
+          case 'redis':
+            await this.startRedis(version);
+            break;
+          case 'mailpit':
+            await this.startMailpit();
+            break;
+          case 'phpmyadmin':
+            await this.startPhpMyAdmin();
+            break;
+          case 'postgresql':
+            await this.startPostgreSQL(version);
+            break;
+          case 'mongodb':
+            await this.startMongoDB(version);
+            break;
+          case 'memcached':
+            await this.startMemcached(version);
+            break;
+          case 'minio':
+            await this.startMinIO();
+            break;
+        }
+
+        // Only update status to running if the service was actually started
+        // (i.e., not if it returned early due to missing binary)
+        if (status.status !== 'not_installed') {
+          status.status = 'running';
+          status.startedAt = new Date();
+          status.version = version;
+          this.emit('serviceStarted', serviceName, version);
+        }
+
+        return { success: status.status === 'running', service: serviceName, version, status: status.status };
+      } catch (error) {
+        this.managers.log?.systemError(`Failed to start ${config.name}${versionSuffix}`, { error: error.message });
+        if (status) {
+          status.status = 'error';
+          status.error = error.message;
+        }
+        throw error;
+      }
+    };
+
+    const startPromise = (serviceName === 'nginx' || serviceName === 'apache')
+      ? this.runExclusiveWebServerStart(runStart)
+      : runStart();
+
+    const trackedPromise = startPromise.finally(() => {
+      if (this.pendingStarts.get(startKey) === trackedPromise) {
+        this.pendingStarts.delete(startKey);
+      }
+    });
+
+    this.pendingStarts.set(startKey, trackedPromise);
+
+    return trackedPromise;
+  }
+
+  async runExclusiveWebServerStart(startOperation) {
+    const previous = this.webServerStartQueue;
+    let releaseQueue;
+
+    this.webServerStartQueue = new Promise((resolve) => {
+      releaseQueue = resolve;
+    });
+
+    await previous;
 
     try {
-      switch (serviceName) {
-        case 'nginx':
-          await this.startNginx(version);
-          break;
-        case 'apache':
-          await this.startApache(version);
-          break;
-        case 'mysql':
-          await this.startMySQL(version);
-          break;
-        case 'mariadb':
-          await this.startMariaDB(version);
-          break;
-        case 'redis':
-          await this.startRedis(version);
-          break;
-        case 'mailpit':
-          await this.startMailpit();
-          break;
-        case 'phpmyadmin':
-          await this.startPhpMyAdmin();
-          break;
-        case 'postgresql':
-          await this.startPostgreSQL(version);
-          break;
-        case 'mongodb':
-          await this.startMongoDB(version);
-          break;
-        case 'memcached':
-          await this.startMemcached(version);
-          break;
-        case 'minio':
-          await this.startMinIO();
-          break;
-      }
-
-      // Only update status to running if the service was actually started
-      // (i.e., not if it returned early due to missing binary)
-      const status = this.serviceStatus.get(serviceName);
-      if (status.status !== 'not_installed') {
-        status.status = 'running';
-        status.startedAt = new Date();
-        status.version = version;
-        this.emit('serviceStarted', serviceName, version);
-      }
-
-      return { success: status.status === 'running', service: serviceName, version, status: status.status };
-    } catch (error) {
-      this.managers.log?.systemError(`Failed to start ${config.name}${versionSuffix}`, { error: error.message });
-      const status = this.serviceStatus.get(serviceName);
-      status.status = 'error';
-      status.error = error.message;
-      throw error;
+      return await startOperation();
+    } finally {
+      releaseQueue();
     }
   }
 
@@ -359,6 +601,8 @@ class ServiceManager extends EventEmitter {
     const mysqlPath = this.getMySQLPath(version);
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
 
+    await this.ensureWindowsRuntimeDlls(mysqlPath, `MySQL ${version}`);
+
     if (!await fs.pathExists(mysqldPath)) {
       throw new Error(`MySQL ${version} binary not found`);
     }
@@ -371,7 +615,7 @@ class ServiceManager extends EventEmitter {
       this.processes.delete(processKey);
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mysql', version, 'data');
 
     // Use the same port detection as normal start
@@ -517,19 +761,19 @@ class ServiceManager extends EventEmitter {
     const isWindows = process.platform === 'win32';
 
     // Build init-file line if provided
-    const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
+    const initFileLine = initFile ? `init-file=${this.quoteConfigPath(initFile)}\n` : '';
 
     let config;
     if (isWindows) {
       config = `[mysqld]
-basedir=${mysqlPath.replace(/\\/g, '/')}
-datadir=${dataDir.replace(/\\/g, '/')}
+    basedir=${this.quoteConfigPath(mysqlPath)}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=0.0.0.0
 enable-named-pipe=ON
 socket=MYSQL_${version.replace(/\./g, '')}_SKIP
-pid-file=${path.join(dataDir, 'mysql_skip.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mysql_skip.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error_skip.log'))}
 skip-grant-tables
 skip-networking=0
 ${initFileLine}innodb_buffer_pool_size=128M
@@ -543,17 +787,17 @@ port=${port}
 `;
     } else {
       config = `[mysqld]
-datadir=${dataDir.replace(/\\/g, '/')}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=127.0.0.1
-socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
-pid-file=${path.join(dataDir, 'mysql_skip.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mysql_skip.sock'))}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mysql_skip.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error_skip.log'))}
 skip-grant-tables
 ${initFileLine}
 [client]
 port=${port}
-socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mysql_skip.sock'))}
 `;
     }
 
@@ -564,6 +808,8 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
   async startMariaDBWithSkipGrant(version = '11.4', initFile = null) {
     const mariadbPath = this.getMariaDBPath(version);
     const mariadbd = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
+
+    await this.ensureWindowsRuntimeDlls(mariadbPath, `MariaDB ${version}`);
 
     if (!await fs.pathExists(mariadbd)) {
       throw new Error(`MariaDB ${version} binary not found`);
@@ -577,7 +823,7 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
       this.processes.delete(processKey);
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mariadb', version, 'data');
 
     const defaultPort = this.getVersionPort('mariadb', version, this.serviceConfigs.mariadb.defaultPort);
@@ -632,19 +878,19 @@ socket=${path.join(dataDir, 'mysql_skip.sock').replace(/\\/g, '/')}
     const isWindows = process.platform === 'win32';
 
     // Build init-file line if provided
-    const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
+    const initFileLine = initFile ? `init-file=${this.quoteConfigPath(initFile)}\n` : '';
 
     let config;
     if (isWindows) {
       config = `[mysqld]
-basedir=${mariadbPath.replace(/\\/g, '/')}
-datadir=${dataDir.replace(/\\/g, '/')}
+    basedir=${this.quoteConfigPath(mariadbPath)}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=0.0.0.0
 enable-named-pipe=ON
 socket=MARIADB_${version.replace(/\./g, '')}_SKIP
-pid-file=${path.join(dataDir, 'mariadb_skip.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mariadb_skip.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error_skip.log'))}
 skip-grant-tables
 ${initFileLine}innodb_buffer_pool_size=128M
 max_connections=100
@@ -654,17 +900,17 @@ port=${port}
 `;
     } else {
       config = `[mysqld]
-datadir=${dataDir.replace(/\\/g, '/')}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=127.0.0.1
-socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
-pid-file=${path.join(dataDir, 'mariadb_skip.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error_skip.log').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mariadb_skip.sock'))}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mariadb_skip.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error_skip.log'))}
 skip-grant-tables
 ${initFileLine}
 [client]
 port=${port}
-socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mariadb_skip.sock'))}
 `;
     }
 
@@ -711,7 +957,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         const nginxVersion = version || '1.28';
         const nginxPath = this.getNginxPath(nginxVersion);
         const nginxExe = path.join(nginxPath, 'nginx.exe');
-        const dataPath = path.join(app.getPath('userData'), 'data');
+        const dataPath = this.getDataPath();
         const confPath = path.join(dataPath, 'nginx', nginxVersion, 'nginx.conf');
 
         if (await fs.pathExists(nginxExe)) {
@@ -932,7 +1178,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const versionDataPath = path.join(dataPath, 'nginx', version);
     const confPath = path.join(versionDataPath, 'nginx.conf');
     const logsPath = path.join(versionDataPath, 'logs');
@@ -1027,7 +1273,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         try {
           const { killProcessesByPath, isProcessRunning } = require('../utils/SpawnUtils');
           if (isProcessRunning('nginx.exe')) {
-            const nginxResourcesPath = path.join(app.getPath('userData'), 'resources', 'nginx');
+            const nginxResourcesPath = path.join(this.resourcePath, 'nginx');
             this.managers.log?.systemInfo('Killing stale DevBox nginx processes before start');
             await killProcessesByPath('nginx.exe', nginxResourcesPath);
             // Brief pause for ports to be released
@@ -1068,6 +1314,8 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         // Sites dir may not exist yet
       }
     }
+
+    await this.regenerateWebServerVhosts('nginx', version);
 
     // Test Nginx configuration before starting
     // This may fail with port bind errors even if our port check passed (Windows HTTP service, Hyper-V, etc.)
@@ -1145,27 +1393,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         this.serviceConfigs.nginx.actualHttpPort = httpPort;
         this.serviceConfigs.nginx.actualSslPort = sslPort;
 
-        // Regenerate vhost configs for running projects that use THIS nginx version.
-        // Without this, vhosts created before the port fallback would have stale ports.
-        // IMPORTANT: Use createNginxVhost (write-only) instead of createVirtualHost here.
-        // createVirtualHost would reload/restart nginx, but we're still INSIDE startNginx —
-        // the server hasn't finished starting yet.
-        if (this.managers.project) {
-          const runningProjects = this.managers.project.runningProjects;
-          const allProjects = this.configStore?.get('projects', []) || [];
-          for (const proj of allProjects) {
-            const projVersion = proj.webServerVersion || '1.28';
-            if ((proj.webServer === 'nginx' || !proj.webServer) && projVersion === version && runningProjects?.has(proj.id)) {
-              try {
-                const running = runningProjects.get(proj.id);
-                const phpFpmPort = running?.phpFpmPort || null;
-                await this.managers.project.createNginxVhost(proj, phpFpmPort, version);
-              } catch (e) {
-                this.managers.log?.systemWarn(`Could not regenerate vhost for ${proj.name} after port fallback`, { error: e.message });
-              }
-            }
-          }
-        }
+        await this.regenerateWebServerVhosts('nginx', version);
 
         testResult = await testConfig();
       }
@@ -1263,7 +1491,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     try {
       const startWait = Date.now();
       let nginxReady = false;
-      while (Date.now() - startWait < 10000) {
+      while (Date.now() - startWait < 15000) {
         if (await this.checkPortOpen(httpPort)) {
           nginxReady = true;
           break;
@@ -1271,7 +1499,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         await new Promise(resolve => setTimeout(resolve, 500));
       }
       if (!nginxReady) {
-        throw new Error(`Nginx ${version} did not open port ${httpPort} within 10s`);
+        throw new Error(`Nginx ${version} did not open port ${httpPort} within 15s`);
       }
       status.status = 'running';
       status.startedAt = Date.now();
@@ -1298,7 +1526,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
     const nginxPath = this.getNginxPath(version);
     const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'sbin/nginx');
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const confPath = path.join(dataPath, 'nginx', version, 'nginx.conf');
 
     if (!await fs.pathExists(nginxExe)) {
@@ -1334,7 +1562,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const nginxPath = this.getNginxPath(version);
     const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'sbin/nginx');
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const confPath = path.join(dataPath, 'nginx', version, 'nginx.conf');
 
     if (!await fs.pathExists(nginxExe)) {
@@ -1426,7 +1654,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const apachePath = this.getApachePath(version);
     const httpdExe = path.join(apachePath, 'bin', process.platform === 'win32' ? 'httpd.exe' : 'httpd');
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const confPath = path.join(dataPath, 'apache', 'httpd.conf');
 
     if (!await fs.pathExists(httpdExe)) {
@@ -1475,7 +1703,7 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
 
         // Regenerate httpd.conf with confirmed-available ports before re-spawning.
         // This ensures Listen directives match reality even if the old config is stale.
-        const dataPathReload = path.join(app.getPath('userData'), 'data');
+        const dataPathReload = this.getDataPath();
         const logsPath = path.join(dataPathReload, 'apache', 'logs');
         await this.createApacheConfig(apachePath, confPath, logsPath, expectedHttpPort, expectedSslPort);
 
@@ -1501,6 +1729,13 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
         });
         proc.on('exit', (code) => {
           const s = this.serviceStatus.get('apache');
+          const benignWindowsDetach = process.platform === 'win32' && code === 0 && s.status === 'running';
+          if (benignWindowsDetach) {
+            this.processes.delete(processKey);
+            s.pid = null;
+            return;
+          }
+
           if (s.status === 'running') {
             s.status = 'stopped';
             this.runningVersions.get('apache')?.delete(version);
@@ -1558,52 +1793,55 @@ socket=${path.join(dataDir, 'mariadb_skip.sock').replace(/\\/g, '/')}
   }
 
   async createNginxConfig(confPath, logsPath, httpPort = 80, sslPort = 443, version = '1.28') {
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     // Use getNginxPath to get the correct versioned path
     const nginxPath = this.getNginxPath(version);
     const mimeTypesPath = path.join(nginxPath, 'conf', 'mime.types').replace(/\\/g, '/');
+    const fastcgiParamsPath = path.join(nginxPath, 'conf', 'fastcgi_params').replace(/\\/g, '/');
 
     // Per-version data paths for multi-version nginx support
     const webServerDataPath = dataPath;
     const sitesPath = path.join(webServerDataPath, 'nginx', version, 'sites').replace(/\\/g, '/');
     const pidPath = path.join(webServerDataPath, 'nginx', version, 'nginx.pid').replace(/\\/g, '/');
+    const normalizedLogsPath = logsPath.replace(/\\/g, '/');
+    const normalizedDataPath = dataPath.replace(/\\/g, '/');
 
     // Ensure version-specific directories exist
     await fs.ensureDir(path.join(webServerDataPath, 'nginx', version, 'sites'));
     await fs.ensureDir(path.join(webServerDataPath, 'nginx', version, 'logs'));
 
     const config = `worker_processes 1;
-pid ${pidPath};
-error_log ${logsPath.replace(/\\/g, '/')}/error.log;
+  pid "${pidPath}";
+  error_log "${normalizedLogsPath}/error.log";
 
 events {
     worker_connections 1024;
 }
 
 http {
-    include       ${mimeTypesPath};
+    include       "${mimeTypesPath}";
     default_type  application/octet-stream;
     sendfile      on;
     keepalive_timeout 65;
     client_max_body_size 128M;
     server_names_hash_bucket_size 128;
     
-    access_log ${logsPath.replace(/\\/g, '/')}/access.log;
-    error_log ${logsPath.replace(/\\/g, '/')}/http_error.log;
+    access_log "${normalizedLogsPath}/access.log";
+    error_log "${normalizedLogsPath}/http_error.log";
 
     # FastCGI params
-    include ${path.join(nginxPath, 'conf', 'fastcgi_params').replace(/\\/g, '/')};
+    include "${fastcgiParamsPath}";
 
     # Include virtual host configs from sites directory
-    include ${sitesPath}/*.conf;
+    include "${sitesPath}/*.conf";
 
     # Fallback server for unmatched requests
     # Project vhosts with network access use default_server to claim IP-based traffic
     server {
         listen ${httpPort};
         server_name localhost;
-        root ${dataPath.replace(/\\/g, '/')}/www;
+      root "${normalizedDataPath}/www";
         index index.html index.php;
         
         location / {
@@ -1623,6 +1861,23 @@ http {
     await fs.writeFile(confPath, config);
   }
 
+  async regenerateWebServerVhosts(serviceName, version = null) {
+    const projectManager = this.managers.project;
+    if (!projectManager) {
+      return;
+    }
+
+    try {
+      if (serviceName === 'nginx') {
+        await projectManager.regenerateAllNginxVhosts(null, version);
+      } else if (serviceName === 'apache') {
+        await projectManager.regenerateAllApacheVhosts(null, version);
+      }
+    } catch (error) {
+      this.managers.log?.systemWarn(`Could not regenerate ${serviceName} vhosts before start`, { error: error.message });
+    }
+  }
+
   // Apache
   async startApache(version = '2.4') {
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
@@ -1638,7 +1893,7 @@ http {
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const confPath = path.join(dataPath, 'apache', 'httpd.conf');
     const logsPath = path.join(dataPath, 'apache', 'logs');
 
@@ -1658,7 +1913,7 @@ http {
         try {
           const { killProcessesByPath, isProcessRunning } = require('../utils/SpawnUtils');
           if (isProcessRunning('httpd.exe')) {
-            const apacheResourcesPath = path.join(app.getPath('userData'), 'resources', 'apache');
+            const apacheResourcesPath = path.join(this.resourcePath, 'apache');
             this.managers.log?.systemInfo('Killing stale DevBox Apache processes before start');
             await killProcessesByPath('httpd.exe', apacheResourcesPath);
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -1768,6 +2023,8 @@ http {
       }
     }
 
+    await this.regenerateWebServerVhosts('apache', version);
+
     // Test Apache config before starting
     // This may fail with port bind errors even if our port check passed (Windows HTTP service, Hyper-V, etc.)
     const testConfig = async () => {
@@ -1777,11 +2034,15 @@ http {
           cwd: apachePath,
           windowsHide: true,
           timeout: 10000,
-          encoding: 'utf8'
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe']
         });
         return { success: true };
       } catch (configError) {
-        const errorMsg = configError.stderr || configError.message || '';
+        const stderr = configError.stderr || '';
+        const stdout = configError.stdout || '';
+        const message = configError.message || '';
+        const errorMsg = `${stderr} ${stdout} ${message}`.trim();
         // Check for port binding errors (Windows error 10013 = permission denied, 10048 = already in use)
         const portBindError = errorMsg.includes('10013') || errorMsg.includes('10048') ||
           errorMsg.includes('could not bind') || errorMsg.includes('Address already in use') ||
@@ -1838,24 +2099,7 @@ http {
         this.serviceConfigs.apache.actualHttpPort = httpPort;
         this.serviceConfigs.apache.actualSslPort = httpsPort;
 
-        // Regenerate vhost configs for all running Apache projects with the new ports.
-        // Without this, vhosts created before the port fallback would have stale ports.
-        // IMPORTANT: Use createApacheVhost (write-only) instead of createVirtualHost here.
-        // createVirtualHost would reload/restart apache, but we're still INSIDE startApache —
-        // the server hasn't finished starting yet.
-        if (this.managers.project) {
-          const runningProjects = this.managers.project.runningProjects;
-          const allProjects = this.configStore?.get('projects', []) || [];
-          for (const proj of allProjects) {
-            if (proj.webServer === 'apache' && runningProjects?.has(proj.id)) {
-              try {
-                await this.managers.project.createApacheVhost(proj, version);
-              } catch (e) {
-                this.managers.log?.systemWarn(`Could not regenerate vhost for ${proj.name} after port fallback`, { error: e.message });
-              }
-            }
-          }
-        }
+        await this.regenerateWebServerVhosts('apache', version);
 
         testResult = await testConfig();
       }
@@ -1890,11 +2134,18 @@ http {
 
     proc.on('exit', (code) => {
       const status = this.serviceStatus.get('apache');
+
+      // On Windows, httpd.exe can detach and let the launcher process exit with
+      // code 0 while the real Apache workers keep serving. In that case keep the
+      // tracked port/version state so callers do not fall back to predictive ports.
+      if (process.platform === 'win32' && code === 0 && status.status === 'running') {
+        this.processes.delete(this.getProcessKey('apache', version));
+        status.pid = null;
+        return;
+      }
+
       if (status.status === 'running') {
         status.status = 'stopped';
-        // Clean up runningVersions so isVersionRunning returns false.
-        // Without this, stale entries cause startProject to take the
-        // "webServerAlreadyRunning" path with stale port info.
         this.runningVersions.get('apache')?.delete(version);
       }
     });
@@ -1911,7 +2162,7 @@ http {
 
     // Wait for Apache to be ready
     try {
-      await this.waitForService('apache', 20000);
+      await this.waitForService('apache', 30000);
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
@@ -1947,7 +2198,7 @@ http {
   }
 
   async createApacheConfig(apachePath, confPath, logsPath, httpPort = 8081, httpsPort = 8444, additionalListenPorts = []) {
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const mimeTypesPath = path.join(apachePath, 'conf', 'mime.types').replace(/\\/g, '/');
 
     // Default SSL catch-all: Apache falls back to the first defined SSL VirtualHost when
@@ -2032,6 +2283,7 @@ LoadModule actions_module modules/mod_actions.so
 
 # Proxy modules for PHP-FPM
 LoadModule proxy_module modules/mod_proxy.so
+LoadModule proxy_http_module modules/mod_proxy_http.so
 LoadModule proxy_fcgi_module modules/mod_proxy_fcgi.so
 
 # SSL modules
@@ -2058,9 +2310,12 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
   }
 
   // MySQL
-  async startMySQL(version = '8.4') {
+  async startMySQL(version = '8.4', startupOptions = {}) {
+    const { attemptedRedoRecovery = false } = startupOptions;
     const mysqlPath = this.getMySQLPath(version);
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
+
+    await this.ensureWindowsRuntimeDlls(mysqlPath, `MySQL ${version}`);
 
     // Check if MySQL binary exists
     if (!await fs.pathExists(mysqldPath)) {
@@ -2078,8 +2333,11 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mysql', version, 'data');
+    const configPath = path.join(dataPath, 'mysql', version, 'my.cnf');
+    const legacyDataDir = this.getLegacyMySQLDataDir(version);
+    const shareMessagesPath = path.join(mysqlPath, 'share', 'messages_to_error_log.txt');
 
     // Find available port dynamically based on version
     const defaultPort = this.getVersionPort('mysql', version, this.serviceConfigs.mysql.defaultPort);
@@ -2098,12 +2356,26 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     // Ensure data directory exists
     await fs.ensureDir(dataDir);
 
+    const adoptedLegacyData = await this.maybeAdoptLegacyMySQLData(version, dataDir);
+
     // Check if MySQL data directory needs initialization
     const isInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
 
+    this.managers.log?.systemInfo(`MySQL ${version} startup context`, {
+      mysqlPath,
+      mysqldPath,
+      dataPath,
+      dataDir,
+      legacyDataDir,
+      configPath,
+      shareMessagesPath,
+      adoptedLegacyData,
+      isInitialized,
+    });
+
     if (!isInitialized) {
       try {
-        await this.initializeMySQLData(mysqlPath, dataDir);
+        await this.initializeMySQLData(mysqlPath, dataDir, version);
       } catch (error) {
         this.managers.log?.systemError('MySQL initialization failed', { error: error.message });
         const status = this.serviceStatus.get('mysql');
@@ -2112,8 +2384,6 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
         return;
       }
     }
-
-    const configPath = path.join(dataPath, 'mysql', version, 'my.cnf');
 
     // Create init-file with credentials from ConfigStore (source of truth)
     // This runs on every startup to ensure credentials match ConfigStore
@@ -2124,6 +2394,8 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
     await this.createMySQLConfig(configPath, dataDir, port, version, initFile);
 
     let proc;
+    let startupStdout = '';
+    let startupStderr = '';
     if (process.platform === 'win32') {
       // On Windows, use spawnHidden to run without console window
       proc = spawnHidden(mysqldPath, [`--defaults-file=${configPath}`], {
@@ -2132,15 +2404,25 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       });
 
       proc.stdout?.on('data', (data) => {
+        startupStdout = this.appendProcessOutputSnippet(startupStdout, data);
         this.managers.log?.service('mysql', data.toString());
       });
 
       proc.stderr?.on('data', (data) => {
+        startupStderr = this.appendProcessOutputSnippet(startupStderr, data);
         this.managers.log?.service('mysql', data.toString(), 'error');
       });
 
       proc.on('error', (error) => {
         this.managers.log?.systemError('MySQL process error', { error: error.message });
+        this.logServiceStartupFailure('MySQL', version, {
+          error: error.message,
+          configPath,
+          mysqlPath,
+          dataDir,
+          stdout: startupStdout,
+          stderr: startupStderr,
+        });
         const status = this.serviceStatus.get('mysql');
         status.status = 'error';
         status.error = error.message;
@@ -2148,6 +2430,17 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
       proc.on('exit', (code) => {
         const status = this.serviceStatus.get('mysql');
+        this.processes.delete(processKey);
+        if (code !== 0 || (status.status !== 'running' && (startupStdout || startupStderr))) {
+          this.logServiceStartupFailure('MySQL', version, {
+            code,
+            configPath,
+            mysqlPath,
+            dataDir,
+            stdout: startupStdout,
+            stderr: startupStderr,
+          });
+        }
         if (status.status === 'running') {
           status.status = 'stopped';
           this.runningVersions.get('mysql')?.delete(version);
@@ -2161,15 +2454,25 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       });
 
       proc.stdout.on('data', (data) => {
+        startupStdout = this.appendProcessOutputSnippet(startupStdout, data);
         this.managers.log?.service('mysql', data.toString());
       });
 
       proc.stderr.on('data', (data) => {
+        startupStderr = this.appendProcessOutputSnippet(startupStderr, data);
         this.managers.log?.service('mysql', data.toString(), 'error');
       });
 
       proc.on('error', (error) => {
         this.managers.log?.systemError('MySQL process error', { error: error.message });
+        this.logServiceStartupFailure('MySQL', version, {
+          error: error.message,
+          configPath,
+          mysqlPath,
+          dataDir,
+          stdout: startupStdout,
+          stderr: startupStderr,
+        });
         const status = this.serviceStatus.get('mysql');
         status.status = 'error';
         status.error = error.message;
@@ -2177,6 +2480,17 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
       proc.on('exit', (code) => {
         const status = this.serviceStatus.get('mysql');
+        this.processes.delete(processKey);
+        if (code !== 0 || (status.status !== 'running' && (startupStdout || startupStderr))) {
+          this.logServiceStartupFailure('MySQL', version, {
+            code,
+            configPath,
+            mysqlPath,
+            dataDir,
+            stdout: startupStdout,
+            stderr: startupStderr,
+          });
+        }
         if (status.status === 'running') {
           status.status = 'stopped';
           this.runningVersions.get('mysql')?.delete(version);
@@ -2199,9 +2513,33 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
       status.startedAt = Date.now();
       // Credentials are applied via init-file before MySQL accepts connections
     } catch (error) {
-      this.managers.log?.systemError(`MySQL ${version} failed to start`, { error: error.message });
+      const errorLogTail = await this.getMySQLErrorLogTail(dataDir);
+
+      if (!attemptedRedoRecovery && await this.hasRecoverableMySQLRedoCorruption(dataDir)) {
+        try {
+          await this.recoverCorruptMySQLRedoLogs(version, dataDir);
+          this.runningVersions.get('mysql').delete(version);
+          status.status = 'stopped';
+          status.error = null;
+          status.startedAt = null;
+          status.pid = null;
+          return this.startMySQL(version, { attemptedRedoRecovery: true });
+        } catch (recoveryError) {
+          this.managers.log?.systemError(`MySQL ${version} redo recovery failed`, {
+            error: recoveryError.message,
+            dataDir,
+          });
+        }
+      }
+
+      this.managers.log?.systemError(`MySQL ${version} failed to start`, {
+        error: error.message,
+        errorLogTail: errorLogTail || undefined,
+      });
       status.status = 'error';
-      status.error = 'Failed to start within timeout. Check logs for details.';
+      status.error = errorLogTail
+        ? `Failed to start. ${errorLogTail.split('\n').at(-1)}`
+        : 'Failed to start within timeout. Check logs for details.';
       // Clean up the runningVersions entry on failure
       this.runningVersions.get('mysql').delete(version);
     }
@@ -2287,7 +2625,7 @@ IncludeOptional "${dataPath.replace(/\\/g, '/')}/apache/vhosts/*.conf"
 
   // Create init file for MySQL credential reset
   async createMySQLCredentialResetInitFile(user, password) {
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const initFile = path.join(dataPath, 'mysql_credential_reset.sql');
 
     const escapedPassword = password.replace(/'/g, "''");
@@ -2313,7 +2651,7 @@ FLUSH PRIVILEGES;
    * 3. No authentication is needed - it's internal server execution
    */
   async createCredentialsInitFile(serviceName, version) {
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const initFile = path.join(dataPath, serviceName, version, 'credentials_init.sql');
 
     // Get credentials from ConfigStore (the source of truth)
@@ -2409,11 +2747,13 @@ FLUSH PRIVILEGES;
     const mysqlPath = this.getMySQLPath(version);
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
 
+    await this.ensureWindowsRuntimeDlls(mysqlPath, `MySQL ${version}`);
+
     if (!await fs.pathExists(mysqldPath)) {
       throw new Error(`MySQL ${version} binary not found`);
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mysql', version, 'data');
     const configPath = path.join(dataPath, 'mysql', version, 'my.cnf');
 
@@ -2450,17 +2790,40 @@ FLUSH PRIVILEGES;
       });
     }
 
+    let startupStdout = '';
+    let startupStderr = '';
+
     proc.stdout?.on('data', (data) => {
+      startupStdout = this.appendProcessOutputSnippet(startupStdout, data);
       this.managers.log?.service('mysql', data.toString());
     });
     proc.stderr?.on('data', (data) => {
+      startupStderr = this.appendProcessOutputSnippet(startupStderr, data);
       this.managers.log?.service('mysql', data.toString(), 'error');
     });
     proc.on('error', (error) => {
       this.managers.log?.systemError('MySQL process error', { error: error.message });
+      this.logServiceStartupFailure('MySQL', version, {
+        error: error.message,
+        configPath,
+        mysqlPath,
+        dataDir,
+        stdout: startupStdout,
+        stderr: startupStderr,
+      });
     });
     proc.on('exit', (code) => {
       const status = this.serviceStatus.get('mysql');
+      if (code !== 0 || (status.status !== 'running' && (startupStdout || startupStderr))) {
+        this.logServiceStartupFailure('MySQL', version, {
+          code,
+          configPath,
+          mysqlPath,
+          dataDir,
+          stdout: startupStdout,
+          stderr: startupStderr,
+        });
+      }
       if (status.status === 'running') {
         status.status = 'stopped';
         this.runningVersions.get('mysql')?.delete(version);
@@ -2482,27 +2845,65 @@ FLUSH PRIVILEGES;
 
   async initializeMySQLData(mysqlPath, dataDir, version = '8.4') {
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
+    const shareDir = path.join(mysqlPath, 'share');
+    const shareMessagesFile = path.join(shareDir, 'messages_to_error_log.txt');
+
+    await this.ensureWindowsRuntimeDlls(mysqlPath, `MySQL ${version}`);
+
+    if (!await fs.pathExists(shareMessagesFile)) {
+      throw new Error(`MySQL ${version} installation is incomplete (missing share/messages_to_error_log.txt). Please re-download from Binary Manager.`);
+    }
 
     // Ensure data directory is empty before initialization
     await fs.emptyDir(dataDir);
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(mysqldPath, ['--initialize-insecure', `--datadir=${dataDir}`], {
+      const args = [
+        '--initialize-insecure',
+        `--basedir=${mysqlPath}`,
+        `--datadir=${dataDir}`,
+        '--console'
+      ];
+
+      const proc = spawn(mysqldPath, args, {
         cwd: mysqlPath,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       });
 
+      let stdout = '';
       let stderr = '';
+      let settled = false;
+
+      proc.stdout?.on('data', (data) => {
+        stdout += data.toString();
+      });
+
       proc.stderr.on('data', (data) => {
         stderr += data.toString();
       });
 
+      proc.on('error', (error) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        reject(new Error(`MySQL initialization failed to launch: ${error.message}`));
+      });
+
       proc.on('exit', (code) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
         if (code === 0) {
           resolve();
         } else {
-          reject(new Error(`MySQL initialization failed: ${stderr}`));
+          const details = [stderr.trim(), stdout.trim()].filter(Boolean).join(' | ');
+          const suffix = details ? `: ${details}` : ` (exit code ${code}, no output captured)`;
+          reject(new Error(`MySQL initialization failed${suffix}`));
         }
       });
     });
@@ -2513,7 +2914,7 @@ FLUSH PRIVILEGES;
     const mysqlPath = this.getMySQLPath(version);
 
     // Build init-file line if provided (for applying credentials from ConfigStore)
-    const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
+    const initFileLine = initFile ? `init-file=${this.quoteConfigPath(initFile)}\n` : '';
 
     // Get timezone from settings and convert to UTC offset for MySQL compatibility
     const settings = this.configStore?.get('settings', {}) || {};
@@ -2526,14 +2927,14 @@ FLUSH PRIVILEGES;
       // Note: skip-grant-tables causes skip_networking=ON in MySQL 8.4, so we don't use it
       // Instead, we use init-file to apply credentials from ConfigStore on every startup
       config = `[mysqld]
-basedir=${mysqlPath.replace(/\\/g, '/')}
-datadir=${dataDir.replace(/\\/g, '/')}
+    basedir=${this.quoteConfigPath(mysqlPath)}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=0.0.0.0
 enable-named-pipe=ON
 socket=MYSQL_${version.replace(/\./g, '')}
-pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mysql.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error.log'))}
 default-time-zone='${timezoneOffset}'
 ${initFileLine}innodb_buffer_pool_size=128M
 innodb_redo_log_capacity=100M
@@ -2547,17 +2948,17 @@ port=${port}
     } else {
       // Unix/macOS config with socket
       config = `[mysqld]
-datadir=${dataDir.replace(/\\/g, '/')}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=127.0.0.1
-socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
-pid-file=${path.join(dataDir, 'mysql.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mysql.sock'))}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mysql.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error.log'))}
 default-time-zone='${timezoneOffset}'
 ${initFileLine}
 [client]
 port=${port}
-socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mysql.sock'))}
 `;
     }
 
@@ -2638,6 +3039,8 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     const mariadbPath = this.getMariaDBPath(version);
     const mariadbd = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
 
+    await this.ensureWindowsRuntimeDlls(mariadbPath, `MariaDB ${version}`);
+
     // Check if MariaDB binary exists
     if (!await fs.pathExists(mariadbd)) {
       this.managers.log?.systemError(`MariaDB ${version} binary not found. Please download MariaDB from the Binary Manager.`);
@@ -2654,7 +3057,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mariadb', version, 'data');
 
     // Find available port dynamically based on version
@@ -2693,16 +3096,29 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       windowsHide: true,
     });
 
+    let startupStdout = '';
+    let startupStderr = '';
+
     proc.stdout.on('data', (data) => {
+      startupStdout = this.appendProcessOutputSnippet(startupStdout, data);
       this.managers.log?.service('mariadb', data.toString());
     });
 
     proc.stderr.on('data', (data) => {
+      startupStderr = this.appendProcessOutputSnippet(startupStderr, data);
       this.managers.log?.service('mariadb', data.toString(), 'error');
     });
 
     proc.on('error', (error) => {
       this.managers.log?.systemError('MariaDB process error', { error: error.message });
+      this.logServiceStartupFailure('MariaDB', version, {
+        error: error.message,
+        configPath,
+        mariadbPath,
+        dataDir,
+        stdout: startupStdout,
+        stderr: startupStderr,
+      });
       const status = this.serviceStatus.get('mariadb');
       status.status = 'error';
       status.error = error.message;
@@ -2710,6 +3126,16 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
 
     proc.on('exit', (code) => {
       const status = this.serviceStatus.get('mariadb');
+      if (code !== 0 || (status.status !== 'running' && (startupStdout || startupStderr))) {
+        this.logServiceStartupFailure('MariaDB', version, {
+          code,
+          configPath,
+          mariadbPath,
+          dataDir,
+          stdout: startupStdout,
+          stderr: startupStderr,
+        });
+      }
       if (status.status === 'running') {
         status.status = 'stopped';
         this.runningVersions.get('mariadb')?.delete(version);
@@ -2748,7 +3174,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       throw new Error(`MariaDB ${version} binary not found`);
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mariadb', version, 'data');
     const configPath = path.join(dataPath, 'mariadb', version, 'my.cnf');
 
@@ -2841,7 +3267,7 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
     const mariadbPath = this.getMariaDBPath(version);
 
     // Build init-file line if provided (for applying credentials from ConfigStore)
-    const initFileLine = initFile ? `init-file=${initFile.replace(/\\/g, '/')}\n` : '';
+    const initFileLine = initFile ? `init-file=${this.quoteConfigPath(initFile)}\n` : '';
 
     // Get timezone from settings and convert to UTC offset for compatibility
     const settings = this.configStore?.get('settings', {}) || {};
@@ -2854,14 +3280,14 @@ socket=${path.join(dataDir, 'mysql.sock').replace(/\\/g, '/')}
       // Use unique named pipe name to avoid conflict with MySQL
       // Credentials are applied via init-file from ConfigStore
       config = `[mysqld]
-basedir=${mariadbPath.replace(/\\/g, '/')}
-datadir=${dataDir.replace(/\\/g, '/')}
+    basedir=${this.quoteConfigPath(mariadbPath)}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=127.0.0.1
 enable_named_pipe=ON
 socket=MARIADB_${version.replace(/\./g, '')}
-pid-file=${path.join(dataDir, 'mariadb.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mariadb.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error.log'))}
 default-time-zone='${timezoneOffset}'
 ${initFileLine}innodb_buffer_pool_size=128M
 max_connections=100
@@ -2874,17 +3300,17 @@ socket=MARIADB_${version.replace(/\./g, '')}
       // Unix/macOS config with socket
       // Credentials are applied via init-file from ConfigStore
       config = `[mysqld]
-datadir=${dataDir.replace(/\\/g, '/')}
+    datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
 bind-address=127.0.0.1
-socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
-pid-file=${path.join(dataDir, 'mariadb.pid').replace(/\\/g, '/')}
-log-error=${path.join(dataDir, 'error.log').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mariadb.sock'))}
+    pid-file=${this.quoteConfigPath(path.join(dataDir, 'mariadb.pid'))}
+    log-error=${this.quoteConfigPath(path.join(dataDir, 'error.log'))}
 default-time-zone='${timezoneOffset}'
 ${initFileLine}
 [client]
 port=${port}
-socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
+    socket=${this.quoteConfigPath(path.join(dataDir, 'mariadb.sock'))}
 `;
     }
 
@@ -2908,7 +3334,7 @@ socket=${path.join(dataDir, 'mariadb.sock').replace(/\\/g, '/')}
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'redis', version, 'data');
 
     // Ensure data directory exists
@@ -3386,7 +3812,7 @@ ${servers.join('')}
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'postgresql', version, 'data');
     await fs.ensureDir(dataDir);
 
@@ -3501,7 +3927,7 @@ ${servers.join('')}
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mongodb', version, 'data');
     const logFile = path.join(dataPath, 'logs', `mongodb-${version}.log`);
     await fs.ensureDir(dataDir);
@@ -3613,7 +4039,7 @@ ${servers.join('')}
       return;
     }
 
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.getDataPath();
     const minioDataDir = path.join(dataPath, 'minio', 'data');
     await fs.ensureDir(minioDataDir);
 
@@ -3909,6 +4335,19 @@ ${servers.join('')}
           httpPort: versionInfo.port,
           sslPort: versionInfo.sslPort,
         };
+      }
+
+      // Apache on Windows can detach worker processes and let the launcher exit,
+      // which makes runningVersions stale even though the server is still up.
+      // In that case prefer the live status ports over predictive ownership logic.
+      if (serviceName === 'apache') {
+        const status = this.serviceStatus.get(serviceName);
+        if (status?.status === 'running' && status.version === version && status.port) {
+          return {
+            httpPort: status.port,
+            sslPort: status.sslPort,
+          };
+        }
       }
 
       // Version not running yet — use version-aware prediction instead of falling

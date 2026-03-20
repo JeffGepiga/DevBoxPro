@@ -45,8 +45,7 @@ class SupervisorManager {
   }
 
   async initialize() {
-    const { app } = require('electron');
-    const dataPath = path.join(app.getPath('userData'), 'data');
+    const dataPath = this.configStore.getDataPath();
     const supervisorPath = path.join(dataPath, 'supervisor');
     this.logsPath = path.join(supervisorPath, 'logs');
     await fs.ensureDir(supervisorPath);

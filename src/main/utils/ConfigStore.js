@@ -2,19 +2,24 @@ const Store = require('electron-store');
 const path = require('path');
 const os = require('os');
 const fs = require('fs-extra');
+const { app } = require('electron');
+const { getDataPath, getResourcesPath, getAppCachePath, getPortableRoot } = require('./PathResolver');
 
 class ConfigStore {
   constructor() {
     try {
       const defaultData = this.getDefaults();
+      this.resolvedDataPath = defaultData.dataPath;
       this.store = new Store({
         name: 'devbox-pro-config',
         defaults: defaultData,
         cwd: defaultData.dataPath
       });
 
+      this.normalizeDataPath();
+
       // Ensure data directory exists
-      const dataPath = this.get('dataPath');
+      const dataPath = this.getDataPath();
       try {
         fs.ensureDirSync(dataPath);
       } catch (err) {
@@ -24,29 +29,138 @@ class ConfigStore {
       // Failed to initialize store - this is a critical error but we can't log to system yet
       // Create a fallback in-memory store
       this._fallbackData = this.getDefaults();
+      this.resolvedDataPath = this._fallbackData.dataPath;
       this.store = null;
     }
+  }
+
+  normalizeDataPath() {
+    if (!this.resolvedDataPath) {
+      this.resolvedDataPath = this.getDefaults().dataPath;
+    }
+
+    if (!this.store) {
+      if (this._fallbackData) {
+        this._fallbackData.dataPath = this.resolvedDataPath;
+      }
+      return;
+    }
+
+    const storedDataPath = this.store.get('dataPath');
+    if (storedDataPath !== this.resolvedDataPath) {
+      this.store.set('dataPath', this.resolvedDataPath);
+    }
+
+    this.normalizeDefaultProjectsPath();
+  }
+
+  normalizeDefaultProjectsPath() {
+    const normalizedProjectsPath = this.getNormalizedDefaultProjectsPath();
+    if (!normalizedProjectsPath) {
+      return;
+    }
+
+    if (!this.store) {
+      if (this._fallbackData?.settings) {
+        this._fallbackData.settings.defaultProjectsPath = normalizedProjectsPath;
+      }
+      return;
+    }
+
+    const currentProjectsPath = this.store.get('settings.defaultProjectsPath');
+    if (currentProjectsPath !== normalizedProjectsPath) {
+      this.store.set('settings.defaultProjectsPath', normalizedProjectsPath);
+    }
+  }
+
+  isTestEnvironment() {
+    return process.env.PLAYWRIGHT_TEST === 'true'
+      || process.argv.includes('--playwright-e2e')
+      || process.env.NODE_ENV === 'test'
+      || process.env.VITEST === 'true';
+  }
+
+  getPlatformDefaultProjectsPath() {
+    return process.platform === 'win32'
+      ? 'C:/Projects'
+      : path.join(os.homedir(), 'Projects');
+  }
+
+  getResolvedStandardProjectsPath() {
+    if (this.isTestEnvironment()) {
+      const baseDir = process.env.TEST_USER_DATA_DIR || os.tmpdir();
+      return path.join(baseDir, '.devbox-pro-test', 'Projects');
+    }
+
+    return this.getPlatformDefaultProjectsPath();
+  }
+
+  getNormalizedDefaultProjectsPath() {
+    const portableRoot = getPortableRoot(app);
+    const currentProjectsPath = this.store
+      ? this.store.get('settings.defaultProjectsPath')
+      : this._fallbackData?.settings?.defaultProjectsPath;
+
+    if (!portableRoot) {
+      const standardProjectsPath = this.getResolvedStandardProjectsPath();
+      const currentDataPath = this.getDataPath();
+      const legacyDataProjectsPath = path.join(currentDataPath, 'Projects');
+
+      if (!currentProjectsPath) {
+        return standardProjectsPath;
+      }
+
+      if (currentProjectsPath === standardProjectsPath) {
+        return standardProjectsPath;
+      }
+
+      if (currentProjectsPath === legacyDataProjectsPath) {
+        return standardProjectsPath;
+      }
+
+      return currentProjectsPath;
+    }
+
+    const portableProjectsPath = path.join(portableRoot, 'Projects');
+
+    if (!currentProjectsPath) {
+      return portableProjectsPath;
+    }
+
+    if (currentProjectsPath === portableProjectsPath) {
+      return portableProjectsPath;
+    }
+
+    const legacyPortableDefault = this.getPlatformDefaultProjectsPath();
+    const defaultData = this.getDefaults();
+    const legacyTestDefault = path.join(defaultData.dataPath, 'Projects');
+
+    if (currentProjectsPath === legacyPortableDefault || currentProjectsPath === legacyTestDefault) {
+      return portableProjectsPath;
+    }
+
+    return currentProjectsPath;
   }
 
   getDefaults() {
     let dataPath;
     let defaultProjectsPath;
+    const portableRoot = getPortableRoot(app);
+    const portableDataPath = portableRoot ? getDataPath(app) : null;
 
     // Accept both env var (set by test runner) and CLI arg (set by main.js from --playwright-e2e)
-    const isTestEnv = process.env.PLAYWRIGHT_TEST === 'true'
-      || process.argv.includes('--playwright-e2e')
-      || process.env.NODE_ENV === 'test'
-      || process.env.VITEST === 'true';
+    const isTestEnv = this.isTestEnvironment();
 
-    if (isTestEnv) {
+    if (portableDataPath) {
+      dataPath = portableDataPath;
+      defaultProjectsPath = path.join(portableRoot, 'Projects');
+    } else if (isTestEnv) {
       const baseDir = process.env.TEST_USER_DATA_DIR || os.tmpdir();
       dataPath = path.join(baseDir, '.devbox-pro-test');
       defaultProjectsPath = path.join(dataPath, 'Projects');
     } else {
-      dataPath = path.join(os.homedir(), '.devbox-pro');
-      defaultProjectsPath = process.platform === 'win32'
-        ? 'C:/Projects'
-        : path.join(os.homedir(), 'Projects');
+      dataPath = getDataPath(app);
+      defaultProjectsPath = this.getPlatformDefaultProjectsPath();
     }
 
     return {
@@ -202,35 +316,59 @@ class ConfigStore {
 
   // Path helpers
   getDataPath() {
-    return this.get('dataPath');
+    if (!this.resolvedDataPath) {
+      this.resolvedDataPath = this.getDefaults().dataPath;
+    }
+
+    return this.resolvedDataPath;
+  }
+
+  getResourcesPath() {
+    return getResourcesPath(app);
+  }
+
+  getAppCachePath(...segments) {
+    return getAppCachePath(app, ...segments);
+  }
+
+  getBinaryConfigPath() {
+    return this.getAppCachePath('binaries-config.json');
+  }
+
+  getCliPath() {
+    return path.join(this.getDataPath(), 'cli');
+  }
+
+  getSshPath() {
+    return path.join(this.getDataPath(), 'ssh');
   }
 
   getLogsPath() {
-    return path.join(this.get('dataPath'), 'logs');
+    return path.join(this.getDataPath(), 'logs');
   }
 
   getMysqlDataPath() {
-    return path.join(this.get('dataPath'), 'mysql', 'data');
+    return path.join(this.getDataPath(), 'mysql', 'data');
   }
 
   getRedisDataPath() {
-    return path.join(this.get('dataPath'), 'redis');
+    return path.join(this.getDataPath(), 'redis');
   }
 
   getPostgresqlDataPath(version = '17') {
-    return path.join(this.get('dataPath'), 'postgresql', version, 'data');
+    return path.join(this.getDataPath(), 'postgresql', version, 'data');
   }
 
   getMongodbDataPath(version = '8.0') {
-    return path.join(this.get('dataPath'), 'mongodb', version, 'data');
+    return path.join(this.getDataPath(), 'mongodb', version, 'data');
   }
 
   getMinioDataPath() {
-    return path.join(this.get('dataPath'), 'minio', 'data');
+    return path.join(this.getDataPath(), 'minio', 'data');
   }
 
   getSslPath() {
-    return path.join(this.get('dataPath'), 'ssl');
+    return path.join(this.getDataPath(), 'ssl');
   }
 }
 
