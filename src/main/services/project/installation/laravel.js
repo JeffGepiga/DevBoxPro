@@ -165,7 +165,6 @@ module.exports = {
           await new Promise((resolve) => {
             const npmProc = spawn(npmCmd, ['install'], {
               cwd: projectPath,
-              shell: true,
               stdio: ['ignore', 'pipe', 'pipe'],
               windowsHide: true,
               env: {

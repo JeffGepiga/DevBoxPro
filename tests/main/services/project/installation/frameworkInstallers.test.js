@@ -124,6 +124,8 @@ describe('project/installation/framework installers', () => {
     expect(spawnMock).toHaveBeenCalledTimes(2);
     expect(spawnMock.mock.calls[0][1]).toEqual(['artisan', 'key:generate']);
     expect(spawnMock.mock.calls[1][1]).toEqual(['install']);
+    expect(spawnMock.mock.calls[1][2]).toEqual(expect.objectContaining({ cwd: projectPath, windowsHide: true }));
+    expect(spawnMock.mock.calls[1][2]).not.toHaveProperty('shell');
     expect(ctx.managers.log.systemError).not.toHaveBeenCalled();
   });
 

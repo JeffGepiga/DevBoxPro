@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs-extra');
-const { spawn } = require('child_process');
+const childProcess = require('child_process');
 
 module.exports = {
   async initialize() {
@@ -40,10 +40,9 @@ module.exports = {
   async checkSystemGit() {
     return new Promise((resolve) => {
       const isWindows = process.platform === 'win32';
-      const command = isWindows ? 'where' : 'which';
+      const command = isWindows ? 'where.exe' : 'which';
 
-      const proc = spawn(command, ['git'], {
-        shell: true,
+      const proc = childProcess.spawn(command, ['git'], {
         windowsHide: true,
       });
 
@@ -92,7 +91,7 @@ module.exports = {
     }
 
     return new Promise((resolve) => {
-      const proc = spawn(this.gitPath, ['--version'], {
+      const proc = childProcess.spawn(this.gitPath, ['--version'], {
         windowsHide: true,
       });
 

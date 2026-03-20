@@ -162,10 +162,9 @@ function commandExists(command) {
     const isWindows = process.platform === 'win32';
 
     if (isWindows) {
-        // On Windows, use 'where' with shell to properly search PATH
-        const result = spawnSync('where', [command], {
+        const result = spawnSync('where.exe', [command], {
             windowsHide: true,
-            shell: true, // Required for 'where' to work properly
+            shell: false,
             stdio: ['ignore', 'pipe', 'pipe'],
             timeout: 5000,
         });

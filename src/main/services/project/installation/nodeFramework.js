@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs-extra');
-const { spawn } = require('child_process');
+const childProcess = require('child_process');
 
 module.exports = {
   async installNodeFramework(project, mainWindow = null) {
@@ -45,9 +45,8 @@ module.exports = {
 
     const runCmd = (command, args, cwd, label) => new Promise((resolve, reject) => {
       onOutput(`$ ${label || [command, ...args].join(' ')}`, 'command');
-      const proc = spawn(command, args, {
+      const proc = childProcess.spawn(command, args, {
         cwd,
-        shell: true,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
         env: envWithNode,

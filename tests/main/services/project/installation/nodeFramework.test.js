@@ -49,7 +49,8 @@ describe('project/installation/nodeFramework', () => {
     expect(spawnSpy.mock.calls[0][0]).toContain('nodejs');
     expect(spawnSpy.mock.calls[0][0]).toContain('20');
     expect(spawnSpy.mock.calls[0][1]).toEqual(['init', '-y']);
-    expect(spawnSpy.mock.calls[0][2]).toEqual(expect.objectContaining({ cwd: '/project', shell: true, windowsHide: true }));
+    expect(spawnSpy.mock.calls[0][2]).toEqual(expect.objectContaining({ cwd: '/project', windowsHide: true }));
+    expect(spawnSpy.mock.calls[0][2]).not.toHaveProperty('shell');
     expect(fs.writeFile.mock.calls[0][0]).toContain('project');
     expect(fs.writeFile.mock.calls[0][0]).toContain('index.js');
     expect(fs.writeFile.mock.calls[0][1]).toContain('Hello from Node.js!');
@@ -73,11 +74,13 @@ describe('project/installation/nodeFramework', () => {
     expect(spawnSpy.mock.calls[0][0]).toContain('nodejs');
     expect(spawnSpy.mock.calls[0][0]).toContain('20');
     expect(spawnSpy.mock.calls[0][1]).toEqual(['-y', 'fastify-cli', 'generate', '.', '--lang=js']);
-    expect(spawnSpy.mock.calls[0][2]).toEqual(expect.objectContaining({ cwd: '/project', shell: true, windowsHide: true }));
+    expect(spawnSpy.mock.calls[0][2]).toEqual(expect.objectContaining({ cwd: '/project', windowsHide: true }));
+    expect(spawnSpy.mock.calls[0][2]).not.toHaveProperty('shell');
     expect(spawnSpy.mock.calls[1][0]).toContain('nodejs');
     expect(spawnSpy.mock.calls[1][0]).toContain('20');
     expect(spawnSpy.mock.calls[1][1]).toEqual(['install']);
-    expect(spawnSpy.mock.calls[1][2]).toEqual(expect.objectContaining({ cwd: '/project', shell: true, windowsHide: true }));
+    expect(spawnSpy.mock.calls[1][2]).toEqual(expect.objectContaining({ cwd: '/project', windowsHide: true }));
+    expect(spawnSpy.mock.calls[1][2]).not.toHaveProperty('shell');
     expect(fs.writeFile).not.toHaveBeenCalled();
     expect(ctx.managers.log.systemError).not.toHaveBeenCalled();
   });

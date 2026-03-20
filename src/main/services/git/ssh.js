@@ -1,9 +1,10 @@
 const path = require('path');
 const fs = require('fs-extra');
+const childProcess = require('child_process');
 
 module.exports = {
   async generateSshKey() {
-    const { commandExists } = require('../utils/SpawnUtils');
+    const { commandExists } = require('../../utils/SpawnUtils');
 
     const keyPath = path.join(this.sshKeyPath, 'devboxpro_rsa');
     const publicKeyPath = `${keyPath}.pub`;
@@ -61,19 +62,13 @@ module.exports = {
       };
     }
 
-    const keyPathEscaped = keyPath.replace(/\\/g, '\\\\');
-    const command = isWindows
-      ? `"${sshKeygenPath}" -t ed25519 -f "${keyPathEscaped}" -N "" -C "devboxpro-generated-key" -q`
-      : `"${sshKeygenPath}" -t ed25519 -f "${keyPath}" -N "" -C "devboxpro-generated-key" -q`;
+    const args = ['-t', 'ed25519', '-f', keyPath, '-N', '', '-C', 'devboxpro-generated-key', '-q'];
 
     try {
-      const { spawn } = require('child_process');
-
       return new Promise((resolve) => {
         let resolved = false;
-        const proc = spawn(command, [], {
+        const proc = childProcess.spawn(sshKeygenPath, args, {
           windowsHide: true,
-          shell: true,
           stdio: ['ignore', 'pipe', 'pipe'],
         });
 
