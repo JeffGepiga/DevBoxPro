@@ -120,4 +120,34 @@ describe('Services', () => {
         expect(mockDevbox.services.stopAll).not.toHaveBeenCalled();
         expect(mockDevbox.services.stop).toHaveBeenCalledWith('mailpit', null);
     });
+
+    it('marks database versions used by running projects as running', async () => {
+        mockDevbox.binaries.getStatus.mockResolvedValue({
+            mysql: { '8.0': { installed: true } },
+        });
+        mockDevbox.binaries.getServiceConfig.mockResolvedValue({
+            versions: { mysql: ['8.0'] },
+            defaultPorts: { mysql: 3306 },
+            portOffsets: { mysql: { '8.0': 1 } },
+        });
+        mockAppContext.projects = [{
+            id: 'proj-1',
+            isRunning: true,
+            webServer: 'nginx',
+            services: { mysql: true, mysqlVersion: '8.0' },
+        }];
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <Services />
+            </MemoryRouter>
+        );
+
+        await waitFor(() => {
+            expect(screen.getByText('v8.0')).toBeInTheDocument();
+            expect(screen.getByText('3307')).toBeInTheDocument();
+        });
+
+        expect(screen.getByRole('button', { name: /^Stop$/i })).toBeInTheDocument();
+    });
 });

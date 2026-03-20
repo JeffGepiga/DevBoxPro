@@ -26,6 +26,12 @@ describe('UpdateManager', () => {
                 systemInfo: vi.fn(),
                 systemError: vi.fn(),
             },
+            project: {
+                stopAllProjects: vi.fn(async () => {}),
+            },
+            service: {
+                stopAllServices: vi.fn(async () => {}),
+            },
         };
         um = new UpdateManager(mockManagers);
     });
@@ -108,15 +114,17 @@ describe('UpdateManager', () => {
     // ═══════════════════════════════════════════════════════════════════
 
     describe('quitAndInstall()', () => {
-        it('does nothing when update not downloaded', () => {
+        it('does nothing when update not downloaded', async () => {
             um.updateDownloaded = false;
-            um.quitAndInstall();
+            await um.quitAndInstall();
             expect(mockAutoUpdater.quitAndInstall).not.toHaveBeenCalled();
         });
 
-        it('calls autoUpdater when update downloaded', () => {
+        it('stops services before calling autoUpdater when update downloaded', async () => {
             um.updateDownloaded = true;
-            um.quitAndInstall();
+            await um.quitAndInstall();
+            expect(mockManagers.project.stopAllProjects).toHaveBeenCalled();
+            expect(mockManagers.service.stopAllServices).toHaveBeenCalled();
             expect(mockAutoUpdater.quitAndInstall).toHaveBeenCalled();
         });
     });

@@ -23,7 +23,7 @@ import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
 
 function Databases() {
-  const { databaseOperations, removeDatabaseOperation, cancelDatabaseOperation } = useApp();
+  const { databaseOperations, removeDatabaseOperation, cancelDatabaseOperation, projects } = useApp();
   const { showAlert, showConfirm } = useModal();
   const [databases, setDatabases] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +35,10 @@ function Databases() {
   const [dbInfo, setDbInfo] = useState(null);
   const [binariesStatus, setBinariesStatus] = useState(null);
   const [servicesStatus, setServicesStatus] = useState({});
+  const [serviceConfig, setServiceConfig] = useState({
+    defaultPorts: {},
+    portOffsets: {},
+  });
   const [startingVersion, setStartingVersion] = useState(null); // 'mysql-8.4' or null
   const [stoppingVersion, setStoppingVersion] = useState(null);
   const [phpMyAdminLoading, setPhpMyAdminLoading] = useState(false);
@@ -42,6 +46,68 @@ function Databases() {
   const [showImportModal, setShowImportModal] = useState(null); // { dbName, filePath } or null
   const loadingDatabasesRef = useRef(false); // prevents concurrent loadDatabases calls
   const wasRunningRef = useRef(false);        // tracks previous running state to detect transitions
+  const defaultDatabaseVersions = {
+    mysql: '8.4',
+    mariadb: '11.4',
+    postgresql: '17',
+    mongodb: '8.0',
+  };
+
+  const runningProjectDatabaseVersions = React.useMemo(() => {
+    const versions = {
+      mysql: new Set(),
+      mariadb: new Set(),
+      postgresql: new Set(),
+      mongodb: new Set(),
+    };
+
+    for (const project of projects || []) {
+      if (!project?.isRunning) {
+        continue;
+      }
+
+      if (project.services?.mysql) {
+        versions.mysql.add(project.services.mysqlVersion || defaultDatabaseVersions.mysql);
+      }
+      if (project.services?.mariadb) {
+        versions.mariadb.add(project.services.mariadbVersion || defaultDatabaseVersions.mariadb);
+      }
+      if (project.services?.postgresql) {
+        versions.postgresql.add(project.services.postgresqlVersion || defaultDatabaseVersions.postgresql);
+      }
+      if (project.services?.mongodb) {
+        versions.mongodb.add(project.services.mongodbVersion || defaultDatabaseVersions.mongodb);
+      }
+    }
+
+    return versions;
+  }, [projects]);
+
+  const isDatabaseVersionUsedByRunningProject = React.useCallback((type, version) => {
+    return runningProjectDatabaseVersions[type]?.has(version) || false;
+  }, [runningProjectDatabaseVersions]);
+
+  const isDatabaseVersionRunning = React.useCallback((type, version) => {
+    return Boolean(servicesStatus[type]?.runningVersions?.[version])
+      || runningProjectDatabaseVersions[type]?.has(version);
+  }, [runningProjectDatabaseVersions, servicesStatus]);
+
+  const syncSelectedDatabaseInfo = React.useCallback(async (type, version) => {
+    await window.devbox?.database.setActiveDatabaseType(type, version);
+    const info = await window.devbox?.database.getDatabaseInfo();
+    setDbInfo(info || null);
+    return info;
+  }, []);
+
+  const getConfiguredServicePort = React.useCallback((type, version) => {
+    const basePort = serviceConfig.defaultPorts?.[type];
+    if (!basePort) {
+      return null;
+    }
+
+    const offset = serviceConfig.portOffsets?.[type]?.[version] ?? 0;
+    return basePort + offset;
+  }, [serviceConfig.defaultPorts, serviceConfig.portOffsets]);
 
   useEffect(() => {
     loadInitialData();
@@ -57,8 +123,7 @@ function Databases() {
       wasRunningRef.current = false;
       return;
     }
-    const serviceStatus = servicesStatus[selectedDatabase.type];
-    const isRunning = !!serviceStatus?.runningVersions?.[selectedDatabase.version];
+    const isRunning = isDatabaseVersionRunning(selectedDatabase.type, selectedDatabase.version);
     const wasRunning = wasRunningRef.current;
     wasRunningRef.current = isRunning;
 
@@ -67,7 +132,7 @@ function Databases() {
       const timeout = setTimeout(() => { loadDatabases(); }, 1000);
       return () => clearTimeout(timeout);
     }
-  }, [servicesStatus]);
+  }, [isDatabaseVersionRunning, selectedDatabase, servicesStatus]);
 
   const loadServicesStatus = async () => {
     try {
@@ -81,14 +146,17 @@ function Databases() {
   const loadInitialData = async () => {
     setLoading(true);
     try {
-      const [status, info, services] = await Promise.all([
+      const [status, services, config] = await Promise.all([
         window.devbox?.binaries.getStatus(),
-        window.devbox?.database.getDatabaseInfo(),
         window.devbox?.services.getStatus(),
+        window.devbox?.binaries.getServiceConfig(),
       ]);
       setBinariesStatus(status);
-      setDbInfo(info);
       setServicesStatus(services || {});
+      setServiceConfig({
+        defaultPorts: config?.defaultPorts || {},
+        portOffsets: config?.portOffsets || {},
+      });
 
       // Auto-select first running database, or first installed one
       // Get first running MySQL version from runningVersions
@@ -137,9 +205,11 @@ function Databases() {
       // Databases will be loaded when user explicitly clicks on a version or starts one
       if (autoSelectedType && autoSelectedVersion) {
         setSelectedDatabase({ type: autoSelectedType, version: autoSelectedVersion });
-        await window.devbox?.database.setActiveDatabaseType(autoSelectedType, autoSelectedVersion);
+        await syncSelectedDatabaseInfo(autoSelectedType, autoSelectedVersion);
         // Don't auto-query databases on startup - wait for user interaction
         // This avoids credential mismatch errors on startup
+      } else {
+        setDbInfo(null);
       }
     } catch (error) {
       // Error loading initial data
@@ -155,8 +225,7 @@ function Databases() {
     }
 
     // Check if the selected database version is running (using runningVersions)
-    const serviceStatus = servicesStatus[selectedDatabase.type];
-    const isRunning = !!serviceStatus?.runningVersions?.[selectedDatabase.version];
+    const isRunning = isDatabaseVersionRunning(selectedDatabase.type, selectedDatabase.version);
 
     if (!isRunning) {
       setDatabases([]);
@@ -186,12 +255,11 @@ function Databases() {
     setSelectedDatabase({ type, version });
     // Update active database type AND version for queries
     try {
-      await window.devbox?.database.setActiveDatabaseType(type, version);
+      await syncSelectedDatabaseInfo(type, version);
       setServiceError(null);
       // Now load databases for this specific version
       // Check if running first
-      const serviceStatus = servicesStatus[type];
-      const isRunning = !!serviceStatus?.runningVersions?.[version];
+      const isRunning = isDatabaseVersionRunning(type, version);
       if (isRunning) {
         await loadDatabases();
       }
@@ -210,7 +278,7 @@ function Databases() {
       await loadServicesStatus();
       // Auto-select this database after starting
       setSelectedDatabase({ type, version });
-      await window.devbox?.database.setActiveDatabaseType(type, version);
+      await syncSelectedDatabaseInfo(type, version);
       // Load databases for the newly started version
       await loadDatabases();
     } catch (error) {
@@ -373,7 +441,15 @@ function Databases() {
 
   // Check if selected database version is running (using runningVersions)
   const isSelectedRunning = selectedDatabase &&
-    !!servicesStatus[selectedDatabase.type]?.runningVersions?.[selectedDatabase.version];
+    isDatabaseVersionRunning(selectedDatabase.type, selectedDatabase.version);
+  const selectedVersionInfo = selectedDatabase
+    ? servicesStatus[selectedDatabase.type]?.runningVersions?.[selectedDatabase.version]
+    : null;
+  const selectedDisplayPort = selectedDatabase
+    ? getConfiguredServicePort(selectedDatabase.type, selectedDatabase.version)
+      || selectedVersionInfo?.port
+      || dbInfo?.port
+    : dbInfo?.port;
 
   const selectedLabel = selectedDatabase
     ? `${{ mysql: 'MySQL', mariadb: 'MariaDB', postgresql: 'PostgreSQL', mongodb: 'MongoDB' }[selectedDatabase.type] || selectedDatabase.type} ${selectedDatabase.version}`
@@ -515,14 +591,17 @@ function Databases() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {installedDatabases.map((db) => {
               const serviceStatus = servicesStatus[db.type];
-              // Check if this specific version is running using runningVersions
               const versionInfo = serviceStatus?.runningVersions?.[db.version];
-              const isRunning = !!versionInfo;
+              const isDirectlyRunning = Boolean(versionInfo);
+              const isUsedByRunningProject = isDatabaseVersionUsedByRunningProject(db.type, db.version);
+              const isRunning = isDatabaseVersionRunning(db.type, db.version);
               const isSelected = selectedDatabase?.type === db.type && selectedDatabase?.version === db.version;
               const versionKey = `${db.type}-${db.version}`;
               const isStarting = startingVersion === versionKey;
               const isStopping = stoppingVersion === versionKey;
-              const port = isRunning ? versionInfo?.port : null;
+              const port = getConfiguredServicePort(db.type, db.version)
+                || versionInfo?.port
+                || (isSelected && dbInfo?.type === db.type && dbInfo?.version === db.version ? dbInfo.port : null);
 
               return (
                 <div
@@ -556,23 +635,31 @@ function Databases() {
                     {isRunning ? (
                       <>
                         <span className="text-xs text-gray-500 dark:text-gray-400">
-                          Port: {port}
+                          {isUsedByRunningProject && !isDirectlyRunning
+                            ? `Port: ${port || 'Unknown'} · In use`
+                            : port ? `Port: ${port}` : 'Running'}
                         </span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleStopVersion(db.type, db.version);
-                          }}
-                          disabled={isStopping}
-                          className="btn-ghost btn-sm text-red-500 hover:text-red-600"
-                        >
-                          {isStopping ? (
-                            <RefreshCw className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Square className="w-3 h-3" />
-                          )}
-                          <span className="text-xs">Stop</span>
-                        </button>
+                        {isUsedByRunningProject ? (
+                          <span className="text-xs text-amber-600 dark:text-amber-400">
+                            Currently Used
+                          </span>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStopVersion(db.type, db.version);
+                            }}
+                            disabled={isStopping}
+                            className="btn-ghost btn-sm text-red-500 hover:text-red-600"
+                          >
+                            {isStopping ? (
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Square className="w-3 h-3" />
+                            )}
+                            <span className="text-xs">Stop</span>
+                          </button>
+                        )}
                       </>
                     ) : (
                       <>
@@ -607,7 +694,7 @@ function Databases() {
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <div className="flex items-center gap-6 text-sm text-gray-600 dark:text-gray-400">
                 <span><strong>Host:</strong> {dbInfo.host}</span>
-                <span><strong>Port:</strong> {dbInfo.port}</span>
+                <span><strong>Port:</strong> {selectedDisplayPort}</span>
                 <span><strong>User:</strong> {dbInfo.user}</span>
                 <span><strong>Password:</strong> {dbInfo.password ? '••••••' : '(empty)'}</span>
               </div>

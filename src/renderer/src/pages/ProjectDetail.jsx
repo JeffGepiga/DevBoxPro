@@ -558,6 +558,10 @@ function OverviewTab({ project, processes, refreshProjects }) {
   const [localAccessPorts, setLocalAccessPorts] = useState({ httpPort: 80, sslPort: 443 });
   const [webServerPorts, setWebServerPorts] = useState({ httpPort: 80, sslPort: 443 });
   const [phpMyAdminLoading, setPhpMyAdminLoading] = useState(null);
+  const [serviceConfig, setServiceConfig] = useState({
+    defaultPorts: {},
+    portOffsets: {},
+  });
   const [versionOptions, setVersionOptions] = useState({
     mysql: [],
     mariadb: [],
@@ -574,8 +578,15 @@ function OverviewTab({ project, processes, refreshProjects }) {
   // Load available PHP versions, binaries status, and service config
   const loadBinariesData = useCallback(async () => {
     try {
-      const status = await window.devbox?.binaries.getStatus();
+      const [status, config] = await Promise.all([
+        window.devbox?.binaries.getStatus(),
+        window.devbox?.binaries.getServiceConfig(),
+      ]);
       setBinariesStatus(status || {});
+      setServiceConfig({
+        defaultPorts: config?.defaultPorts || {},
+        portOffsets: config?.portOffsets || {},
+      });
 
       // Get installed PHP versions from binaries status (real-time disk check)
       const getInstalledVersions = (service) => {
@@ -855,20 +866,10 @@ function OverviewTab({ project, processes, refreshProjects }) {
     return Object.values(serviceStatus).some(v => v?.installed === true);
   };
 
-  // Port config mirrored from shared/serviceConfig.js
-  const SERVICE_DEFAULT_PORTS = { mysql: 3306, mariadb: 3310, redis: 6379, postgresql: 5432, mongodb: 27017, memcached: 11211 };
-  const SERVICE_VERSION_PORT_OFFSETS = {
-    mysql: { '8.4': 0, '8.0': 1, '5.7': 2 },
-    mariadb: { '11.4': 0, '10.11': 1, '10.6': 2 },
-    redis: { '7.4': 0, '7.2': 1, '6.2': 2 },
-    postgresql: { '17': 0, '16': 1, '15': 2, '14': 3 },
-    mongodb: { '8.0': 0, '7.0': 1, '6.0': 2 },
-    memcached: { '1.6': 0, '1.5': 1 },
-  };
   const getServicePort = (serviceId, version) => {
-    const base = SERVICE_DEFAULT_PORTS[serviceId];
+    const base = serviceConfig.defaultPorts?.[serviceId];
     if (!base) return null;
-    const offset = SERVICE_VERSION_PORT_OFFSETS[serviceId]?.[version] ?? 0;
+    const offset = serviceConfig.portOffsets?.[serviceId]?.[version] ?? 0;
     return base + offset;
   };
 

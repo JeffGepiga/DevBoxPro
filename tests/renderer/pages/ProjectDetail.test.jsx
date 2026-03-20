@@ -39,7 +39,11 @@ const mockDevbox = {
         getPhpIni: vi.fn().mockResolvedValue(''),
     },
     binaries: {
-        getStatus: vi.fn().mockResolvedValue({ php: { '8.3': { installed: true } } }),
+        getStatus: vi.fn().mockResolvedValue({ php: { '8.3': { installed: true } }, mysql: { '8.4': { installed: true }, '8.0': { installed: true } } }),
+        getServiceConfig: vi.fn().mockResolvedValue({
+            defaultPorts: { mysql: 3306 },
+            portOffsets: { mysql: { '8.4': 0, '8.0': 1 } },
+        }),
         onProgress: vi.fn(() => vi.fn()),
     },
     database: {
@@ -66,6 +70,11 @@ const mockDevbox = {
 beforeEach(() => {
     Object.defineProperty(window, 'devbox', { value: mockDevbox, writable: true, configurable: true });
     vi.clearAllMocks();
+    mockDevbox.binaries.getStatus.mockResolvedValue({ php: { '8.3': { installed: true } }, mysql: { '8.4': { installed: true }, '8.0': { installed: true } } });
+    mockDevbox.binaries.getServiceConfig.mockResolvedValue({
+        defaultPorts: { mysql: 3306 },
+        portOffsets: { mysql: { '8.4': 0, '8.0': 1 } },
+    });
 });
 
 vi.mock('@/context/AppContext', () => ({
@@ -142,6 +151,18 @@ describe('ProjectDetail', () => {
             expect(mockDevbox.services.getProjectLocalAccessPorts).toHaveBeenCalledWith('proj-1');
             expect(mockDevbox.services.getProjectNetworkPort).toHaveBeenCalledWith('proj-1');
             MOCK_PROJECT.networkAccess = false;
+        });
+
+        it('derives service ports from shared service config', async () => {
+            MOCK_PROJECT.services.mysqlVersion = '8.0';
+
+            renderProjectDetail();
+
+            await waitFor(() => {
+                expect(screen.getByText(':3307')).toBeInTheDocument();
+            });
+
+            MOCK_PROJECT.services.mysqlVersion = '8.4';
         });
     });
 

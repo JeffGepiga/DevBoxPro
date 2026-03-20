@@ -113,7 +113,7 @@ const WIZARD_STEPS = [
 
 function CreateProject() {
   const navigate = useNavigate();
-  const { projects, settings, refreshProjects } = useApp();
+  const { projects, settings, refreshProjects, createProject } = useApp();
   const { showAlert } = useModal();
   const [currentStep, setCurrentStep] = useState(0);
   const [isCreating, setIsCreating] = useState(false);

@@ -151,6 +151,48 @@ function Services() {
     return required;
   }, [runningProjects]);
 
+  const runningProjectVersions = useMemo(() => {
+    const versions = {};
+
+    for (const project of runningProjects) {
+      const webServer = project.webServer || 'nginx';
+      const webServerVersion = project.webServerVersion || serviceConfig.versions[webServer]?.[0];
+      if (webServerVersion) {
+        if (!versions[webServer]) {
+          versions[webServer] = new Set();
+        }
+        versions[webServer].add(webServerVersion);
+      }
+
+      const versionedServices = [
+        ['mysql', project.services?.mysql, project.services?.mysqlVersion],
+        ['mariadb', project.services?.mariadb, project.services?.mariadbVersion],
+        ['redis', project.services?.redis, project.services?.redisVersion],
+        ['postgresql', project.services?.postgresql, project.services?.postgresqlVersion],
+        ['mongodb', project.services?.mongodb, project.services?.mongodbVersion],
+        ['memcached', project.services?.memcached, project.services?.memcachedVersion],
+      ];
+
+      for (const [serviceName, enabled, projectVersion] of versionedServices) {
+        if (!enabled) {
+          continue;
+        }
+
+        const version = projectVersion || serviceConfig.versions[serviceName]?.[0];
+        if (!version) {
+          continue;
+        }
+
+        if (!versions[serviceName]) {
+          versions[serviceName] = new Set();
+        }
+        versions[serviceName].add(version);
+      }
+    }
+
+    return versions;
+  }, [runningProjects, serviceConfig.versions]);
+
   // Service info with icons (use config for versions/ports)
   const serviceInfo = useMemo(() => ({
     mysql: {
@@ -296,7 +338,8 @@ function Services() {
         } else {
           // Add a card for each installed version
           for (const version of installedVersions) {
-            const isRunning = runningVersions[name]?.includes(version);
+            const isRunning = runningVersions[name]?.includes(version)
+              || runningProjectVersions[name]?.has(version);
             cards.push({
               type: 'version',
               serviceName: name,
@@ -334,7 +377,7 @@ function Services() {
     }
 
     return cards;
-  }, [services, runningProjects, requiredServices, getInstalledVersions, runningVersions, getServicePort, binariesStatus]);
+  }, [services, runningProjects, requiredServices, getInstalledVersions, runningVersions, runningProjectVersions, getServicePort, binariesStatus]);
 
   const handleStartAll = async () => {
     // Mark all services as loading
