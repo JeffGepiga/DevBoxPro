@@ -157,6 +157,72 @@ describe('project/lifecycle', () => {
     expect(configStore.set).toHaveBeenCalledWith('projects', [expect.objectContaining({ webServerVersion: '1.28' })]);
   });
 
+  it('reloads nginx when a rapid restart moves PHP-CGI to a fallback port', async () => {
+    const project = {
+      id: 'proj-rapid',
+      name: 'Rapid Restart',
+      type: 'php',
+      phpVersion: '8.3',
+      webServer: 'nginx',
+      webServerVersion: '1.28',
+      domain: 'rapid.test',
+      path: '/projects/rapid',
+      services: {},
+      supervisor: { processes: [] },
+      environment: {},
+    };
+
+    const configStore = makeConfigStore([project]);
+    const reloadNginx = vi.fn().mockResolvedValue(undefined);
+    const ctx = makeContext({
+      configStore,
+      getProject: vi.fn(() => project),
+      validateProjectBinaries: vi.fn().mockResolvedValue([]),
+      getPhpFpmPort: vi.fn(() => 9100),
+      createNginxVhost: vi.fn().mockResolvedValue(undefined),
+      regenerateAllNginxVhosts: vi.fn().mockResolvedValue(undefined),
+      syncProjectLocalProxy: vi.fn().mockResolvedValue(false),
+      startProjectServices: vi.fn().mockResolvedValue({ success: true, errors: [], criticalFailures: [] }),
+      startPhpCgi: vi.fn().mockResolvedValue({ process: { pid: 4321 }, port: 9101 }),
+      createVirtualHost: vi.fn().mockResolvedValue(undefined),
+      updateHostsFile: vi.fn().mockResolvedValue(undefined),
+      managers: {
+        service: {
+          serviceStatus: new Map([['nginx', { status: 'running', version: '1.28' }]]),
+          serviceConfigs: {
+            nginx: { versioned: true },
+            apache: { versioned: true },
+            mysql: { versioned: true },
+            redis: { versioned: true },
+          },
+          getServicePorts: vi.fn(() => ({ httpPort: 80, sslPort: 443 })),
+          isVersionRunning: vi.fn((serviceName, version) => serviceName === 'nginx' && version === '1.28'),
+          startService: vi.fn().mockResolvedValue({ success: true }),
+          restartService: vi.fn().mockResolvedValue({ success: true }),
+          stopService: vi.fn().mockResolvedValue(undefined),
+          reloadNginx,
+          standardPortOwner: 'nginx',
+          standardPortOwnerVersion: '1.28',
+        },
+        supervisor: {
+          startProcess: vi.fn().mockResolvedValue(undefined),
+        },
+        log: {
+          project: vi.fn(),
+          systemWarn: vi.fn(),
+          systemError: vi.fn(),
+          systemInfo: vi.fn(),
+        },
+      },
+    });
+
+    const result = await ctx.startProject(project.id);
+
+    expect(result.success).toBe(true);
+    expect(ctx.createVirtualHost).toHaveBeenCalledWith(project, 9101, '1.28');
+    expect(reloadNginx).toHaveBeenCalledTimes(2);
+  });
+
   it('stops all running projects and reports the aggregate result', async () => {
     const ctx = makeContext({
       runningProjects: new Map([

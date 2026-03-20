@@ -196,6 +196,14 @@ module.exports = {
 
         if (actualPhpFpmPort !== phpFpmPort) {
           await this.createVirtualHost(project, actualPhpFpmPort, targetVersion);
+          if (webServerAlreadyRunning) {
+            this.managers.log?.project(id, `Reloading ${webServer} after PHP-CGI moved to port ${actualPhpFpmPort}`);
+            try {
+              await this.managers.service?.reloadNginx(targetVersion);
+            } catch (error) {
+              this.managers.log?.systemWarn(`Could not reload ${webServer} after PHP-CGI port update`, { error: error.message });
+            }
+          }
         }
       }
 
@@ -382,7 +390,9 @@ module.exports = {
       }
     }
 
-    this.managers.log?.systemWarn(`PHP-CGI may not have started properly on port ${actualPort}`);
+    if (!isListening) {
+      this.managers.log?.systemWarn(`PHP-CGI may not have started properly on port ${actualPort}`);
+    }
 
     return { process: phpCgiProcess, port: actualPort };
   },
