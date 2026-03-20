@@ -17,6 +17,7 @@ module.exports = {
   files: [
     'src/main/**/*',
     'src/shared/**/*',
+    'config/binaries.json',
     'config/compatibility.json',
     '!src/main/**/*.map',
     {

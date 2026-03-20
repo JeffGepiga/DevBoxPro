@@ -14,8 +14,34 @@ const binaryPlatformServices = require('./binary/platformServices');
 const binaryProgress = require('./binary/progress');
 const binaryRuntimeTools = require('./binary/runtimeTools');
 const binaryServiceDownloads = require('./binary/serviceDownloads');
-const bundledBinaryConfig = require('../../../config/binaries.json');
 const { SERVICE_VERSIONS, VERSION_PORT_OFFSETS, DEFAULT_PORTS } = require('../../shared/serviceConfig');
+
+function getBundledBinaryConfigPath() {
+  const candidateRoots = [];
+  const appPath = typeof app.getAppPath === 'function' ? app.getAppPath() : '';
+
+  if (appPath) {
+    candidateRoots.push(appPath);
+  }
+
+  candidateRoots.push(path.resolve(__dirname, '../../..'));
+
+  for (const rootPath of candidateRoots) {
+    const configPath = path.join(rootPath, 'config', 'binaries.json');
+    if (fs.existsSync(configPath)) {
+      return configPath;
+    }
+  }
+
+  return path.join(candidateRoots[0] || process.cwd(), 'config', 'binaries.json');
+}
+
+function loadBundledBinaryConfigSync() {
+  const configPath = getBundledBinaryConfigPath();
+  return fs.readJsonSync(configPath);
+}
+
+const bundledBinaryConfig = loadBundledBinaryConfigSync();
 
 function cloneConfig(value) {
   return JSON.parse(JSON.stringify(value));
