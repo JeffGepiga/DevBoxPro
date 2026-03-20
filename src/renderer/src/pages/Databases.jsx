@@ -442,6 +442,14 @@ function Databases() {
   // Check if selected database version is running (using runningVersions)
   const isSelectedRunning = selectedDatabase &&
     isDatabaseVersionRunning(selectedDatabase.type, selectedDatabase.version);
+  const selectedVersionInfo = selectedDatabase
+    ? servicesStatus[selectedDatabase.type]?.runningVersions?.[selectedDatabase.version]
+    : null;
+  const selectedDisplayPort = selectedDatabase
+    ? getConfiguredServicePort(selectedDatabase.type, selectedDatabase.version)
+      || selectedVersionInfo?.port
+      || dbInfo?.port
+    : dbInfo?.port;
 
   const selectedLabel = selectedDatabase
     ? `${{ mysql: 'MySQL', mariadb: 'MariaDB', postgresql: 'PostgreSQL', mongodb: 'MongoDB' }[selectedDatabase.type] || selectedDatabase.type} ${selectedDatabase.version}`
@@ -686,7 +694,7 @@ function Databases() {
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <div className="flex items-center gap-6 text-sm text-gray-600 dark:text-gray-400">
                 <span><strong>Host:</strong> {dbInfo.host}</span>
-                <span><strong>Port:</strong> {dbInfo.port}</span>
+                <span><strong>Port:</strong> {selectedDisplayPort}</span>
                 <span><strong>User:</strong> {dbInfo.user}</span>
                 <span><strong>Password:</strong> {dbInfo.password ? '••••••' : '(empty)'}</span>
               </div>

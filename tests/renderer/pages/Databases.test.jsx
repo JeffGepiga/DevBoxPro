@@ -221,6 +221,44 @@ describe('Databases', () => {
         expect(portLabels).toContain('Port: 3307');
     });
 
+    it('uses the selected engine version port in connection info even if dbInfo is stale', async () => {
+        mockDevbox.binaries.getStatus.mockResolvedValue({
+            mysql: { '8.4': { installed: true }, '8.0': { installed: true } },
+            mariadb: {},
+            postgresql: {},
+            mongodb: {},
+        });
+        mockDevbox.services.getStatus.mockResolvedValue({
+            mysql: { runningVersions: { '8.4': { pid: 1234 } } },
+            mariadb: { runningVersions: {} },
+            postgresql: { runningVersions: {} },
+            mongodb: { runningVersions: {} },
+        });
+        mockDevbox.database.getDatabaseInfo.mockResolvedValue({
+            type: 'mysql',
+            version: '8.0',
+            host: '127.0.0.1',
+            port: 3307,
+            user: 'root',
+            password: '',
+        });
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <Databases />
+            </MemoryRouter>
+        );
+
+        await waitFor(() => {
+            expect(screen.getByText('MySQL 8.4')).toBeInTheDocument();
+            expect(screen.getByText('Port: 3306')).toBeInTheDocument();
+        });
+
+        expect(screen.getByText('Host:')).toBeInTheDocument();
+        expect(screen.getByText('Port:')).toBeInTheDocument();
+        expect(screen.getAllByText(/Port:/i).some((node) => node.textContent === 'Port: 3306')).toBe(true);
+    });
+
     it('does not show a stop action for versions used by a running project', async () => {
         mockAppContext.projects = [{
             id: 'proj-1',
