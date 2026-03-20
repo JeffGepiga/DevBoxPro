@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+const { EventEmitter } = require('events');
+
 const fs = require('fs-extra');
 const lifecycle = require('../../../../src/main/services/project/lifecycle');
 
@@ -70,6 +72,7 @@ describe('project/lifecycle', () => {
 
   afterEach(() => {
     delete process.env.PLAYWRIGHT_TEST;
+    vi.useRealTimers();
   });
 
   it('starts only supervisor processes marked for autostart', async () => {
@@ -323,5 +326,48 @@ describe('project/lifecycle', () => {
         { id: 'proj-b', success: true },
       ],
     });
+  });
+
+  it('waits for PHP-CGI to exit before finishing stopProject', async () => {
+    vi.useFakeTimers();
+
+    const killMock = vi.fn((pid, signal, callback) => {
+      callback();
+    });
+    require('module')._cache[require.resolve('tree-kill')] = {
+      id: require.resolve('tree-kill'),
+      filename: require.resolve('tree-kill'),
+      loaded: true,
+      exports: killMock,
+    };
+
+    const phpCgiProcess = new EventEmitter();
+    phpCgiProcess.pid = 4321;
+
+    const project = {
+      id: 'proj-stop',
+      name: 'Stop Wait',
+      supervisor: { processes: [] },
+    };
+
+    const ctx = makeContext({
+      getProject: vi.fn(() => project),
+      runningProjects: new Map([['proj-stop', { phpCgiProcess }]]),
+      stopProjectServices: vi.fn().mockResolvedValue({ scheduled: [] }),
+    });
+
+    let resolved = false;
+    const stopPromise = ctx.stopProject('proj-stop').then(() => {
+      resolved = true;
+    });
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(resolved).toBe(false);
+
+    phpCgiProcess.emit('exit', 0);
+    await stopPromise;
+
+    expect(killMock).toHaveBeenCalledWith(4321, 'SIGTERM', expect.any(Function));
+    expect(ctx.stopProjectServices).toHaveBeenCalledWith(project);
   });
 });

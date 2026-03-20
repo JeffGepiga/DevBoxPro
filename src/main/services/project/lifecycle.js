@@ -402,6 +402,43 @@ module.exports = {
     return { process: phpCgiProcess, port: actualPort };
   },
 
+  async waitForChildProcessExit(proc, timeoutMs = 1500) {
+    if (!proc || typeof proc.once !== 'function') {
+      return;
+    }
+
+    await new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        resolve();
+      };
+
+      const timeout = setTimeout(finish, timeoutMs);
+      proc.once('exit', () => {
+        clearTimeout(timeout);
+        finish();
+      });
+    });
+  },
+
+  async waitForPortRelease(port, timeoutMs = 1500) {
+    if (!port) {
+      return;
+    }
+
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeoutMs) {
+      if (await isPortAvailable(port)) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  },
+
   async stopProject(id) {
     const running = this.runningProjects.get(id);
     if (!running) {
@@ -423,6 +460,9 @@ module.exports = {
             resolve();
           });
         });
+
+        await this.waitForChildProcessExit(running.phpCgiProcess);
+        await this.waitForPortRelease(running.phpFpmPort);
       }
 
       if (project?.supervisor.processes.length > 0) {
