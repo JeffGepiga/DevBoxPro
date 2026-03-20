@@ -282,6 +282,15 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return ports || { httpPort: 80, sslPort: 443 };
   });
 
+  ipcMain.handle('services:getProjectLocalAccessPorts', async (event, projectId) => {
+    const projectData = project.getProject(projectId);
+    if (!projectData) {
+      return { httpPort: 80, sslPort: 443 };
+    }
+
+    return project.getProjectLocalAccessPorts(projectData);
+  });
+
   // Get actual network access port for a specific project
   // This considers per-project port 80 ownership for network access
   ipcMain.handle('services:getProjectNetworkPort', async (event, projectId) => {

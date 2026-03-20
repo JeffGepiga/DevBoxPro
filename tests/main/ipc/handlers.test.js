@@ -62,6 +62,7 @@ describe('IPC Handlers', () => {
                 moveProject: vi.fn(async () => ({ success: true })),
                 switchWebServer: vi.fn(async () => ({ success: true })),
                 createVirtualHost: vi.fn(async () => { }),
+                getProjectLocalAccessPorts: vi.fn(() => ({ httpPort: 80, sslPort: 443 })),
                 getProjectServiceVersions: vi.fn(async () => ({})),
                 updateProjectServiceVersions: vi.fn(async () => ({})),
                 checkCompatibility: vi.fn(async () => ({ warnings: [] })),
@@ -173,7 +174,7 @@ describe('IPC Handlers', () => {
                 'services:getStatus', 'services:start', 'services:stop',
                 'services:restart', 'services:startAll', 'services:stopAll',
                 'services:getResourceUsage', 'services:getWebServerPorts',
-                'services:getProjectNetworkPort', 'services:getRunningVersions',
+                'services:getProjectLocalAccessPorts', 'services:getProjectNetworkPort', 'services:getRunningVersions',
                 'services:isVersionRunning',
             ];
             for (const channel of serviceChannels) {
@@ -361,6 +362,15 @@ describe('IPC Handlers', () => {
         it('services:stopAll routes correctly', async () => {
             await handlers['services:stopAll'](fakeEvent);
             expect(mockManagers.service.stopAllServices).toHaveBeenCalled();
+        });
+
+        it('services:getProjectLocalAccessPorts routes to project.getProjectLocalAccessPorts', async () => {
+            await handlers['services:getProjectLocalAccessPorts'](fakeEvent, 'proj-1');
+
+            expect(mockManagers.project.getProject).toHaveBeenCalledWith('proj-1');
+            expect(mockManagers.project.getProjectLocalAccessPorts).toHaveBeenCalledWith(
+                expect.objectContaining({ id: 'proj-1' })
+            );
         });
     });
 

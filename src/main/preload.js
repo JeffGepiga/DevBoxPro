@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld('devbox', {
     getRunningVersions: (service) => ipcRenderer.invoke('services:getRunningVersions', service),
     isVersionRunning: (service, version) => ipcRenderer.invoke('services:isVersionRunning', service, version),
     getWebServerPorts: (webServerType, version) => ipcRenderer.invoke('services:getWebServerPorts', webServerType, version),
+    getProjectLocalAccessPorts: (projectId) => ipcRenderer.invoke('services:getProjectLocalAccessPorts', projectId),
     getProjectNetworkPort: (projectId) => ipcRenderer.invoke('services:getProjectNetworkPort', projectId),
   },
 

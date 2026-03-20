@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
 import os from 'os';
+import forge from 'node-forge';
 
 const fs = require('fs-extra');
 require('../../helpers/mockElectronCjs');
@@ -157,6 +158,18 @@ describe('SslManager', () => {
             expect(result.domains).toEqual(['example.test', '*.example.test']);
         });
 
+        it('writes an authority key identifier that matches the current root CA', async () => {
+            await ssl.createRootCA();
+            const result = await ssl.createCertificate(['example.test']);
+
+            const certPem = await fs.readFile(result.certPath, 'utf8');
+            const leafCert = forge.pki.certificateFromPem(certPem);
+
+            expect(ssl.getAuthorityKeyIdentifierHex(leafCert)).toBe(
+                ssl.getSubjectKeyIdentifierHex(ssl.caCert)
+            );
+        });
+
         it('throws for empty domains array', async () => {
             await ssl.createRootCA();
             await expect(ssl.createCertificate([])).rejects.toThrow('At least one domain');
@@ -193,6 +206,103 @@ describe('SslManager', () => {
             expect(paths).not.toBeNull();
             expect(paths.key).toContain('key.pem');
             expect(paths.cert).toContain('cert.pem');
+        });
+    });
+
+    describe('certificateMatchesCurrentCA()', () => {
+        it('rejects legacy certificates whose authority key identifier points at the leaf key', async () => {
+            await ssl.createRootCA();
+
+            const domainDir = path.join(tmpDir, 'example.test');
+            await fs.ensureDir(domainDir);
+
+            const leafKeys = forge.pki.rsa.generateKeyPair(2048);
+            const cert = forge.pki.createCertificate();
+            cert.publicKey = leafKeys.publicKey;
+            cert.serialNumber = '02';
+            cert.validity.notBefore = new Date();
+            cert.validity.notAfter = new Date();
+            cert.validity.notAfter.setDate(cert.validity.notBefore.getDate() + 30);
+            cert.setSubject([{ name: 'commonName', value: 'example.test' }]);
+            cert.setIssuer(ssl.caCert.subject.attributes);
+            cert.setExtensions([
+                { name: 'basicConstraints', cA: false },
+                { name: 'keyUsage', digitalSignature: true, keyEncipherment: true, nonRepudiation: true },
+                { name: 'extKeyUsage', serverAuth: true, clientAuth: true },
+                { name: 'subjectAltName', altNames: [{ type: 2, value: 'example.test' }] },
+                { name: 'subjectKeyIdentifier' },
+                { name: 'authorityKeyIdentifier', keyIdentifier: true },
+            ]);
+            cert.sign(ssl.caKey, forge.md.sha256.create());
+
+            await fs.writeFile(path.join(domainDir, 'cert.pem'), forge.pki.certificateToPem(cert));
+            await fs.writeFile(path.join(domainDir, 'key.pem'), forge.pki.privateKeyToPem(leafKeys.privateKey));
+
+            await expect(ssl.certificateMatchesCurrentCA('example.test')).resolves.toBe(false);
+        });
+
+        it('accepts certificates issued by the current root CA', async () => {
+            await ssl.createRootCA();
+            await ssl.createCertificate(['example.test']);
+
+            await expect(ssl.certificateMatchesCurrentCA('example.test')).resolves.toBe(true);
+        });
+
+        it('reuses cached authority-match results when the certificate file is unchanged', async () => {
+            await ssl.createRootCA();
+            const result = await ssl.createCertificate(['example.test']);
+            const readFileSpy = vi.spyOn(fs, 'readFile');
+
+            await expect(ssl.certificateMatchesCurrentCA('example.test')).resolves.toBe(true);
+            const readsAfterFirstCheck = readFileSpy.mock.calls.filter(([filePath]) => filePath === result.certPath).length;
+
+            await expect(ssl.certificateMatchesCurrentCA('example.test')).resolves.toBe(true);
+            const readsAfterSecondCheck = readFileSpy.mock.calls.filter(([filePath]) => filePath === result.certPath).length;
+
+            expect(readsAfterFirstCheck).toBeGreaterThan(0);
+            expect(readsAfterSecondCheck).toBe(readsAfterFirstCheck);
+        });
+    });
+
+    describe('repairCertificates()', () => {
+        it('regenerates stored certificates that do not match the current root CA', async () => {
+            await ssl.createRootCA();
+
+            const domainDir = path.join(tmpDir, 'example.test');
+            await fs.ensureDir(domainDir);
+
+            const leafKeys = forge.pki.rsa.generateKeyPair(2048);
+            const cert = forge.pki.createCertificate();
+            cert.publicKey = leafKeys.publicKey;
+            cert.serialNumber = '02';
+            cert.validity.notBefore = new Date();
+            cert.validity.notAfter = new Date();
+            cert.validity.notAfter.setDate(cert.validity.notBefore.getDate() + 30);
+            cert.setSubject([{ name: 'commonName', value: 'example.test' }]);
+            cert.setIssuer(ssl.caCert.subject.attributes);
+            cert.setExtensions([
+                { name: 'basicConstraints', cA: false },
+                { name: 'keyUsage', digitalSignature: true, keyEncipherment: true, nonRepudiation: true },
+                { name: 'extKeyUsage', serverAuth: true, clientAuth: true },
+                { name: 'subjectAltName', altNames: [{ type: 2, value: 'example.test' }] },
+                { name: 'subjectKeyIdentifier' },
+                { name: 'authorityKeyIdentifier', keyIdentifier: true },
+            ]);
+            cert.sign(ssl.caKey, forge.md.sha256.create());
+
+            await fs.writeFile(path.join(domainDir, 'cert.pem'), forge.pki.certificateToPem(cert));
+            await fs.writeFile(path.join(domainDir, 'key.pem'), forge.pki.privateKeyToPem(leafKeys.privateKey));
+            mockConfigStore.set('certificates', {
+                'example.test': {
+                    domains: ['example.test'],
+                    certPath: path.join(domainDir, 'cert.pem'),
+                    keyPath: path.join(domainDir, 'key.pem'),
+                },
+            });
+
+            await ssl.repairCertificates();
+
+            await expect(ssl.certificateMatchesCurrentCA('example.test')).resolves.toBe(true);
         });
     });
 

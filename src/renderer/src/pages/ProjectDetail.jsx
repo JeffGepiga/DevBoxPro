@@ -555,6 +555,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
   const [pendingChanges, setPendingChanges] = useState({});
   const [localIpAddresses, setLocalIpAddresses] = useState([]);
   const [otherNetworkProjectsCount, setOtherNetworkProjectsCount] = useState(0);
+  const [localAccessPorts, setLocalAccessPorts] = useState({ httpPort: 80, sslPort: 443 });
   const [webServerPorts, setWebServerPorts] = useState({ httpPort: 80, sslPort: 443 });
   const [phpMyAdminLoading, setPhpMyAdminLoading] = useState(null);
   const [versionOptions, setVersionOptions] = useState({
@@ -638,6 +639,11 @@ function OverviewTab({ project, processes, refreshProjects }) {
 
         // Fetch actual network port for THIS project (considers per-project port 80 ownership)
         if (project?.id) {
+          const localPorts = await window.devbox?.services?.getProjectLocalAccessPorts(project.id);
+          if (localPorts) {
+            setLocalAccessPorts(localPorts);
+          }
+
           const ports = await window.devbox?.services?.getProjectNetworkPort(project.id);
           if (ports) {
             setWebServerPorts(ports);
@@ -1084,6 +1090,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
 
             <DomainManager
               domains={getEffectiveValue('domains') || (project.domain ? [project.domain] : [])}
+              localAccessPorts={localAccessPorts}
               webServerPorts={webServerPorts}
               ssl={project.ssl}
               onChange={(newDomains) => {
@@ -2079,9 +2086,9 @@ function EnvironmentTab({ project, onRefresh }) {
 }
 
 // Domain management sub-component
-function DomainManager({ domains, onChange, webServerPorts, ssl }) {
-  const httpPort = webServerPorts?.httpPort || 80;
-  const sslPort = webServerPorts?.sslPort || 443;
+function DomainManager({ domains, onChange, localAccessPorts, webServerPorts, ssl }) {
+  const httpPort = localAccessPorts?.httpPort || 80;
+  const sslPort = localAccessPorts?.sslPort || 443;
   const portSuffix = ssl
     ? (sslPort === 443 ? '' : `:${sslPort}`)
     : (httpPort === 80 ? '' : `:${httpPort}`);

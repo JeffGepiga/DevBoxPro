@@ -14,6 +14,8 @@ afterEach(cleanup);
 const mockDevbox = {
     projects: {
         create: vi.fn().mockResolvedValue({ id: 'new-project' }),
+        registerExisting: vi.fn().mockResolvedValue({ id: 'imported-project' }),
+        detectType: vi.fn().mockResolvedValue({ name: 'Imported App', type: 'laravel' }),
         importFolder: vi.fn().mockResolvedValue(null),
         import: vi.fn().mockResolvedValue({}),
     },
@@ -31,7 +33,12 @@ const mockDevbox = {
     settings: {
         get: vi.fn().mockResolvedValue({ projectsPath: '/projects' }),
     },
+    system: {
+        selectDirectory: vi.fn().mockResolvedValue('/projects/existing-app'),
+    },
 };
+
+const mockShowAlert = vi.fn();
 
 beforeEach(() => {
     Object.defineProperty(window, 'devbox', { value: mockDevbox, writable: true, configurable: true });
@@ -49,7 +56,7 @@ beforeEach(() => {
 
 vi.mock('@/context/AppContext', () => ({
     useApp: () => ({
-        projects: [],
+        projects: [{ id: 'existing-1', name: 'Existing App', path: '/projects/existing-app' }],
         loading: false,
         projectLoadingStates: {},
         refreshProjects: vi.fn(),
@@ -57,7 +64,16 @@ vi.mock('@/context/AppContext', () => ({
 }));
 
 vi.mock('@/context/ModalContext', () => ({
-    useModal: () => ({ showAlert: vi.fn(), showConfirm: vi.fn().mockResolvedValue(false) }),
+    useModal: () => ({ showAlert: mockShowAlert, showConfirm: vi.fn().mockResolvedValue(false) }),
+}));
+
+vi.mock('@/components/ImportProjectModal', () => ({
+    default: ({ onImport, onClose }) => (
+        <div data-testid="import-modal">
+            <button onClick={() => onImport({ name: 'Imported App', path: '/projects/fresh-app', type: 'laravel' })}>SubmitImport</button>
+            <button onClick={onClose}>CloseImport</button>
+        </div>
+    ),
 }));
 
 import CreateProject from '@/pages/CreateProject';
@@ -98,6 +114,38 @@ describe('CreateProject', () => {
                 const laravelButton = screen.getByText('Laravel');
                 expect(laravelButton).toBeInTheDocument();
             });
+        });
+
+        it('shows an alert when importing a folder that is already registered', async () => {
+            renderCreate();
+
+            fireEvent.click(await screen.findByRole('button', { name: /Import Project/i }));
+
+            await waitFor(() => {
+                expect(mockShowAlert).toHaveBeenCalledWith(expect.objectContaining({
+                    title: 'Already Registered',
+                    type: 'warning',
+                }));
+            });
+            expect(mockDevbox.projects.detectType).not.toHaveBeenCalled();
+        });
+
+        it('registers an imported project through the existing-project flow', async () => {
+            mockDevbox.system.selectDirectory.mockResolvedValueOnce('/projects/fresh-app');
+            renderCreate();
+
+            fireEvent.click(await screen.findByRole('button', { name: /Import Project/i }));
+            await waitFor(() => expect(screen.getByTestId('import-modal')).toBeInTheDocument());
+
+            fireEvent.click(screen.getByRole('button', { name: 'SubmitImport' }));
+
+            await waitFor(() => {
+                expect(mockDevbox.projects.registerExisting).toHaveBeenCalledWith(expect.objectContaining({
+                    name: 'Imported App',
+                    path: '/projects/fresh-app',
+                }));
+            });
+            expect(mockDevbox.projects.create).not.toHaveBeenCalled();
         });
     });
 });

@@ -90,6 +90,11 @@ describe('ServiceManager', () => {
                 getDefaultVersion: vi.fn().mockReturnValue('8.3'),
                 getPhpBinaryPath: vi.fn().mockReturnValue('/path/to/php')
             },
+            project: {
+                regenerateAllNginxVhosts: vi.fn().mockResolvedValue(),
+                regenerateAllApacheVhosts: vi.fn().mockResolvedValue(),
+                runningProjects: new Map(),
+            },
             log: {
                 systemInfo: vi.fn(),
                 systemWarn: vi.fn(),
@@ -415,6 +420,41 @@ describe('ServiceManager', () => {
             expect(config).toContain('Listen 0.0.0.0:8005');
             expect(config).not.toContain('Listen 0.0.0.0:8003');
             expect(config).not.toContain('Listen 0.0.0.0:8004');
+        });
+    });
+
+    describe('front-door vhost regeneration', () => {
+        it('regenerates nginx vhosts before start so running apache projects get proxy entries', async () => {
+            const childProcess = require('child_process');
+            mgr.startNginx.mockRestore();
+            mgr.getNginxPath = vi.fn(() => '/resources/nginx/1.28/win');
+            vi.spyOn(mgr, 'checkPortOpen').mockResolvedValue(true);
+            vi.spyOn(childProcess, 'execSync').mockReturnValue('Syntax OK');
+
+            managers.project.runningProjects = new Map([
+                ['apache-project', { startedAt: new Date() }],
+            ]);
+            mgr.serviceStatus.set('apache', { status: 'stopped' });
+
+            await mgr.startNginx('1.28');
+
+            expect(managers.project.regenerateAllNginxVhosts).toHaveBeenCalledWith(null, '1.28');
+        });
+
+        it('regenerates apache vhosts before start so running nginx projects get proxy entries', async () => {
+            const childProcess = require('child_process');
+            mgr.getApachePath = vi.fn(() => '/resources/apache/2.4/win');
+            vi.spyOn(mgr, 'waitForService').mockResolvedValue();
+            vi.spyOn(childProcess, 'execSync').mockReturnValue('Syntax OK');
+
+            managers.project.runningProjects = new Map([
+                ['nginx-project', { startedAt: new Date() }],
+            ]);
+            mgr.serviceStatus.set('nginx', { status: 'stopped' });
+
+            await mgr.startApache('2.4');
+
+            expect(managers.project.regenerateAllApacheVhosts).toHaveBeenCalledWith(null, '2.4');
         });
     });
 });

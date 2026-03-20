@@ -15,11 +15,14 @@ const MOCK_PROJECT = {
     id: 'proj-1',
     name: 'My Laravel App',
     domain: 'myapp.test',
+    domains: ['myapp.test'],
     path: '/projects/myapp',
     type: 'laravel',
     phpVersion: '8.3',
     isRunning: true,
     port: 8080,
+    ssl: false,
+    networkAccess: false,
     services: {
         mysql: true,
         mysqlVersion: '8.4',
@@ -30,6 +33,7 @@ const mockDevbox = {
     projects: {
         start: vi.fn().mockResolvedValue({}),
         stop: vi.fn().mockResolvedValue({}),
+        getAll: vi.fn().mockResolvedValue([MOCK_PROJECT]),
         openFolder: vi.fn(),
         openEditor: vi.fn(),
         getPhpIni: vi.fn().mockResolvedValue(''),
@@ -50,6 +54,7 @@ const mockDevbox = {
     },
     services: {
         getWebServerPorts: vi.fn().mockResolvedValue({ httpPort: 80, sslPort: 443 }),
+        getProjectLocalAccessPorts: vi.fn().mockResolvedValue({ httpPort: 80, sslPort: 443 }),
         getProjectNetworkPort: vi.fn().mockResolvedValue({ httpPort: 80, sslPort: 443 }),
     },
     system: {
@@ -123,6 +128,20 @@ describe('ProjectDetail', () => {
             // Should render navigation tabs like Overview, Terminal, Logs, etc.
             const buttons = screen.getAllByRole('button');
             expect(buttons.length).toBeGreaterThan(0);
+        });
+
+        it('keeps the local domain portless while LAN URLs use backend ports', async () => {
+            MOCK_PROJECT.networkAccess = true;
+            mockDevbox.system.getLocalIpAddresses.mockResolvedValue(['192.168.1.20']);
+            mockDevbox.services.getProjectLocalAccessPorts.mockResolvedValue({ httpPort: 80, sslPort: 443 });
+            mockDevbox.services.getProjectNetworkPort.mockResolvedValue({ httpPort: 8084, sslPort: 8446 });
+
+            renderProjectDetail();
+
+            await waitFor(() => expect(screen.getByRole('button', { name: /^myapp\.test$/i })).toBeInTheDocument());
+            expect(mockDevbox.services.getProjectLocalAccessPorts).toHaveBeenCalledWith('proj-1');
+            expect(mockDevbox.services.getProjectNetworkPort).toHaveBeenCalledWith('proj-1');
+            MOCK_PROJECT.networkAccess = false;
         });
     });
 

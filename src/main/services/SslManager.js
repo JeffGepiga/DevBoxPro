@@ -11,6 +11,7 @@ class SslManager {
     this.caPath = null;
     this.caKey = null;
     this.caCert = null;
+    this.certificateAuthorityMatchCache = new Map();
   }
 
   async initialize() {
@@ -32,6 +33,7 @@ class SslManager {
 
         // Automatically prompt to trust the new Root CA
         await this.promptTrustRootCA();
+        await this.repairCertificates();
       } catch (error) {
         this.managers.log?.systemError('Failed to create Root CA certificate', { error: error.message });
       }
@@ -42,6 +44,7 @@ class SslManager {
         const caCertPem = await fs.readFile(caCertPath, 'utf8');
         this.caKey = forge.pki.privateKeyFromPem(caKeyPem);
         this.caCert = forge.pki.certificateFromPem(caCertPem);
+        await this.repairCertificates();
       } catch (error) {
         this.managers.log?.systemError('Failed to load existing Root CA', { error: error.message });
       }
@@ -170,6 +173,93 @@ class SslManager {
     return { keyPath, certPath };
   }
 
+  getSubjectKeyIdentifierHex(cert) {
+    return cert?.getExtension?.('subjectKeyIdentifier')?.subjectKeyIdentifier?.toLowerCase() || null;
+  }
+
+  getAuthorityKeyIdentifierHex(cert) {
+    const extension = cert?.getExtension?.('authorityKeyIdentifier');
+    if (!extension?.value || typeof extension.value !== 'string') {
+      return null;
+    }
+
+    return forge.util.bytesToHex(extension.value.slice(-20)).toLowerCase();
+  }
+
+  getDistinguishedNameKey(attributes = []) {
+    return attributes
+      .map((attribute) => `${attribute.type || attribute.name}:${attribute.value}`)
+      .join('|');
+  }
+
+  invalidateCertificateAuthorityMatch(domain = null) {
+    if (domain) {
+      this.certificateAuthorityMatchCache.delete(domain);
+      return;
+    }
+
+    this.certificateAuthorityMatchCache.clear();
+  }
+
+  async certificateMatchesCurrentCA(domain) {
+    if (!domain || !this.caCert) {
+      return false;
+    }
+
+    const certPath = path.join(this.certsPath, '..', domain, 'cert.pem');
+    if (!await fs.pathExists(certPath)) {
+      this.invalidateCertificateAuthorityMatch(domain);
+      return false;
+    }
+
+    try {
+      const certStats = await fs.stat(certPath);
+      const cacheKey = `${this.getSubjectKeyIdentifierHex(this.caCert)}:${certStats.mtimeMs}`;
+      const cachedResult = this.certificateAuthorityMatchCache.get(domain);
+      if (cachedResult?.cacheKey === cacheKey) {
+        return cachedResult.matches;
+      }
+
+      const certPem = await fs.readFile(certPath, 'utf8');
+      const leafCert = forge.pki.certificateFromPem(certPem);
+      const caSubjectKeyIdentifier = this.getSubjectKeyIdentifierHex(this.caCert);
+      const leafAuthorityKeyIdentifier = this.getAuthorityKeyIdentifierHex(leafCert);
+
+      if (!caSubjectKeyIdentifier || !leafAuthorityKeyIdentifier) {
+        this.certificateAuthorityMatchCache.set(domain, { cacheKey, matches: false });
+        return false;
+      }
+
+      const issuerMatches = this.getDistinguishedNameKey(leafCert.issuer.attributes)
+        === this.getDistinguishedNameKey(this.caCert.subject.attributes);
+
+      const matches = issuerMatches && leafAuthorityKeyIdentifier === caSubjectKeyIdentifier;
+      this.certificateAuthorityMatchCache.set(domain, { cacheKey, matches });
+      return matches;
+    } catch (error) {
+      this.invalidateCertificateAuthorityMatch(domain);
+      return false;
+    }
+  }
+
+  async repairCertificates() {
+    const certificates = this.configStore.get('certificates', {});
+
+    for (const [domain, certificateInfo] of Object.entries(certificates)) {
+      const matchesCurrentCA = await this.certificateMatchesCurrentCA(domain);
+      if (matchesCurrentCA) {
+        continue;
+      }
+
+      try {
+        await this.createCertificate(certificateInfo?.domains?.length ? certificateInfo.domains : [domain]);
+        this.managers.log?.systemInfo(`Regenerated SSL certificate for ${domain} to match the current DevBox Root CA`);
+      } catch (error) {
+        this.managers.log?.systemWarn(`Failed to regenerate SSL certificate for ${domain}`, { error: error.message });
+      }
+    }
+  }
+
   async createCertificate(domains) {
     if (!Array.isArray(domains) || domains.length === 0) {
       throw new Error('At least one domain is required');
@@ -251,7 +341,7 @@ class SslManager {
       },
       {
         name: 'authorityKeyIdentifier',
-        keyIdentifier: true
+        keyIdentifier: forge.util.hexToBytes(this.getSubjectKeyIdentifierHex(this.caCert))
       }
     ]);
 
@@ -264,6 +354,7 @@ class SslManager {
 
     await fs.writeFile(keyPath, keyPem);
     await fs.writeFile(certPath, certPem);
+    this.invalidateCertificateAuthorityMatch(primaryDomain);
 
     // Store certificate info
     const certificates = this.configStore.get('certificates', {});
@@ -297,6 +388,7 @@ class SslManager {
     if (await fs.pathExists(domainCertDir)) {
       await fs.remove(domainCertDir);
     }
+    this.invalidateCertificateAuthorityMatch(domain);
 
     // Remove from config
     delete certificates[domain];

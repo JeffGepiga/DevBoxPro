@@ -96,6 +96,8 @@ describe('ProjectManager', () => {
             },
             service: {
                 getVersionPort: vi.fn().mockReturnValue(3306),
+                getApachePath: vi.fn().mockReturnValue('/mock/resources/apache/2.4/win'),
+                createApacheConfig: vi.fn().mockResolvedValue(),
                 serviceConfigs: {
                     nginx: { defaultPort: 80 }
                 },
@@ -104,11 +106,13 @@ describe('ProjectManager', () => {
                 }),
                 reloadApache: vi.fn().mockResolvedValue(),
                 reloadNginx: vi.fn().mockResolvedValue(),
-                getServicePorts: vi.fn().mockReturnValue([]),
+                getServicePorts: vi.fn().mockReturnValue({ httpPort: 80, sslPort: 443 }),
                 isVersionRunning: vi.fn().mockReturnValue(true),
                 startService: vi.fn().mockResolvedValue(),
                 stopService: vi.fn().mockResolvedValue(),
                 processes: new Map(),
+                standardPortOwner: null,
+                standardPortOwnerVersion: null,
                 serviceStatus: new Map([
                     ['nginx', { status: 'running' }],
                     ['mysql', { status: 'running' }]
@@ -191,6 +195,22 @@ describe('ProjectManager', () => {
             configStore.set('projects', [{ id: 'xyz', name: 'ExistingProj', path: '/foo/existing' }]);
 
             await expect(mgr.createProject({ name: 'ExistingProj', path: '/foo/bar' })).rejects.toThrow('A project with the name "ExistingProj" already exists');
+        });
+
+        it('rejects importing an already-registered project path', async () => {
+            configStore.set('projects', [{ id: 'xyz', name: 'ExistingProj', path: '/foo/existing' }]);
+
+            await expect(mgr.registerExistingProject({ name: 'Another Name', path: '/foo/existing' })).rejects.toThrow(
+                'This folder is already registered as project "ExistingProj".'
+            );
+        });
+
+        it('rejects importing an existing project under a duplicate name', async () => {
+            configStore.set('projects', [{ id: 'xyz', name: 'ExistingProj', path: '/foo/existing' }]);
+
+            await expect(mgr.registerExistingProject({ name: 'ExistingProj', path: '/foo/other' })).rejects.toThrow(
+                'A project with the name "ExistingProj" already exists.'
+            );
         });
 
         it('updates an existing project', async () => {
@@ -332,6 +352,73 @@ describe('ProjectManager', () => {
                 expect(err.message).not.toMatch(/already in use by an external program/);
             }
         });
+
+        it('regenerates Apache Listen directives for alternate LAN ports when Apache is already running', async () => {
+            const project = {
+                id: 'proj-apache-lan',
+                name: 'ProjApacheLan',
+                type: 'laravel',
+                path: 'C:/Sites/Apache LAN',
+                domain: 'apache-lan.test',
+                domains: ['apache-lan.test'],
+                phpVersion: '8.3',
+                webServer: 'apache',
+                webServerVersion: '2.4',
+                ssl: true,
+                networkAccess: true,
+                port: 8003,
+                services: {},
+                supervisor: { processes: [] },
+            };
+            configStore.set('projects', [project]);
+
+            managers.service.isVersionRunning = vi.fn((service, version) => service === 'apache' && version === '2.4');
+            managers.service.serviceStatus.set('apache', { status: 'running', version: '2.4' });
+            managers.service.getServicePorts.mockImplementation((service) => {
+                if (service === 'apache') {
+                    return { httpPort: 8084, sslPort: 8446 };
+                }
+                return { httpPort: 80, sslPort: 443 };
+            });
+
+            mgr.createApacheVhost = vi.fn().mockResolvedValue({
+                networkAccess: true,
+                finalHttpPort: 8003,
+                httpPort: 8084,
+            });
+            mgr.regenerateAllApacheVhosts = vi.fn().mockResolvedValue();
+            mgr.syncProjectLocalProxy = vi.fn().mockResolvedValue(false);
+            mgr.startProjectServices = vi.fn().mockResolvedValue({ success: true, started: ['apache:2.4'], failed: [], criticalFailures: [], errors: [] });
+            mgr.addToHostsFile = vi.fn().mockResolvedValue();
+
+            await mgr.startProject('proj-apache-lan');
+
+            expect(managers.service.createApacheConfig).toHaveBeenCalledWith(
+                '/mock/resources/apache/2.4/win',
+                expect.stringMatching(/[\\/]apache[\\/]httpd\.conf$/),
+                expect.stringMatching(/[\\/]apache[\\/]logs$/),
+                8084,
+                8446,
+                [8003]
+            );
+            expect(managers.service.reloadApache).toHaveBeenCalledWith('2.4');
+        });
+
+        it('regenerates stale SSL certs that do not match the current root CA', async () => {
+            const project = {
+                id: 'proj-stale-ssl',
+                domain: 'stale-ssl.test',
+                domains: ['stale-ssl.test'],
+                ssl: true,
+            };
+
+            managers.ssl.certificateMatchesCurrentCA = vi.fn().mockResolvedValue(false);
+
+            await mgr.ensureProjectSslCertificates(project, 'C:/Users/Test User/.devbox-pro/ssl/stale-ssl.test');
+
+            expect(managers.ssl.certificateMatchesCurrentCA).toHaveBeenCalledWith('stale-ssl.test');
+            expect(managers.ssl.createCertificate).toHaveBeenCalledWith(['stale-ssl.test']);
+        });
     });
 
     describe('Nginx vhost generation', () => {
@@ -436,7 +523,7 @@ describe('ProjectManager', () => {
 
             const [, config] = fs.writeFile.mock.calls.at(-1);
             expect(config).toContain('ServerAlias www.proj-apache.test *.proj-apache.test *');
-            expect(config).toContain('<VirtualHost 0.0.0.0:443>');
+            expect(config).toContain('<VirtualHost *:443>');
             expect(config).toContain('ServerAlias www.proj-apache.test *.proj-apache.test');
             expect(config).not.toContain('ServerAlias www.proj-apache.test *.proj-apache.test *\n    DocumentRoot "C:/Sites/Apache App/public"');
         });
@@ -494,15 +581,75 @@ describe('ProjectManager', () => {
             await mgr.createApacheVhost(secondProject, '2.4');
             const [, secondConfig] = fs.writeFile.mock.calls.at(-1);
 
-            expect(firstConfig).toContain('<VirtualHost 0.0.0.0:8005>');
-            expect(firstConfig).toContain('<VirtualHost 0.0.0.0:8446>');
+            expect(firstConfig).toContain('<VirtualHost *:8005>');
+            expect(firstConfig).toContain('<VirtualHost *:8446>');
             expect(firstConfig).toContain('ServerAlias www.first-apache.test *.first-apache.test');
             expect(firstConfig).not.toContain('ServerAlias www.first-apache.test *.first-apache.test *');
 
-            expect(secondConfig).toContain('<VirtualHost 0.0.0.0:8006>');
-            expect(secondConfig).toContain('<VirtualHost 0.0.0.0:8446>');
+            expect(secondConfig).toContain('<VirtualHost *:8006>');
+            expect(secondConfig).toContain('<VirtualHost *:8446>');
             expect(secondConfig).toContain('ServerAlias www.second-apache.test *.second-apache.test');
             expect(secondConfig).not.toContain('ServerAlias www.second-apache.test *.second-apache.test *');
+        });
+
+        it('uses the same Apache vhost address binding for mixed local and network projects on shared SSL ports', async () => {
+            const firstProject = {
+                id: 'proj-apache-local',
+                name: 'ProjApacheLocal',
+                type: 'laravel',
+                path: 'C:/Sites/Apache Local',
+                domain: 'local-apache.test',
+                domains: ['local-apache.test'],
+                phpVersion: '8.3',
+                webServer: 'apache',
+                webServerVersion: '2.4',
+                ssl: true,
+                networkAccess: false,
+                services: {},
+                supervisor: { processes: [] },
+            };
+            const secondProject = {
+                id: 'proj-apache-network',
+                name: 'ProjApacheNetwork',
+                type: 'laravel',
+                path: 'C:/Sites/Apache Network',
+                domain: 'network-apache.test',
+                domains: ['network-apache.test'],
+                phpVersion: '8.3',
+                webServer: 'apache',
+                webServerVersion: '2.4',
+                ssl: true,
+                networkAccess: true,
+                services: {},
+                supervisor: { processes: [] },
+                port: 8007,
+            };
+
+            configStore.get.mockImplementation((key, def) => {
+                if (key === 'projects' || key === 'devbox.projects') return [firstProject, secondProject];
+                if (key === 'resourcePath') return 'C:/Users/Test User/AppData/Roaming/devbox-pro/resources';
+                if (key === 'settings') return { webServer: 'apache' };
+                return def;
+            });
+            configStore.getDataPath = vi.fn(() => 'C:/Users/Test User/.devbox-pro');
+            configStore.getResourcesPath = vi.fn(() => 'C:/Users/Test User/AppData/Roaming/devbox-pro/resources');
+            managers.service.getServicePorts.mockReturnValue({ httpPort: 80, sslPort: 443 });
+            managers.service.standardPortOwner = 'apache';
+            mgr.networkPort80Owner = secondProject.id;
+
+            await mgr.createApacheVhost(firstProject, '2.4');
+            const [, firstConfig] = fs.writeFile.mock.calls.at(-1);
+
+            await mgr.createApacheVhost(secondProject, '2.4');
+            const [, secondConfig] = fs.writeFile.mock.calls.at(-1);
+
+            expect(firstConfig).toContain('<VirtualHost *:80>');
+            expect(firstConfig).toContain('<VirtualHost *:443>');
+            expect(secondConfig).toContain('<VirtualHost *:80>');
+            expect(secondConfig).toContain('<VirtualHost *:443>');
+            expect(firstConfig).not.toContain('<VirtualHost 0.0.0.0:443>');
+            expect(secondConfig).not.toContain('<VirtualHost 0.0.0.0:443>');
+            expect(secondConfig).toContain('ServerAlias www.network-apache.test *.network-apache.test *');
         });
 
         it('switches web servers with the requested target version', async () => {
@@ -553,7 +700,7 @@ describe('ProjectManager', () => {
     });
 
     describe('URL generation', () => {
-        it('uses the project web server version when building URLs', () => {
+        it('uses clean local URLs when a front-door owner exists', () => {
             managers.service.getServicePorts.mockImplementation((serviceName, version) => {
                 if (serviceName === 'nginx' && version === '1.28') {
                     return { httpPort: 8081, sslPort: 8443 };
@@ -565,6 +712,7 @@ describe('ProjectManager', () => {
 
                 return { httpPort: 80, sslPort: 443 };
             });
+            managers.service.standardPortOwner = 'apache';
 
             const project128 = {
                 id: 'nginx128',
@@ -583,13 +731,14 @@ describe('ProjectManager', () => {
                 webServerVersion: '1.26',
             };
 
-            expect(mgr.getProjectUrl(project128)).toBe('https://second.test:8443');
-            expect(mgr.getProjectUrl(project126)).toBe('https://third.test:8444');
+            expect(mgr.getProjectUrl(project128)).toBe('https://second.test');
+            expect(mgr.getProjectUrl(project126)).toBe('https://third.test');
         });
 
-        it('uses the project network port for HTTP when port 80 belongs to another project', () => {
+        it('falls back to backend ports only when no front-door owner exists', () => {
             managers.service.getServicePorts.mockReturnValue({ httpPort: 8081, sslPort: 8443 });
             mgr.networkPort80Owner = 'other-project';
+            managers.service.standardPortOwner = null;
 
             const project = {
                 id: 'proj-http',
@@ -603,6 +752,131 @@ describe('ProjectManager', () => {
             };
 
             expect(mgr.getProjectUrl(project)).toBe('http://fourth.test:8005');
+        });
+
+        it('returns standard local access ports when any web server owns the front door', () => {
+            managers.service.standardPortOwner = 'nginx';
+            managers.service.getServicePorts.mockReturnValue({ httpPort: 8084, sslPort: 8446 });
+
+            const ports = mgr.getProjectLocalAccessPorts({
+                webServer: 'apache',
+                webServerVersion: '2.4',
+            });
+
+            expect(ports).toEqual({ httpPort: 80, sslPort: 443 });
+        });
+
+        it('preserves configured domain order for the primary domain', () => {
+            const project = {
+                domain: 'zeta.test',
+                domains: ['zeta.test', 'alpha.test'],
+            };
+
+            expect(mgr.getProjectPrimaryDomain(project)).toBe('zeta.test');
+            expect(mgr.getProjectUrl({
+                ...project,
+                ssl: true,
+                webServer: 'nginx',
+                webServerVersion: '1.28',
+            })).toBe('https://zeta.test');
+        });
+    });
+
+    describe('Proxy vhost generation', () => {
+        it('creates an nginx proxy vhost that forwards to apache backends', async () => {
+            const project = {
+                id: 'proxy-nginx',
+                name: 'ProxyNginx',
+                domain: 'apache.test',
+                domains: ['apache.test'],
+                webServer: 'apache',
+                ssl: true,
+            };
+
+            await mgr.createProxyNginxVhost(project, 8084, '1.28');
+
+            const [, config] = fs.writeFile.mock.calls.at(-1);
+            expect(config).toContain('proxy_pass http://127.0.0.1:8084;');
+            expect(config).toContain('proxy_set_header Host $host;');
+            expect(config).toContain('listen 80;');
+            expect(config).toContain('listen 443 ssl');
+        });
+
+        it('creates an apache proxy vhost that forwards to nginx backends', async () => {
+            const project = {
+                id: 'proxy-apache',
+                name: 'ProxyApache',
+                domain: 'nginx.test',
+                domains: ['nginx.test'],
+                webServer: 'nginx',
+                ssl: true,
+            };
+
+            await mgr.createProxyApacheVhost(project, 8081, '2.4');
+
+            const [, config] = fs.writeFile.mock.calls.at(-1);
+            expect(config).toContain('ProxyPass / http://127.0.0.1:8081/ retry=0');
+            expect(config).toContain('ProxyPreserveHost On');
+            expect(config).toContain('RequestHeader set X-Forwarded-Proto "https"');
+            expect(config).toContain('<VirtualHost *:80>');
+        });
+
+        it('proxies network-access apache projects through nginx using the project port', async () => {
+            managers.service.standardPortOwner = 'nginx';
+            managers.service.standardPortOwnerVersion = '1.28';
+            managers.service.getServicePorts.mockImplementation((serviceName) => {
+                if (serviceName === 'apache') {
+                    return { httpPort: 8084, sslPort: 8446 };
+                }
+                return { httpPort: 80, sslPort: 443 };
+            });
+
+            const project = {
+                id: 'proxy-apache-alt-port',
+                name: 'ProxyApacheAltPort',
+                domain: 'apache-alt.test',
+                domains: ['apache-alt.test'],
+                webServer: 'apache',
+                webServerVersion: '2.4',
+                networkAccess: true,
+                port: 8003,
+                ssl: true,
+            };
+
+            mgr.createProxyNginxVhost = vi.fn().mockResolvedValue();
+
+            await mgr.syncProjectLocalProxy(project);
+
+            expect(mgr.createProxyNginxVhost).toHaveBeenCalledWith(project, 8003, '1.28');
+        });
+
+        it('proxies network-access nginx projects through apache using the project port', async () => {
+            managers.service.standardPortOwner = 'apache';
+            managers.service.standardPortOwnerVersion = '2.4';
+            managers.service.getServicePorts.mockImplementation((serviceName) => {
+                if (serviceName === 'nginx') {
+                    return { httpPort: 8081, sslPort: 8443 };
+                }
+                return { httpPort: 80, sslPort: 443 };
+            });
+
+            const project = {
+                id: 'proxy-nginx-alt-port',
+                name: 'ProxyNginxAltPort',
+                domain: 'nginx-alt.test',
+                domains: ['nginx-alt.test'],
+                webServer: 'nginx',
+                webServerVersion: '1.28',
+                networkAccess: true,
+                port: 8008,
+                ssl: true,
+            };
+
+            mgr.createProxyApacheVhost = vi.fn().mockResolvedValue();
+
+            await mgr.syncProjectLocalProxy(project);
+
+            expect(mgr.createProxyApacheVhost).toHaveBeenCalledWith(project, 8008, '2.4');
         });
     });
 

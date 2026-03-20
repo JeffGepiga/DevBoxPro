@@ -356,7 +356,11 @@ function Projects() {
       // Refresh projects list
       refreshProjects?.();
     } catch (error) {
-      // Failed to import project
+      await showAlert({
+        title: error?.message?.includes('already registered') ? 'Already Registered' : 'Import Failed',
+        message: error?.message || 'Failed to import project.',
+        type: error?.message?.includes('already registered') ? 'warning' : 'error',
+      });
     }
   };
 
@@ -1004,7 +1008,7 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
         {project.isRunning && (
           <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
             <p className="text-sm text-green-700 dark:text-green-400">
-              Running on port <strong>{project.port}</strong>
+              Backend port <strong>{project.port}</strong>
             </p>
           </div>
         )}
@@ -1181,7 +1185,7 @@ function ProjectTableRow({ project, onStart, onStop, onDelete, onMove, defaultEd
         {project.isRunning ? (
           <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            Running {project.port ? `(${project.port})` : ''}
+            Running {project.port ? `(backend ${project.port})` : ''}
           </span>
         ) : (
           <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">

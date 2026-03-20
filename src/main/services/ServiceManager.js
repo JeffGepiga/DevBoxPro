@@ -1267,6 +1267,8 @@ port=${port}
       }
     }
 
+    await this.regenerateWebServerVhosts('nginx', version);
+
     // Test Nginx configuration before starting
     // This may fail with port bind errors even if our port check passed (Windows HTTP service, Hyper-V, etc.)
     const testConfig = async () => {
@@ -1343,27 +1345,7 @@ port=${port}
         this.serviceConfigs.nginx.actualHttpPort = httpPort;
         this.serviceConfigs.nginx.actualSslPort = sslPort;
 
-        // Regenerate vhost configs for running projects that use THIS nginx version.
-        // Without this, vhosts created before the port fallback would have stale ports.
-        // IMPORTANT: Use createNginxVhost (write-only) instead of createVirtualHost here.
-        // createVirtualHost would reload/restart nginx, but we're still INSIDE startNginx —
-        // the server hasn't finished starting yet.
-        if (this.managers.project) {
-          const runningProjects = this.managers.project.runningProjects;
-          const allProjects = this.configStore?.get('projects', []) || [];
-          for (const proj of allProjects) {
-            const projVersion = proj.webServerVersion || '1.28';
-            if ((proj.webServer === 'nginx' || !proj.webServer) && projVersion === version && runningProjects?.has(proj.id)) {
-              try {
-                const running = runningProjects.get(proj.id);
-                const phpFpmPort = running?.phpFpmPort || null;
-                await this.managers.project.createNginxVhost(proj, phpFpmPort, version);
-              } catch (e) {
-                this.managers.log?.systemWarn(`Could not regenerate vhost for ${proj.name} after port fallback`, { error: e.message });
-              }
-            }
-          }
-        }
+        await this.regenerateWebServerVhosts('nginx', version);
 
         testResult = await testConfig();
       }
@@ -1831,6 +1813,23 @@ http {
     await fs.writeFile(confPath, config);
   }
 
+  async regenerateWebServerVhosts(serviceName, version = null) {
+    const projectManager = this.managers.project;
+    if (!projectManager) {
+      return;
+    }
+
+    try {
+      if (serviceName === 'nginx') {
+        await projectManager.regenerateAllNginxVhosts(null, version);
+      } else if (serviceName === 'apache') {
+        await projectManager.regenerateAllApacheVhosts(null, version);
+      }
+    } catch (error) {
+      this.managers.log?.systemWarn(`Could not regenerate ${serviceName} vhosts before start`, { error: error.message });
+    }
+  }
+
   // Apache
   async startApache(version = '2.4') {
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
@@ -1976,6 +1975,8 @@ http {
       }
     }
 
+    await this.regenerateWebServerVhosts('apache', version);
+
     // Test Apache config before starting
     // This may fail with port bind errors even if our port check passed (Windows HTTP service, Hyper-V, etc.)
     const testConfig = async () => {
@@ -2050,24 +2051,7 @@ http {
         this.serviceConfigs.apache.actualHttpPort = httpPort;
         this.serviceConfigs.apache.actualSslPort = httpsPort;
 
-        // Regenerate vhost configs for all running Apache projects with the new ports.
-        // Without this, vhosts created before the port fallback would have stale ports.
-        // IMPORTANT: Use createApacheVhost (write-only) instead of createVirtualHost here.
-        // createVirtualHost would reload/restart apache, but we're still INSIDE startApache —
-        // the server hasn't finished starting yet.
-        if (this.managers.project) {
-          const runningProjects = this.managers.project.runningProjects;
-          const allProjects = this.configStore?.get('projects', []) || [];
-          for (const proj of allProjects) {
-            if (proj.webServer === 'apache' && runningProjects?.has(proj.id)) {
-              try {
-                await this.managers.project.createApacheVhost(proj, version);
-              } catch (e) {
-                this.managers.log?.systemWarn(`Could not regenerate vhost for ${proj.name} after port fallback`, { error: e.message });
-              }
-            }
-          }
-        }
+        await this.regenerateWebServerVhosts('apache', version);
 
         testResult = await testConfig();
       }
@@ -2251,6 +2235,7 @@ LoadModule actions_module modules/mod_actions.so
 
 # Proxy modules for PHP-FPM
 LoadModule proxy_module modules/mod_proxy.so
+LoadModule proxy_http_module modules/mod_proxy_http.so
 LoadModule proxy_fcgi_module modules/mod_proxy_fcgi.so
 
 # SSL modules

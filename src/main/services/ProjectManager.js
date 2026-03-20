@@ -103,7 +103,151 @@ class ProjectManager {
 
   getProjectDomains(project) {
     const domains = project?.domains?.length ? project.domains : (project?.domain ? [project.domain] : []);
-    return [...new Set(domains.filter(Boolean))].sort();
+    return [...new Set(domains.filter(Boolean))];
+  }
+
+  getProjectPrimaryDomain(project) {
+    return this.getProjectDomains(project)[0] || project?.domain || '';
+  }
+
+  getProjectServerNameEntries(project, includeCatchAll = false) {
+    const primaryDomain = this.getProjectPrimaryDomain(project);
+    const domains = this.getProjectDomains(project);
+
+    return [...new Set([
+      ...domains,
+      primaryDomain ? `www.${primaryDomain}` : null,
+      primaryDomain ? `*.${primaryDomain}` : null,
+      includeCatchAll ? '_' : null,
+    ].filter(Boolean))];
+  }
+
+  getProjectServerAliasEntries(project, includeCatchAll = false) {
+    const primaryDomain = this.getProjectPrimaryDomain(project);
+    const domains = this.getProjectDomains(project);
+
+    return [...new Set([
+      primaryDomain ? `www.${primaryDomain}` : null,
+      primaryDomain ? `*.${primaryDomain}` : null,
+      ...domains.filter((domain) => domain !== primaryDomain),
+      includeCatchAll ? '*' : null,
+    ].filter(Boolean))];
+  }
+
+  getProjectLocalAccessPorts(project) {
+    const frontDoorOwner = this.managers.service?.standardPortOwner;
+    if (frontDoorOwner) {
+      return { httpPort: 80, sslPort: 443 };
+    }
+
+    const webServer = this.getEffectiveWebServer(project);
+    const webServerVersion = this.getEffectiveWebServerVersion(project, webServer);
+    const servicePorts = this.managers.service?.getServicePorts(webServer, webServerVersion) || { httpPort: 80, sslPort: 443 };
+
+    if (project?.networkAccess && this.networkPort80Owner !== project?.id && project?.port) {
+      return {
+        httpPort: project.port,
+        sslPort: servicePorts.sslPort || 443,
+      };
+    }
+
+    return servicePorts;
+  }
+
+  async ensureProjectSslCertificates(project, sslDir) {
+    const certPath = path.join(sslDir, 'cert.pem');
+    const keyPath = path.join(sslDir, 'key.pem');
+    let certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
+
+    if (project.ssl && certsExist && this.managers.ssl?.certificateMatchesCurrentCA) {
+      const matchesCurrentCA = await this.managers.ssl.certificateMatchesCurrentCA(project.domain);
+      if (!matchesCurrentCA) {
+        certsExist = false;
+        this.managers.log?.systemWarn(`Regenerating SSL certificate for ${project.domain} because it does not match the current DevBox Root CA`);
+      }
+    }
+
+    if (project.ssl && !certsExist) {
+      try {
+        await this.managers.ssl?.createCertificate(project.domains || [project.domain]);
+        certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
+      } catch (error) {
+        this.managers.log?.systemWarn(`Failed to create SSL certificates for ${project.domain}`, { error: error.message });
+      }
+    }
+
+    return certsExist;
+  }
+
+  getProjectProxyBackendHttpPort(project) {
+    const webServer = this.getEffectiveWebServer(project);
+    const projectVersion = this.getEffectiveWebServerVersion(project, webServer);
+    const servicePorts = this.managers.service?.getServicePorts(webServer, projectVersion);
+    const fallbackHttpPort = webServer === 'apache' ? 8084 : 8081;
+    const serviceHttpPort = servicePorts?.httpPort || fallbackHttpPort;
+
+    if (!project?.networkAccess) {
+      return serviceHttpPort;
+    }
+
+    return project?.port || serviceHttpPort;
+  }
+
+  async ensureApacheListenConfig(project, vhostResult, targetApacheVersion = null) {
+    const needsConfigRegen = vhostResult?.networkAccess
+      && vhostResult?.finalHttpPort !== vhostResult?.httpPort;
+
+    if (!needsConfigRegen) {
+      return;
+    }
+
+    try {
+      const serviceManager = this.managers.service;
+      const apacheVersion = targetApacheVersion
+        || serviceManager?.serviceStatus?.get('apache')?.version
+        || this.getEffectiveWebServerVersion(project, 'apache');
+      const apachePath = serviceManager?.getApachePath(apacheVersion);
+      const dataPath = this.getDataPath();
+      const confPath = path.join(dataPath, 'apache', 'httpd.conf');
+      const logsPath = path.join(dataPath, 'apache', 'logs');
+      const ports = serviceManager?.getServicePorts('apache', apacheVersion);
+
+      if (!apachePath || !confPath) {
+        return;
+      }
+
+      await serviceManager.createApacheConfig(
+        apachePath,
+        confPath,
+        logsPath,
+        ports?.httpPort || 80,
+        ports?.sslPort || 443,
+        [vhostResult.finalHttpPort]
+      );
+      this.managers.log?.systemInfo(`Regenerated httpd.conf to include Listen for port ${vhostResult.finalHttpPort}`);
+    } catch (error) {
+      this.managers.log?.systemWarn('Could not regenerate httpd.conf', { error: error.message });
+    }
+  }
+
+  async syncProjectLocalProxy(project) {
+    const frontDoorOwner = this.managers.service?.standardPortOwner;
+    const projectWebServer = this.getEffectiveWebServer(project);
+
+    if (!frontDoorOwner || frontDoorOwner === projectWebServer) {
+      return false;
+    }
+
+    const backendHttpPort = this.getProjectProxyBackendHttpPort(project);
+    const ownerVersion = this.managers.service?.standardPortOwnerVersion || this.getDefaultWebServerVersion(frontDoorOwner);
+
+    if (frontDoorOwner === 'nginx') {
+      await this.createProxyNginxVhost(project, backendHttpPort, ownerVersion);
+    } else {
+      await this.createProxyApacheVhost(project, backendHttpPort, ownerVersion);
+    }
+
+    return true;
   }
 
   getComparableVhostState(project) {
@@ -294,6 +438,23 @@ class ProjectManager {
     return project;
   }
 
+  findProjectByPath(projects, projectPath) {
+    if (!projectPath) {
+      return null;
+    }
+
+    const normalizedPath = path.normalize(projectPath).toLowerCase();
+    return projects.find((project) => project.path && path.normalize(project.path).toLowerCase() === normalizedPath) || null;
+  }
+
+  findProjectByName(projects, projectName) {
+    if (!projectName) {
+      return null;
+    }
+
+    return projects.find((project) => project.name?.toLowerCase() === projectName.toLowerCase()) || null;
+  }
+
   async exportProjectConfig(id, mainWindow = null) {
     const project = this.getProject(id);
     if (!project) throw new Error('Project not found');
@@ -360,10 +521,7 @@ class ProjectManager {
     }
 
     // Check if a project already exists at this path
-    const normalizedPath = path.normalize(config.path).toLowerCase();
-    const existingProject = existingProjects.find(p =>
-      p.path && path.normalize(p.path).toLowerCase() === normalizedPath
-    );
+    const existingProject = this.findProjectByPath(existingProjects, config.path);
 
     if (existingProject) {
       // Project at this path already exists - check if it was a failed installation
@@ -401,9 +559,7 @@ class ProjectManager {
     // Check if a project with the same name already exists (to avoid confusion)
     // Re-fetch after potentially removing failed project
     const projectsAfterCleanup = this.configStore.get('projects', []);
-    const sameNameProject = projectsAfterCleanup.find(p =>
-      p.name.toLowerCase() === config.name.toLowerCase()
-    );
+    const sameNameProject = this.findProjectByName(projectsAfterCleanup, config.name);
 
     if (sameNameProject) {
       throw new Error(`A project with the name "${config.name}" already exists.\n\nPlease choose a different name.`);
@@ -2299,6 +2455,8 @@ class ProjectManager {
     }
     this.managers.log?.project(id, `Domain: ${project.domain}, Path: ${project.path}`);
 
+    let registeredRunningProjectEarly = false;
+
     try {
       // Get expected ports for this project's web server directly from ServiceManager
       const webServer = project.webServer || 'nginx';
@@ -2353,8 +2511,15 @@ class ProjectManager {
             this.managers.log?.systemWarn('Could not reload/restart nginx', { error: error.message });
           }
         } else if (webServer === 'apache') {
-          await this.createApacheVhost(project, targetVersion);
+          const vhostResult = await this.createApacheVhost(project, targetVersion);
           await this.regenerateAllApacheVhosts(id, webServerVersion);
+          await this.ensureApacheListenConfig(project, vhostResult, targetVersion);
+          this.runningProjects.set(id, {
+            phpCgiProcess: null,
+            phpFpmPort,
+            startedAt: new Date(),
+          });
+          registeredRunningProjectEarly = true;
           try {
             await this.managers.service?.reloadApache(targetVersion);
           } catch (error) {
@@ -2363,6 +2528,20 @@ class ProjectManager {
         } else {
           // Non-web-server paths keep the existing behavior.
           await this.createVirtualHost(project, phpFpmPort || undefined, targetVersion);
+        }
+
+        if (await this.syncProjectLocalProxy(project)) {
+          const owner = this.managers.service?.standardPortOwner;
+          const ownerVersion = this.managers.service?.standardPortOwnerVersion || this.getDefaultWebServerVersion(owner);
+          try {
+            if (owner === 'nginx') {
+              await this.managers.service?.reloadNginx(ownerVersion);
+            } else if (owner === 'apache') {
+              await this.managers.service?.reloadApache(ownerVersion);
+            }
+          } catch (error) {
+            this.managers.log?.systemWarn(`Could not reload ${owner} after creating proxy vhost`, { error: error.message });
+          }
         }
       }
       // When web server is NOT running, we defer ALL vhost creation/regeneration
@@ -2394,6 +2573,8 @@ class ProjectManager {
           await this.regenerateAllApacheVhosts(id, webServerVersion);
         }
 
+        const proxyCreated = await this.syncProjectLocalProxy(project);
+
         // Reload (not restart!) the web server to pick up the new vhost configs.
         // CRITICAL: Do NOT use restartService() here. On Windows, stopping nginx
         // puts ports into TCP TIME_WAIT for ~120 seconds. The restarted nginx then
@@ -2411,9 +2592,27 @@ class ProjectManager {
           if (webServer === 'nginx') {
             await this.managers.service?.reloadNginx(targetVersion);
           } else if (webServer === 'apache') {
+            this.runningProjects.set(id, {
+              phpCgiProcess: null,
+              phpFpmPort,
+              startedAt: new Date(),
+            });
+            registeredRunningProjectEarly = true;
             await this.managers.service?.reloadApache(targetVersion);
           }
           this.managers.log?.project(id, `${webServer} reloaded successfully with vhost for ${project.domain}`);
+
+          if (proxyCreated) {
+            const owner = this.managers.service?.standardPortOwner;
+            const ownerVersion = this.managers.service?.standardPortOwnerVersion || this.getDefaultWebServerVersion(owner);
+            if (owner && owner !== webServer) {
+              if (owner === 'nginx') {
+                await this.managers.service?.reloadNginx(ownerVersion);
+              } else if (owner === 'apache') {
+                await this.managers.service?.reloadApache(ownerVersion);
+              }
+            }
+          }
         } catch (reloadError) {
           // Log but do NOT fall back to restart — restart would destroy vhosts on Windows.
           this.managers.log?.systemWarn(`${webServer} reload failed after vhost creation`, { error: reloadError.message });
@@ -2476,6 +2675,9 @@ class ProjectManager {
       }
       return { success: true, port: project.port, phpFpmPort: actualPhpFpmPort };
     } catch (error) {
+      if (registeredRunningProjectEarly) {
+        this.runningProjects.delete(id);
+      }
       this.managers.log?.systemError(`Failed to start project ${project.name}`, { error: error.message });
       this.managers.log?.project(id, `Failed to start project: ${error.message}`, 'error');
       throw error;
@@ -3078,27 +3280,9 @@ class ProjectManager {
 
   getProjectUrl(project) {
     const protocol = project.ssl ? 'https' : 'http';
-    const domain = project.domains?.[0] || project.domain;
-
-    // Get actual port from ServiceManager based on web server type
-    const webServer = project.webServer || 'nginx';
-    const webServerVersion = this.getEffectiveWebServerVersion(project, webServer);
-    const serviceManager = this.managers.service;
-    const ports = serviceManager?.getServicePorts(webServer, webServerVersion);
-
-    // Determine which port to use based on SSL setting
-    // All projects on same web server share the SSL port (SNI handles certificate selection)
-    let port;
-    if (project.ssl) {
-      port = ports?.sslPort || 443;
-    } else {
-      // For HTTP, use project's unique port if network access and not owning port 80
-      if (project.networkAccess && this.networkPort80Owner !== project.id && project.port) {
-        port = project.port;
-      } else {
-        port = ports?.httpPort || 80;
-      }
-    }
+    const domain = this.getProjectPrimaryDomain(project);
+    const ports = this.getProjectLocalAccessPorts(project);
+    const port = project.ssl ? (ports?.sslPort || 443) : (ports?.httpPort || 80);
 
     // Only include port in URL if it's not the default (80 for http, 443 for https)
     const isDefaultPort = (protocol === 'http' && port === 80) || (protocol === 'https' && port === 443);
@@ -3312,10 +3496,14 @@ class ProjectManager {
     const webServer = project.webServer || this.configStore.get('settings.webServer', 'nginx');
 
     if (webServer === 'nginx') {
-      const result = await this.createNginxVhost(project, phpFpmPort, targetVersion);
+      await this.createNginxVhost(project, phpFpmPort, targetVersion);
+      const proxied = await this.syncProjectLocalProxy(project);
 
       try {
         await this.managers.service?.reloadNginx(targetVersion);
+        if (proxied && this.managers.service?.standardPortOwner === 'apache') {
+          await this.managers.service?.reloadApache(this.managers.service?.standardPortOwnerVersion || null);
+        }
         // On Windows, add a small delay to ensure SSL config is fully applied
         // This fixes issues where nginx serves wrong certificates immediately after reload
         if (process.platform === 'win32') {
@@ -3326,37 +3514,15 @@ class ProjectManager {
       }
     } else {
       const result = await this.createApacheVhost(project, targetVersion);
-
-      // If this project uses a non-standard port for network access (secondary project),
-      // we need to regenerate httpd.conf to include the new Listen directive before restarting
-      const needsConfigRegen = result?.networkAccess
-        && result?.finalHttpPort !== result?.httpPort;
-
-      if (needsConfigRegen) {
-        try {
-          const serviceManager = this.managers.service;
-          const apacheVersion = serviceManager?.serviceStatus?.get('apache')?.version || this.getDefaultWebServerVersion('apache');
-          const apachePath = serviceManager?.getApachePath(apacheVersion);
-          const dataPath = this.getDataPath();
-          const confPath = path.join(dataPath, 'apache', 'httpd.conf');
-          const logsPath = path.join(dataPath, 'apache', 'logs');
-          const ports = serviceManager?.getServicePorts('apache', apacheVersion);
-          if (apachePath && confPath) {
-            await serviceManager.createApacheConfig(
-              apachePath, confPath, logsPath,
-              ports?.httpPort || 80, ports?.sslPort || 443,
-              [result.finalHttpPort]
-            );
-            this.managers.log?.systemInfo(`Regenerated httpd.conf to include Listen for port ${result.finalHttpPort}`);
-          }
-        } catch (error) {
-          this.managers.log?.systemWarn('Could not regenerate httpd.conf', { error: error.message });
-        }
-      }
+      const proxied = await this.syncProjectLocalProxy(project);
+      await this.ensureApacheListenConfig(project, result, targetVersion);
 
       // Reload Apache to pick up config changes (on Windows this does a full restart)
       try {
         await this.managers.service?.reloadApache();
+        if (proxied && this.managers.service?.standardPortOwner === 'nginx') {
+          await this.managers.service?.reloadNginx(this.managers.service?.standardPortOwnerVersion || null);
+        }
       } catch (error) {
         this.managers.log?.systemWarn('Could not reload Apache', { error: error.message });
       }
@@ -3374,17 +3540,23 @@ class ProjectManager {
     const allProjects = this.configStore.get('projects', []);
     const dataPath = this.getDataPath();
     const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
+    const apacheOwnsFrontDoor = this.managers.service?.standardPortOwner === 'apache';
 
     for (const proj of allProjects) {
       if (proj.id === excludeProjectId) continue;
-      if (proj.webServer && proj.webServer !== 'apache') continue;
+      const webServer = this.getEffectiveWebServer(proj);
+      if (webServer !== 'apache' && !apacheOwnsFrontDoor) continue;
 
       // Only regenerate if a vhost conf file exists for this project
       const confFile = path.join(vhostsDir, `${proj.id}.conf`);
-      if (!await fs.pathExists(confFile)) continue;
+      if (!await fs.pathExists(confFile) && !(apacheOwnsFrontDoor && webServer === 'nginx' && this.runningProjects.has(proj.id))) continue;
 
       try {
-        await this.createApacheVhost(proj, targetApacheVersion);
+        if (webServer === 'apache') {
+          await this.createApacheVhost(proj, targetApacheVersion);
+        } else if (apacheOwnsFrontDoor && this.runningProjects.has(proj.id)) {
+          await this.createProxyApacheVhost(proj, this.getProjectProxyBackendHttpPort(proj), targetApacheVersion);
+        }
       } catch (error) {
         this.managers.log?.systemWarn(`Could not regenerate Apache vhost for ${proj.name}`, { error: error.message });
       }
@@ -3403,24 +3575,30 @@ class ProjectManager {
     const dataPath = this.getDataPath();
     const effectiveVersion = targetNginxVersion || this.getDefaultWebServerVersion('nginx');
     const sitesDir = path.join(dataPath, 'nginx', effectiveVersion, 'sites');
+    const nginxOwnsFrontDoor = this.managers.service?.standardPortOwner === 'nginx';
 
     for (const proj of allProjects) {
       if (proj.id === excludeProjectId) continue;
-      if (proj.webServer && proj.webServer !== 'nginx') continue;
+      const webServer = this.getEffectiveWebServer(proj);
+      if (webServer !== 'nginx' && !nginxOwnsFrontDoor) continue;
 
       // Only regenerate projects that use this nginx version
       const projVersion = this.getEffectiveWebServerVersion(proj, 'nginx');
-      if (projVersion !== effectiveVersion) continue;
+      if (webServer === 'nginx' && projVersion !== effectiveVersion) continue;
 
       // Only regenerate if a vhost conf file exists for this project
       const confFile = path.join(sitesDir, `${proj.id}.conf`);
-      if (!await fs.pathExists(confFile)) continue;
+      if (!await fs.pathExists(confFile) && !(nginxOwnsFrontDoor && webServer === 'apache' && this.runningProjects.has(proj.id))) continue;
 
       try {
-        // Get the running PHP-CGI port for this project if it's running
-        const running = this.runningProjects.get(proj.id);
-        const phpFpmPort = running?.phpFpmPort || null;
-        await this.createNginxVhost(proj, phpFpmPort, targetNginxVersion);
+        if (webServer === 'nginx') {
+          // Get the running PHP-CGI port for this project if it's running
+          const running = this.runningProjects.get(proj.id);
+          const phpFpmPort = running?.phpFpmPort || null;
+          await this.createNginxVhost(proj, phpFpmPort, targetNginxVersion);
+        } else if (nginxOwnsFrontDoor && this.runningProjects.has(proj.id)) {
+          await this.createProxyNginxVhost(proj, this.getProjectProxyBackendHttpPort(proj), targetNginxVersion);
+        }
       } catch (error) {
         this.managers.log?.systemWarn(`Could not regenerate vhost for ${proj.name}`, { error: error.message });
       }
@@ -3544,11 +3722,7 @@ class ProjectManager {
       : `${httpsPort} ssl${http2ListenSuffix}`;
 
     // Build server_name from all project domains + wildcard for subdomains
-    const allNginxDomains = [...new Set([
-      ...(project.domains?.length ? project.domains : [project.domain]),
-      `www.${project.domain}`,
-      `*.${project.domain}`,  // Wildcard allows any subdomain (e.g. api.myproject.test)
-    ])];
+    const allNginxDomains = this.getProjectServerNameEntries(project);
     if (networkAccess && canUsePort80) {
       allNginxDomains.push('_');  // Catch-all for IP-based access
     }
@@ -3560,6 +3734,8 @@ class ProjectManager {
 # DevBox Pro - ${project.name}
 # Domain: ${project.domain}
 # Generated: ${new Date().toISOString()}
+    # NOTE: Auto-generated file. Manual edits are not recommended.
+    # This file is regenerated when DevBox starts, stops, or reloads the project/service.
 # Ports: HTTP=${finalHttpPort}, HTTPS=${httpsPort}${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}${canUsePort80 ? '\n# Port 80 (first-come-first-served)' : ''}
 
 # HTTP Server
@@ -3605,20 +3781,7 @@ server {
 `;
 
     // Add HTTPS server block if SSL is enabled AND certificates exist
-    let certPath = path.join(sslDir, 'cert.pem');
-    let keyPath = path.join(sslDir, 'key.pem');
-    let certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
-
-    // Auto-create SSL certificates if SSL is enabled but certs don't exist
-    if (project.ssl && !certsExist) {
-      try {
-        await this.managers.ssl?.createCertificate(project.domains);
-        // Re-check if certificates were created successfully
-        certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
-      } catch (error) {
-        this.managers.log?.systemWarn(`Failed to create SSL certificates for ${project.domain}`, { error: error.message });
-      }
-    }
+    const certsExist = await this.ensureProjectSslCertificates(project, sslDir);
 
     if (project.ssl && !certsExist) {
       this.managers.log?.systemWarn(`SSL enabled for ${project.domain} but certificates not found at ${sslDir}. Skipping SSL block.`);
@@ -3687,6 +3850,89 @@ server {
     await fs.ensureDir(path.join(dataPath, 'nginx', 'logs'));
 
     return { configPath, finalHttpPort, httpPort, networkAccess };
+  }
+
+  async createProxyNginxVhost(project, backendHttpPort, targetNginxVersion = null) {
+    const dataPath = this.getDataPath();
+    const sslDir = path.join(dataPath, 'ssl', project.domain);
+    const effectiveVersion = targetNginxVersion || this.managers.service?.standardPortOwnerVersion || this.getDefaultWebServerVersion('nginx');
+    const sitesDir = path.join(dataPath, 'nginx', effectiveVersion, 'sites');
+    const serverName = this.getProjectServerNameEntries(project).join(' ');
+
+    await fs.ensureDir(sitesDir);
+    const certsExist = await this.ensureProjectSslCertificates(project, sslDir);
+
+    let config = `
+# DevBox Pro Proxy - ${project.name}
+# Domain: ${project.domain}
+# Generated: ${new Date().toISOString()}
+  # NOTE: Auto-generated file. Manual edits are not recommended.
+  # This file is regenerated when DevBox starts, stops, or reloads the project/service.
+# Front Door: nginx -> ${this.getEffectiveWebServer(project)}:${backendHttpPort}
+
+server {
+    listen 80;
+    server_name ${serverName};
+
+    client_max_body_size 128M;
+
+    location / {
+        proxy_pass http://127.0.0.1:${backendHttpPort};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_buffering off;
+        proxy_request_buffering off;
+    }
+
+    access_log "${dataPath.replace(/\\/g, '/')}/nginx/logs/${project.id}-proxy-access.log";
+    error_log "${dataPath.replace(/\\/g, '/')}/nginx/logs/${project.id}-proxy-error.log";
+}
+`;
+
+    if (project.ssl && certsExist) {
+      const useHttp2Directive = parseFloat(effectiveVersion) >= 1.25;
+      const http2ListenSuffix = useHttp2Directive ? '' : ' http2';
+      const http2Directive = useHttp2Directive ? '\n    http2 on;' : '';
+
+      config += `
+server {
+    listen 443 ssl${http2ListenSuffix};${http2Directive}
+    server_name ${serverName};
+
+    ssl_certificate "${sslDir.replace(/\\/g, '/')}/cert.pem";
+    ssl_certificate_key "${sslDir.replace(/\\/g, '/')}/key.pem";
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    client_max_body_size 128M;
+
+    location / {
+        proxy_pass http://127.0.0.1:${backendHttpPort};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_buffering off;
+        proxy_request_buffering off;
+    }
+
+    access_log "${dataPath.replace(/\\/g, '/')}/nginx/logs/${project.id}-proxy-ssl-access.log";
+    error_log "${dataPath.replace(/\\/g, '/')}/nginx/logs/${project.id}-proxy-ssl-error.log";
+}
+`;
+    }
+
+    const configPath = path.join(sitesDir, `${project.id}.conf`);
+    await fs.writeFile(configPath, config);
+    await fs.ensureDir(path.join(dataPath, 'nginx', 'logs'));
+    return { configPath, finalHttpPort: 80, httpPort: 80, networkAccess: false, proxied: true };
   }
 
   // Create Apache virtual host
@@ -3766,14 +4012,13 @@ server {
     }
     // All projects on same web server share SSL port (SNI handles certificate selection)
 
-    const listenAddress = networkAccess ? '0.0.0.0' : '*';
+    // Keep all Apache name-based vhosts on the same addr:port bucket.
+    // Mixing 0.0.0.0:443 and *:443 causes Apache to select the wrong vhost
+    // for some HTTPS requests when multiple projects share the same port.
+    const listenAddress = '*';
 
     // Build ServerAlias - include all custom domains + wildcard for subdomains
-    const allApacheDomains = [...new Set([
-      `www.${project.domain}`,
-      `*.${project.domain}`,  // Wildcard allows any subdomain (e.g. api.myproject.test)
-      ...(project.domains?.filter(d => d !== project.domain) || []),
-    ])];
+    const allApacheDomains = this.getProjectServerAliasEntries(project);
     const httpApacheDomains = [...allApacheDomains];
     if (networkAccess && canUsePort80) {
       httpApacheDomains.push('*');  // Catch-all for IP-based HTTP access only
@@ -3794,6 +4039,8 @@ server {
 # DevBox Pro - ${project.name}
 # Domain: ${project.domain}
 # Generated: ${new Date().toISOString()}
+  # NOTE: Auto-generated file. Manual edits are not recommended.
+  # This file is regenerated when DevBox starts, stops, or reloads the project/service.
 # Apache running on ports HTTP=${finalHttpPort}, SSL=${httpsPort}
 # PHP Version: ${phpVersion}${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}${canUsePort80 ? '\n# Port 80 (first-come-first-served)' : ''}
 
@@ -3837,20 +4084,7 @@ server {
 `;
 
     // Check if SSL certificates exist for HTTPS
-    let certPath = path.join(sslDir, 'cert.pem');
-    let keyPath = path.join(sslDir, 'key.pem');
-    let certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
-
-    // Auto-create SSL certificates if SSL is enabled but certs don't exist
-    if (project.ssl && !certsExist) {
-      try {
-        await this.managers.ssl?.createCertificate(project.domains);
-        // Re-check if certificates were created successfully
-        certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
-      } catch (error) {
-        this.managers.log?.systemWarn(`Failed to create SSL certificates for ${project.domain}`, { error: error.message });
-      }
-    }
+    const certsExist = await this.ensureProjectSslCertificates(project, sslDir);
 
     if (project.ssl && !certsExist) {
       this.managers.log?.systemWarn(`SSL enabled for ${project.domain} but certificates not found at ${sslDir}. Skipping SSL block.`);
@@ -3858,7 +4092,7 @@ server {
 
     // Add HTTPS virtual host if SSL is enabled and certs exist
     if (project.ssl && certsExist) {
-      const listenAddressSsl = networkAccess ? '0.0.0.0' : '*';
+      const listenAddressSsl = '*';
       config += `
 # HTTPS Virtual Host (SSL) - Port ${httpsPort}
 <VirtualHost ${listenAddressSsl}:${httpsPort}>
@@ -3922,6 +4156,67 @@ server {
     await fs.ensureDir(path.join(dataPath, 'apache', 'logs'));
 
     return { configPath, finalHttpPort, httpPort, networkAccess };
+  }
+
+  async createProxyApacheVhost(project, backendHttpPort, targetApacheVersion = null) {
+    const dataPath = this.getDataPath();
+    const vhostsDir = path.join(dataPath, 'apache', 'vhosts');
+    const sslDir = path.join(dataPath, 'ssl', project.domain).replace(/\\/g, '/');
+    const primaryDomain = this.getProjectPrimaryDomain(project);
+    const serverAliases = this.getProjectServerAliasEntries(project).join(' ');
+
+    await fs.ensureDir(vhostsDir);
+    const certsExist = await this.ensureProjectSslCertificates(project, sslDir);
+
+    let config = `
+# DevBox Pro Proxy - ${project.name}
+# Domain: ${project.domain}
+# Generated: ${new Date().toISOString()}
+  # NOTE: Auto-generated file. Manual edits are not recommended.
+  # This file is regenerated when DevBox starts, stops, or reloads the project/service.
+# Front Door: apache -> ${this.getEffectiveWebServer(project)}:${backendHttpPort}
+
+<VirtualHost *:80>
+    ServerName ${primaryDomain}
+${serverAliases ? `    ServerAlias ${serverAliases}` : ''}
+
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:${backendHttpPort}/ retry=0
+    ProxyPassReverse / http://127.0.0.1:${backendHttpPort}/
+    RequestHeader set X-Forwarded-Proto "http"
+    RequestHeader set X-Forwarded-Port "80"
+
+    ErrorLog "${dataPath.replace(/\\/g, '/')}/apache/logs/${project.id}-proxy-error.log"
+    CustomLog "${dataPath.replace(/\\/g, '/')}/apache/logs/${project.id}-proxy-access.log" combined
+</VirtualHost>
+`;
+
+    if (project.ssl && certsExist) {
+      config += `
+<VirtualHost *:443>
+    ServerName ${primaryDomain}
+${serverAliases ? `    ServerAlias ${serverAliases}` : ''}
+
+    SSLEngine on
+    SSLCertificateFile "${sslDir}/cert.pem"
+    SSLCertificateKeyFile "${sslDir}/key.pem"
+
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:${backendHttpPort}/ retry=0
+    ProxyPassReverse / http://127.0.0.1:${backendHttpPort}/
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader set X-Forwarded-Port "443"
+
+    ErrorLog "${dataPath.replace(/\\/g, '/')}/apache/logs/${project.id}-proxy-ssl-error.log"
+    CustomLog "${dataPath.replace(/\\/g, '/')}/apache/logs/${project.id}-proxy-ssl-access.log" combined
+</VirtualHost>
+`;
+    }
+
+    const configPath = path.join(vhostsDir, `${project.id}.conf`);
+    await fs.writeFile(configPath, config);
+    await fs.ensureDir(path.join(dataPath, 'apache', 'logs'));
+    return { configPath, finalHttpPort: 80, httpPort: 80, networkAccess: false, proxied: true };
   }
 
   /**
@@ -4367,6 +4662,24 @@ server {
     const settings = this.configStore.get('settings', {});
     const existingProjects = this.configStore.get('projects', []);
     const projectServices = config.services || {};
+
+    if (!config.path || !config.path.trim()) {
+      throw new Error('Project path is required. Please choose an existing project folder to import.');
+    }
+
+    if (!config.name || !config.name.trim()) {
+      throw new Error('Project name is required.');
+    }
+
+    const existingProject = this.findProjectByPath(existingProjects, config.path);
+    if (existingProject) {
+      throw new Error(`This folder is already registered as project "${existingProject.name}".`);
+    }
+
+    const sameNameProject = this.findProjectByName(existingProjects, config.name);
+    if (sameNameProject) {
+      throw new Error(`A project with the name "${config.name}" already exists.\n\nPlease choose a different name.`);
+    }
 
     // Find available port
     const usedPorts = existingProjects.map((p) => p.port);

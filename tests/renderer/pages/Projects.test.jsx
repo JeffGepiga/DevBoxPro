@@ -31,6 +31,7 @@ const mockProjects = [
         type: 'wordpress',
         phpVersion: '8.2',
         isRunning: true,
+        port: 8084,
     },
 ];
 
@@ -127,6 +128,12 @@ describe('Projects', () => {
                 const link = screen.getByText(/New Project/i).closest('a');
                 expect(link).toHaveAttribute('href', '/projects/new');
             });
+        });
+
+        it('labels running ports as backend ports', async () => {
+            renderProjects();
+            await waitFor(() => expect(screen.getByText(/Backend port/i)).toBeInTheDocument());
+            expect(screen.getByText(/Backend port/i)).toHaveTextContent('8084');
         });
     });
 

@@ -113,7 +113,8 @@ const WIZARD_STEPS = [
 
 function CreateProject() {
   const navigate = useNavigate();
-  const { createProject, settings, refreshProjects } = useApp();
+  const { projects, settings, refreshProjects } = useApp();
+  const { showAlert } = useModal();
   const [currentStep, setCurrentStep] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
   const [showInstallProgress, setShowInstallProgress] = useState(false);
@@ -863,12 +864,17 @@ function CreateProject() {
           }}
           onImport={async (config) => {
             try {
-              const result = await createProject(config);
+              const result = await window.devbox?.projects?.registerExisting(config);
               if (result?.id) {
+                await refreshProjects?.();
                 navigate('/projects');
               }
             } catch (error) {
-              console.error('Import failed:', error);
+              await showAlert({
+                title: error?.message?.includes('already registered') ? 'Already Registered' : 'Import Failed',
+                message: error?.message || 'Failed to import project.',
+                type: error?.message?.includes('already registered') ? 'warning' : 'error',
+              });
             }
             setShowImportModal(false);
             setImportProjectData(null);
@@ -880,11 +886,24 @@ function CreateProject() {
 }
 
 function StepProjectType({ formData, updateFormData, onImportProject }) {
+  const { projects } = useApp();
+  const { showAlert } = useModal();
+
   const handleImportFolder = async () => {
     try {
       // Open folder picker dialog
       const folderPath = await window.devbox?.system.selectDirectory();
       if (!folderPath) return; // User cancelled
+
+      const existingProject = projects.find((project) => project.path === folderPath);
+      if (existingProject) {
+        await showAlert({
+          title: 'Already Registered',
+          message: `This folder is already registered as project "${existingProject.name}"`,
+          type: 'warning',
+        });
+        return;
+      }
 
       // Detect project type from folder contents
       const projectInfo = await window.devbox?.projects.detectType(folderPath);
