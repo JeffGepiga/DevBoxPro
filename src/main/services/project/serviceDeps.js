@@ -6,7 +6,12 @@ module.exports = {
   },
 
   isServiceNeededByRunningProjects(service) {
-    return Array.from(this.runningProjects.keys())
+    const activeProjectIds = new Set([
+      ...this.runningProjects.keys(),
+      ...(this.startingProjects || []),
+    ]);
+
+    return Array.from(activeProjectIds)
       .map((id) => this.getProject(id))
       .filter(Boolean)
       .some((runningProject) => {

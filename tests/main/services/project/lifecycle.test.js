@@ -56,6 +56,8 @@ function makeContext(overrides = {}) {
       },
     },
     runningProjects: new Map(),
+    startingProjects: new Set(),
+    pendingProjectStops: new Map(),
     cancelPendingServiceStop: vi.fn(),
     getProject: vi.fn(),
     getProjectServiceDependencies: vi.fn(() => []),
@@ -130,6 +132,60 @@ describe('project/lifecycle', () => {
     expect(result.success).toBe(false);
     expect(result.criticalFailures).toEqual(['nginx']);
     expect(result.errors).toContain('nginx 1.28 is not installed. Please download it from Binary Manager.');
+  });
+
+  it('records non-critical service start failures instead of reporting everything ready', async () => {
+    const startService = vi.fn().mockResolvedValue({ success: false, status: 'error' });
+
+    const ctx = makeContext({
+      managers: {
+        service: {
+          serviceStatus: new Map([
+            ['nginx', { status: 'running', version: '1.28' }],
+            ['mysql', { status: 'error', version: '8.4', error: 'MySQL 8.4 failed to start within 30000ms' }],
+          ]),
+          serviceConfigs: {
+            nginx: { versioned: true },
+            apache: { versioned: true },
+            mysql: { versioned: true },
+            redis: { versioned: true },
+          },
+          getServicePorts: vi.fn(() => ({ httpPort: 80, sslPort: 443 })),
+          isVersionRunning: vi.fn((serviceName, version) => serviceName === 'nginx' && version === '1.28'),
+          startService,
+          restartService: vi.fn().mockResolvedValue({ success: true }),
+          stopService: vi.fn().mockResolvedValue(undefined),
+          standardPortOwner: null,
+        },
+        supervisor: {
+          startProcess: vi.fn().mockResolvedValue(undefined),
+        },
+        log: {
+          project: vi.fn(),
+          systemWarn: vi.fn(),
+          systemError: vi.fn(),
+          systemInfo: vi.fn(),
+        },
+      },
+    });
+
+    const result = await ctx.startProjectServices({
+      id: 'proj-2b',
+      name: 'Proj 2b',
+      webServer: 'nginx',
+      webServerVersion: '1.28',
+      services: { mysql: true, mysqlVersion: '8.4' },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.started).toContain('nginx:1.28');
+    expect(result.failed).toContain('mysql');
+    expect(result.errors).toContain('Failed to start mysql:8.4: MySQL 8.4 failed to start within 30000ms');
+    expect(ctx.managers.log.project).toHaveBeenCalledWith(
+      'proj-2b',
+      expect.stringContaining('Services ready with warnings:'),
+      'error'
+    );
   });
 
   it('auto-updates the project web server version when a fallback binary exists', async () => {
@@ -303,6 +359,83 @@ describe('project/lifecycle', () => {
     expect(cancelPendingServiceStop.mock.invocationCallOrder[0]).toBeLessThan(createNginxVhost.mock.invocationCallOrder[0]);
   });
 
+  it('defers front-door proxy reload until the mixed-server project has started', async () => {
+    const project = {
+      id: 'proj-proxy-order',
+      name: 'Proxy Order',
+      type: 'php',
+      phpVersion: '8.3',
+      webServer: 'nginx',
+      webServerVersion: '1.28',
+      domain: 'proxy-order.test',
+      path: '/projects/proxy-order',
+      services: {},
+      supervisor: { processes: [] },
+      environment: {},
+    };
+
+    const startProjectServices = vi.fn().mockResolvedValue({ success: true, errors: [], criticalFailures: [] });
+    const startPhpCgi = vi.fn().mockResolvedValue({ process: { pid: 4321 }, port: 9100 });
+    const reloadApache = vi.fn().mockResolvedValue(undefined);
+
+    const ctx = makeContext({
+      configStore: makeConfigStore([project]),
+      getProject: vi.fn(() => project),
+      validateProjectBinaries: vi.fn().mockResolvedValue([]),
+      getPhpFpmPort: vi.fn(() => 9100),
+      createNginxVhost: vi.fn().mockResolvedValue(undefined),
+      regenerateAllNginxVhosts: vi.fn().mockResolvedValue(undefined),
+      syncProjectLocalProxy: vi.fn().mockResolvedValue(true),
+      startProjectServices,
+      startPhpCgi,
+      updateHostsFile: vi.fn().mockResolvedValue(undefined),
+      managers: {
+        service: {
+          serviceStatus: new Map([
+            ['nginx', { status: 'running', version: '1.28' }],
+            ['apache', { status: 'running', version: '2.4' }],
+          ]),
+          serviceConfigs: {
+            nginx: { versioned: true },
+            apache: { versioned: true },
+            mysql: { versioned: true },
+            redis: { versioned: true },
+          },
+          getServicePorts: vi.fn((serviceName) => serviceName === 'nginx'
+            ? { httpPort: 8081, sslPort: 8444 }
+            : { httpPort: 80, sslPort: 443 }),
+          isVersionRunning: vi.fn((serviceName, version) =>
+            (serviceName === 'nginx' && version === '1.28') || (serviceName === 'apache' && version === '2.4')),
+          startService: vi.fn().mockResolvedValue({ success: true }),
+          restartService: vi.fn().mockResolvedValue({ success: true }),
+          stopService: vi.fn().mockResolvedValue(undefined),
+          reloadNginx: vi.fn().mockResolvedValue(undefined),
+          reloadApache,
+          standardPortOwner: 'apache',
+          standardPortOwnerVersion: '2.4',
+        },
+        supervisor: {
+          startProcess: vi.fn().mockResolvedValue(undefined),
+        },
+        log: {
+          project: vi.fn(),
+          systemWarn: vi.fn(),
+          systemError: vi.fn(),
+          systemInfo: vi.fn(),
+        },
+      },
+      getFrontDoorOwner: vi.fn(() => ({ webServer: 'apache', version: '2.4' })),
+    });
+
+    await ctx.startProject(project.id);
+
+    expect(startProjectServices.mock.invocationCallOrder[0]).toBeLessThan(ctx.syncProjectLocalProxy.mock.invocationCallOrder[0]);
+    expect(startPhpCgi.mock.invocationCallOrder[0]).toBeLessThan(ctx.syncProjectLocalProxy.mock.invocationCallOrder[0]);
+    expect(ctx.syncProjectLocalProxy).toHaveBeenCalledWith(project);
+    expect(reloadApache).toHaveBeenCalledTimes(1);
+    expect(ctx.syncProjectLocalProxy.mock.invocationCallOrder[0]).toBeLessThan(reloadApache.mock.invocationCallOrder[0]);
+  });
+
   it('stops all running projects and reports the aggregate result', async () => {
     const ctx = makeContext({
       runningProjects: new Map([
@@ -369,5 +502,136 @@ describe('project/lifecycle', () => {
 
     expect(killMock).toHaveBeenCalledWith(4321, 'SIGTERM', expect.any(Function));
     expect(ctx.stopProjectServices).toHaveBeenCalledWith(project);
+  });
+
+  it('waits for an in-flight stop before starting the same project again', async () => {
+    let resolveStop;
+    const pendingStop = new Promise((resolve) => {
+      resolveStop = resolve;
+    });
+
+    const project = {
+      id: 'proj-restart',
+      name: 'Restart Wait',
+      type: 'php',
+      phpVersion: '8.3',
+      webServer: 'nginx',
+      webServerVersion: '1.28',
+      domain: 'restart.test',
+      path: '/projects/restart',
+      services: {},
+      supervisor: { processes: [] },
+      environment: {},
+    };
+
+    const startProjectServices = vi.fn().mockResolvedValue({ success: true, errors: [], criticalFailures: [] });
+    const ctx = makeContext({
+      configStore: makeConfigStore([project]),
+      pendingProjectStops: new Map([['proj-restart', pendingStop]]),
+      getProject: vi.fn(() => project),
+      validateProjectBinaries: vi.fn().mockResolvedValue([]),
+      getPhpFpmPort: vi.fn(() => 9100),
+      createNginxVhost: vi.fn().mockResolvedValue(undefined),
+      regenerateAllNginxVhosts: vi.fn().mockResolvedValue(undefined),
+      syncProjectLocalProxy: vi.fn().mockResolvedValue(false),
+      startProjectServices,
+      startPhpCgi: vi.fn().mockResolvedValue({ process: { pid: 4321 }, port: 9100 }),
+      updateHostsFile: vi.fn().mockResolvedValue(undefined),
+      managers: {
+        service: {
+          serviceStatus: new Map(),
+          serviceConfigs: {
+            nginx: { versioned: true },
+            apache: { versioned: true },
+            mysql: { versioned: true },
+            redis: { versioned: true },
+          },
+          getServicePorts: vi.fn(() => ({ httpPort: 80, sslPort: 443 })),
+          isVersionRunning: vi.fn(() => false),
+          startService: vi.fn().mockResolvedValue({ success: true }),
+          restartService: vi.fn().mockResolvedValue({ success: true }),
+          stopService: vi.fn().mockResolvedValue(undefined),
+          reloadNginx: vi.fn().mockResolvedValue(undefined),
+          standardPortOwner: null,
+        },
+        supervisor: {
+          startProcess: vi.fn().mockResolvedValue(undefined),
+        },
+        log: {
+          project: vi.fn(),
+          systemWarn: vi.fn(),
+          systemError: vi.fn(),
+          systemInfo: vi.fn(),
+        },
+      },
+    });
+
+    let started = false;
+    const startPromise = ctx.startProject(project.id).then(() => {
+      started = true;
+    });
+
+    await Promise.resolve();
+    expect(started).toBe(false);
+    expect(startProjectServices).not.toHaveBeenCalled();
+
+    resolveStop();
+    await startPromise;
+
+    expect(startProjectServices).toHaveBeenCalledWith(project);
+  });
+
+  it('does not schedule shared services to stop while another project is still starting', async () => {
+    const stoppingProject = {
+      id: 'proj-stop-services',
+      name: 'Stop Services',
+      webServer: 'nginx',
+      webServerVersion: '1.28',
+      services: { mysql: true, mysqlVersion: '8.4' },
+    };
+    const startingProject = {
+      id: 'proj-starting-services',
+      name: 'Starting Services',
+      webServer: 'apache',
+      webServerVersion: '2.4',
+      services: { mysql: true, mysqlVersion: '8.4' },
+    };
+
+    const ctx = makeContext({
+      startingProjects: new Set(['proj-starting-services']),
+      getProject: vi.fn((id) => {
+        if (id === 'proj-starting-services') {
+          return startingProject;
+        }
+        if (id === 'proj-stop-services') {
+          return stoppingProject;
+        }
+        return null;
+      }),
+      getProjectServiceDependencies: vi.fn((project) => {
+        if (project.id === 'proj-stop-services') {
+          return [
+            { name: 'nginx', version: '1.28' },
+            { name: 'mysql', version: '8.4' },
+          ];
+        }
+
+        if (project.id === 'proj-starting-services') {
+          return [
+            { name: 'apache', version: '2.4' },
+            { name: 'mysql', version: '8.4' },
+          ];
+        }
+
+        return [];
+      }),
+      scheduleServiceStop: vi.fn(),
+    });
+
+    const result = await ctx.stopProjectServices(stoppingProject);
+
+    expect(result.scheduled).toEqual(['nginx:1.28']);
+    expect(ctx.scheduleServiceStop).toHaveBeenCalledTimes(1);
+    expect(ctx.scheduleServiceStop).toHaveBeenCalledWith('proj-stop-services', { name: 'nginx', version: '1.28' });
   });
 });

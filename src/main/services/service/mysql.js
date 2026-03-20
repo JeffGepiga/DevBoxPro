@@ -40,10 +40,23 @@ module.exports = {
     const legacyDataDir = this.getLegacyMySQLDataDir(version);
     const shareMessagesPath = path.join(mysqlPath, 'share', 'messages_to_error_log.txt');
 
+    const status = this.serviceStatus.get('mysql');
     const defaultPort = this.getVersionPort('mysql', version, this.serviceConfigs.mysql.defaultPort);
     let port = defaultPort;
 
     if (!await isPortAvailable(port)) {
+      const healthyExpectedPort = await this.checkPortOpen(defaultPort);
+      if (status?.status === 'error' && status.version === version && healthyExpectedPort) {
+        this.serviceConfigs.mysql.actualPort = defaultPort;
+        this.runningVersions.get('mysql').set(version, { port: defaultPort, startedAt: new Date() });
+        status.port = defaultPort;
+        status.version = version;
+        status.status = 'running';
+        status.startedAt = Date.now();
+        this.managers.log?.systemWarn(`Recovered MySQL ${version} tracking from healthy port ${defaultPort}`);
+        return;
+      }
+
       port = await findAvailablePort(defaultPort, 100);
       if (!port) {
         throw new Error(`Could not find available port for MySQL starting from ${defaultPort}`);
@@ -176,14 +189,49 @@ module.exports = {
     }
 
     this.processes.set(processKey, proc);
-    const status = this.serviceStatus.get('mysql');
     status.port = port;
     status.version = version;
 
     this.runningVersions.get('mysql').set(version, { port, startedAt: new Date() });
 
+    const startupFailurePromise = new Promise((_, reject) => {
+      proc.once('error', (error) => {
+        const currentStatus = this.serviceStatus.get('mysql');
+        if (currentStatus?.status === 'running') {
+          return;
+        }
+        reject(error);
+      });
+
+      proc.once('exit', async (code, signal) => {
+        const currentStatus = this.serviceStatus.get('mysql');
+        if (currentStatus?.status === 'running') {
+          return;
+        }
+
+        let errorLogTail = '';
+        try {
+          errorLogTail = await this.getMySQLErrorLogTail(dataDir);
+        } catch {
+          // Ignore log-tail lookup failures while building the startup error.
+        }
+
+        const lastErrorLine = errorLogTail ? errorLogTail.split('\n').at(-1) : null;
+        const detail = [
+          lastErrorLine,
+          code !== null && code !== undefined ? `exit code ${code}` : null,
+          signal ? `signal ${signal}` : null,
+        ].filter(Boolean).join(' | ');
+
+        reject(new Error(detail ? `MySQL exited before becoming ready: ${detail}` : 'MySQL exited before becoming ready'));
+      });
+    });
+
     try {
-      await this.waitForService('mysql', 30000);
+      await Promise.race([
+        this.waitForService('mysql', 30000),
+        startupFailurePromise,
+      ]);
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {

@@ -6,6 +6,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
+import { EventEmitter } from 'events';
+import * as childProcess from 'child_process';
 
 vi.mock('child_process', () => {
     const stdout = { on: vi.fn() };
@@ -18,6 +20,9 @@ vi.mock('child_process', () => {
         killed: false,
         on: vi.fn((event, cb) => {
             // we won't auto-trigger exit/close so processes appear "running"
+        }),
+        once: vi.fn((event, cb) => {
+            // tests can override spawn to provide an EventEmitter when needed
         }),
         unref: vi.fn()
     };
@@ -295,6 +300,48 @@ describe('ServiceManager', () => {
                 expect.any(Object)
             );
             expect(warningDetails.redoDir.replace(/\\/g, '/')).toBe('C:/DevBox Pro/data/mysql/8.4/data/#innodb_redo');
+        });
+
+        it('fails fast when mysqld exits before becoming ready', async () => {
+            const proc = new EventEmitter();
+            proc.pid = 4321;
+            proc.stdout = new EventEmitter();
+            proc.stderr = new EventEmitter();
+
+            vi.mocked(childProcess.spawn).mockImplementationOnce(() => proc);
+
+            mgr.startMySQL.mockRestore();
+            mgr.getMySQLPath = vi.fn(() => 'C:/DevBox Pro/resources-user/mysql/8.4/win');
+            mgr.getDataPath = vi.fn(() => 'C:/DevBox Pro/data');
+            mgr.getLegacyMySQLDataDir = vi.fn(() => 'C:/DevBox Pro/legacy/mysql/8.4/data');
+            mgr.ensureWindowsRuntimeDlls = vi.fn().mockResolvedValue(undefined);
+            mgr.maybeAdoptLegacyMySQLData = vi.fn().mockResolvedValue(false);
+            mgr.createCredentialsInitFile = vi.fn().mockResolvedValue('C:/DevBox Pro/data/mysql/8.4/credentials_init.sql');
+            mgr.createMySQLConfig = vi.fn().mockResolvedValue(undefined);
+            mgr.waitForService = vi.fn(() => new Promise(() => {}));
+            mgr.getMySQLErrorLogTail = vi.fn().mockResolvedValue('2026-03-20T14:53:59.272391Z 0 [System] [MY-015016] [Server] MySQL Server - end.');
+            mgr.hasRecoverableMySQLRedoCorruption = vi.fn().mockResolvedValue(false);
+            mgr.logServiceStartupFailure = vi.fn();
+
+            vi.spyOn(fs, 'pathExists').mockImplementation(async (targetPath) => {
+                const normalized = String(targetPath).replace(/\\/g, '/');
+                return normalized.endsWith('/bin/mysqld.exe') || normalized.endsWith('/data/mysql/8.4/data/mysql');
+            });
+
+            const startPromise = mgr.startMySQL('8.4');
+            setTimeout(() => {
+                proc.emit('exit', 0);
+            }, 10);
+
+            const result = await Promise.race([
+                startPromise.then(() => 'done'),
+                new Promise((resolve) => setTimeout(() => resolve('timeout'), 250)),
+            ]);
+
+            expect(result).toBe('done');
+            expect(mgr.getMySQLErrorLogTail).toHaveBeenCalled();
+            expect(mgr.serviceStatus.get('mysql').status).toBe('error');
+            expect(mgr.serviceStatus.get('mysql').error).toContain('MySQL Server - end.');
         });
     });
 

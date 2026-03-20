@@ -21,6 +21,11 @@ function spawnHidden(command, args, options = {}) {
 
 module.exports = {
   async startProject(id) {
+    const pendingStop = this.pendingProjectStops?.get(id);
+    if (pendingStop) {
+      await pendingStop;
+    }
+
     const project = this.getProject(id);
     if (!project) {
       throw new Error('Project not found');
@@ -35,6 +40,8 @@ module.exports = {
       this.managers.log?.project(id, `Project ${project.name} is already running`);
       return { success: true, alreadyRunning: true };
     }
+
+    this.startingProjects?.add(id);
 
     this.managers.log?.project(id, `Starting project: ${project.name}`);
     if (project.type === 'nodejs') {
@@ -59,6 +66,8 @@ module.exports = {
     this.managers.log?.project(id, `Domain: ${project.domain}, Path: ${project.path}`);
 
     let registeredRunningProjectEarly = false;
+    let deferFrontDoorProxySync = false;
+    let frontDoorProxyHandledByVirtualHostReload = false;
 
     try {
       const webServer = project.webServer || 'nginx';
@@ -114,19 +123,7 @@ module.exports = {
           await this.createVirtualHost(project, phpFpmPort || undefined, targetVersion);
         }
 
-        if (await this.syncProjectLocalProxy(project)) {
-          const owner = this.managers.service?.standardPortOwner;
-          const ownerVersion = this.managers.service?.standardPortOwnerVersion || this.getDefaultWebServerVersion(owner);
-          try {
-            if (owner === 'nginx') {
-              await this.managers.service?.reloadNginx(ownerVersion);
-            } else if (owner === 'apache') {
-              await this.managers.service?.reloadApache(ownerVersion);
-            }
-          } catch (error) {
-            this.managers.log?.systemWarn(`Could not reload ${owner} after creating proxy vhost`, { error: error.message });
-          }
-        }
+        deferFrontDoorProxySync = true;
       }
 
       const serviceResult = await this.startProjectServices(project);
@@ -188,6 +185,7 @@ module.exports = {
         if (currentHttpPort !== httpPort) {
           this.managers.log?.project(id, `Web server ports changed (was: ${httpPort}, now: ${currentHttpPort}). Regenerating vhost config.`);
           await this.createVirtualHost(project, phpFpmPort || undefined, targetVersion);
+          frontDoorProxyHandledByVirtualHostReload = true;
         }
       }
 
@@ -201,6 +199,7 @@ module.exports = {
 
         if (actualPhpFpmPort !== phpFpmPort) {
           await this.createVirtualHost(project, actualPhpFpmPort, targetVersion);
+          frontDoorProxyHandledByVirtualHostReload = true;
           if (webServerAlreadyRunning) {
             this.managers.log?.project(id, `Reloading ${webServer} after PHP-CGI moved to port ${actualPhpFpmPort}`);
             try {
@@ -208,6 +207,25 @@ module.exports = {
             } catch (error) {
               this.managers.log?.systemWarn(`Could not reload ${webServer} after PHP-CGI port update`, { error: error.message });
             }
+          }
+        }
+      }
+
+      if (deferFrontDoorProxySync && !frontDoorProxyHandledByVirtualHostReload) {
+        const proxyCreated = await this.syncProjectLocalProxy(project);
+        if (proxyCreated) {
+          const frontDoorOwner = this.getFrontDoorOwner();
+          try {
+            if (frontDoorOwner?.webServer === 'nginx') {
+              await this.managers.service?.reloadNginx(frontDoorOwner.version);
+            } else if (frontDoorOwner?.webServer === 'apache') {
+              await this.managers.service?.reloadApache(frontDoorOwner.version);
+            }
+          } catch (error) {
+            this.managers.log?.systemWarn(
+              `Could not reload ${frontDoorOwner?.webServer} after creating proxy vhost`,
+              { error: error.message }
+            );
           }
         }
       }
@@ -245,6 +263,8 @@ module.exports = {
       this.managers.log?.systemError(`Failed to start project ${project.name}`, { error: error.message });
       this.managers.log?.project(id, `Failed to start project: ${error.message}`, 'error');
       throw error;
+    } finally {
+      this.startingProjects?.delete(id);
     }
   },
 
@@ -440,6 +460,12 @@ module.exports = {
   },
 
   async stopProject(id) {
+    const existingPendingStop = this.pendingProjectStops?.get(id);
+    if (existingPendingStop) {
+      await existingPendingStop;
+      return { success: true, wasRunning: false };
+    }
+
     const running = this.runningProjects.get(id);
     if (!running) {
       return { success: true, wasRunning: false };
@@ -448,7 +474,7 @@ module.exports = {
     const project = this.getProject(id);
     this.managers.log?.project(id, `Stopping project: ${project?.name || id}`);
 
-    try {
+    const stopPromise = (async () => {
       const kill = require('tree-kill');
 
       if (running.phpCgiProcess && running.phpCgiProcess.pid) {
@@ -488,9 +514,17 @@ module.exports = {
       this.managers.log?.project(id, `Project ${project?.name || id} stopped successfully`);
 
       return { success: true, wasRunning: true };
+    })();
+
+    this.pendingProjectStops.set(id, stopPromise);
+
+    try {
+      return await stopPromise;
     } catch (error) {
       this.managers.log?.systemError('Error stopping project', { project: project?.name, id, error: error.message });
       throw error;
+    } finally {
+      this.pendingProjectStops.delete(id);
     }
   },
 
@@ -501,7 +535,13 @@ module.exports = {
     }
 
     const projectServices = this.getProjectServiceDependencies(project);
-    const otherRunningProjects = Array.from(this.runningProjects.keys())
+    const activeProjectIds = new Set([
+      ...this.runningProjects.keys(),
+      ...(this.startingProjects || []),
+    ]);
+    activeProjectIds.delete(project.id);
+
+    const otherRunningProjects = Array.from(activeProjectIds)
       .map((id) => this.getProject(id))
       .filter(Boolean);
 
@@ -646,6 +686,9 @@ module.exports = {
         const runningVersion = status?.version;
         const needsStart = !status || status.status !== 'running';
         const needsDifferentVersion = isVersioned && requestedVersion && runningVersion && runningVersion !== requestedVersion;
+        const versionRunning = isVersioned && requestedVersion
+          ? serviceManager.isVersionRunning(service.name, requestedVersion)
+          : false;
 
         if ((service.name === 'nginx' || service.name === 'apache') && status && status.status === 'running' && !needsDifferentVersion) {
           const ports = serviceManager.getServicePorts(service.name, requestedVersion);
@@ -671,7 +714,6 @@ module.exports = {
         }
 
         if (isVersioned && requestedVersion) {
-          const versionRunning = serviceManager.isVersionRunning(service.name, requestedVersion);
           if (versionRunning) {
             results.started.push(`${service.name}:${requestedVersion}`);
             continue;
@@ -692,6 +734,16 @@ module.exports = {
             }
           } else if (result.success) {
             results.started.push(`${service.name}${requestedVersion ? ':' + requestedVersion : ''}`);
+          } else {
+            const serviceLabel = `${service.name}${service.version ? `:${service.version}` : ''}`;
+            const serviceError = serviceManager.serviceStatus.get(service.name)?.error || `status=${result.status || 'unknown'}`;
+            const errorMsg = `Failed to start ${serviceLabel}: ${serviceError}`;
+            results.failed.push(service.name);
+            results.errors.push(errorMsg);
+            if (service.critical) {
+              results.criticalFailures.push(service.name);
+              results.success = false;
+            }
           }
         } else if (status && status.status === 'running') {
           results.started.push(`${service.name}${runningVersion ? ':' + runningVersion : ''}`);
@@ -710,8 +762,10 @@ module.exports = {
       }
     }
 
-    if (results.success) {
+    if (results.success && results.failed.length === 0) {
       this.managers.log?.project(project.id, `Services ready: ${results.started.join(', ')}`);
+    } else if (results.success) {
+      this.managers.log?.project(project.id, `Services ready with warnings: ${results.started.join(', ')}; failures: ${results.errors.join('; ')}`, 'error');
     } else {
       this.managers.log?.systemError(`Critical services failed for project ${project.name}`, { failures: results.criticalFailures });
       this.managers.log?.project(project.id, `Service failures: ${results.errors.join('; ')}`, 'error');

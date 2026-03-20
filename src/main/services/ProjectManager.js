@@ -18,6 +18,8 @@ class ProjectManager {
     this.configStore = configStore;
     this.managers = managers;
     this.runningProjects = new Map();
+    this.startingProjects = new Set();
+    this.pendingProjectStops = new Map();
     this.projectServers = new Map();
     this.compatibilityManager = new CompatibilityManager();
     this.pendingServiceStops = new Map();

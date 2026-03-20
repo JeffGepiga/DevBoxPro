@@ -163,7 +163,7 @@ module.exports = {
 
         // Only update status to running if the service was actually started
         // (i.e., not if it returned early due to missing binary)
-        if (status.status !== 'not_installed') {
+        if (status.status !== 'not_installed' && status.status !== 'error') {
           status.status = 'running';
           status.startedAt = new Date();
           status.version = version;

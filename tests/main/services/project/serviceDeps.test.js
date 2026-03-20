@@ -5,6 +5,7 @@ const serviceDeps = require('../../../../src/main/services/project/serviceDeps')
 function makeContext(overrides = {}) {
   const ctx = {
     runningProjects: new Map(),
+    startingProjects: new Set(),
     pendingServiceStops: new Map(),
     managers: {
       service: {
@@ -86,5 +87,24 @@ describe('project/serviceDeps', () => {
       'project-2',
       'Skipped stopping mysql:8.4 because another project started using it during the grace period'
     );
+  });
+
+  it('treats projects that are still starting as active service consumers', () => {
+    const project = {
+      id: 'project-starting',
+      webServer: 'nginx',
+      webServerVersion: '1.28',
+      services: {
+        mysql: true,
+        mysqlVersion: '8.4',
+      },
+    };
+
+    const ctx = makeContext({
+      startingProjects: new Set(['project-starting']),
+      getProject: vi.fn((id) => (id === 'project-starting' ? project : null)),
+    });
+
+    expect(ctx.isServiceNeededByRunningProjects({ name: 'mysql', version: '8.4' })).toBe(true);
   });
 });
