@@ -14,7 +14,7 @@
 | CliManager.js | 48 | ✅ Refactored — under target |
 | DatabaseManager.js | 23 | ✅ Refactored — under target |
 | SupervisorManager.js | 24 | ✅ Refactored — under target |
-| GitManager.js | 561 | Moderate — slightly over |
+| GitManager.js | 34 | ✅ Refactored — under target |
 | CompatibilityManager.js | 556 | Moderate — slightly over |
 | SslManager.js | 462 | ✅ OK |
 | PhpManager.js | 443 | ✅ OK |
@@ -39,6 +39,7 @@
 - [x] Phase 4 (`CliManager.js`) started
 - [x] Phase 5 (`DatabaseManager.js`) structurally split and validated
 - [x] Phase 6 (`SupervisorManager.js`) structurally split and validated
+- [x] Phase 7 (`GitManager.js`) structurally split and validated
 
 ### Phase 1 Status: ProjectManager
 
@@ -375,6 +376,50 @@ Result: `35` tests passed across `2` files.
 
 ---
 
+### Phase 7 Status: GitManager
+
+Phase 7 has started with GitManager as the next smaller-file extraction. The manager is now a thin facade, with concern-specific mixins under `src/main/services/git/` covering Git discovery/version checks, clone/auth flows, SSH-key management, and progress listeners.
+
+Implemented so far:
+
+- `git/availability.js`
+- `git/clone.js`
+- `git/ssh.js`
+- `git/progress.js`
+- `tests/main/services/git/progress.test.js`
+
+Current checkpoint:
+
+- `GitManager.js` reduced to `34` lines
+- Git detection, system-vs-portable resolution, and version lookups now live in `git/availability.js`
+- repository URL validation, clone flow, and auth test helpers now live in `git/clone.js`
+- SSH key generation, retrieval, and regeneration now live in `git/ssh.js`
+- progress listener registration and emission now live in `git/progress.js`
+- the public manager API remains unchanged through `Object.assign(GitManager.prototype, gitAvailability, gitClone, gitSsh, gitProgress)`
+- focused coverage now exists for progress-listener behavior, while the existing manager test continues covering URL validation, SSH public key lookup, availability shape, and clone guardrails
+
+### Phase 7 Checklist
+
+- [x] Create `src/main/services/git/`
+- [x] Extract Git discovery/version logic to `git/availability.js`
+- [x] Extract clone/auth flows to `git/clone.js`
+- [x] Extract SSH-key management to `git/ssh.js`
+- [x] Extract progress/listener helpers to `git/progress.js`
+- [x] Replace `GitManager.js` with a thin facade + `Object.assign(...)`
+- [x] Reduce `GitManager.js` below the 400–500 line target
+- [x] Keep integration coverage in `tests/main/services/GitManager.test.js`
+- [x] Add focused unit tests under `tests/main/services/git/`
+- [x] Validate the current GitManager slice
+
+### Last Verified Phase 7 Test Slice
+
+- `tests/main/services/GitManager.test.js`
+- `tests/main/services/git/progress.test.js`
+
+Result: `22` tests passed across `2` files.
+
+---
+
 ## Chosen Pattern: Prototype Mixin Composition
 
 ### Why This Pattern
@@ -560,7 +605,6 @@ SupervisorManager is now complete. The remaining optional follow-up candidates a
 
 | File | Lines | Action |
 |------|------:|--------|
-| GitManager.js | 656 | Split into `git/clone.js` + `git/ssh.js` + facade |
 | CompatibilityManager.js | 653 | Split into `compatibility/checks.js` + `compatibility/config.js` + facade |
 
 ---
@@ -630,7 +674,8 @@ describe('project/crud', () => {
 | 4 | **CliManager.js** split | Low — CLI/PATH logic is platform-specific but isolated | ~7 new files, 1 test file |
 | 5 | **DatabaseManager.js** split | Low — clean DB engine separation | ~7 new files, 2 test files |
 | 6 | **SupervisorManager.js** split | Very Low — isolated worker/runtime/log concerns | ~6 new files, 1 test file |
-| 7 | **Remaining smaller files** | Very Low — optional follow-up for Git/Compatibility only | ~6 new files |
+| 7 | **GitManager.js** split | Very Low — clear discovery/clone/SSH/progress boundaries | ~5 new files, 1 test file |
+| 8 | **Remaining smaller files** | Very Low — optional follow-up for Compatibility only | ~3 new files |
 
 ### Per-Step Process
 
@@ -738,7 +783,13 @@ src/main/services/
 │   ├── logs.js                    (~100 lines)
 │   └── templates.js               (~100 lines)
 │
-├── GitManager.js                  (656 lines - optional split)
+├── GitManager.js                  (~100 lines - facade)
+├── git/
+│   ├── availability.js            (~150 lines)
+│   ├── clone.js                   (~250 lines)
+│   ├── ssh.js                     (~200 lines)
+│   └── progress.js                (~50 lines)
+│
 ├── CompatibilityManager.js        (653 lines - optional split)
 ├── SslManager.js                  (462 lines - ✅ OK)
 ├── PhpManager.js                  (443 lines - ✅ OK)
@@ -748,7 +799,7 @@ src/main/services/
 └── extractWorker.js               (72 lines - ✅ OK)
 ```
 
-**Total new files**: ~48 domain modules + 6 facades = ~54 files
+**Total new files**: ~52 domain modules + 7 facades = ~59 files
 **Average file size**: ~350 lines (well within 400-500 target)
 **Breaking changes**: Zero — all public APIs remain identical
 
@@ -817,4 +868,8 @@ tests/main/services/
 ├── SupervisorManager.test.js      (integration - keep existing)
 ├── supervisor/
 │   └── helpers.test.js
+│
+├── GitManager.test.js             (integration - keep existing)
+├── git/
+│   └── progress.test.js
 ```
