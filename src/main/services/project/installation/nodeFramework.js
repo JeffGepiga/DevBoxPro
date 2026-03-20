@@ -2,6 +2,15 @@ const path = require('path');
 const fs = require('fs-extra');
 const childProcess = require('child_process');
 
+function quoteWindowsCmdArgument(value) {
+  const stringValue = String(value ?? '');
+  if (!/[\s"&()\[\]{}^=;!'+,`~|<>]/.test(stringValue)) {
+    return stringValue;
+  }
+
+  return `"${stringValue.replace(/"/g, '""')}"`;
+}
+
 module.exports = {
   async installNodeFramework(project, mainWindow = null) {
     const divider = '-'.repeat(64);
@@ -45,7 +54,13 @@ module.exports = {
 
     const runCmd = (command, args, cwd, label) => new Promise((resolve, reject) => {
       onOutput(`$ ${label || [command, ...args].join(' ')}`, 'command');
-      const proc = childProcess.spawn(command, args, {
+      const isWindowsCommandWrapper = process.platform === 'win32' && /\.(cmd|bat)$/i.test(command);
+      const spawnCommand = isWindowsCommandWrapper ? (process.env.COMSPEC || 'cmd.exe') : command;
+      const spawnArgs = isWindowsCommandWrapper
+        ? ['/d', '/s', '/c', [quoteWindowsCmdArgument(command), ...args.map(quoteWindowsCmdArgument)].join(' ')]
+        : args;
+
+      const proc = childProcess.spawn(spawnCommand, spawnArgs, {
         cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,

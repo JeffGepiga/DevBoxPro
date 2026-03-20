@@ -55,16 +55,14 @@ module.exports = {
       const envPath = path.join(projectPath, '.env');
       if (await fs.pathExists(envPath)) {
         let envContent = await fs.readFile(envPath, 'utf-8');
-        const dbName = this.sanitizeDatabaseName(project.name);
-        const dbInfo = this.managers.database?.getDatabaseInfo() || {};
-        const dbUser = dbInfo.user || 'root';
-        const dbPassword = dbInfo.password || '';
-        const dbPort = dbInfo.port || 3306;
+        const dbConfig = this.getProjectDatabaseConfig(project);
 
-        envContent = envContent.replace(/^DB_DATABASE=.*/m, `DB_DATABASE=${dbName}`);
-        envContent = envContent.replace(/^DB_USERNAME=.*/m, `DB_USERNAME=${dbUser}`);
-        envContent = envContent.replace(/^DB_PASSWORD=.*/m, `DB_PASSWORD=${dbPassword}`);
-        envContent = envContent.replace(/^DB_PORT=.*/m, `DB_PORT=${dbPort}`);
+        envContent = envContent.replace(/^DB_CONNECTION=.*/m, `DB_CONNECTION=${dbConfig.laravelConnection}`);
+        envContent = envContent.replace(/^DB_HOST=.*/m, `DB_HOST=${dbConfig.host}`);
+        envContent = envContent.replace(/^DB_DATABASE=.*/m, `DB_DATABASE=${dbConfig.database}`);
+        envContent = envContent.replace(/^DB_USERNAME=.*/m, `DB_USERNAME=${dbConfig.user}`);
+        envContent = envContent.replace(/^DB_PASSWORD=.*/m, `DB_PASSWORD=${dbConfig.password}`);
+        envContent = envContent.replace(/^DB_PORT=.*/m, `DB_PORT=${dbConfig.port}`);
         envContent = envContent.replace(/^APP_URL=.*/m, `APP_URL=http://${project.domain}`);
 
         await fs.writeFile(envPath, envContent);

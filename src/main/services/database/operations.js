@@ -5,7 +5,7 @@ module.exports = {
   async listDatabases() {
     const dbType = this.getActiveDatabaseType();
 
-    if (!this.isServiceRunning()) {
+    if (!await this.ensureServiceRunning()) {
       return [];
     }
 
@@ -54,12 +54,12 @@ module.exports = {
     const dbType = this.getActiveDatabaseType();
     const dbVersion = version || this.getActiveDatabaseVersion();
 
-    if (!this.isServiceRunning(dbType, dbVersion)) {
+    if (!await this.ensureServiceRunning(dbType, dbVersion)) {
       if (this.managers.service) {
         try {
           await this.managers.service.startService(dbType, dbVersion);
           await new Promise((resolve) => setTimeout(resolve, 3000));
-          if (!this.isServiceRunning(dbType, dbVersion)) {
+          if (!await this.ensureServiceRunning(dbType, dbVersion)) {
             throw new Error(`${dbType} ${dbVersion} failed to start`);
           }
         } catch (startError) {

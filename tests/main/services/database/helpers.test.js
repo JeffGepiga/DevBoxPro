@@ -27,6 +27,8 @@ function makeContext({ settings = {}, state = {}, managers = {}, resourcePath = 
     getActiveDatabaseType: databaseHelpers.getActiveDatabaseType,
     getActiveDatabaseVersion: databaseHelpers.getActiveDatabaseVersion,
     getActualPort: databaseHelpers.getActualPort,
+    isServiceRunning: databaseHelpers.isServiceRunning,
+    ensureServiceRunning: databaseHelpers.ensureServiceRunning,
     getBinaryRuntimeDir: databaseHelpers.getBinaryRuntimeDir,
     _getBinaryPath: databaseHelpers._getBinaryPath,
   };
@@ -148,6 +150,27 @@ describe('database/helpers', () => {
         status: 'connected',
       },
     });
+  });
+
+  it('rehydrates a MariaDB service before reporting it as running', async () => {
+    const rehydrateManagedServiceState = vi.fn().mockResolvedValue(true);
+    const context = makeContext({
+      settings: { activeDatabaseType: 'mariadb', activeDatabaseVersion: '11.4' },
+      managers: {
+        log: {
+          systemWarn: vi.fn(),
+        },
+        service: {
+          runningVersions: new Map([['mariadb', new Map()]]),
+          rehydrateManagedServiceState,
+        },
+      },
+    });
+
+    const result = await databaseHelpers.ensureServiceRunning.call(context, 'mariadb', '11.4');
+
+    expect(result).toBe(true);
+    expect(rehydrateManagedServiceState).toHaveBeenCalledWith('mariadb', '11.4');
   });
 
   it('sanitizes database names consistently', () => {

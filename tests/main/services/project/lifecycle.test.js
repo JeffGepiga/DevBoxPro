@@ -634,4 +634,58 @@ describe('project/lifecycle', () => {
     expect(ctx.scheduleServiceStop).toHaveBeenCalledTimes(1);
     expect(ctx.scheduleServiceStop).toHaveBeenCalledWith('proj-stop-services', { name: 'nginx', version: '1.28' });
   });
+
+  it('stops unused services immediately when the last active project stops', async () => {
+    const stoppingProject = {
+      id: 'proj-last-stop',
+      name: 'Last Stop',
+      webServer: 'apache',
+      webServerVersion: '2.4',
+      services: { mysql: true, mysqlVersion: '8.4' },
+    };
+
+    const stopService = vi.fn().mockResolvedValue(undefined);
+    const ctx = makeContext({
+      getProjectServiceDependencies: vi.fn(() => [
+        { name: 'apache', version: '2.4' },
+        { name: 'mysql', version: '8.4' },
+      ]),
+      managers: {
+        service: {
+          serviceStatus: new Map(),
+          serviceConfigs: {
+            nginx: { versioned: true },
+            apache: { versioned: true },
+            mysql: { versioned: true },
+            redis: { versioned: true },
+          },
+          getServicePorts: vi.fn(() => ({ httpPort: 80, sslPort: 443 })),
+          isVersionRunning: vi.fn(() => false),
+          startService: vi.fn().mockResolvedValue({ success: true }),
+          restartService: vi.fn().mockResolvedValue({ success: true }),
+          stopService,
+          standardPortOwner: null,
+        },
+        supervisor: {
+          startProcess: vi.fn().mockResolvedValue(undefined),
+        },
+        log: {
+          project: vi.fn(),
+          systemWarn: vi.fn(),
+          systemError: vi.fn(),
+          systemInfo: vi.fn(),
+        },
+      },
+      scheduleServiceStop: vi.fn(),
+    });
+
+    const result = await ctx.stopProjectServices(stoppingProject);
+
+    expect(result.stopped).toEqual(['apache:2.4', 'mysql:8.4']);
+    expect(result.scheduled).toEqual([]);
+    expect(stopService).toHaveBeenCalledTimes(2);
+    expect(stopService).toHaveBeenNthCalledWith(1, 'apache', '2.4');
+    expect(stopService).toHaveBeenNthCalledWith(2, 'mysql', '8.4');
+    expect(ctx.scheduleServiceStop).not.toHaveBeenCalled();
+  });
 });

@@ -190,6 +190,68 @@ describe('ServiceManager', () => {
             await expect(mgr.startService('unknownservice')).rejects.toThrow('Unknown service');
         });
 
+        it('rehydrates already-running managed database services during initialize', async () => {
+            const checkPortOpenSpy = vi.spyOn(mgr, 'checkPortOpen').mockImplementation(async (port) => port === 3306);
+
+            await mgr.initialize();
+
+            expect(mgr.serviceStatus.get('mysql')).toEqual(expect.objectContaining({
+                status: 'running',
+                version: '8.4',
+                port: 3306,
+            }));
+            expect(mgr.runningVersions.get('mysql').get('8.4')).toEqual(expect.objectContaining({
+                port: 3306,
+            }));
+
+            checkPortOpenSpy.mockRestore();
+        });
+
+        it('rehydrates already-running managed MariaDB services during initialize', async () => {
+            const checkPortOpenSpy = vi.spyOn(mgr, 'checkPortOpen').mockImplementation(async (port) => port === 3310);
+
+            await mgr.initialize();
+
+            expect(mgr.serviceStatus.get('mariadb')).toEqual(expect.objectContaining({
+                status: 'running',
+                version: '11.4',
+                port: 3310,
+            }));
+            expect(mgr.runningVersions.get('mariadb').get('11.4')).toEqual(expect.objectContaining({
+                port: 3310,
+            }));
+
+            checkPortOpenSpy.mockRestore();
+        });
+
+        it('does not start a second copy of a rehydrated versioned service', async () => {
+            mgr.runningVersions.get('mysql').set('8.4', { port: 3306, startedAt: new Date() });
+            mgr.serviceStatus.set('mysql', { status: 'running', version: '8.4', port: 3306 });
+
+            await expect(mgr.startService('mysql', '8.4')).resolves.toEqual({
+                success: true,
+                service: 'mysql',
+                version: '8.4',
+                status: 'running',
+            });
+
+            expect(mgr.startMySQL).not.toHaveBeenCalled();
+        });
+
+        it('does not start a second copy of a rehydrated MariaDB version', async () => {
+            mgr.runningVersions.get('mariadb').set('11.4', { port: 3310, startedAt: new Date() });
+            mgr.serviceStatus.set('mariadb', { status: 'running', version: '11.4', port: 3310 });
+
+            await expect(mgr.startService('mariadb', '11.4')).resolves.toEqual({
+                success: true,
+                service: 'mariadb',
+                version: '11.4',
+                status: 'running',
+            });
+
+            expect(mgr.startMariaDB).not.toHaveBeenCalled();
+        });
+
         it('quotes file paths in generated nginx config', async () => {
             configStore.getDataPath = vi.fn(() => 'C:/DevBox Pro/data');
             mgr.getNginxPath = vi.fn(() => 'C:/DevBox Pro/resources-user/nginx/1.28/win');

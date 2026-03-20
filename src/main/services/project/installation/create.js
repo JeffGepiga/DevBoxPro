@@ -101,6 +101,27 @@ module.exports = {
 
     const defaultTld = this.configStore.get('settings.defaultTld', 'test');
     const domainName = config.domain || `${config.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}.${defaultTld}`;
+    const projectServices = {
+      mysql: config.services?.mysql || false,
+      mysqlVersion: config.services?.mysqlVersion || '8.4',
+      mariadb: config.services?.mariadb || false,
+      mariadbVersion: config.services?.mariadbVersion || '11.4',
+      redis: config.services?.redis || false,
+      redisVersion: config.services?.redisVersion || '7.4',
+      queue: config.services?.queue || false,
+      nodejs: projectType === 'nodejs' ? true : (config.services?.nodejs || false),
+      nodejsVersion: config.services?.nodejsVersion || '20',
+      postgresql: config.services?.postgresql || false,
+      postgresqlVersion: config.services?.postgresqlVersion || '17',
+      mongodb: config.services?.mongodb || false,
+      mongodbVersion: config.services?.mongodbVersion || '8.0',
+      python: config.services?.python || false,
+      pythonVersion: config.services?.pythonVersion || '3.13',
+      memcached: config.services?.memcached || false,
+      memcachedVersion: config.services?.memcachedVersion || '1.6',
+      minio: config.services?.minio || false,
+    };
+
     const project = {
       id,
       name: config.name,
@@ -115,27 +136,8 @@ module.exports = {
       domains: [domainName],
       ssl: config.ssl !== false,
       autoStart: config.autoStart || false,
-      services: {
-        mysql: config.services?.mysql || false,
-        mysqlVersion: config.services?.mysqlVersion || '8.4',
-        mariadb: config.services?.mariadb || false,
-        mariadbVersion: config.services?.mariadbVersion || '11.4',
-        redis: config.services?.redis || false,
-        redisVersion: config.services?.redisVersion || '7.4',
-        queue: config.services?.queue || false,
-        nodejs: projectType === 'nodejs' ? true : (config.services?.nodejs || false),
-        nodejsVersion: config.services?.nodejsVersion || '20',
-        postgresql: config.services?.postgresql || false,
-        postgresqlVersion: config.services?.postgresqlVersion || '17',
-        mongodb: config.services?.mongodb || false,
-        mongodbVersion: config.services?.mongodbVersion || '8.0',
-        python: config.services?.python || false,
-        pythonVersion: config.services?.pythonVersion || '3.13',
-        memcached: config.services?.memcached || false,
-        memcachedVersion: config.services?.memcachedVersion || '1.6',
-        minio: config.services?.minio || false,
-      },
-      environment: this.getDefaultEnvironment(projectType, config.name, port),
+      services: projectServices,
+      environment: this.getDefaultEnvironment(projectType, config.name, port, { services: projectServices, database: config.database }),
       supervisor: {
         workers: config.supervisor?.workers || 1,
         processes: [],

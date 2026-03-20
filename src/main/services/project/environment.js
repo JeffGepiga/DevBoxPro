@@ -208,7 +208,7 @@ module.exports = {
     return environment;
   },
 
-  getDefaultEnvironment(projectType, projectName, port) {
+  getDefaultEnvironment(projectType, projectName, port, projectConfig = {}) {
     const baseEnv = {
       APP_ENV: 'local',
       APP_DEBUG: 'true',
@@ -216,22 +216,22 @@ module.exports = {
 
     switch (projectType) {
       case 'laravel': {
-        const dbInfo = this.managers?.database?.getDatabaseInfo() || {};
-        const dbUser = dbInfo.user || 'root';
-        const dbPassword = dbInfo.password || '';
-        const dbPort = dbInfo.port || 3306;
+        const dbConfig = this.getProjectDatabaseConfig({
+          name: projectName,
+          ...projectConfig,
+        });
 
         return {
           ...baseEnv,
           APP_NAME: projectName,
           APP_KEY: '',
           APP_URL: `http://localhost:${port}`,
-          DB_CONNECTION: 'mysql',
-          DB_HOST: '127.0.0.1',
-          DB_PORT: String(dbPort),
-          DB_DATABASE: this.sanitizeDatabaseName(projectName),
-          DB_USERNAME: dbUser,
-          DB_PASSWORD: dbPassword,
+          DB_CONNECTION: dbConfig.laravelConnection,
+          DB_HOST: dbConfig.host,
+          DB_PORT: String(dbConfig.port),
+          DB_DATABASE: dbConfig.database,
+          DB_USERNAME: dbConfig.user,
+          DB_PASSWORD: dbConfig.password,
           CACHE_DRIVER: 'redis',
           QUEUE_CONNECTION: 'redis',
           SESSION_DRIVER: 'redis',
@@ -244,15 +244,14 @@ module.exports = {
       }
 
       case 'symfony': {
-        const dbInfo = this.managers?.database?.getDatabaseInfo() || {};
-        const dbUser = dbInfo.user || 'root';
-        const dbPassword = dbInfo.password || '';
-        const dbPort = dbInfo.port || 3306;
-        const dbName = this.sanitizeDatabaseName(projectName);
+        const dbConfig = this.getProjectDatabaseConfig({
+          name: projectName,
+          ...projectConfig,
+        });
 
         return {
           ...baseEnv,
-          DATABASE_URL: `mysql://${dbUser}:${dbPassword}@127.0.0.1:${dbPort}/${dbName}`,
+          DATABASE_URL: dbConfig.symfonyDatabaseUrl,
           MAILER_DSN: 'smtp://127.0.0.1:1025',
         };
       }

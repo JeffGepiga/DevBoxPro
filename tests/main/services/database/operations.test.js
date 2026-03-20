@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 require('../../../helpers/mockElectronCjs');
 const operations = require('../../../../src/main/services/database/operations');
 
-function makeContext({ dbType = 'mysql', settings = {}, running = true } = {}) {
+function makeContext({ dbType = 'mysql', dbVersion = '8.4', settings = {}, running = true } = {}) {
   const context = {
     dbConfig: {
       host: '127.0.0.1',
@@ -23,8 +23,9 @@ function makeContext({ dbType = 'mysql', settings = {}, running = true } = {}) {
       get: vi.fn((key, def) => key === 'settings' ? settings : def),
     },
     getActiveDatabaseType: vi.fn(() => dbType),
-    getActiveDatabaseVersion: vi.fn(() => '8.4'),
+    getActiveDatabaseVersion: vi.fn(() => dbVersion),
     isServiceRunning: vi.fn(() => running),
+    ensureServiceRunning: vi.fn(async () => running),
     sanitizeName: vi.fn((value) => String(value).trim().replace(/[^a-zA-Z0-9_]/g, '_') || 'unnamed'),
     _runPostgresQuery: vi.fn(),
     _runMongoQuery: vi.fn(),
@@ -55,6 +56,38 @@ describe('database/operations', () => {
     const context = makeContext({ running: false });
 
     await expect(operations.listDatabases.call(context)).resolves.toEqual([]);
+  });
+
+  it('uses recovered service state before trying to start MySQL again', async () => {
+    const context = makeContext({ running: false });
+    context.ensureServiceRunning
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    context.runDbQuery = vi.fn().mockResolvedValue([]);
+
+    await expect(operations.createDatabase.call(context, 'app_db')).resolves.toEqual({
+      success: true,
+      name: 'app_db',
+    });
+
+    expect(context.managers.service.startService).toHaveBeenCalledWith('mysql', '8.4');
+    expect(context.ensureServiceRunning).toHaveBeenCalledWith('mysql', '8.4');
+  });
+
+  it('uses recovered service state before trying to start MariaDB again', async () => {
+    const context = makeContext({ dbType: 'mariadb', dbVersion: '11.4', running: false });
+    context.ensureServiceRunning
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    context.runDbQuery = vi.fn().mockResolvedValue([]);
+
+    await expect(operations.createDatabase.call(context, 'app_db')).resolves.toEqual({
+      success: true,
+      name: 'app_db',
+    });
+
+    expect(context.managers.service.startService).toHaveBeenCalledWith('mariadb', '11.4');
+    expect(context.ensureServiceRunning).toHaveBeenCalledWith('mariadb', '11.4');
   });
 
   it('returns an empty list on connection errors while listing databases', async () => {

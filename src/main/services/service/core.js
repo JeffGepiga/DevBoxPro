@@ -4,6 +4,29 @@ const { spawn } = require('child_process');
 const { isPortAvailable, findAvailablePort } = require('../../utils/PortUtils');
 const { SERVICE_VERSIONS } = require('../../../shared/serviceConfig');
 
+const STARTUP_RECOVERY_SERVICES = [
+  'mysql',
+  'mariadb',
+  'redis',
+  'postgresql',
+  'mongodb',
+  'memcached',
+  'mailpit',
+  'minio',
+];
+
+const DEFAULT_SERVICE_VERSIONS = {
+  mysql: '8.4',
+  mariadb: '11.4',
+  redis: '7.4',
+  nginx: '1.28',
+  apache: '2.4',
+  postgresql: '17',
+  mongodb: '8.0',
+  memcached: '1.6',
+  minio: 'latest',
+};
+
 module.exports = {
   async initialize() {
     // Set initial status for all services
@@ -66,6 +89,84 @@ module.exports = {
 
     // MinIO data directory
     await fs.ensureDir(path.join(dataPath, 'minio', 'data'));
+
+    await this.rehydrateManagedServicesOnStartup();
+  },
+
+  async rehydrateManagedServicesOnStartup() {
+    for (const serviceName of STARTUP_RECOVERY_SERVICES) {
+      const config = this.serviceConfigs[serviceName];
+      if (!config) {
+        continue;
+      }
+
+      if (config.versioned) {
+        const versions = SERVICE_VERSIONS[serviceName] || [];
+        for (const version of versions) {
+          await this.rehydrateManagedServiceState(serviceName, version);
+        }
+        continue;
+      }
+
+      await this.rehydrateManagedServiceState(serviceName);
+    }
+  },
+
+  async rehydrateManagedServiceState(serviceName, version = null) {
+    const config = this.serviceConfigs[serviceName];
+    if (!config) {
+      return false;
+    }
+
+    const status = this.serviceStatus.get(serviceName);
+    const resolvedVersion = config.versioned
+      ? (version || status?.version || DEFAULT_SERVICE_VERSIONS[serviceName])
+      : null;
+
+    if (config.versioned) {
+      const trackedVersions = this.runningVersions.get(serviceName);
+      if (trackedVersions?.has(resolvedVersion)) {
+        return true;
+      }
+    } else if (status?.status === 'running') {
+      return true;
+    }
+
+    const expectedPort = config.versioned
+      ? this.getVersionPort(serviceName, resolvedVersion, config.defaultPort)
+      : config.defaultPort;
+
+    if (!await this.checkPortOpen(expectedPort)) {
+      return false;
+    }
+
+    const recoveredAt = new Date();
+    const currentStatus = this.serviceStatus.get(serviceName);
+    if (currentStatus) {
+      currentStatus.status = 'running';
+      currentStatus.startedAt = recoveredAt;
+      currentStatus.version = resolvedVersion;
+      currentStatus.port = expectedPort;
+      currentStatus.error = null;
+    }
+
+    if (config.versioned) {
+      this.runningVersions.get(serviceName)?.set(resolvedVersion, {
+        port: expectedPort,
+        startedAt: recoveredAt,
+      });
+      config.actualPort = expectedPort;
+    } else {
+      config.actualPort = expectedPort;
+    }
+
+    this.managers.log?.systemInfo?.('Recovered managed service state after restart', {
+      service: serviceName,
+      version: resolvedVersion,
+      port: expectedPort,
+    });
+
+    return true;
   },
 
   async startCoreServices() {
@@ -104,8 +205,17 @@ module.exports = {
     // For versioned services, version is required (or use default)
     if (config.versioned && !version) {
       // Use first available version as default
-      const defaults = { mysql: '8.4', mariadb: '11.4', redis: '7.4', nginx: '1.28', apache: '2.4', postgresql: '17', mongodb: '8.0', memcached: '1.6' };
-      version = defaults[serviceName];
+      version = DEFAULT_SERVICE_VERSIONS[serviceName];
+    }
+
+    const existingStatus = this.serviceStatus.get(serviceName);
+    if (config.versioned) {
+      const trackedVersions = this.runningVersions.get(serviceName);
+      if (trackedVersions?.has(version)) {
+        return { success: true, service: serviceName, version, status: 'running' };
+      }
+    } else if (existingStatus?.status === 'running') {
+      return { success: true, service: serviceName, version, status: 'running' };
     }
 
     const versionSuffix = version ? ` ${version}` : '';
@@ -274,6 +384,10 @@ module.exports = {
     // Check if other versions of this service are still running
     const remainingVersions = this.runningVersions.get(serviceName);
     const isLastVersion = !remainingVersions || remainingVersions.size === 0;
+    const releasedStandardPorts = (serviceName === 'nginx' || serviceName === 'apache')
+      && isLastVersion
+      && this.standardPortOwner === serviceName
+      && (!version || !this.standardPortOwnerVersion || this.standardPortOwnerVersion === version);
 
     // For Nginx on Windows, also try to stop gracefully and kill any remaining workers
     if (serviceName === 'nginx' && require('os').platform() === 'win32') {
@@ -328,6 +442,19 @@ module.exports = {
 
     // Wait a moment for ports to be released
     await new Promise(resolve => setTimeout(resolve, 500));
+
+    if (releasedStandardPorts) {
+      const startTime = Date.now();
+      const timeoutMs = 3000;
+      while (Date.now() - startTime < timeoutMs) {
+        const httpAvailable = await isPortAvailable(80);
+        const httpsAvailable = await isPortAvailable(443);
+        if (httpAvailable && httpsAvailable) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
 
     // Release standard ports only if this version owned them
     if ((serviceName === 'nginx' || serviceName === 'apache') && this.standardPortOwner === serviceName) {

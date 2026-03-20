@@ -4,6 +4,7 @@ require('../../../helpers/mockElectronCjs');
 
 const fs = require('fs-extra');
 const environment = require('../../../../src/main/services/project/environment');
+const projectHelpers = require('../../../../src/main/services/project/helpers');
 
 function makeContext(overrides = {}) {
   return {
@@ -40,6 +41,8 @@ function makeContext(overrides = {}) {
     sanitizeDatabaseName: vi.fn((name) => name.toLowerCase().replace(/[^a-z0-9]/g, '_')),
     syncCliProjectsFile: environment.syncCliProjectsFile,
     cleanupOrphanedConfigs: environment.cleanupOrphanedConfigs,
+    getProjectDatabaseSelection: projectHelpers.getProjectDatabaseSelection,
+    getProjectDatabaseConfig: projectHelpers.getProjectDatabaseConfig,
     ...environment,
     ...overrides,
   };
@@ -114,6 +117,44 @@ describe('project/environment', () => {
       DB_PORT: '3306',
       DB_DATABASE: 'my_app',
       MAIL_PORT: '1025',
+    });
+  });
+
+  it('builds laravel defaults from project-selected MariaDB settings', () => {
+    const ctx = makeContext({
+      managers: {
+        database: {
+          getDatabaseInfo: vi.fn().mockReturnValue({ type: 'mysql', version: '8.4', user: 'root', password: '', port: 3306 }),
+        },
+        service: {
+          runningVersions: new Map([
+            ['mariadb', new Map([['11.4', { port: 3310 }]])],
+          ]),
+          serviceConfigs: {
+            mariadb: { defaultPort: 3310 },
+          },
+          getVersionPort: vi.fn((serviceName, version, defaultPort) => defaultPort),
+        },
+        log: {
+          systemWarn: vi.fn(),
+          systemError: vi.fn(),
+          systemInfo: vi.fn(),
+        },
+      },
+    });
+
+    const result = ctx.getDefaultEnvironment('laravel', 'Maria App', 8080, {
+      services: {
+        mariadb: true,
+        mariadbVersion: '11.4',
+      },
+    });
+
+    expect(result).toMatchObject({
+      DB_CONNECTION: 'mysql',
+      DB_HOST: '127.0.0.1',
+      DB_PORT: '3310',
+      DB_DATABASE: 'maria_app',
     });
   });
 

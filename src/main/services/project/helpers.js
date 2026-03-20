@@ -2,6 +2,16 @@ const path = require('path');
 const fs = require('fs-extra');
 const { getDefaultVersion } = require('../../../shared/serviceConfig');
 
+const DEFAULT_DATABASE_VERSIONS = {
+  mysql: '8.4',
+  mariadb: '11.4',
+};
+
+const DEFAULT_DATABASE_PORTS = {
+  mysql: 3306,
+  mariadb: 3310,
+};
+
 module.exports = {
   getDataPath() {
     if (typeof this.configStore.getDataPath === 'function') {
@@ -33,6 +43,75 @@ module.exports = {
 
     const { app } = require('electron');
     return path.join(app.getPath('userData'), 'resources');
+  },
+
+  getProjectDatabaseSelection(project = {}) {
+    const services = project?.services || {};
+    const explicitDatabase = project?.database;
+    const activeDatabaseInfo = this.managers?.database?.getDatabaseInfo?.() || {};
+
+    if (services.mariadb || explicitDatabase === 'mariadb') {
+      return {
+        type: 'mariadb',
+        version: services.mariadbVersion || DEFAULT_DATABASE_VERSIONS.mariadb,
+        explicit: true,
+      };
+    }
+
+    if (services.mysql || explicitDatabase === 'mysql') {
+      return {
+        type: 'mysql',
+        version: services.mysqlVersion || DEFAULT_DATABASE_VERSIONS.mysql,
+        explicit: true,
+      };
+    }
+
+    const activeType = activeDatabaseInfo.type || 'mysql';
+    return {
+      type: activeType,
+      version: activeDatabaseInfo.version || DEFAULT_DATABASE_VERSIONS[activeType] || DEFAULT_DATABASE_VERSIONS.mysql,
+      explicit: false,
+    };
+  },
+
+  getProjectDatabaseConfig(project = {}) {
+    const settings = this.configStore?.get('settings', {}) || {};
+    const activeDatabaseInfo = this.managers?.database?.getDatabaseInfo?.() || {};
+    const serviceManager = this.managers?.service;
+    const selection = this.getProjectDatabaseSelection(project);
+    const dbType = selection.type;
+    const dbVersion = selection.version;
+    const serviceConfig = serviceManager?.serviceConfigs?.[dbType];
+    const runningVersionInfo = serviceManager?.runningVersions?.get(dbType)?.get(dbVersion);
+
+    let dbPort = activeDatabaseInfo.port || DEFAULT_DATABASE_PORTS[dbType] || DEFAULT_DATABASE_PORTS.mysql;
+    if (selection.explicit) {
+      dbPort = runningVersionInfo?.port
+        || (serviceManager?.getVersionPort
+          ? serviceManager.getVersionPort(dbType, dbVersion, serviceConfig?.defaultPort || DEFAULT_DATABASE_PORTS[dbType] || DEFAULT_DATABASE_PORTS.mysql)
+          : (serviceConfig?.defaultPort || DEFAULT_DATABASE_PORTS[dbType] || DEFAULT_DATABASE_PORTS.mysql));
+    }
+
+    const dbUser = settings.dbUser || activeDatabaseInfo.user || 'root';
+    const dbPassword = settings.dbPassword !== undefined ? settings.dbPassword : (activeDatabaseInfo.password || '');
+    const dbName = this.sanitizeDatabaseName(project?.name || 'app');
+    const symfonyServerVersion = dbType === 'mariadb' ? `${dbVersion}-MariaDB` : dbVersion;
+    const encodedUser = encodeURIComponent(dbUser);
+    const encodedPassword = encodeURIComponent(dbPassword);
+    const encodedDbName = encodeURIComponent(dbName);
+    const encodedServerVersion = encodeURIComponent(symfonyServerVersion);
+
+    return {
+      type: dbType,
+      version: dbVersion,
+      host: '127.0.0.1',
+      port: dbPort,
+      user: dbUser,
+      password: dbPassword,
+      database: dbName,
+      laravelConnection: 'mysql',
+      symfonyDatabaseUrl: `mysql://${encodedUser}:${encodedPassword}@127.0.0.1:${dbPort}/${encodedDbName}?serverVersion=${encodedServerVersion}`,
+    };
   },
 
   getPhpFpmPort(project) {

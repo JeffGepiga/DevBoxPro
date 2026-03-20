@@ -78,12 +78,8 @@ module.exports = {
         onOutput('Configuring .env file...', 'info');
         let envContent = await fs.readFile(envPath, 'utf-8');
 
-        const dbName = this.sanitizeDatabaseName(projectName);
-        const dbInfo = this.managers.database?.getDatabaseInfo() || {};
-        const dbUser = dbInfo.user || 'root';
-        const dbPassword = dbInfo.password || '';
-        const dbPort = dbInfo.port || 3306;
-        const dbUrl = `mysql://${dbUser}:${dbPassword}@127.0.0.1:${dbPort}/${dbName}?serverVersion=8.0`;
+        const dbConfig = this.getProjectDatabaseConfig(project);
+        const dbUrl = dbConfig.symfonyDatabaseUrl;
 
         if (envContent.includes('DATABASE_URL=')) {
           envContent = envContent.replace(/^DATABASE_URL=.*/m, `DATABASE_URL="${dbUrl}"`);

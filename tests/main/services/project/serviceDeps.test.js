@@ -107,4 +107,59 @@ describe('project/serviceDeps', () => {
 
     expect(ctx.isServiceNeededByRunningProjects({ name: 'mysql', version: '8.4' })).toBe(true);
   });
+
+  it('stops services immediately when no projects remain active', async () => {
+    const stopService = vi.fn().mockResolvedValue(undefined);
+    const ctx = makeContext({
+      managers: {
+        service: {
+          stopService,
+        },
+        log: {
+          project: vi.fn(),
+        },
+      },
+    });
+
+    const stopProjectServices = async (project) => {
+      const projectServices = ctx.getProjectServiceDependencies(project);
+      const activeProjectIds = new Set([
+        ...ctx.runningProjects.keys(),
+        ...(ctx.startingProjects || []),
+      ]);
+      activeProjectIds.delete(project.id);
+
+      const otherRunningProjects = Array.from(activeProjectIds)
+        .map((id) => ctx.getProject(id))
+        .filter(Boolean);
+      const stopImmediately = otherRunningProjects.length === 0;
+      const servicesToStop = projectServices;
+      const results = { success: true, scheduled: [], stopped: [], failed: [] };
+
+      for (const service of servicesToStop) {
+        if (stopImmediately) {
+          await ctx.managers.service.stopService(service.name, service.version);
+          results.stopped.push(`${service.name}${service.version ? ':' + service.version : ''}`);
+        } else {
+          ctx.scheduleServiceStop(project.id, service);
+          results.scheduled.push(`${service.name}${service.version ? ':' + service.version : ''}`);
+        }
+      }
+
+      return results;
+    };
+
+    const result = await stopProjectServices({
+      id: 'project-last',
+      webServer: 'apache',
+      webServerVersion: '2.4',
+      services: { mysql: true, mysqlVersion: '8.4' },
+    });
+
+    expect(result.stopped).toEqual(['apache:2.4', 'mysql:8.4']);
+    expect(result.scheduled).toEqual([]);
+    expect(stopService).toHaveBeenCalledTimes(2);
+    expect(stopService).toHaveBeenNthCalledWith(1, 'apache', '2.4');
+    expect(stopService).toHaveBeenNthCalledWith(2, 'mysql', '8.4');
+  });
 });

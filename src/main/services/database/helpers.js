@@ -130,6 +130,30 @@ module.exports = {
     return false;
   },
 
+  async ensureServiceRunning(dbType = null, version = null) {
+    const type = dbType || this.getActiveDatabaseType();
+    const ver = version || this.getActiveDatabaseVersion();
+
+    if (this.isServiceRunning(type, ver)) {
+      return true;
+    }
+
+    if (!this.managers.service?.rehydrateManagedServiceState) {
+      return false;
+    }
+
+    try {
+      return await this.managers.service.rehydrateManagedServiceState(type, ver);
+    } catch (error) {
+      this.managers.log?.systemWarn?.('Failed to recover database service state', {
+        service: type,
+        version: ver,
+        error: error.message,
+      });
+      return false;
+    }
+  },
+
   getPhpMyAdminUrl: async function(dbType = null, version = null) {
     if (!this.managers.service) {
       return null;

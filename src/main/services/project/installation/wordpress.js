@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs-extra');
+const crypto = require('crypto');
 
 module.exports = {
   async installWordPress(project, mainWindow = null) {
@@ -170,24 +171,43 @@ module.exports = {
         let wpConfig = await fs.readFile(wpConfigSamplePath, 'utf-8');
 
         const dbName = this.sanitizeDatabaseName(projectName);
-        const dbInfo = this.managers.database?.getDatabaseInfo() || {};
-        const dbUser = dbInfo.user || 'root';
-        const dbPassword = dbInfo.password || '';
-        const dbHost = `127.0.0.1:${dbInfo.port || 3306}`;
+        const settings = this.configStore?.get('settings', {}) || {};
+        const prefersMariaDb = project.services?.mariadb === true;
+        const dbType = prefersMariaDb ? 'mariadb' : 'mysql';
+        const dbVersion = prefersMariaDb
+          ? (project.services?.mariadbVersion || '11.4')
+          : (project.services?.mysqlVersion || '8.4');
+        const dbInfo = this.managers.database?.getDatabaseInfo?.() || {};
+        const serviceManager = this.managers.service;
+        const runningVersions = serviceManager?.runningVersions?.get(dbType);
+        const runningVersionInfo = runningVersions?.get(dbVersion);
+        const serviceConfig = serviceManager?.serviceConfigs?.[dbType];
+        const fallbackPort = serviceManager?.getVersionPort
+          ? serviceManager.getVersionPort(dbType, dbVersion, serviceConfig?.defaultPort || (prefersMariaDb ? 3310 : 3306))
+          : (prefersMariaDb ? 3310 : 3306);
+        const dbUser = settings.dbUser || dbInfo.user || 'root';
+        const dbPassword = settings.dbPassword !== undefined ? settings.dbPassword : (dbInfo.password || '');
+        const dbPort = runningVersionInfo?.port || fallbackPort;
+        const dbHost = `127.0.0.1:${dbPort}`;
+
+        try {
+          await this.managers.database?.createDatabase(dbName, dbVersion);
+        } catch (error) {
+          this.managers.log?.systemWarn?.('Could not ensure WordPress database exists during installation', {
+            project: project.name,
+            database: dbName,
+            dbType,
+            dbVersion,
+            error: error.message,
+          });
+        }
 
         wpConfig = wpConfig.replace(/define\(\s*'DB_NAME',\s*'[^']*'\s*\)/, `define( 'DB_NAME', '${dbName}' )`);
         wpConfig = wpConfig.replace(/define\(\s*'DB_USER',\s*'[^']*'\s*\)/, `define( 'DB_USER', '${dbUser}' )`);
         wpConfig = wpConfig.replace(/define\(\s*'DB_PASSWORD',\s*'[^']*'\s*\)/, `define( 'DB_PASSWORD', '${dbPassword}' )`);
         wpConfig = wpConfig.replace(/define\(\s*'DB_HOST',\s*'[^']*'\s*\)/, `define( 'DB_HOST', '${dbHost}' )`);
 
-        const generateSalt = () => {
-          const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{}|;:,.<>?';
-          let salt = '';
-          for (let index = 0; index < 64; index++) {
-            salt += chars.charAt(Math.floor(Math.random() * chars.length));
-          }
-          return salt;
-        };
+        const generateSalt = () => crypto.randomBytes(48).toString('base64url');
 
         const salts = [
           'AUTH_KEY', 'SECURE_AUTH_KEY', 'LOGGED_IN_KEY', 'NONCE_KEY',

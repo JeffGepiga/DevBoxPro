@@ -147,7 +147,15 @@ module.exports = {
         memcachedVersion: projectServices.memcachedVersion || '1.6',
         minio: projectServices.minio || false,
       },
-      environment: this.getDefaultEnvironment(projectType, config.name, port),
+      environment: this.getDefaultEnvironment(projectType, config.name, port, {
+        services: {
+          mysql: projectServices.mysql || config.database === 'mysql',
+          mysqlVersion: projectServices.mysqlVersion || '8.4',
+          mariadb: projectServices.mariadb || config.database === 'mariadb',
+          mariadbVersion: projectServices.mariadbVersion || '11.4',
+        },
+        database: config.database,
+      }),
       supervisor: {
         workers: 1,
         processes: [],

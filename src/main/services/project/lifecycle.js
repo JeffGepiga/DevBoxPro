@@ -544,6 +544,7 @@ module.exports = {
     const otherRunningProjects = Array.from(activeProjectIds)
       .map((id) => this.getProject(id))
       .filter(Boolean);
+    const stopImmediately = otherRunningProjects.length === 0;
 
     const servicesToStop = [];
     for (const service of projectServices) {
@@ -560,12 +561,19 @@ module.exports = {
       }
     }
 
-    const results = { success: true, scheduled: [], failed: [] };
+    const results = { success: true, scheduled: [], stopped: [], failed: [] };
     for (const service of servicesToStop) {
       try {
-        this.managers.log?.project(project.id, `Scheduling ${service.name}${service.version ? ':' + service.version : ''} to stop if it remains unused...`);
-        this.scheduleServiceStop(project.id, service);
-        results.scheduled.push(`${service.name}${service.version ? ':' + service.version : ''}`);
+        const serviceLabel = `${service.name}${service.version ? ':' + service.version : ''}`;
+        if (stopImmediately) {
+          this.managers.log?.project(project.id, `Stopping ${serviceLabel} immediately because no projects are running...`);
+          await serviceManager.stopService(service.name, service.version);
+          results.stopped.push(serviceLabel);
+        } else {
+          this.managers.log?.project(project.id, `Scheduling ${serviceLabel} to stop if it remains unused...`);
+          this.scheduleServiceStop(project.id, service);
+          results.scheduled.push(serviceLabel);
+        }
       } catch (error) {
         this.managers.log?.project(project.id, `Failed to stop ${service.name}: ${error.message}`, 'error');
         results.failed.push({ service: service.name, error: error.message });
