@@ -12,7 +12,7 @@
 | ServiceManager.js | 160 | ✅ Refactored — under target |
 | BinaryDownloadManager.js | 182 | ✅ Refactored — under target |
 | CliManager.js | 48 | ✅ Refactored — under target |
-| DatabaseManager.js | 1,075 | In progress — helper, credentials, engine helpers, and operations slices extracted |
+| DatabaseManager.js | 23 | ✅ Refactored — under target |
 | SupervisorManager.js | 572 | Moderate — slightly over |
 | GitManager.js | 561 | Moderate — slightly over |
 | CompatibilityManager.js | 556 | Moderate — slightly over |
@@ -37,7 +37,7 @@
 - [x] Phase 2 (`ServiceManager.js`) structurally split and validated
 - [x] Phase 3 (`BinaryDownloadManager.js`) started
 - [x] Phase 4 (`CliManager.js`) started
-- [x] Phase 5 (`DatabaseManager.js`) started
+- [x] Phase 5 (`DatabaseManager.js`) structurally split and validated
 
 ### Phase 1 Status: ProjectManager
 
@@ -267,34 +267,37 @@ Result: `21` tests passed across `5` files.
 
 ### Phase 5 Status: DatabaseManager
 
-Phase 5 has started with five extracted slices: shared database helper/accessor logic now lives in `src/main/services/database/helpers.js`, credential/reset flows live in `src/main/services/database/credentials.js`, engine-specific PostgreSQL and MongoDB helper methods live in `src/main/services/database/postgres.js` and `src/main/services/database/mongo.js`, and higher-level database operations/query logic now lives in `src/main/services/database/operations.js`. `DatabaseManager.js` now mostly owns import/export flow plus the remaining engine-specific import/export implementations.
+Phase 5 is now functionally complete. DatabaseManager has been reduced to a thin facade, with concern-specific mixins under `src/main/services/database/` covering helpers, credentials, import/export flow, engine-specific PostgreSQL and MongoDB behavior, and higher-level database operations.
 
 Implemented so far:
 
 - `database/helpers.js`
 - `database/credentials.js`
+- `database/importExport.js`
 - `database/postgres.js`
 - `database/mongo.js`
 - `database/operations.js`
 - `tests/main/services/database/helpers.test.js`
 - `tests/main/services/database/credentials.test.js`
+- `tests/main/services/database/importExport.test.js`
 - `tests/main/services/database/postgres.test.js`
 - `tests/main/services/database/mongo.test.js`
 - `tests/main/services/database/operations.test.js`
 
 Current checkpoint:
 
-- `DatabaseManager.js` reduced to `1,075` lines
+- `DatabaseManager.js` reduced to `23` lines
 - operation tracking now lives in `database/helpers.js`
 - active database type/version accessors and port resolution now live in `database/helpers.js`
 - phpMyAdmin URL resolution and binary path/runtime helpers now live in `database/helpers.js`
 - connection metadata, name sanitization, and TCP connection probing now live in `database/helpers.js`
 - credential persistence, init-file generation, and no-auth query setup now live in `database/credentials.js`
-- PostgreSQL env setup and query execution now live in `database/postgres.js`
-- MongoDB query execution now lives in `database/mongo.js`
+- import/export flow, SQL stream processing, and import file validation now live in `database/importExport.js`
+- PostgreSQL env setup, query execution, and PostgreSQL-specific import/export now live in `database/postgres.js`
+- MongoDB query execution and MongoDB-specific import/export now live in `database/mongo.js`
 - database creation/deletion, query execution, schema introspection, and size lookup now live in `database/operations.js`
-- the public manager API remains unchanged through `Object.assign(DatabaseManager.prototype, databaseHelpers, databaseCredentials, databasePostgres, databaseMongo, databaseOperations)`
-- focused coverage now exists for database info, port calculation, binary path selection, spawn option runtime cwd behavior, connection metadata, name sanitization, credential persistence, init-file generation behavior, PostgreSQL env precedence, PostgreSQL mocked database tracking, MongoDB mocked database tracking, MySQL mocked database tracking, connection-error fallback while listing databases, MongoDB schema introspection mapping, and database size parsing
+- the public manager API remains unchanged through `Object.assign(DatabaseManager.prototype, databaseHelpers, databaseCredentials, databasePostgres, databaseMongo, databaseOperations, databaseImportExport)`
+- focused coverage now exists for database info, port calculation, binary path selection, spawn option runtime cwd behavior, connection metadata, name sanitization, credential persistence, init-file generation behavior, SQL import/export helper parsing, PostgreSQL env precedence, PostgreSQL mocked database tracking, MongoDB mocked database tracking, MySQL mocked database tracking, connection-error fallback while listing databases, MongoDB schema introspection mapping, and database size parsing
 
 ### Phase 5 Checklist
 
@@ -302,11 +305,11 @@ Current checkpoint:
 - [x] Extract helper/accessor/runtime logic to `database/helpers.js`
 - [x] Extract credential/reset helpers to `database/credentials.js`
 - [x] Extract MySQL/MariaDB operations/query logic to `database/operations.js`
-- [ ] Extract import/export flow to `database/importExport.js`
+- [x] Extract import/export flow to `database/importExport.js`
 - [x] Extract PostgreSQL helpers to `database/postgres.js`
 - [x] Extract MongoDB helpers to `database/mongo.js`
-- [ ] Replace `DatabaseManager.js` with a thin facade + `Object.assign(...)`
-- [ ] Reduce `DatabaseManager.js` below the 400–500 line target
+- [x] Replace `DatabaseManager.js` with a thin facade + `Object.assign(...)`
+- [x] Reduce `DatabaseManager.js` below the 400–500 line target
 - [x] Add first focused unit test under `tests/main/services/database/`
 - [x] Validate the current DatabaseManager slice
 
@@ -315,11 +318,12 @@ Current checkpoint:
 - `tests/main/services/DatabaseManager.test.js`
 - `tests/main/services/database/helpers.test.js`
 - `tests/main/services/database/credentials.test.js`
+- `tests/main/services/database/importExport.test.js`
 - `tests/main/services/database/postgres.test.js`
 - `tests/main/services/database/mongo.test.js`
 - `tests/main/services/database/operations.test.js`
 
-Result: `60` tests passed across `6` files.
+Result: `66` tests passed across `7` files.
 
 ---
 
@@ -496,8 +500,8 @@ module.exports = {
 |----------|---------|-----------|
 | `database/operations.js` | `createDatabase`, `deleteDatabase`, `listDatabases`, `runDbQuery`, `runQuery`, `dropAllTables`, `getTables`, `getTableStructure`, `getDatabaseSize` | ~400 |
 | `database/importExport.js` | `importDatabase`, `exportDatabase`, `createSqlProcessorStream`, `splitDefinitions`, `removeColumnsFromValues`, `parseValueSets`, `splitValues`, `validateFilePath`, `processImportSql` | ~500 |
-| `database/postgres.js` | `_buildPgEnv`, `_runPostgresQuery` now; `_importPostgres`, `_exportPostgres` still pending | In progress |
-| `database/mongo.js` | `_runMongoQuery` now; `_importMongo`, `_exportMongo` still pending | In progress |
+| `database/postgres.js` | `_buildPgEnv`, `_runPostgresQuery`, `_importPostgres`, `_exportPostgres` | Implemented |
+| `database/mongo.js` | `_runMongoQuery`, `_importMongo`, `_exportMongo` | Implemented |
 | `database/helpers.js` | `initialize`, `getActiveDatabaseType`, `getActiveDatabaseVersion`, `setActiveDatabaseType`, `getDatabaseInfo`, `getConnections`, `isServiceRunning`, `getActualPort`, `sanitizeName`, `_getBinaryPath`, `getDbClientPath`, `getDbDumpPath`, `getDbRestorePath`, `getBinaryRuntimeDir`, `ensureDbBinaryRuntime`, `buildBinarySpawnOptions`, `getPhpMyAdminUrl`, `checkConnection`, `cancelOperation`, `getRunningOperations` | Implemented |
 | `database/credentials.js` | `resetCredentials`, `createCredentialResetInitFile`, `runDbQueryNoAuth` | Implemented |
 | **DatabaseManager.js** (facade) | Constructor, property init, `Object.assign` mixins | ~100 |
