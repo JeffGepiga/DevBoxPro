@@ -83,6 +83,15 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return result;
   });
 
+  ipcMain.handle('projects:stopAll', async () => {
+    const result = await project.stopAllProjects();
+    mainWindow?.webContents.send('project:statusChanged', {
+      id: null,
+      status: 'stopped',
+    });
+    return result;
+  });
+
   ipcMain.handle('projects:restart', async (event, id) => {
     await project.stopProject(id);
     return project.startProject(id);

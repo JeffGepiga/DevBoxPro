@@ -3,43 +3,60 @@
  *
  * Phase 5 – Structure tests for the Services page.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor, cleanup, act } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 afterEach(cleanup);
 
 const mockDevbox = {
+    projects: {
+        stopAll: vi.fn().mockResolvedValue({ success: true }),
+    },
     services: {
         getStatus: vi.fn().mockResolvedValue({}),
         getRunningVersions: vi.fn().mockResolvedValue({}),
-        startService: vi.fn().mockResolvedValue({}),
-        stopService: vi.fn().mockResolvedValue({}),
+        start: vi.fn().mockResolvedValue({}),
+        stop: vi.fn().mockResolvedValue({}),
+        stopAll: vi.fn().mockResolvedValue({}),
     },
     binaries: {
         getStatus: vi.fn().mockResolvedValue({}),
+        getServiceConfig: vi.fn().mockResolvedValue({ versions: {}, defaultPorts: {} }),
     },
     database: {
         getInfo: vi.fn().mockResolvedValue({}),
     },
 };
 
+const mockAppContext = {
+    projects: [],
+    loading: false,
+    services: {},
+    resourceUsage: { total: { cpu: 0, memory: 0 }, services: {} },
+    projectLoadingStates: {},
+    refreshServices: vi.fn(),
+    refreshProjects: vi.fn(),
+    startService: vi.fn(),
+    stopService: vi.fn(),
+};
+
 beforeEach(() => {
     Object.defineProperty(window, 'devbox', { value: mockDevbox, writable: true, configurable: true });
     vi.clearAllMocks();
+    mockDevbox.binaries.getStatus.mockResolvedValue({});
+    mockDevbox.binaries.getServiceConfig.mockResolvedValue({ versions: {}, defaultPorts: {}, portOffsets: {} });
+    mockAppContext.projects = [];
+    mockAppContext.services = {};
+    mockAppContext.refreshServices = vi.fn();
+    mockAppContext.refreshProjects = vi.fn();
+    mockAppContext.startService = vi.fn();
+    mockAppContext.stopService = vi.fn();
 });
 
 vi.mock('@/context/AppContext', () => ({
-    useApp: () => ({
-        projects: [],
-        loading: false,
-        services: {},
-        resourceUsage: { total: { cpu: 0, memory: 0 }, services: {} },
-        projectLoadingStates: {},
-        refreshServices: vi.fn(),
-        refreshProjects: vi.fn(),
-    }),
+    useApp: () => mockAppContext,
 }));
 
 vi.mock('@/context/ModalContext', () => ({
@@ -69,5 +86,38 @@ describe('Services', () => {
         // Page should list service categories
         const headings = screen.getAllByRole('heading');
         expect(headings.length).toBeGreaterThan(0);
+    });
+
+    it('stops running projects in bulk before stopping standalone services', async () => {
+        mockDevbox.binaries.getStatus.mockResolvedValueOnce({
+            mailpit: { installed: true },
+        });
+        mockAppContext.projects = [{
+            id: 'proj-1',
+            isRunning: true,
+            webServer: 'nginx',
+            services: { mysql: true },
+        }];
+        mockAppContext.services = {
+            nginx: { status: 'running', version: '1.28' },
+            mysql: { status: 'running', version: '8.4' },
+            mailpit: { status: 'running' },
+        };
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <Services />
+            </MemoryRouter>
+        );
+
+        const stopAllButton = await screen.findByRole('button', { name: /Stop All/i });
+        await waitFor(() => expect(stopAllButton).not.toBeDisabled());
+        fireEvent.click(stopAllButton);
+
+        await waitFor(() => {
+            expect(mockDevbox.projects.stopAll).toHaveBeenCalledTimes(1);
+        });
+        expect(mockDevbox.services.stopAll).not.toHaveBeenCalled();
+        expect(mockDevbox.services.stop).toHaveBeenCalledWith('mailpit', null);
     });
 });

@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('devbox', {
     delete: (id, deleteFiles) => ipcRenderer.invoke('projects:delete', id, deleteFiles),
     start: (id) => ipcRenderer.invoke('projects:start', id),
     stop: (id) => ipcRenderer.invoke('projects:stop', id),
+    stopAll: () => ipcRenderer.invoke('projects:stopAll'),
     restart: (id) => ipcRenderer.invoke('projects:restart', id),
     getStatus: (id) => ipcRenderer.invoke('projects:getStatus', id),
     openInEditor: (id, editor) => ipcRenderer.invoke('projects:openInEditor', id, editor),
