@@ -11,8 +11,8 @@
 | ProjectManager.js | 254 | ✅ Refactored — under target |
 | ServiceManager.js | 160 | ✅ Refactored — under target |
 | BinaryDownloadManager.js | 182 | ✅ Refactored — under target |
-| CliManager.js | 2,278 | **High** — still large |
-| DatabaseManager.js | 2,160 | **High** — still large |
+| CliManager.js | 48 | ✅ Refactored — under target |
+| DatabaseManager.js | 1,075 | In progress — helper, credentials, engine helpers, and operations slices extracted |
 | SupervisorManager.js | 572 | Moderate — slightly over |
 | GitManager.js | 561 | Moderate — slightly over |
 | CompatibilityManager.js | 556 | Moderate — slightly over |
@@ -36,8 +36,8 @@
 - [x] `ProjectManager.js` reduced below the 400–500 line target
 - [x] Phase 2 (`ServiceManager.js`) structurally split and validated
 - [x] Phase 3 (`BinaryDownloadManager.js`) started
-- [ ] Phase 4 (`CliManager.js`) started
-- [ ] Phase 5 (`DatabaseManager.js`) started
+- [x] Phase 4 (`CliManager.js`) started
+- [x] Phase 5 (`DatabaseManager.js`) started
 
 ### Phase 1 Status: ProjectManager
 
@@ -212,6 +212,117 @@ Result: `60` tests passed across `13` files.
 
 ---
 
+### Phase 4 Status: CliManager
+
+Phase 4 is now functionally complete. CliManager has been reduced to a thin facade, with concern-specific mixins under `src/main/services/cli/` covering runtime discovery, wrapper installation, project mapping, PATH management, and direct shim management.
+
+Implemented so far:
+
+- `cli/binaries.js`
+- `cli/install.js`
+- `cli/projects.js`
+- `cli/path.js`
+- `cli/shims.js`
+- `tests/main/services/cli/binaries.test.js`
+- `tests/main/services/cli/install.test.js`
+- `tests/main/services/cli/projects.test.js`
+- `tests/main/services/cli/path.test.js`
+- `tests/main/services/cli/shims.test.js`
+
+Current checkpoint:
+
+- `CliManager.js` reduced to `48` lines
+- runtime binary path lookups and default-version helpers now live in `cli/binaries.js`
+- CLI wrapper installation now lives in `cli/install.js`
+- project mapping and command-dispatch helpers now live in `cli/projects.js`
+- CLI PATH detection, install instructions, and PATH add/remove flows now live in `cli/path.js`
+- direct shim installation, removal, and platform-specific shim generation now live in `cli/shims.js`
+- the public manager API is preserved through a thin facade + `Object.assign(...)` mixins
+- focused coverage now exists for runtime/path lookup, project dispatch, PATH management, wrapper installation, direct shim toggling, direct shim cleanup, and Windows shim generation behavior
+
+### Phase 4 Checklist
+
+- [x] Create `src/main/services/cli/`
+- [x] Extract runtime binary lookup/default helpers to `cli/binaries.js`
+- [x] Extract project mapping and command execution to `cli/projects.js`
+- [x] Extract PATH management to `cli/path.js`
+- [x] Extract CLI install flow to `cli/install.js`
+- [x] Extract direct shim installation/removal to `cli/shims.js`
+- [x] Replace `CliManager.js` with a thin facade + `Object.assign(...)`
+- [x] Reduce `CliManager.js` below the 400–500 line target
+- [x] Add first focused unit test under `tests/main/services/cli/`
+- [x] Validate the current CliManager slice
+
+### Last Verified Phase 4 Test Slice
+
+- `tests/main/services/cli/binaries.test.js`
+- `tests/main/services/cli/install.test.js`
+- `tests/main/services/cli/projects.test.js`
+- `tests/main/services/cli/path.test.js`
+- `tests/main/services/cli/shims.test.js`
+
+Result: `21` tests passed across `5` files.
+
+---
+
+### Phase 5 Status: DatabaseManager
+
+Phase 5 has started with five extracted slices: shared database helper/accessor logic now lives in `src/main/services/database/helpers.js`, credential/reset flows live in `src/main/services/database/credentials.js`, engine-specific PostgreSQL and MongoDB helper methods live in `src/main/services/database/postgres.js` and `src/main/services/database/mongo.js`, and higher-level database operations/query logic now lives in `src/main/services/database/operations.js`. `DatabaseManager.js` now mostly owns import/export flow plus the remaining engine-specific import/export implementations.
+
+Implemented so far:
+
+- `database/helpers.js`
+- `database/credentials.js`
+- `database/postgres.js`
+- `database/mongo.js`
+- `database/operations.js`
+- `tests/main/services/database/helpers.test.js`
+- `tests/main/services/database/credentials.test.js`
+- `tests/main/services/database/postgres.test.js`
+- `tests/main/services/database/mongo.test.js`
+- `tests/main/services/database/operations.test.js`
+
+Current checkpoint:
+
+- `DatabaseManager.js` reduced to `1,075` lines
+- operation tracking now lives in `database/helpers.js`
+- active database type/version accessors and port resolution now live in `database/helpers.js`
+- phpMyAdmin URL resolution and binary path/runtime helpers now live in `database/helpers.js`
+- connection metadata, name sanitization, and TCP connection probing now live in `database/helpers.js`
+- credential persistence, init-file generation, and no-auth query setup now live in `database/credentials.js`
+- PostgreSQL env setup and query execution now live in `database/postgres.js`
+- MongoDB query execution now lives in `database/mongo.js`
+- database creation/deletion, query execution, schema introspection, and size lookup now live in `database/operations.js`
+- the public manager API remains unchanged through `Object.assign(DatabaseManager.prototype, databaseHelpers, databaseCredentials, databasePostgres, databaseMongo, databaseOperations)`
+- focused coverage now exists for database info, port calculation, binary path selection, spawn option runtime cwd behavior, connection metadata, name sanitization, credential persistence, init-file generation behavior, PostgreSQL env precedence, PostgreSQL mocked database tracking, MongoDB mocked database tracking, MySQL mocked database tracking, connection-error fallback while listing databases, MongoDB schema introspection mapping, and database size parsing
+
+### Phase 5 Checklist
+
+- [x] Create `src/main/services/database/`
+- [x] Extract helper/accessor/runtime logic to `database/helpers.js`
+- [x] Extract credential/reset helpers to `database/credentials.js`
+- [x] Extract MySQL/MariaDB operations/query logic to `database/operations.js`
+- [ ] Extract import/export flow to `database/importExport.js`
+- [x] Extract PostgreSQL helpers to `database/postgres.js`
+- [x] Extract MongoDB helpers to `database/mongo.js`
+- [ ] Replace `DatabaseManager.js` with a thin facade + `Object.assign(...)`
+- [ ] Reduce `DatabaseManager.js` below the 400–500 line target
+- [x] Add first focused unit test under `tests/main/services/database/`
+- [x] Validate the current DatabaseManager slice
+
+### Last Verified Phase 5 Test Slice
+
+- `tests/main/services/DatabaseManager.test.js`
+- `tests/main/services/database/helpers.test.js`
+- `tests/main/services/database/credentials.test.js`
+- `tests/main/services/database/postgres.test.js`
+- `tests/main/services/database/mongo.test.js`
+- `tests/main/services/database/operations.test.js`
+
+Result: `60` tests passed across `6` files.
+
+---
+
 ## Chosen Pattern: Prototype Mixin Composition
 
 ### Why This Pattern
@@ -373,22 +484,22 @@ module.exports = {
 | New File | Methods | Est. Lines |
 |----------|---------|-----------|
 | `cli/install.js` | `installCli`, `installWindowsCli`, `installUnixCli` | ~500 |
-| `cli/path.js` | `addToPath`, `addToUserPath`, `addToUnixPath`, `tryAddToSystemPath`, `removeFromPath`, `removeFromUserPath`, `removeFromUnixPath`, `tryRemoveFromSystemPath`, `checkCliInstalled`, `isInWindowsUserPath`, `getInstallInstructions` | ~450 |
-| `cli/shims.js` | `installDirectShims`, `removeDirectShims`, `installWindowsDirectShims`, `installUnixDirectShims`, `getDirectShimsEnabled`, `setDirectShimsEnabled` | ~500 |
 | `cli/binaries.js` | All `get*Path` methods, `getActiveMysqlInfo`, `getFirstInstalled*Version`, `getDefault*Version`, `setDefault*Version`, `buildProjectEnv` | ~400 |
 | `cli/projects.js` | `syncProjectsFile`, `getProjectsFilePath`, `getProjectForPath`, `executeCommand` | ~200 |
+| `cli/path.js` | `getInstallInstructions`, `checkCliInstalled`, PATH add/remove helpers | ~350 |
+| `cli/shims.js` | `installDirectShims`, `removeDirectShims`, `installWindowsDirectShims`, `installUnixDirectShims`, `getDirectShimsEnabled`, `setDirectShimsEnabled` | ~500 |
 | **CliManager.js** (facade) | Constructor, property init, `Object.assign` mixins | ~100 |
 
-### Phase 5: DatabaseManager.js (2,516 lines → 6 files)
+### Phase 5: DatabaseManager.js (2,160 lines → 6 files)
 
 | New File | Methods | Est. Lines |
 |----------|---------|-----------|
 | `database/operations.js` | `createDatabase`, `deleteDatabase`, `listDatabases`, `runDbQuery`, `runQuery`, `dropAllTables`, `getTables`, `getTableStructure`, `getDatabaseSize` | ~400 |
 | `database/importExport.js` | `importDatabase`, `exportDatabase`, `createSqlProcessorStream`, `splitDefinitions`, `removeColumnsFromValues`, `parseValueSets`, `splitValues`, `validateFilePath`, `processImportSql` | ~500 |
-| `database/postgres.js` | `_importPostgres`, `_exportPostgres`, `_runPostgresQuery`, `_buildPgEnv` | ~250 |
-| `database/mongo.js` | `_importMongo`, `_exportMongo`, `_runMongoQuery` | ~200 |
-| `database/helpers.js` | `initialize`, `getActiveDatabaseType`, `getActiveDatabaseVersion`, `setActiveDatabaseType`, `getDatabaseInfo`, `getConnections`, `isServiceRunning`, `getActualPort`, `sanitizeName`, `_getBinaryPath`, `getDbClientPath`, `getDbDumpPath`, `getDbRestorePath`, `getBinaryRuntimeDir`, `ensureDbBinaryRuntime`, `buildBinarySpawnOptions`, `getPhpMyAdminUrl`, `checkConnection`, `cancelOperation`, `getRunningOperations` | ~450 |
-| `database/credentials.js` | `resetCredentials`, `createCredentialResetInitFile`, `runDbQueryNoAuth` | ~200 |
+| `database/postgres.js` | `_buildPgEnv`, `_runPostgresQuery` now; `_importPostgres`, `_exportPostgres` still pending | In progress |
+| `database/mongo.js` | `_runMongoQuery` now; `_importMongo`, `_exportMongo` still pending | In progress |
+| `database/helpers.js` | `initialize`, `getActiveDatabaseType`, `getActiveDatabaseVersion`, `setActiveDatabaseType`, `getDatabaseInfo`, `getConnections`, `isServiceRunning`, `getActualPort`, `sanitizeName`, `_getBinaryPath`, `getDbClientPath`, `getDbDumpPath`, `getDbRestorePath`, `getBinaryRuntimeDir`, `ensureDbBinaryRuntime`, `buildBinarySpawnOptions`, `getPhpMyAdminUrl`, `checkConnection`, `cancelOperation`, `getRunningOperations` | Implemented |
+| `database/credentials.js` | `resetCredentials`, `createCredentialResetInitFile`, `runDbQueryNoAuth` | Implemented |
 | **DatabaseManager.js** (facade) | Constructor, property init, `Object.assign` mixins | ~100 |
 
 ### Phase 6: Smaller Files (optional, only if >500 lines)
