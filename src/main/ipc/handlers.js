@@ -648,7 +648,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     if (!managers.update) {
       return { success: false, error: 'Update manager not initialized' };
     }
-    managers.update.quitAndInstall();
+    await managers.update.quitAndInstall();
     return { success: true };
   });
 

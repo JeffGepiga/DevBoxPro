@@ -25,6 +25,7 @@ const { UpdateManager } = require('./services/UpdateManager');
 const { MigrationManager } = require('./services/MigrationManager');
 const { ConfigStore } = require('./utils/ConfigStore');
 const pathResolver = require('./utils/PathResolver');
+const { cleanupStaleManagedWebServerProcesses } = require('./utils/StartupCleanup');
 const { setupIpcHandlers } = require('./ipc/handlers');
 
 const GENERATED_CONFIG_SCHEMA_VERSION = 2;
@@ -389,6 +390,7 @@ async function startup() {
 
     await checkAndRegenerateMigratedConfigs();
     await checkAndRepairGeneratedConfigs();
+    await cleanupStaleManagedWebServerProcesses(getResourcePath(), managers.log);
 
     // Create main window immediately so user sees the app
     await createWindow();

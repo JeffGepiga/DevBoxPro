@@ -200,12 +200,23 @@ class UpdateManager {
     /**
      * Install the downloaded update and restart the app
      */
-    quitAndInstall() {
-        if (this.updateDownloaded) {
-            // Set the quitting flag so graceful shutdown proceeds
-            app.isQuitting = true;
-            autoUpdater.quitAndInstall(false, true);
+    async quitAndInstall() {
+        if (!this.updateDownloaded) {
+            return;
         }
+
+        try {
+            await this.managers?.project?.stopAllProjects?.();
+            await this.managers?.service?.stopAllServices?.();
+        } catch (error) {
+            this.managers?.log?.systemError?.('Failed to stop services before installing update', {
+                error: error.message,
+            });
+        }
+
+        // Set the quitting flag so graceful shutdown proceeds
+        app.isQuitting = true;
+        autoUpdater.quitAndInstall(false, true);
     }
 
     /**
