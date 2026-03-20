@@ -12,8 +12,12 @@ function makeContext(settings = {}) {
     dbConfig: {
       host: '127.0.0.1',
     },
+    managers: {},
+    getActiveDatabaseType: vi.fn(() => 'mongodb'),
+    getActiveDatabaseVersion: vi.fn(() => '8.0'),
     getDbClientPath: vi.fn(() => 'C:/resources/mongosh.exe'),
     getActualPort: vi.fn(() => 27017),
+    ...mongo,
   };
 }
 
@@ -57,7 +61,25 @@ describe('database/mongo', () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
     await expect(mongo._runMongoQuery.call(context, 'db.stats()')).rejects.toThrow(
-      'mongosh not found at C:/resources/mongosh.exe. Please install the MongoDB binary from the Binaries page.'
+      'MongoDB shell not found at C:/resources/mongosh.exe. Please install or reinstall the MongoDB binary from the Binaries page.'
     );
+  });
+
+  it('repairs a missing mongosh binary once before querying', async () => {
+    process.env.PLAYWRIGHT_TEST = 'false';
+    const context = makeContext();
+    context.managers = {
+      binaryDownload: {
+        downloadMongosh: vi.fn(async () => ({ success: true })),
+      },
+    };
+
+    const existsSync = vi.spyOn(fs, 'existsSync');
+    existsSync
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+
+    await expect(mongo._ensureMongoClientPath.call(context)).resolves.toBe('C:/resources/mongosh.exe');
+    expect(context.managers.binaryDownload.downloadMongosh).toHaveBeenCalledWith('8.0');
   });
 });

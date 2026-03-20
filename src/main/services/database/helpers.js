@@ -235,12 +235,32 @@ module.exports = {
     const dbType = dbTypeOverride || this.getActiveDatabaseType();
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const binName = process.platform === 'win32' ? `${binBaseName}.exe` : binBaseName;
+    const candidateVersions = [];
 
     let version = null;
     if (this.managers.service) {
       const serviceStatus = this.managers.service.serviceStatus.get(dbType);
       if (serviceStatus?.status === 'running') {
         version = serviceStatus.version;
+      }
+    }
+
+    if (version) {
+      candidateVersions.push(version);
+    }
+
+    const activeType = this.getActiveDatabaseType?.();
+    if (activeType === dbType) {
+      const activeVersion = this.getActiveDatabaseVersion?.();
+      if (activeVersion && !candidateVersions.includes(activeVersion)) {
+        candidateVersions.push(activeVersion);
+      }
+    }
+
+    for (const candidateVersion of candidateVersions) {
+      const versionPath = path.join(this.resourcePath, dbType, candidateVersion, platform, 'bin', binName);
+      if (fs.existsSync(versionPath)) {
+        return versionPath;
       }
     }
 
@@ -267,13 +287,30 @@ module.exports = {
       }
     }
 
+    const preferredVersion = candidateVersions[0];
+    if (preferredVersion) {
+      return path.join(this.resourcePath, dbType, preferredVersion, platform, 'bin', binName);
+    }
+
     return path.join(this.resourcePath, dbType, platform, 'bin', binName);
   },
 
   getDbClientPath() {
     const dbType = this.getActiveDatabaseType();
     if (dbType === 'postgresql') return this._getBinaryPath('psql');
-    if (dbType === 'mongodb') return this._getBinaryPath('mongosh');
+    if (dbType === 'mongodb') {
+      const mongoshPath = this._getBinaryPath('mongosh');
+      if (fs.existsSync(mongoshPath)) {
+        return mongoshPath;
+      }
+
+      const legacyMongoPath = this._getBinaryPath('mongo');
+      if (fs.existsSync(legacyMongoPath)) {
+        return legacyMongoPath;
+      }
+
+      return mongoshPath;
+    }
     return this._getBinaryPath('mysql');
   },
 

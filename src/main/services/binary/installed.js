@@ -109,7 +109,12 @@ module.exports = {
     for (const version of (this.versionMeta.mongodb || [])) {
       const mongoPath = path.join(this.resourcesPath, 'mongodb', version, platform, 'bin');
       const mongoExe = platform === 'win' ? 'mongod.exe' : 'mongod';
-      installed.mongodb[version] = await fs.pathExists(path.join(mongoPath, mongoExe));
+      const mongoShellExe = platform === 'win' ? 'mongosh.exe' : 'mongosh';
+      const legacyMongoShellExe = platform === 'win' ? 'mongo.exe' : 'mongo';
+      const serverInstalled = await fs.pathExists(path.join(mongoPath, mongoExe));
+      const shellInstalled = await fs.pathExists(path.join(mongoPath, mongoShellExe))
+        || await fs.pathExists(path.join(mongoPath, legacyMongoShellExe));
+      installed.mongodb[version] = serverInstalled && shellInstalled;
     }
 
     const sqlitePath = path.join(this.resourcesPath, 'sqlite', '3', platform);

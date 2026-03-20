@@ -46,10 +46,12 @@ const mockDevbox = {
 };
 
 const mockShowAlert = vi.fn();
+const mockCreateProject = vi.fn().mockResolvedValue({ id: 'new-project' });
 
 beforeEach(() => {
     Object.defineProperty(window, 'devbox', { value: mockDevbox, writable: true, configurable: true });
     vi.clearAllMocks();
+    mockCreateProject.mockResolvedValue({ id: 'new-project' });
     mockDevbox.binaries.getStatus.mockResolvedValue({
         php: { '8.3': { installed: true } },
         nginx: { '1.28': { installed: true } },
@@ -67,6 +69,7 @@ vi.mock('@/context/AppContext', () => ({
         loading: false,
         projectLoadingStates: {},
         refreshProjects: vi.fn(),
+        createProject: mockCreateProject,
     }),
 }));
 
@@ -166,6 +169,40 @@ describe('CreateProject', () => {
                 }));
             });
             expect(mockDevbox.projects.create).not.toHaveBeenCalled();
+        });
+
+        it('submits the wizard through the createProject app action', async () => {
+            renderCreate();
+
+            fireEvent.click(await screen.findByText('Custom PHP'));
+
+            const nextButton = await screen.findByRole('button', { name: /^Next$/i });
+            fireEvent.click(nextButton);
+
+            await waitFor(() => {
+                expect(screen.getByText(/Project Details/i)).toBeInTheDocument();
+            });
+
+            const textInputs = document.querySelectorAll('input[type="text"]');
+            fireEvent.change(textInputs[0], { target: { value: 'My Test Project' } });
+            fireEvent.change(textInputs[1], { target: { value: '/projects/my-test-project' } });
+
+            fireEvent.click(nextButton);
+            await waitFor(() => expect(screen.getByText(/Configure Services/i)).toBeInTheDocument());
+            fireEvent.click(nextButton);
+            await waitFor(() => expect(screen.getByText(/Domain, SSL & Web Server/i)).toBeInTheDocument());
+            fireEvent.click(nextButton);
+
+            const createButton = await screen.findByRole('button', { name: /Create Project/i });
+            fireEvent.click(createButton);
+
+            await waitFor(() => {
+                expect(mockCreateProject).toHaveBeenCalledWith(expect.objectContaining({
+                    name: 'My Test Project',
+                    path: '/projects/my-test-project',
+                    type: 'custom',
+                }));
+            });
         });
     });
 });

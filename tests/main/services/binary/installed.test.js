@@ -19,7 +19,7 @@ function makeContext(overrides = {}) {
       nodejs: ['20'],
       postgresql: [],
       python: [],
-      mongodb: [],
+      mongodb: ['8.0'],
       memcached: [],
     },
     managers: {
@@ -92,12 +92,28 @@ describe('binary/installed', () => {
         || normalized.endsWith('/php/8.4/win/php-cgi.exe')
         || normalized.endsWith('/nodejs/20/win/node.exe')
         || normalized.endsWith('/nodejs/20/win/npm.cmd')
-        || normalized.endsWith('/nodejs/20/win/npx.cmd');
+        || normalized.endsWith('/nodejs/20/win/npx.cmd')
+        || normalized.endsWith('/mongodb/8.0/win/bin/mongod.exe')
+        || normalized.endsWith('/mongodb/8.0/win/bin/mongosh.exe');
     });
 
     const installed = await ctx.getInstalledBinaries();
 
     expect(installed.php['8.4']).toBe(true);
     expect(installed.nodejs['20']).toBe(true);
+    expect(installed.mongodb['8.0']).toBe(true);
+  });
+
+  it('marks MongoDB incomplete when the shell binary is missing', async () => {
+    const ctx = makeContext();
+    vi.spyOn(fs, 'readdir').mockResolvedValue([]);
+    vi.spyOn(fs, 'pathExists').mockImplementation(async (targetPath) => {
+      const normalized = targetPath.replace(/\\/g, '/');
+      return normalized.endsWith('/mongodb/8.0/win/bin/mongod.exe');
+    });
+
+    const installed = await ctx.getInstalledBinaries();
+
+    expect(installed.mongodb['8.0']).toBe(false);
   });
 });

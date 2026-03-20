@@ -3,7 +3,35 @@ const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 
 module.exports = {
-  _runMongoQuery(evalExpr, database = 'admin') {
+  async _ensureMongoClientPath() {
+    const clientPath = this.getDbClientPath();
+    if (fs.existsSync(clientPath)) {
+      return clientPath;
+    }
+
+    const activeType = this.getActiveDatabaseType?.();
+    const activeVersion = activeType === 'mongodb' ? this.getActiveDatabaseVersion?.() : null;
+    const binaryDownload = this.managers?.binaryDownload;
+
+    if (activeVersion && typeof binaryDownload?.downloadMongosh === 'function') {
+      const repairResult = await binaryDownload.downloadMongosh(activeVersion);
+      const repairedPath = this.getDbClientPath();
+
+      if (repairResult?.success && fs.existsSync(repairedPath)) {
+        return repairedPath;
+      }
+
+      this.managers?.log?.systemWarn?.('MongoDB shell repair did not produce a client binary', {
+        version: activeVersion,
+        path: repairedPath,
+        error: repairResult?.error,
+      });
+    }
+
+    return clientPath;
+  },
+
+  async _runMongoQuery(evalExpr, database = 'admin') {
     const isPlaywright = process.env.PLAYWRIGHT_TEST === 'true';
     if (isPlaywright) {
       if (!this._mongoMockedDbs) this._mongoMockedDbs = new Set(['admin']);
@@ -33,14 +61,14 @@ module.exports = {
       return Promise.resolve([]);
     }
 
-    const clientPath = this.getDbClientPath();
+    const clientPath = await this._ensureMongoClientPath();
     const port = this.getActualPort();
     const settings = this.configStore.get('settings', {});
     const mongoUser = settings.mongoUser ?? null;
     const mongoPassword = settings.mongoPassword ?? null;
 
     if (!fs.existsSync(clientPath)) {
-      return Promise.reject(new Error(`mongosh not found at ${clientPath}. Please install the MongoDB binary from the Binaries page.`));
+      return Promise.reject(new Error(`MongoDB shell not found at ${clientPath}. Please install or reinstall the MongoDB binary from the Binaries page.`));
     }
 
     const args = [
