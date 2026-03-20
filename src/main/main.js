@@ -8,7 +8,7 @@ const { app, BrowserWindow, ipcMain, Menu, Tray, nativeTheme, dialog, nativeImag
 const path = require('path');
 
 // Disable hardware acceleration to save 40-80MB of RAM since we don't need intense GPU rendering
-app.disableHardwareAcceleration();
+//app.disableHardwareAcceleration();
 
 const { ServiceManager } = require('./services/ServiceManager');
 const { ProjectManager } = require('./services/ProjectManager');

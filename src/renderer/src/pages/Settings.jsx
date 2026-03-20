@@ -5,8 +5,14 @@ import {
   COLOR_PALETTES,
   TEXTURES,
   DARK_SURFACES,
+  GRADIENT_PRESETS,
+  SURFACE_STYLES,
+  RADIUS_PRESETS,
   applyAccentColor,
+  applyGradientPreset,
   applyTexture,
+  applySurfaceStyle,
+  applyRadiusPreset,
   applyDarkSurface,
 } from '../utils/themeConfig';
 import {
@@ -1004,9 +1010,24 @@ function AppearanceSettings({ settings, updateSetting }) {
     applyAccentColor(colorKey);
   };
 
+  const handleGradientChange = (gradientKey) => {
+    updateSetting('gradientPreset', gradientKey);
+    applyGradientPreset(gradientKey);
+  };
+
   const handleTextureChange = (textureKey) => {
     updateSetting('texture', textureKey);
     applyTexture(textureKey);
+  };
+
+  const handleSurfaceStyleChange = (styleKey) => {
+    updateSetting('surfaceStyle', styleKey);
+    applySurfaceStyle(styleKey);
+  };
+
+  const handleRadiusChange = (radiusKey) => {
+    updateSetting('radiusPreset', radiusKey);
+    applyRadiusPreset(radiusKey);
   };
 
   const handleDarkSurfaceChange = (surfaceKey) => {
@@ -1015,7 +1036,10 @@ function AppearanceSettings({ settings, updateSetting }) {
   };
 
   const currentAccent = settings.accentColor || 'sky';
+  const currentGradient = settings.gradientPreset || 'none';
   const currentTexture = settings.texture || 'none';
+  const currentSurfaceStyle = settings.surfaceStyle || 'soft';
+  const currentRadius = settings.radiusPreset || 'rounded';
   const currentSurface = settings.darkSurface || 'default';
   const isDark = document.documentElement.classList.contains('dark');
 
@@ -1085,6 +1109,37 @@ function AppearanceSettings({ settings, updateSetting }) {
         </div>
       </div>
 
+      {/* Background Gradient */}
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Gradient Backdrop</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Adds a soft atmospheric wash behind the interface without overwhelming the content
+        </p>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+          {Object.entries(GRADIENT_PRESETS).map(([key, preset]) => (
+            <button
+              key={key}
+              onClick={() => handleGradientChange(key)}
+              className={clsx(
+                'relative overflow-hidden rounded-2xl border-2 text-left transition-all',
+                currentGradient === key
+                  ? 'border-primary-500 shadow-sm'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+              )}
+            >
+              <div className="h-20 w-full" style={{ backgroundImage: preset.preview }} />
+              <div className="p-3 bg-white/90 dark:bg-gray-900/80 backdrop-blur-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{preset.label}</span>
+                  {currentGradient === key && <Check className="w-4 h-4 text-primary-600 dark:text-primary-400" />}
+                </div>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{preset.description}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Background Texture */}
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Background Texture</h3>
@@ -1110,6 +1165,78 @@ function AppearanceSettings({ settings, updateSetting }) {
                 key !== 'none' && `texture-${key}`
               )} />
               <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{tex.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Surface Style */}
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Surface Style</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Controls panel weight, transparency, and how much the interface floats above the background
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {Object.entries(SURFACE_STYLES).map(([key, style]) => (
+            <button
+              key={key}
+              onClick={() => handleSurfaceStyleChange(key)}
+              className={clsx(
+                'rounded-2xl border-2 p-4 text-left transition-all',
+                currentSurfaceStyle === key
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+              )}
+            >
+              <div className="rounded-xl border p-3" style={{
+                backgroundColor: isDark ? style.darkBg : style.lightBg,
+                borderColor: isDark ? style.darkBorder : style.lightBorder,
+                boxShadow: style.shadow,
+                backdropFilter: style.blur,
+                WebkitBackdropFilter: style.blur,
+              }}>
+                <div className="h-2 w-16 rounded-full bg-primary-400/70 mb-2" />
+                <div className="h-2 w-full rounded-full bg-gray-300/70 dark:bg-gray-600/70 mb-1.5" />
+                <div className="h-2 w-2/3 rounded-full bg-gray-300/60 dark:bg-gray-600/60" />
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">{style.label}</span>
+                {currentSurfaceStyle === key && <Check className="w-4 h-4 text-primary-600 dark:text-primary-400" />}
+              </div>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{style.description}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Corner Radius */}
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Corner Radius</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Adjusts the geometry of cards, buttons, and inputs across the app
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {Object.entries(RADIUS_PRESETS).map(([key, radius]) => (
+            <button
+              key={key}
+              onClick={() => handleRadiusChange(key)}
+              className={clsx(
+                'rounded-2xl border-2 p-4 text-left transition-all',
+                currentRadius === key
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+              )}
+            >
+              <div className="flex items-end gap-2 h-14">
+                <div className="flex-1 bg-primary-400/70" style={{ borderRadius: radius.button, height: '1.8rem' }} />
+                <div className="flex-1 bg-gray-300/80 dark:bg-gray-600/80" style={{ borderRadius: radius.control, height: '2.2rem' }} />
+                <div className="flex-[1.4] border border-gray-300 dark:border-gray-600 bg-white/70 dark:bg-gray-800/70" style={{ borderRadius: radius.card, height: '3rem' }} />
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">{radius.label}</span>
+                {currentRadius === key && <Check className="w-4 h-4 text-primary-600 dark:text-primary-400" />}
+              </div>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{radius.description}</p>
             </button>
           ))}
         </div>

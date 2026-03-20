@@ -119,7 +119,7 @@ function AppContent({ darkMode, setDarkMode }) {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar darkMode={darkMode} setDarkMode={setDarkMode} />
-      <main className="flex-1 overflow-auto relative">
+      <main className="app-content-shell flex-1 overflow-auto relative">
         {/* Regular routes - hidden when on project detail */}
         <div style={{ display: isOnProjectDetail ? 'none' : 'block' }}>
           <Suspense fallback={<PageLoader />}>

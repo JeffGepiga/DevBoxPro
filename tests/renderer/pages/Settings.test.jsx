@@ -39,7 +39,10 @@ describe('Settings', () => {
                     defaultProjectsPath: 'C:\\test\\projects',
                     dbUser: 'root',
                     dbPassword: '',
-                    serverTimezone: 'UTC'
+                    serverTimezone: 'UTC',
+                    gradientPreset: 'none',
+                    surfaceStyle: 'soft',
+                    radiusPreset: 'rounded'
                 }
             },
             refreshSettings: mockRefreshSettings,
@@ -93,6 +96,16 @@ describe('Settings', () => {
         // Should show Database Credentials section now
         expect(screen.getByText('MySQL & MariaDB Credentials')).toBeInTheDocument();
         expect(screen.getByDisplayValue('root')).toBeInTheDocument(); // dbUser
+    });
+
+    it('shows extended appearance controls', () => {
+        render(<Settings />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Appearance' }));
+
+        expect(screen.getByText('Gradient Backdrop')).toBeInTheDocument();
+        expect(screen.getByText('Surface Style')).toBeInTheDocument();
+        expect(screen.getByText('Corner Radius')).toBeInTheDocument();
     });
 
     it('calls save API when Save Changes is clicked', async () => {

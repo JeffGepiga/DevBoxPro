@@ -44,6 +44,26 @@
     /* Dark surface override vars (set by JS) */
     --dvp-dark-bg: #111827;
     --dvp-dark-surface: #1f2937;
+
+    /* Appearance preset vars */
+    --dvp-app-gradient-light: none;
+    --dvp-app-gradient-dark: none;
+    --dvp-content-overlay-light: transparent;
+    --dvp-content-overlay-dark: transparent;
+    --dvp-card-bg-light: rgba(255, 255, 255, 0.94);
+    --dvp-card-bg-dark: rgba(31, 41, 55, 0.88);
+    --dvp-card-border-light: rgba(226, 232, 240, 0.92);
+    --dvp-card-border-dark: rgba(75, 85, 99, 0.82);
+    --dvp-card-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 12px 28px rgba(15, 23, 42, 0.06);
+    --dvp-card-blur: blur(0px);
+    --dvp-shell-bg-light: rgba(255, 255, 255, 0.82);
+    --dvp-shell-bg-dark: rgba(17, 24, 39, 0.82);
+    --dvp-shell-border-light: rgba(226, 232, 240, 0.92);
+    --dvp-shell-border-dark: rgba(75, 85, 99, 0.84);
+    --dvp-shell-blur: blur(8px);
+    --dvp-radius-card: 18px;
+    --dvp-radius-control: 12px;
+    --dvp-radius-button: 12px;
   }
 
   .dark {
@@ -57,18 +77,48 @@
   body {
     @apply bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-image: var(--dvp-app-gradient-light);
+    background-attachment: fixed;
+    background-size: cover;
+    min-height: 100vh;
   }
 
   /* Dark mode surface color overrides */
   .dark body {
     background-color: var(--dvp-dark-bg);
+    background-image: var(--dvp-app-gradient-dark);
   }
+
+  .app-content-shell {
+    background-color: var(--dvp-content-overlay-light);
+  }
+
+  .dark .app-content-shell {
+    background-color: var(--dvp-content-overlay-dark);
+  }
+
   .dark .card {
     background-color: var(--dvp-dark-surface) !important;
   }
   .dark aside,
   .dark [data-sidebar] {
     background-color: color-mix(in srgb, var(--dvp-dark-surface) 80%, black) !important;
+  }
+
+  html[data-surface-style='glass'] aside,
+  html[data-surface-style='glass'] [data-sidebar] {
+    background-color: var(--dvp-shell-bg-light) !important;
+    border-color: var(--dvp-shell-border-light) !important;
+    backdrop-filter: var(--dvp-shell-blur) saturate(150%);
+    -webkit-backdrop-filter: var(--dvp-shell-blur) saturate(150%);
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.08);
+  }
+
+  html.dark[data-surface-style='glass'] aside,
+  html.dark[data-surface-style='glass'] [data-sidebar] {
+    background-color: var(--dvp-shell-bg-dark) !important;
+    border-color: var(--dvp-shell-border-dark) !important;
+    box-shadow: 0 18px 36px rgba(2, 6, 23, 0.28);
   }
 
   * {
@@ -85,7 +135,8 @@
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    border-radius: var(--dvp-radius-button);
   }
 
   .btn-primary {
@@ -121,7 +172,18 @@
   }
 
   .card {
-    @apply bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700;
+    @apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700;
+    border-radius: var(--dvp-radius-card);
+    background-color: var(--dvp-card-bg-light) !important;
+    border-color: var(--dvp-card-border-light) !important;
+    box-shadow: var(--dvp-card-shadow);
+    backdrop-filter: var(--dvp-card-blur);
+    -webkit-backdrop-filter: var(--dvp-card-blur);
+  }
+
+  .dark .card {
+    background-color: var(--dvp-card-bg-dark) !important;
+    border-color: var(--dvp-card-border-dark) !important;
   }
 
   .card-header {
@@ -133,11 +195,40 @@
   }
 
   .card-footer {
-    @apply px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-xl;
+    @apply px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50;
+    border-bottom-left-radius: var(--dvp-radius-card);
+    border-bottom-right-radius: var(--dvp-radius-card);
+  }
+
+  html[data-surface-style='glass'] .card-header,
+  html[data-surface-style='glass'] .card-footer {
+    background-color: color-mix(in srgb, var(--dvp-card-bg-light) 78%, white 22%) !important;
+  }
+
+  html.dark[data-surface-style='glass'] .card-header,
+  html.dark[data-surface-style='glass'] .card-footer {
+    background-color: color-mix(in srgb, var(--dvp-card-bg-dark) 82%, transparent) !important;
   }
 
   .input {
-    @apply w-full px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent placeholder-gray-400 dark:placeholder-gray-500 transition-colors;
+    @apply w-full px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent placeholder-gray-400 dark:placeholder-gray-500 transition-colors;
+    border-radius: var(--dvp-radius-control);
+  }
+
+  html[data-surface-style='glass'] .input,
+  html[data-surface-style='glass'] .select {
+    background-color: color-mix(in srgb, var(--dvp-card-bg-light) 82%, white 18%) !important;
+    border-color: color-mix(in srgb, var(--dvp-card-border-light) 88%, white 12%) !important;
+    backdrop-filter: var(--dvp-card-blur) saturate(135%);
+    -webkit-backdrop-filter: var(--dvp-card-blur) saturate(135%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+
+  html.dark[data-surface-style='glass'] .input,
+  html.dark[data-surface-style='glass'] .select {
+    background-color: color-mix(in srgb, var(--dvp-card-bg-dark) 88%, transparent) !important;
+    border-color: color-mix(in srgb, var(--dvp-card-border-dark) 90%, transparent) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
 
   .input-error {
@@ -149,7 +240,8 @@
   }
 
   .select {
-    @apply w-full px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent placeholder-gray-400 dark:placeholder-gray-500 transition-colors appearance-none bg-no-repeat bg-right pr-10 cursor-pointer;
+    @apply w-full px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent placeholder-gray-400 dark:placeholder-gray-500 transition-colors appearance-none bg-no-repeat bg-right pr-10 cursor-pointer;
+    border-radius: var(--dvp-radius-control);
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
     background-position: right 0.5rem center;
     background-size: 1.5em 1.5em;
@@ -276,7 +368,15 @@
   background-size: 22px 22px;
 }
 body.texture-dots {
+  background-image:
+    var(--dvp-app-gradient-light),
+    radial-gradient(circle, rgba(0, 0, 0, 0.09) 1px, transparent 1px);
   background-attachment: fixed;
+}
+.dark body.texture-dots {
+  background-image:
+    var(--dvp-app-gradient-dark),
+    radial-gradient(circle, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
 }
 .dark .texture-dots,
 .dark.texture-dots {
@@ -291,7 +391,17 @@ body.texture-dots {
   background-size: 28px 28px;
 }
 body.texture-grid {
+  background-image:
+    var(--dvp-app-gradient-light),
+    linear-gradient(rgba(0, 0, 0, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.06) 1px, transparent 1px);
   background-attachment: fixed;
+}
+.dark body.texture-grid {
+  background-image:
+    var(--dvp-app-gradient-dark),
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
 }
 .dark .texture-grid,
 .dark.texture-grid {
@@ -311,7 +421,27 @@ body.texture-grid {
   );
 }
 body.texture-diagonal {
+  background-image:
+    var(--dvp-app-gradient-light),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 6px,
+      rgba(0, 0, 0, 0.045) 6px,
+      rgba(0, 0, 0, 0.045) 7px
+    );
   background-attachment: fixed;
+}
+.dark body.texture-diagonal {
+  background-image:
+    var(--dvp-app-gradient-dark),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 6px,
+      rgba(255, 255, 255, 0.028) 6px,
+      rgba(255, 255, 255, 0.028) 7px
+    );
 }
 .dark .texture-diagonal,
 .dark.texture-diagonal {
@@ -335,7 +465,21 @@ body.texture-diagonal {
   background-position: -2px -2px, -2px -2px, -1px -1px, -1px -1px;
 }
 body.texture-circuit {
+  background-image:
+    var(--dvp-app-gradient-light),
+    linear-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+    linear-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.02) 1px, transparent 1px);
   background-attachment: fixed;
+}
+.dark body.texture-circuit {
+  background-image:
+    var(--dvp-app-gradient-dark),
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
 }
 .dark .texture-circuit,
 .dark.texture-circuit {
