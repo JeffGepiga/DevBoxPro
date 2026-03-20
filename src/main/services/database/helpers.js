@@ -218,7 +218,7 @@ module.exports = {
       [dbType]: {
         type: dbType,
         host: this.dbConfig.host,
-        port: this.dbConfig.port,
+        port: this.getActualPort(),
         user: this.dbConfig.user,
         status: 'connected',
       },

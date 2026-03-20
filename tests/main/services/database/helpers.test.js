@@ -127,14 +127,23 @@ describe('database/helpers', () => {
     expect(options.windowsHide).toBe(true);
   });
 
-  it('returns connection metadata for the active database type', () => {
-    const context = makeContext({ settings: { activeDatabaseType: 'mariadb' } });
+  it('returns connection metadata using the active database actual port', () => {
+    const context = makeContext({
+      settings: { activeDatabaseType: 'mysql', activeDatabaseVersion: '8.0' },
+      managers: {
+        service: {
+          runningVersions: new Map([['mysql', new Map()]]),
+          serviceConfigs: { mysql: { defaultPort: 3306 } },
+          versionPortOffsets: { mysql: { '8.0': 10 } },
+        },
+      },
+    });
 
     expect(databaseHelpers.getConnections.call(context)).toEqual({
-      mariadb: {
-        type: 'mariadb',
+      mysql: {
+        type: 'mysql',
         host: '127.0.0.1',
-        port: 3306,
+        port: 3316,
         user: 'root',
         status: 'connected',
       },
