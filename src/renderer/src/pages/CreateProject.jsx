@@ -1171,7 +1171,7 @@ function StepDetails({
         {(formData.type === 'laravel' || formData.type === 'custom' || formData.type === 'nodejs') && (
           <div>
             <label className="label">Project Source</label>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={clsx('gap-4', gitStatus?.available || gitStatus?.checking ? 'grid grid-cols-2' : 'grid grid-cols-1')}>
               <button
                 onClick={() => updateFormData({ projectSource: 'new', repositoryUrl: '', authType: 'public' })}
                 className={clsx(
@@ -1187,36 +1187,37 @@ function StepDetails({
                   <p className="text-sm text-gray-500 dark:text-gray-400">Start a fresh project</p>
                 </div>
               </button>
-              <button
-                onClick={() => updateFormData({ projectSource: 'clone', installFresh: false })}
-                disabled={gitStatus?.checking}
-                className={clsx(
-                  'p-4 rounded-xl border-2 text-left transition-all flex items-center gap-3',
-                  formData.projectSource === 'clone'
-                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600',
-                  gitStatus?.checking && 'opacity-50 cursor-not-allowed'
-                )}
-              >
-                <GitBranch className="w-6 h-6 text-green-500" />
-                <div>
-                  <span className="font-medium text-gray-900 dark:text-white">Clone Repository</span>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {gitStatus?.checking ? 'Checking Git...' : 'From GitHub, GitLab, etc.'}
-                  </p>
-                </div>
-              </button>
+              {(gitStatus?.available || gitStatus?.checking) && (
+                <button
+                  onClick={() => updateFormData({ projectSource: 'clone', installFresh: false })}
+                  disabled={gitStatus?.checking}
+                  className={clsx(
+                    'p-4 rounded-xl border-2 text-left transition-all flex items-center gap-3',
+                    formData.projectSource === 'clone'
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600',
+                    gitStatus?.checking && 'opacity-50 cursor-not-allowed'
+                  )}
+                >
+                  <GitBranch className="w-6 h-6 text-green-500" />
+                  <div>
+                    <span className="font-medium text-gray-900 dark:text-white">Clone Repository</span>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {gitStatus?.checking ? 'Checking Git...' : 'From GitHub, GitLab, etc.'}
+                    </p>
+                  </div>
+                </button>
+              )}
             </div>
 
-            {/* Git not available warning */}
-            {formData.projectSource === 'clone' && !gitStatus?.available && !gitStatus?.checking && (
+            {!gitStatus?.available && !gitStatus?.checking && (
               <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
                 <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
                   <AlertTriangle className="w-5 h-5" />
                   <span className="font-medium">Git is not installed</span>
                 </div>
                 <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
-                  Install Git from the Binary Manager or ensure it's in your system PATH.
+                  Clone Repository is hidden until Git is available. Install Portable Git from the <Link to="/binaries" className="underline font-medium">Binary Manager</Link> or add Git to your system PATH.
                 </p>
               </div>
             )}

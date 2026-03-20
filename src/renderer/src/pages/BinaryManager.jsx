@@ -22,6 +22,7 @@ import {
   ChevronDown,
   ChevronUp,
   CloudCog,
+  GitBranch,
 } from 'lucide-react';
 import clsx from 'clsx';
 import PhpIniEditor from '../components/PhpIniEditor';
@@ -190,7 +191,7 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
   );
 };
 
-const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst, size, onDownload, onRemove, onImport, sourceKey, importLabel, downloading, progress, downloadSources, getProgressDisplay, hasUpdate, onCheckUpdate, checkingUpdate }) => {
+const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst, installedLabel = 'Installed', canRemove = true, size, onDownload, onRemove, onImport, sourceKey, importLabel, downloading, progress, downloadSources, getProgressDisplay, hasUpdate, onCheckUpdate, checkingUpdate }) => {
   const isDownloading = downloading[id] || progress?.[id]?.status === 'error';
   const hasSource = !!downloadSources[sourceKey]?.url;
 
@@ -219,7 +220,7 @@ const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst
       <div className="flex items-center gap-1.5 ml-3 shrink-0">
         {isDownloading ? getProgressDisplay(id) : inst ? (
           <>
-            <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium"><Check className="w-3 h-3" /> Installed</span>
+            <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium"><Check className="w-3 h-3" /> {installedLabel}</span>
             
             {onCheckUpdate && !hasUpdate && (
               <button 
@@ -239,7 +240,7 @@ const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst
               </button>
             )}
 
-            <button onClick={onRemove} className="btn-icon text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>
+            {canRemove && onRemove && <button onClick={onRemove} className="btn-icon text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>}
           </>
         ) : (
           <>
@@ -275,6 +276,7 @@ function BinaryManager() {
     apache: {},
     nodejs: {},
     composer: false,
+    git: false,
     postgresql: {},
     python: {},
     mongodb: {},
@@ -283,6 +285,7 @@ function BinaryManager() {
     memcached: {},
   });
   const [downloadUrls, setDownloadUrls] = useState({});
+  const [gitStatus, setGitStatus] = useState({ available: false, source: null, version: null });
   const [loading, setLoading] = useState(true);
   const [phpIniEditor, setPhpIniEditor] = useState({ open: false, version: null });
   const [expandedSections, setExpandedSections] = useState({
@@ -391,6 +394,19 @@ function BinaryManager() {
     }
   }, []);
 
+  const loadGitStatus = useCallback(async () => {
+    try {
+      const result = await window.devbox?.git?.isAvailable();
+      setGitStatus({
+        available: result?.available === true,
+        source: result?.source || null,
+        version: result?.version || null,
+      });
+    } catch (error) {
+      setGitStatus({ available: false, source: null, version: null });
+    }
+  }, []);
+
   // Force refresh installed binaries (always re-check from disk)
   const forceRefreshInstalled = useCallback(async () => {
     try {
@@ -479,6 +495,8 @@ function BinaryManager() {
         // Error loading service config
       }
 
+      await loadGitStatus();
+
       setLoading(false);
     };
     init();
@@ -501,7 +519,7 @@ function BinaryManager() {
     });
 
     return () => unsubscribe?.();
-  }, [forceRefreshInstalled, loadDownloadUrls, loadServiceConfig]); // showAlert is intentionally omitted — it's a stable context function
+  }, [forceRefreshInstalled, loadDownloadUrls, loadServiceConfig, loadGitStatus]); // showAlert is intentionally omitted — it's a stable context function
 
   const handleDownloadPhp = async (version) => {
     const id = `php-${version}`;
@@ -555,6 +573,9 @@ function BinaryManager() {
         break;
       case 'composer':
         downloadPromise = window.devbox?.binaries.downloadComposer();
+        break;
+      case 'git':
+        downloadPromise = window.devbox?.binaries.downloadGit();
         break;
       case 'postgresql':
         downloadPromise = window.devbox?.binaries.downloadPostgresql(version);
@@ -713,6 +734,11 @@ function BinaryManager() {
       url: 'https://getcomposer.org/download/',
       name: 'getcomposer.org',
       note: 'Download composer.phar file',
+    },
+    git: {
+      url: 'https://git-scm.com/downloads/win',
+      name: 'git-scm.com',
+      note: 'Install Git for Windows or use DevBox Pro Portable Git',
     },
     python: {
       url: 'https://www.python.org/downloads/',
@@ -1200,6 +1226,15 @@ function BinaryManager() {
       installed: !!installed.minio,
       size: '~100 MB',
       category: 'storage',
+    },
+    {
+      id: 'git',
+      name: 'Git',
+      description: 'Source control CLI used for repository cloning and SSH auth',
+      icon: GitBranch,
+      installed: !!installed.git,
+      size: '~350 MB',
+      category: 'tool',
     },
   ];
 
@@ -1753,6 +1788,22 @@ function BinaryManager() {
             {...sharedSimpleProps}
             onDownload={() => handleDownloadService('minio')}
             onRemove={() => handleRemove('minio')}
+          />
+          <SimpleRow
+            id="git"
+            name={gitStatus.version ? `Git ${gitStatus.version}` : 'Git'}
+            description={gitStatus.available
+              ? `Git CLI for clone flows, SSH key auth, and repository operations${gitStatus.source === 'system' ? ' · System PATH' : gitStatus.source === 'portable' ? ' · Portable Git' : ''}`
+              : 'Git CLI for clone flows, SSH key auth, and repository operations'}
+            icon={GitBranch}
+            isInstalled={!!installed.git || gitStatus.available}
+            installedLabel={gitStatus.source === 'system' ? 'Available in PATH' : 'Installed'}
+            canRemove={!!installed.git}
+            size="~350 MB"
+            sourceKey="git"
+            {...sharedSimpleProps}
+            onDownload={() => handleDownloadService('git')}
+            onRemove={installed.git ? () => handleRemove('git') : undefined}
           />
         </div>
       )}

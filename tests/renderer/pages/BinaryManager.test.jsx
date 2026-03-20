@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor, cleanup, act } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, act, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 afterEach(cleanup);
@@ -29,7 +29,14 @@ const mockDevbox = {
         getInstalled: vi.fn().mockResolvedValue({}),
         getDownloadUrls: vi.fn().mockResolvedValue({}),
         getServiceConfig: vi.fn().mockResolvedValue({}),
+        downloadGit: vi.fn().mockResolvedValue({ success: true }),
         onProgress: vi.fn().mockImplementation(() => vi.fn()),
+    },
+    system: {
+        openExternal: vi.fn(),
+    },
+    git: {
+        isAvailable: vi.fn().mockResolvedValue({ available: false, source: null, version: null }),
     },
 };
 
@@ -37,6 +44,7 @@ beforeEach(() => {
     Object.defineProperty(window, 'devbox', { value: mockDevbox, writable: true, configurable: true });
     vi.clearAllMocks();
     mockDevbox.binaries.getStatus.mockResolvedValue({ php: {}, nginx: {}, apache: {}, mysql: {}, mariadb: {}, redis: {}, nodejs: {}, phpmyadmin: {}, mailpit: {} });
+    mockDevbox.git.isAvailable.mockResolvedValue({ available: false, source: null, version: null });
 });
 
 vi.mock('@/context/AppContext', () => ({
@@ -47,6 +55,9 @@ vi.mock('@/context/AppContext', () => ({
         downloading: {},
         downloadProgress: {},
         projectLoadingStates: {},
+        setDownloading: vi.fn(),
+        setDownloadProgress: vi.fn(),
+        clearDownload: vi.fn(),
         refreshServices: vi.fn(),
     }),
 }));
@@ -77,5 +88,47 @@ describe('BinaryManager', () => {
         await act(async () => { });
         // Should have some section labels about binaries
         expect(document.body.textContent).toBeTruthy();
+    });
+
+    it('shows Git in tools and starts the portable Git download', async () => {
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <BinaryManager />
+            </MemoryRouter>
+        );
+
+        fireEvent.click(await screen.findByRole('button', { name: /Tools/i }));
+
+        const gitName = await screen.findByText('Git');
+        const gitRow = gitName.closest('div.flex.items-center.justify-between');
+        const gitDownloadButton = gitRow ? within(gitRow).getByRole('button', { name: /Download/i }) : null;
+
+        expect(gitDownloadButton).toBeTruthy();
+        fireEvent.click(gitDownloadButton);
+
+        await waitFor(() => {
+            expect(mockDevbox.binaries.downloadGit).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    it('treats system Git as available without showing a remove action', async () => {
+        mockDevbox.git.isAvailable.mockResolvedValueOnce({
+            available: true,
+            source: 'system',
+            version: '2.49.0',
+        });
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <BinaryManager />
+            </MemoryRouter>
+        );
+
+        fireEvent.click(await screen.findByRole('button', { name: /Tools/i }));
+
+        expect(await screen.findByText('Git 2.49.0')).toBeInTheDocument();
+        await screen.findByText(/Available in PATH/i);
+        expect(screen.getByText(/System PATH/i)).toBeInTheDocument();
+        expect(screen.queryByTitle('Remove')).not.toBeInTheDocument();
     });
 });

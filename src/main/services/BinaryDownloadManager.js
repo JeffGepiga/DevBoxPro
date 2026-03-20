@@ -372,13 +372,17 @@ class BinaryDownloadManager {
       git: {
         portable: {
           win: {
-            url: 'https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.2/PortableGit-2.47.1.2-64-bit.7z.exe',
-            filename: 'PortableGit-2.47.1.2-64-bit.7z.exe',
+            url: 'https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.1/PortableGit-2.53.0-64-bit.7z.exe',
+            filename: 'PortableGit-2.53.0-64-bit.7z.exe',
           },
           mac: {
             // On macOS, Git is typically installed via Xcode Command Line Tools or Homebrew
             url: 'builtin',
             note: 'Install via: xcode-select --install or brew install git',
+          },
+          linux: {
+            url: 'builtin',
+            note: 'Install via package manager: sudo apt install git or sudo dnf install git',
           },
           label: 'Portable',
         },

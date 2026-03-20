@@ -36,6 +36,13 @@ const mockDevbox = {
     system: {
         selectDirectory: vi.fn().mockResolvedValue('/projects/existing-app'),
     },
+    git: {
+        isAvailable: vi.fn().mockResolvedValue({ available: false, source: null, version: null }),
+        getSshPublicKey: vi.fn().mockResolvedValue({ exists: false }),
+        testAuth: vi.fn(),
+        generateSshKey: vi.fn(),
+        regenerateSshKey: vi.fn(),
+    },
 };
 
 const mockShowAlert = vi.fn();
@@ -128,6 +135,19 @@ describe('CreateProject', () => {
                 }));
             });
             expect(mockDevbox.projects.detectType).not.toHaveBeenCalled();
+        });
+
+        it('hides clone repository when git is unavailable and shows install guidance', async () => {
+            renderCreate();
+
+            fireEvent.click(await screen.findByRole('button', { name: /^Next$/i }));
+
+            await waitFor(() => {
+                expect(screen.queryByText('Clone Repository')).not.toBeInTheDocument();
+            });
+
+            expect(screen.getByText('Git is not installed')).toBeInTheDocument();
+            expect(screen.getByRole('link', { name: 'Binary Manager' })).toHaveAttribute('href', '/binaries');
         });
 
         it('registers an imported project through the existing-project flow', async () => {
