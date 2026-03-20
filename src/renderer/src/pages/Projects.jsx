@@ -38,9 +38,11 @@ const VIEW_MODE_KEY = 'devbox_projects_view_mode';
 
 function ServiceBadges({ project, compact = false }) {
   const badges = [];
+  const formatBadgeLabel = (label, version) => (version ? `${label} ${version}` : label);
 
   // Web server
   const wsLabel = project.webServer === 'apache' ? 'Apache' : 'Nginx';
+  const webServerBadgeLabel = formatBadgeLabel(wsLabel, project.webServerVersion);
   badges.push(
     <span
       key="ws"
@@ -49,14 +51,15 @@ function ServiceBadges({ project, compact = false }) {
         compact ? 'text-[10px]' : 'text-xs',
         'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
       )}
-      title={`${wsLabel} ${project.webServerVersion || ''}`}
+      title={webServerBadgeLabel}
     >
       <Globe className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
-      {wsLabel}
+      {webServerBadgeLabel}
     </span>
   );
 
   if (project.services?.mysql) {
+    const mysqlBadgeLabel = formatBadgeLabel('MySQL', project.services.mysqlVersion);
     badges.push(
       <span
         key="mysql"
@@ -65,15 +68,16 @@ function ServiceBadges({ project, compact = false }) {
           compact ? 'text-[10px]' : 'text-xs',
           'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
         )}
-        title={`MySQL ${project.services.mysqlVersion || ''}`}
+        title={mysqlBadgeLabel}
       >
         <Database className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
-        MySQL
+        {mysqlBadgeLabel}
       </span>
     );
   }
 
   if (project.services?.mariadb) {
+    const mariadbBadgeLabel = formatBadgeLabel('MariaDB', project.services.mariadbVersion);
     badges.push(
       <span
         key="mariadb"
@@ -82,15 +86,16 @@ function ServiceBadges({ project, compact = false }) {
           compact ? 'text-[10px]' : 'text-xs',
           'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300'
         )}
-        title={`MariaDB ${project.services.mariadbVersion || ''}`}
+        title={mariadbBadgeLabel}
       >
         <Database className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
-        MariaDB
+        {mariadbBadgeLabel}
       </span>
     );
   }
 
   if (project.services?.redis) {
+    const redisBadgeLabel = formatBadgeLabel('Redis', project.services.redisVersion);
     badges.push(
       <span
         key="redis"
@@ -99,10 +104,10 @@ function ServiceBadges({ project, compact = false }) {
           compact ? 'text-[10px]' : 'text-xs',
           'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
         )}
-        title={`Redis ${project.services.redisVersion || ''}`}
+        title={redisBadgeLabel}
       >
         <Server className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
-        Redis
+        {redisBadgeLabel}
       </span>
     );
   }
@@ -125,6 +130,7 @@ function ServiceBadges({ project, compact = false }) {
   }
 
   if (project.services?.nodejs) {
+    const nodeJsBadgeLabel = formatBadgeLabel('Node.js', project.services.nodejsVersion);
     badges.push(
       <span
         key="nodejs"
@@ -133,10 +139,10 @@ function ServiceBadges({ project, compact = false }) {
           compact ? 'text-[10px]' : 'text-xs',
           'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
         )}
-        title={`Node.js ${project.services.nodejsVersion || ''}`}
+        title={nodeJsBadgeLabel}
       >
         <Cpu className={compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} />
-        Node.js
+        {nodeJsBadgeLabel}
       </span>
     );
   }
