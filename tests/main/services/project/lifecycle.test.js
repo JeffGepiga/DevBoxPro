@@ -223,6 +223,83 @@ describe('project/lifecycle', () => {
     expect(reloadNginx).toHaveBeenCalledTimes(2);
   });
 
+  it('cancels pending nginx shutdown before mixed-server restart work begins', async () => {
+    const project = {
+      id: 'proj-mixed',
+      name: 'Mixed Restart',
+      type: 'php',
+      phpVersion: '8.3',
+      webServer: 'nginx',
+      webServerVersion: '1.28',
+      domain: 'mixed.test',
+      path: '/projects/mixed',
+      services: {},
+      supervisor: { processes: [] },
+      environment: {},
+    };
+
+    const cancelPendingServiceStop = vi.fn();
+    const createNginxVhost = vi.fn().mockResolvedValue(undefined);
+    const reloadNginx = vi.fn().mockResolvedValue(undefined);
+    const reloadApache = vi.fn().mockResolvedValue(undefined);
+
+    const ctx = makeContext({
+      configStore: makeConfigStore([project]),
+      getProject: vi.fn(() => project),
+      getProjectServiceDependencies: vi.fn(() => [{ name: 'nginx', version: '1.28' }]),
+      cancelPendingServiceStop,
+      validateProjectBinaries: vi.fn().mockResolvedValue([]),
+      getPhpFpmPort: vi.fn(() => 9100),
+      createNginxVhost,
+      regenerateAllNginxVhosts: vi.fn().mockResolvedValue(undefined),
+      syncProjectLocalProxy: vi.fn().mockResolvedValue(true),
+      startProjectServices: vi.fn().mockResolvedValue({ success: true, errors: [], criticalFailures: [] }),
+      startPhpCgi: vi.fn().mockResolvedValue({ process: { pid: 4321 }, port: 9100 }),
+      updateHostsFile: vi.fn().mockResolvedValue(undefined),
+      managers: {
+        service: {
+          serviceStatus: new Map([
+            ['nginx', { status: 'running', version: '1.28' }],
+            ['apache', { status: 'running', version: '2.4' }],
+          ]),
+          serviceConfigs: {
+            nginx: { versioned: true },
+            apache: { versioned: true },
+            mysql: { versioned: true },
+            redis: { versioned: true },
+          },
+          getServicePorts: vi.fn((serviceName) => serviceName === 'nginx'
+            ? { httpPort: 8081, sslPort: 8444 }
+            : { httpPort: 80, sslPort: 443 }),
+          isVersionRunning: vi.fn((serviceName, version) =>
+            (serviceName === 'nginx' && version === '1.28') || (serviceName === 'apache' && version === '2.4')),
+          startService: vi.fn().mockResolvedValue({ success: true }),
+          restartService: vi.fn().mockResolvedValue({ success: true }),
+          stopService: vi.fn().mockResolvedValue(undefined),
+          reloadNginx,
+          reloadApache,
+          standardPortOwner: 'apache',
+          standardPortOwnerVersion: '2.4',
+        },
+        supervisor: {
+          startProcess: vi.fn().mockResolvedValue(undefined),
+        },
+        log: {
+          project: vi.fn(),
+          systemWarn: vi.fn(),
+          systemError: vi.fn(),
+          systemInfo: vi.fn(),
+        },
+      },
+      getFrontDoorOwner: vi.fn(() => ({ webServer: 'apache', version: '2.4' })),
+    });
+
+    await ctx.startProject(project.id);
+
+    expect(cancelPendingServiceStop).toHaveBeenCalledWith({ name: 'nginx', version: '1.28' });
+    expect(cancelPendingServiceStop.mock.invocationCallOrder[0]).toBeLessThan(createNginxVhost.mock.invocationCallOrder[0]);
+  });
+
   it('stops all running projects and reports the aggregate result', async () => {
     const ctx = makeContext({
       runningProjects: new Map([

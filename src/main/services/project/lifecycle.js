@@ -26,6 +26,11 @@ module.exports = {
       throw new Error('Project not found');
     }
 
+    const pendingServices = this.getProjectServiceDependencies(project);
+    for (const service of pendingServices) {
+      this.cancelPendingServiceStop(service);
+    }
+
     if (this.runningProjects.has(id)) {
       this.managers.log?.project(id, `Project ${project.name} is already running`);
       return { success: true, alreadyRunning: true };
