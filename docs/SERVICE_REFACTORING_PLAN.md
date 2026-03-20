@@ -10,7 +10,7 @@
 |------|------:|--------|
 | ProjectManager.js | 254 | ✅ Refactored — under target |
 | ServiceManager.js | 160 | ✅ Refactored — under target |
-| BinaryDownloadManager.js | 2,125 | **Critical** — Phase 3 in progress |
+| BinaryDownloadManager.js | 182 | ✅ Refactored — under target |
 | CliManager.js | 2,278 | **High** — still large |
 | DatabaseManager.js | 2,160 | **High** — still large |
 | SupervisorManager.js | 572 | Moderate — slightly over |
@@ -144,6 +144,11 @@ Implemented so far:
 - `binary/metadata.js`
 - `binary/extraction.js`
 - `binary/php.js`
+- `binary/serviceDownloads.js`
+- `binary/runtimeTools.js`
+- `binary/platformServices.js`
+- `binary/catalog.js`
+- `binary/imports.js`
 - `tests/main/services/binary/progress.test.js`
 - `tests/main/services/binary/config.test.js`
 - `tests/main/services/binary/installed.test.js`
@@ -151,6 +156,21 @@ Implemented so far:
 - `tests/main/services/binary/metadata.test.js`
 - `tests/main/services/binary/extraction.test.js`
 - `tests/main/services/binary/php.test.js`
+- `tests/main/services/binary/serviceDownloads.test.js`
+- `tests/main/services/binary/runtimeTools.test.js`
+- `tests/main/services/binary/platformServices.test.js`
+- `tests/main/services/binary/catalog.test.js`
+- `tests/main/services/binary/imports.test.js`
+
+Current checkpoint:
+
+- `BinaryDownloadManager.js` is now a thin facade reduced to `182` lines
+- core service entry points for MySQL, MariaDB, Redis, Mailpit, phpMyAdmin, Nginx, and Apache now live in `binary/serviceDownloads.js`
+- Node.js, Composer, and Git runtime installers and helpers now live in `binary/runtimeTools.js`
+- PostgreSQL, Python, MongoDB, SQLite, MinIO, and Memcached installers now live in `binary/platformServices.js`
+- binary catalog/removal/update helpers now live in `binary/catalog.js`
+- binary import and extracted-structure normalization now live in `binary/imports.js`
+- Phase 3 is functionally complete for the current target: the public manager API is preserved and the facade is back under the 400–500 line limit
 
 ### Phase 3 Checklist
 
@@ -162,9 +182,13 @@ Implemented so far:
 - [x] Extract archive handling to `binary/extraction.js`
 - [x] Extract metadata helpers to `binary/metadata.js`
 - [x] Extract PHP-specific setup to `binary/php.js`
-- [ ] Extract service-specific download entry points to `binary/serviceDownloads.js`
-- [ ] Replace `BinaryDownloadManager.js` with a thin facade + `Object.assign(...)`
-- [ ] Reduce `BinaryDownloadManager.js` below the 400–500 line target
+- [x] Extract service-specific download entry points to `binary/serviceDownloads.js`
+- [x] Extract Node.js / Composer / Git runtime tooling to `binary/runtimeTools.js`
+- [x] Extract PostgreSQL / Python / MongoDB / SQLite / MinIO / Memcached installers to `binary/platformServices.js`
+- [x] Extract binary catalog/removal/update helpers to `binary/catalog.js`
+- [x] Extract binary import helpers to `binary/imports.js`
+- [x] Replace `BinaryDownloadManager.js` with a thin facade + `Object.assign(...)`
+- [x] Reduce `BinaryDownloadManager.js` below the 400–500 line target
 - [x] Add first focused unit test under `tests/main/services/binary/`
 - [x] Validate the current BinaryDownloadManager slice
 
@@ -178,8 +202,13 @@ Implemented so far:
 - `tests/main/services/binary/metadata.test.js`
 - `tests/main/services/binary/extraction.test.js`
 - `tests/main/services/binary/php.test.js`
+- `tests/main/services/binary/serviceDownloads.test.js`
+- `tests/main/services/binary/runtimeTools.test.js`
+- `tests/main/services/binary/platformServices.test.js`
+- `tests/main/services/binary/catalog.test.js`
+- `tests/main/services/binary/imports.test.js`
 
-Result: `39` tests passed across `8` files.
+Result: `60` tests passed across `13` files.
 
 ---
 
