@@ -39,6 +39,7 @@ const mockStartProject = vi.fn();
 const mockStopProject = vi.fn();
 const mockDeleteProject = vi.fn();
 const mockRefreshProjects = vi.fn();
+const mockReorderProjects = vi.fn();
 
 vi.mock('@/context/AppContext', () => ({
     useApp: () => ({
@@ -49,7 +50,9 @@ vi.mock('@/context/AppContext', () => ({
         stopProject: mockStopProject,
         deleteProject: mockDeleteProject,
         refreshProjects: mockRefreshProjects,
+        reorderProjects: mockReorderProjects,
         refreshServices: vi.fn(),
+        settings: { settings: { defaultEditor: 'vscode' } },
     }),
 }));
 
@@ -177,6 +180,31 @@ describe('Projects', () => {
             // There should be grid/list view toggle buttons
             const buttons = screen.getAllByRole('button');
             expect(buttons.length).toBeGreaterThan(0);
+        });
+
+        it('shows dedicated reorder handles in card view', async () => {
+            renderProjects();
+
+            await waitFor(() => expect(screen.getByText('Drag projects using the subtle left-edge handle to reorder them.')).toBeInTheDocument());
+
+            const handles = screen.getAllByLabelText(/Reorder /i);
+            expect(handles).toHaveLength(2);
+
+            const cardLink = screen.getByText('Laravel Blog').closest('a');
+            expect(cardLink).not.toHaveAttribute('draggable', 'true');
+        });
+
+        it('shows dedicated reorder handles in the first table column', async () => {
+            renderProjects();
+            await waitFor(() => screen.getByText('Laravel Blog'));
+
+            fireEvent.click(screen.getByTitle('Table view'));
+
+            const handles = await screen.findAllByLabelText(/Reorder /i);
+            expect(handles).toHaveLength(2);
+
+            const row = screen.getByText('Laravel Blog').closest('tr');
+            expect(row).not.toHaveAttribute('draggable', 'true');
         });
     });
 });
