@@ -13,7 +13,7 @@
 | BinaryDownloadManager.js | 182 | ✅ Refactored — under target |
 | CliManager.js | 48 | ✅ Refactored — under target |
 | DatabaseManager.js | 23 | ✅ Refactored — under target |
-| SupervisorManager.js | 572 | Moderate — slightly over |
+| SupervisorManager.js | 24 | ✅ Refactored — under target |
 | GitManager.js | 561 | Moderate — slightly over |
 | CompatibilityManager.js | 556 | Moderate — slightly over |
 | SslManager.js | 462 | ✅ OK |
@@ -38,6 +38,7 @@
 - [x] Phase 3 (`BinaryDownloadManager.js`) started
 - [x] Phase 4 (`CliManager.js`) started
 - [x] Phase 5 (`DatabaseManager.js`) structurally split and validated
+- [x] Phase 6 (`SupervisorManager.js`) structurally split and validated
 
 ### Phase 1 Status: ProjectManager
 
@@ -327,6 +328,53 @@ Result: `66` tests passed across `7` files.
 
 ---
 
+### Phase 6 Status: SupervisorManager
+
+Phase 6 has started with SupervisorManager as the first smaller-file extraction. The manager is now a thin facade, with concern-specific mixins under `src/main/services/supervisor/` covering runtime helpers, persisted process config/status management, process lifecycle, log handling, and worker-template helpers.
+
+Implemented so far:
+
+- `supervisor/helpers.js`
+- `supervisor/config.js`
+- `supervisor/runtime.js`
+- `supervisor/logs.js`
+- `supervisor/templates.js`
+- `tests/main/services/supervisor/helpers.test.js`
+
+Current checkpoint:
+
+- `SupervisorManager.js` reduced to `24` lines
+- platform/runtime command resolution, tokenization, PATH prepending, and hidden spawn handling now live in `supervisor/helpers.js`
+- process persistence, project lookup, and status updates now live in `supervisor/config.js`
+- start/stop/restart/all-stop flows now live in `supervisor/runtime.js`
+- worker log write/read/clear helpers now live in `supervisor/logs.js`
+- queue, schedule, and horizon worker factories now live in `supervisor/templates.js`
+- the public manager API remains unchanged through `Object.assign(SupervisorManager.prototype, supervisorHelpers, supervisorConfig, supervisorRuntime, supervisorLogs, supervisorTemplates)`
+- focused coverage now exists for command tokenization, executable normalization, and bundled Python command resolution, while the existing manager test continues covering config mutation, process lifecycle, status tracking, log helpers, and worker-template helpers
+
+### Phase 6 Checklist
+
+- [x] Create `src/main/services/supervisor/`
+- [x] Extract helper/runtime resolution logic to `supervisor/helpers.js`
+- [x] Extract config/status persistence helpers to `supervisor/config.js`
+- [x] Extract start/stop/restart lifecycle logic to `supervisor/runtime.js`
+- [x] Extract log helpers to `supervisor/logs.js`
+- [x] Extract worker-template helpers to `supervisor/templates.js`
+- [x] Replace `SupervisorManager.js` with a thin facade + `Object.assign(...)`
+- [x] Reduce `SupervisorManager.js` below the 400–500 line target
+- [x] Keep integration coverage in `tests/main/services/SupervisorManager.test.js`
+- [x] Add focused unit tests under `tests/main/services/supervisor/`
+- [x] Validate the current SupervisorManager slice
+
+### Last Verified Phase 6 Test Slice
+
+- `tests/main/services/SupervisorManager.test.js`
+- `tests/main/services/supervisor/helpers.test.js`
+
+Result: `35` tests passed across `2` files.
+
+---
+
 ## Chosen Pattern: Prototype Mixin Composition
 
 ### Why This Pattern
@@ -506,17 +554,14 @@ module.exports = {
 | `database/credentials.js` | `resetCredentials`, `createCredentialResetInitFile`, `runDbQueryNoAuth` | Implemented |
 | **DatabaseManager.js** (facade) | Constructor, property init, `Object.assign` mixins | ~100 |
 
-### Phase 6: Smaller Files (optional, only if >500 lines)
+### Phase 6: Smaller Files
 
-These files are only slightly over the limit and can be split if desired:
+SupervisorManager is now complete. The remaining optional follow-up candidates are:
 
 | File | Lines | Action |
 |------|------:|--------|
-| SupervisorManager.js | 673 | Split into `supervisor/processes.js` + facade |
 | GitManager.js | 656 | Split into `git/clone.js` + `git/ssh.js` + facade |
 | CompatibilityManager.js | 653 | Split into `compatibility/checks.js` + `compatibility/config.js` + facade |
-| SslManager.js | 541 | Split into `ssl/certificates.js` + `ssl/trust.js` + facade |
-| PhpManager.js | 528 | Split into `php/versions.js` + `php/extensions.js` + facade |
 
 ---
 
@@ -584,7 +629,8 @@ describe('project/crud', () => {
 | 3 | **BinaryDownloadManager.js** split | Low — mostly self-contained download logic | ~10 new files, 2 test files |
 | 4 | **CliManager.js** split | Low — CLI/PATH logic is platform-specific but isolated | ~7 new files, 1 test file |
 | 5 | **DatabaseManager.js** split | Low — clean DB engine separation | ~7 new files, 2 test files |
-| 6 | **Smaller files** (Phase 6) | Very Low — optional, only if team wants strict 500-line max | ~10 new files |
+| 6 | **SupervisorManager.js** split | Very Low — isolated worker/runtime/log concerns | ~6 new files, 1 test file |
+| 7 | **Remaining smaller files** | Very Low — optional follow-up for Git/Compatibility only | ~6 new files |
 
 ### Per-Step Process
 
@@ -684,18 +730,25 @@ src/main/services/
 │   ├── helpers.js                 (~450 lines)
 │   └── credentials.js             (~200 lines)
 │
-├── SupervisorManager.js           (673 lines - optional split)
+├── SupervisorManager.js           (~100 lines - facade)
+├── supervisor/
+│   ├── helpers.js                 (~250 lines)
+│   ├── config.js                  (~150 lines)
+│   ├── runtime.js                 (~180 lines)
+│   ├── logs.js                    (~100 lines)
+│   └── templates.js               (~100 lines)
+│
 ├── GitManager.js                  (656 lines - optional split)
 ├── CompatibilityManager.js        (653 lines - optional split)
-├── SslManager.js                  (541 lines - optional split)
-├── PhpManager.js                  (528 lines - optional split)
+├── SslManager.js                  (462 lines - ✅ OK)
+├── PhpManager.js                  (443 lines - ✅ OK)
 ├── UpdateManager.js               (415 lines - ✅ OK)
 ├── LogManager.js                  (326 lines - ✅ OK)
 ├── MigrationManager.js            (309 lines - ✅ OK)
 └── extractWorker.js               (72 lines - ✅ OK)
 ```
 
-**Total new files**: ~43 domain modules + 5 facades = ~48 files
+**Total new files**: ~48 domain modules + 6 facades = ~54 files
 **Average file size**: ~350 lines (well within 400-500 target)
 **Breaking changes**: Zero — all public APIs remain identical
 
@@ -760,4 +813,8 @@ tests/main/services/
 │   ├── mongo.test.js
 │   ├── helpers.test.js
 │   └── credentials.test.js
+│
+├── SupervisorManager.test.js      (integration - keep existing)
+├── supervisor/
+│   └── helpers.test.js
 ```
