@@ -319,6 +319,46 @@ describe('ProjectManager', () => {
             expect(mgr.runningProjects.has('proj1')).toBe(false);
         });
 
+        it('keeps unused services warm briefly so a quick restart avoids a cold start', async () => {
+            vi.useFakeTimers();
+
+            const project = {
+                id: 'proj-warm-start',
+                name: 'Warm Start',
+                type: 'static',
+                path: '/foo/warm',
+                domain: 'warm.test',
+                webServer: 'nginx',
+                webServerVersion: '1.28',
+                services: { mysql: true, mysqlVersion: '8.4' },
+                supervisor: { processes: [] }
+            };
+
+            configStore.set('projects', [project]);
+            mgr.runningProjects.set(project.id, { phpCgiProcess: { pid: 123 } });
+            managers.service.serviceStatus.set('nginx', { status: 'running', version: '1.28' });
+            managers.service.serviceStatus.set('mysql', { status: 'running', version: '8.4' });
+            managers.service.isVersionRunning.mockImplementation((service, version) => service === 'nginx' ? version === '1.28' : false);
+
+            await mgr.stopProject(project.id);
+
+            expect(managers.service.stopService).not.toHaveBeenCalledWith('nginx', '1.28');
+            expect(managers.service.stopService).not.toHaveBeenCalledWith('mysql', '8.4');
+
+            const serviceResult = await mgr.startProjectServices(project);
+
+            expect(serviceResult.success).toBe(true);
+            expect(managers.service.startService).not.toHaveBeenCalledWith('nginx', '1.28');
+            expect(managers.service.startService).not.toHaveBeenCalledWith('mysql', '8.4');
+
+            await vi.advanceTimersByTimeAsync(16000);
+
+            expect(managers.service.stopService).not.toHaveBeenCalledWith('nginx', '1.28');
+            expect(managers.service.stopService).not.toHaveBeenCalledWith('mysql', '8.4');
+
+            vi.useRealTimers();
+        });
+
         it('logs a warning and continues if configured port is in use by an external server', async () => {
             const project = {
                 id: 'proj1',
