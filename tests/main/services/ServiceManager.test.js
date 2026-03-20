@@ -157,6 +157,30 @@ describe('ServiceManager', () => {
             expect(mgr.startNginx).toHaveBeenCalledWith('1.26');
         });
 
+        it('serializes concurrent Apache and Nginx starts', async () => {
+            let resolveNginxStart;
+            mgr.startNginx.mockImplementation(() => new Promise((resolve) => {
+                resolveNginxStart = resolve;
+            }));
+            const startApacheSpy = vi.spyOn(mgr, 'startApache').mockResolvedValue(true);
+
+            const nginxStart = mgr.startService('nginx', '1.28');
+            await Promise.resolve();
+
+            const apacheStart = mgr.startService('apache', '2.4');
+            await Promise.resolve();
+
+            expect(mgr.startNginx).toHaveBeenCalledWith('1.28');
+            expect(startApacheSpy).not.toHaveBeenCalled();
+
+            resolveNginxStart(true);
+
+            await nginxStart;
+            await apacheStart;
+
+            expect(startApacheSpy).toHaveBeenCalledWith('2.4');
+        });
+
         it('throws an error for unknown service', async () => {
             await expect(mgr.startService('unknownservice')).rejects.toThrow('Unknown service');
         });

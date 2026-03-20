@@ -39,6 +39,8 @@ class ServiceManager extends EventEmitter {
     this.processes = new Map(); // key format: 'serviceName' or 'serviceName-version'
     this.serviceStatus = new Map();
     this.runningVersions = new Map(); // Track running versions per service type
+    this.pendingStarts = new Map();
+    this.webServerStartQueue = Promise.resolve();
 
     // Track which web server owns the standard ports (80/443)
     // First web server to start gets these ports
@@ -461,61 +463,107 @@ class ServiceManager extends EventEmitter {
     }
 
     const versionSuffix = version ? ` ${version}` : '';
+    const startKey = this.getProcessKey(serviceName, version);
+    const existingStart = this.pendingStarts.get(startKey);
+
+    if (existingStart) {
+      return existingStart;
+    }
+
+    const runStart = async () => {
+      const status = this.serviceStatus.get(serviceName);
+      if (status) {
+        status.status = 'starting';
+        status.error = null;
+        status.version = version;
+      }
+
+      try {
+        switch (serviceName) {
+          case 'nginx':
+            await this.startNginx(version);
+            break;
+          case 'apache':
+            await this.startApache(version);
+            break;
+          case 'mysql':
+            await this.startMySQL(version);
+            break;
+          case 'mariadb':
+            await this.startMariaDB(version);
+            break;
+          case 'redis':
+            await this.startRedis(version);
+            break;
+          case 'mailpit':
+            await this.startMailpit();
+            break;
+          case 'phpmyadmin':
+            await this.startPhpMyAdmin();
+            break;
+          case 'postgresql':
+            await this.startPostgreSQL(version);
+            break;
+          case 'mongodb':
+            await this.startMongoDB(version);
+            break;
+          case 'memcached':
+            await this.startMemcached(version);
+            break;
+          case 'minio':
+            await this.startMinIO();
+            break;
+        }
+
+        // Only update status to running if the service was actually started
+        // (i.e., not if it returned early due to missing binary)
+        if (status.status !== 'not_installed') {
+          status.status = 'running';
+          status.startedAt = new Date();
+          status.version = version;
+          this.emit('serviceStarted', serviceName, version);
+        }
+
+        return { success: status.status === 'running', service: serviceName, version, status: status.status };
+      } catch (error) {
+        this.managers.log?.systemError(`Failed to start ${config.name}${versionSuffix}`, { error: error.message });
+        if (status) {
+          status.status = 'error';
+          status.error = error.message;
+        }
+        throw error;
+      }
+    };
+
+    const startPromise = (serviceName === 'nginx' || serviceName === 'apache')
+      ? this.runExclusiveWebServerStart(runStart)
+      : runStart();
+
+    const trackedPromise = startPromise.finally(() => {
+      if (this.pendingStarts.get(startKey) === trackedPromise) {
+        this.pendingStarts.delete(startKey);
+      }
+    });
+
+    this.pendingStarts.set(startKey, trackedPromise);
+
+    return trackedPromise;
+  }
+
+  async runExclusiveWebServerStart(startOperation) {
+    const previous = this.webServerStartQueue;
+    let releaseQueue;
+
+    this.webServerStartQueue = new Promise((resolve) => {
+      releaseQueue = resolve;
+    });
+
+    await previous;
 
     try {
-      switch (serviceName) {
-        case 'nginx':
-          await this.startNginx(version);
-          break;
-        case 'apache':
-          await this.startApache(version);
-          break;
-        case 'mysql':
-          await this.startMySQL(version);
-          break;
-        case 'mariadb':
-          await this.startMariaDB(version);
-          break;
-        case 'redis':
-          await this.startRedis(version);
-          break;
-        case 'mailpit':
-          await this.startMailpit();
-          break;
-        case 'phpmyadmin':
-          await this.startPhpMyAdmin();
-          break;
-        case 'postgresql':
-          await this.startPostgreSQL(version);
-          break;
-        case 'mongodb':
-          await this.startMongoDB(version);
-          break;
-        case 'memcached':
-          await this.startMemcached(version);
-          break;
-        case 'minio':
-          await this.startMinIO();
-          break;
-      }
-
-      // Only update status to running if the service was actually started
-      // (i.e., not if it returned early due to missing binary)
-      const status = this.serviceStatus.get(serviceName);
-      if (status.status !== 'not_installed') {
-        status.status = 'running';
-        status.startedAt = new Date();
-        status.version = version;
-        this.emit('serviceStarted', serviceName, version);
-      }
-
-      return { success: status.status === 'running', service: serviceName, version, status: status.status };
-    } catch (error) {
-      this.managers.log?.systemError(`Failed to start ${config.name}${versionSuffix}`, { error: error.message });
-      const status = this.serviceStatus.get(serviceName);
-      status.status = 'error';
-      status.error = error.message;
-      throw error;
+      return await startOperation();
+    } finally {
+      releaseQueue();
     }
   }
 
