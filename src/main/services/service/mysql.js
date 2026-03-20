@@ -53,7 +53,6 @@ module.exports = {
         status.version = version;
         status.status = 'running';
         status.startedAt = Date.now();
-        this.managers.log?.systemWarn(`Recovered MySQL ${version} tracking from healthy port ${defaultPort}`);
         return;
       }
 
@@ -70,18 +69,6 @@ module.exports = {
     const adoptedLegacyData = await this.maybeAdoptLegacyMySQLData(version, dataDir);
 
     const isInitialized = await fs.pathExists(path.join(dataDir, 'mysql'));
-
-    this.managers.log?.systemInfo(`MySQL ${version} startup context`, {
-      mysqlPath,
-      mysqldPath,
-      dataPath,
-      dataDir,
-      legacyDataDir,
-      configPath,
-      shareMessagesPath,
-      adoptedLegacyData,
-      isInitialized,
-    });
 
     if (!isInitialized) {
       try {
