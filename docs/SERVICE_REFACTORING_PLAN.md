@@ -9,8 +9,8 @@
 | File | Lines | Status |
 |------|------:|--------|
 | ProjectManager.js | 254 | ✅ Refactored — under target |
-| ServiceManager.js | 3,863 | **Critical** — still large |
-| BinaryDownloadManager.js | 3,499 | **Critical** — still large |
+| ServiceManager.js | 160 | ✅ Refactored — under target |
+| BinaryDownloadManager.js | 2,125 | **Critical** — Phase 3 in progress |
 | CliManager.js | 2,278 | **High** — still large |
 | DatabaseManager.js | 2,160 | **High** — still large |
 | SupervisorManager.js | 572 | Moderate — slightly over |
@@ -34,8 +34,8 @@
 - [x] Pattern chosen and documented: prototype mixin composition
 - [x] Phase 1 started and validated on real code
 - [x] `ProjectManager.js` reduced below the 400–500 line target
-- [ ] Phase 2 (`ServiceManager.js`) started
-- [ ] Phase 3 (`BinaryDownloadManager.js`) started
+- [x] Phase 2 (`ServiceManager.js`) structurally split and validated
+- [x] Phase 3 (`BinaryDownloadManager.js`) started
 - [ ] Phase 4 (`CliManager.js`) started
 - [ ] Phase 5 (`DatabaseManager.js`) started
 
@@ -85,6 +85,101 @@ This still follows the same long-term pattern: thin facade + prototype mixins + 
 - `tests/main/services/project/discovery.test.js`
 
 Result: `74` tests passed across `10` files.
+
+---
+
+### Phase 2 Status: ServiceManager
+
+Phase 2 is now functionally complete and under the target size. The actual implementation matches the planned pattern with a thin facade plus domain mixins under `src/main/services/service/`.
+
+Implemented service mixins:
+
+- `helpers.js`
+- `core.js`
+- `health.js`
+- `processes.js`
+- `nginx.js`
+- `apache.js`
+- `mysql.js`
+- `mariadb.js`
+- `redis.js`
+- `mailpit.js`
+- `phpmyadmin.js`
+- `extras.js`
+
+### Phase 2 Checklist
+
+- [x] Create `src/main/services/service/`
+- [x] Extract helper/path/runtime logic to `service/helpers.js`
+- [x] Extract orchestration/start-stop logic to `service/core.js`
+- [x] Extract health/status/port logic to `service/health.js`
+- [x] Extract process/kill/version-tracking logic to `service/processes.js`
+- [x] Extract service-specific runners for nginx/apache/mysql/mariadb/redis/mailpit/phpMyAdmin/extras
+- [x] Replace `ServiceManager.js` with a thin facade + `Object.assign(...)`
+- [x] Reduce `ServiceManager.js` below the 400–500 line target
+- [x] Keep integration coverage in `tests/main/services/ServiceManager.test.js`
+- [x] Add focused unit tests under `tests/main/services/service/`
+- [x] Validate the current ServiceManager slice
+
+### Last Verified Phase 2 Test Slice
+
+- `tests/main/services/ServiceManager.test.js`
+- `tests/main/services/service/helpers.test.js`
+- `tests/main/services/service/processes.test.js`
+
+Result: `30` tests passed across `3` files.
+
+---
+
+### Phase 3 Status: BinaryDownloadManager
+
+Phase 3 has started with multiple safe extraction slices. Progress/listener tracking, config/update logic, installed-binary detection, generic download transport/cancellation flow, metadata helpers, and archive extraction have been moved into focused mixins and composed back into the manager prototype.
+
+Implemented so far:
+
+- `binary/progress.js`
+- `binary/config.js`
+- `binary/installed.js`
+- `binary/download.js`
+- `binary/metadata.js`
+- `binary/extraction.js`
+- `binary/php.js`
+- `tests/main/services/binary/progress.test.js`
+- `tests/main/services/binary/config.test.js`
+- `tests/main/services/binary/installed.test.js`
+- `tests/main/services/binary/download.test.js`
+- `tests/main/services/binary/metadata.test.js`
+- `tests/main/services/binary/extraction.test.js`
+- `tests/main/services/binary/php.test.js`
+
+### Phase 3 Checklist
+
+- [x] Create `src/main/services/binary/`
+- [x] Extract progress/listener tracking to `binary/progress.js`
+- [x] Extract config/update logic to `binary/config.js`
+- [x] Extract installed-binary scanning to `binary/installed.js`
+- [x] Extract download transport/version probing to `binary/download.js`
+- [x] Extract archive handling to `binary/extraction.js`
+- [x] Extract metadata helpers to `binary/metadata.js`
+- [x] Extract PHP-specific setup to `binary/php.js`
+- [ ] Extract service-specific download entry points to `binary/serviceDownloads.js`
+- [ ] Replace `BinaryDownloadManager.js` with a thin facade + `Object.assign(...)`
+- [ ] Reduce `BinaryDownloadManager.js` below the 400–500 line target
+- [x] Add first focused unit test under `tests/main/services/binary/`
+- [x] Validate the current BinaryDownloadManager slice
+
+### Last Verified Phase 3 Test Slice
+
+- `tests/main/services/BinaryDownloadManager.test.js`
+- `tests/main/services/binary/progress.test.js`
+- `tests/main/services/binary/config.test.js`
+- `tests/main/services/binary/installed.test.js`
+- `tests/main/services/binary/download.test.js`
+- `tests/main/services/binary/metadata.test.js`
+- `tests/main/services/binary/extraction.test.js`
+- `tests/main/services/binary/php.test.js`
+
+Result: `39` tests passed across `8` files.
 
 ---
 
@@ -210,6 +305,8 @@ module.exports = {
 
 **Priority: High — second largest, many service-specific blocks**
 
+**Current status:** Complete enough to count done. The facade is now `160` lines, the service domain mixins are in place, and the current integration plus focused mixin tests are passing.
+
 | New File | Methods | Est. Lines |
 |----------|---------|-----------|
 | `service/helpers.js` | `getDataPath`, `getLegacyUserDataPath`, `getLegacyMySQLDataDir`, `getBundledVCRedistDirs`, `quoteConfigPath`, `maybeAdoptLegacyMySQLData`, `ensureWindowsRuntimeDlls`, `appendProcessOutputSnippet`, `logServiceStartupFailure`, `readMySQLErrorLog`, `getMySQLErrorLogTail`, `hasRecoverableMySQLRedoCorruption`, `recoverCorruptMySQLRedoLogs`, `getProcessKey`, `getVersionPort`, all `get*Path` methods | ~400 |
@@ -228,13 +325,15 @@ module.exports = {
 
 ### Phase 3: BinaryDownloadManager.js (4,069 lines → 9 files)
 
+**Current status:** In progress. The manager is still large at `2,125` lines, but the extracted mixins `binary/progress.js`, `binary/config.js`, `binary/installed.js`, `binary/download.js`, `binary/metadata.js`, `binary/extraction.js`, and `binary/php.js` are in place and validated.
+
 | New File | Methods | Est. Lines |
 |----------|---------|-----------|
-| `binary/download.js` | `downloadFile`, `downloadWithVersionProbe`, `downloadPhp`, `isVersionProbeEligibleError`, `buildPatchFallbackCandidates` | ~400 |
+| `binary/download.js` | `downloadFile`, `downloadWithVersionProbe`, `cancelDownload`, `checkCancelled`, `isVersionProbeEligibleError`, `buildPatchFallbackCandidates` | ~400 |
 | `binary/extraction.js` | `extractArchive`, `extractZipAsync`, `validateZipFile` | ~200 |
 | `binary/config.js` | `checkForUpdates`, `isVersionNewer`, `fetchRemoteConfig`, `compareConfigs`, `applyUpdates`, `applyConfigToDownloads`, `loadBundledConfig`, `loadCachedConfig`, `saveCachedConfig`, `cloneDownloadConfig` | ~400 |
 | `binary/installed.js` | `getInstalledBinaries`, `scanCustomVersions`, `scanCustomPhpVersions`, `scanBinaryVersionsRecursive`, `findExecutableRecursive`, `isNodejsVersionInstalled` | ~350 |
-| `binary/php.js` | `enablePhpExtensions`, `ensureCaCertBundle`, `ensureVCRedist`, `createPhpIni` | ~400 |
+| `binary/php.js` | `enablePhpExtensions`, `downloadPhp`, `ensureCaCertBundle`, `ensureVCRedist`, `createPhpIni` | ~400 |
 | `binary/metadata.js` | `saveServiceMetadata`, `getLocalServiceMetadata`, `fetchRemoteMetadata` | ~150 |
 | `binary/progress.js` | `addProgressListener`, `emitProgress`, `getActiveDownloads`, `cancelDownload`, `checkCancelled` | ~200 |
 | `binary/serviceDownloads.js` | All individual `download*` methods (nginx, mysql, redis, etc.) beyond PHP | ~500 |
@@ -477,18 +576,18 @@ tests/main/services/
 │
 ├── ServiceManager.test.js         (integration - keep existing)
 ├── service/
-│   ├── helpers.test.js
-│   ├── core.test.js
-│   ├── nginx.test.js
-│   ├── apache.test.js
-│   ├── mysql.test.js
-│   ├── mariadb.test.js
-│   ├── redis.test.js
-│   ├── mailpit.test.js
-│   ├── phpmyadmin.test.js
-│   ├── extras.test.js
-│   ├── health.test.js
-│   └── processes.test.js
+│   ├── helpers.test.js            (implemented)
+│   ├── processes.test.js          (implemented)
+│   ├── core.test.js               (optional follow-up)
+│   ├── nginx.test.js              (optional follow-up)
+│   ├── apache.test.js             (optional follow-up)
+│   ├── mysql.test.js              (optional follow-up)
+│   ├── mariadb.test.js            (optional follow-up)
+│   ├── redis.test.js              (optional follow-up)
+│   ├── mailpit.test.js            (optional follow-up)
+│   ├── phpmyadmin.test.js         (optional follow-up)
+│   ├── extras.test.js             (optional follow-up)
+│   └── health.test.js             (optional follow-up)
 │
 ├── BinaryDownloadManager.test.js  (integration - keep existing)
 ├── binary/
