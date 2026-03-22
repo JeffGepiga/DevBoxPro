@@ -9,14 +9,53 @@ document.addEventListener('DOMContentLoaded', () => {
   updateDownloadLinks();
 });
 
+function normalizeReleaseVersion(value) {
+  return String(value || '').trim().replace(/^v/i, '');
+}
+
+function compareVersions(left, right) {
+  const leftParts = normalizeReleaseVersion(left).split('.').map(part => Number.parseInt(part, 10) || 0);
+  const rightParts = normalizeReleaseVersion(right).split('.').map(part => Number.parseInt(part, 10) || 0);
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftPart = leftParts[index] || 0;
+    const rightPart = rightParts[index] || 0;
+
+    if (leftPart > rightPart) return 1;
+    if (leftPart < rightPart) return -1;
+  }
+
+  return 0;
+}
+
+function getAssetVersion(name) {
+  const match = String(name || '').match(/(\d+\.\d+\.\d+)/);
+  return match ? match[1] : '';
+}
+
+function pickReleaseAsset(assets, matcher, releaseVersion) {
+  const candidates = (assets || []).filter(asset => matcher(asset?.name || ''));
+  if (!candidates.length) return null;
+
+  const normalizedReleaseVersion = normalizeReleaseVersion(releaseVersion);
+  const exactMatch = candidates.find(asset => getAssetVersion(asset.name) === normalizedReleaseVersion);
+  if (exactMatch) return exactMatch;
+
+  return candidates
+    .slice()
+    .sort((left, right) => compareVersions(getAssetVersion(right.name), getAssetVersion(left.name)))[0];
+}
+
 async function updateDownloadLinks() {
   try {
     const response = await fetch('https://api.github.com/repos/JeffGepiga/DevBoxPro/releases/latest');
     const data = await response.json();
     
     if (data && data.assets) {
-      const setupAsset = data.assets.find(a => a.name.includes('Setup') && a.name.endsWith('.exe'));
-      const portableAsset = data.assets.find(a => !a.name.includes('Setup') && a.name.endsWith('.exe'));
+      const releaseVersion = data.tag_name || data.name;
+      const setupAsset = pickReleaseAsset(data.assets, name => /setup/i.test(name) && name.endsWith('.exe'), releaseVersion);
+      const portableAsset = pickReleaseAsset(data.assets, name => !/setup/i.test(name) && name.endsWith('.exe'), releaseVersion);
       
       if (setupAsset) {
         document.querySelectorAll('.download-setup-btn').forEach(btn => {
