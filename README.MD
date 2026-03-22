@@ -376,6 +376,10 @@ MAIL_PORT=1025
 - [x] PostgreSQL support
 - [x] MongoDB support
 - [x] Project templates
+- [x] Git clone integration with SSH key management
+- [x] Supervisor process management (queues, workers, schedulers)
+- [x] Bulk project and service stop
+- [x] Front-door proxy for Nginx/Apache co-existence
 - [ ] Docker container support
 - [ ] Extension marketplace
 - [ ] Cloud sync settings

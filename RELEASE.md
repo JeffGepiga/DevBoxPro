@@ -1,104 +1,74 @@
-# 🚀 DevBox Pro v1.0.4
+# 🚀 DevBox Pro v1.0.5
 
 **Stable Release | Your all-in-one local development environment for PHP & Node.js**
 
 ---
 
-## 🆕 What's New in v1.0.4
+## 🆕 What's New in v1.0.5
 
 ### ✨ New Features
 
-#### 🖱️ Drag & Drop Reordering
-- Easily reorder project cards and table rows via drag and drop
-- Custom ordering is saved persistently
+#### ⚡ Improved Project Lifecycle Management
+- Immediate service stopping when the last active project is closed
+- Pending service shutdowns are automatically cancelled when starting new project services
+- Track projects currently being started or stopped for accurate status reporting
 
-#### 🔌 Enhanced Port Conflict Detection
-- Accurately detects external web servers running on conflicting ports
-- Prompts you to close the occupying service before starting your project
+#### 🔄 Graceful Update Installation
+- Services are stopped before applying an app update via quit-and-install
 
-#### 🗄️ New Services
-- **PostgreSQL** – versions 14, 15, 16, 17
-- **MongoDB** – versions 6.0, 7.0, 8.0
-- **Python** – versions 3.10, 3.11, 3.12, 3.13
-- **SQLite 3** – embedded, no daemon required
-- **MinIO** – S3-compatible object storage (port 9000, console on 9001)
-- **Memcached 1.6** – high-performance in-memory caching
+#### 🪟 Enhanced Window & Migration Handling
+- New utility functions for window management and data migration
 
-#### 🟢 Node.js Project Support (First-class)
-- Create strict Node.js applications alongside PHP projects
-- Per-project Node.js version selection with seamless Proxy integration
-- Automatic reverse proxy configuration via Nginx
+#### 🗄️ Database Connection Improvements
+- Database connection info now displays the correct port for the selected engine version
+- Actual running port is used for active database connections instead of the default
+- Integrated service configuration for database port offsets across all components
 
-#### ↩️ Version Rollback
-- Roll back to a previously installed version of DevBox Pro from the Settings page
-- Rollback handled safely with state preservation
+#### 💾 Database Import/Export
+- Import and export support for SQL, MongoDB, and PostgreSQL workflows
 
-#### 🎨 Enhanced Themes
-- More built-in color themes and accent options in Settings
-- Live preview when switching themes
+#### 📦 Expanded Binary Downloads
+- One-click downloads for MySQL, MariaDB, Redis, Mailpit, phpMyAdmin, Nginx, Apache, and Node.js binaries
+- Download progress tracking and management
+- Dynamic loading of bundled binary configuration – new versions appear without an app update
+- Binary URL validation script added to the build pipeline
 
-#### 💻 xterm.js Integrated Terminal
-- Replaced the built-in project terminal with a full xterm.js-powered terminal
-- Proper handling of long-running processes (e.g., `npm run dev`)
-- Fixed cancellation of background processes that previously required a force-close
+#### 🌐 Front-Door Proxy & Service Serialization
+- Front-door proxy handling for Nginx and Apache projects with version checks
+- Serialized service starts for Apache and Nginx to prevent port collisions
 
-#### 📤 Export Project Configuration
-- Export individual project configurations for backup or migration
-- Import previously exported configs via the improved Import Project modal
+#### 🛑 Bulk Stop
+- Stop all running projects and services at once from the UI
 
-### 🧹 Improvements & Bug Fixes
+#### 🔗 Git Integration
+- Git download support with availability checks before clone operations
 
-- **Binary updates**: Resolved an issue where new dynamic binary versions (PHP 8.5, Node.js 24) failed to appear in the Binary Manager list
-- **Testing safety**: Fixed a critical bug where `npm run test` could clear production projects
-- **UI polish**: Fixed project card spacing issues and restored missing pointer cursors on hoverable buttons
-- **Import modal overlays**: Fixed z-index overlap issues within the Import Project modal
-- **Laravel installation**: Fixed an issue where `npm run dev` failed to install Laravel
-- **E2E stability**: Addressed various end-to-end testing launch failures and element visibility errors
-- **PHP 8.5 support** – Run the latest PHP pre-release alongside stable versions
-- **Node.js 16 & 24** – Additional Node.js versions now available
-- **Stale vhost cleanup** – Virtual host configs are removed automatically when a project is deleted, preventing ghost entries
-- **Optimized Projects tab** – Redesigned project list UI with faster load and better layout
-- **Project detail polish** – Cleaner layout and quicker access to common actions
+#### 🔐 SSL & Import Enhancements
+- Enhanced SSL certificate management workflows
+- Improved project import functionality
 
----
+### 🏗️ Architecture & Refactoring
 
-#### 🗄️ New Services
-- **PostgreSQL** – versions 14, 15, 16, 17
-- **MongoDB** – versions 6.0, 7.0, 8.0
-- **Python** – versions 3.10, 3.11, 3.12, 3.13
-- **SQLite 3** – embedded, no daemon required
-- **MinIO** – S3-compatible object storage (port 9000, console on 9001)
-- **Memcached 1.6** – high-performance in-memory caching
+- **Manager refactoring** – `CompatibilityManager` split into config and rules modules; `GitManager` split into smaller focused modules for improved maintainability
+- **Spawn hardening** – Removed `shell: true` from process spawning across the codebase to avoid `DEP0190` deprecation warnings and improve process handling
+- **Data path refactoring** – Centralized data path handling across services and utilities
+- **Binary removal** – Better error handling for locked files during binary removal
+- **MongoDB** – Enhanced binary detection and repair process
+- **MySQL** – Removed redundant logging during startup
+- **Nginx lifecycle** – Nginx is reloaded on rapid PHP-CGI port changes
 
-#### 🟢 Node.js Project Type
-- Create Node.js applications as first-class projects (alongside PHP)
-- Per-project Node.js version selection
-- Automatic proxy configuration via Nginx
+### 🧹 Bug Fixes & Improvements
 
-#### ↩️ Version Rollback
-- Roll back to a previously installed version of DevBox Pro from the Settings page
-- Rollback handled safely with state preservation
-
-#### 🎨 Enhanced Themes
-- More built-in color themes and accent options in Settings
-- Live preview when switching themes
-
-#### 💻 xterm.js Integrated Terminal
-- Replaced the built-in project terminal with a full xterm.js-powered terminal
-- Proper handling of long-running processes (e.g., `npm run dev`)
-- Fixed cancellation of background processes that previously required a force-close
-
-#### 📤 Export Project Configuration
-- Export individual project configurations for backup or migration
-- Import previously exported configs via the improved Import Project modal
-
-### 🧹 Improvements
-
-- **PHP 8.5 support** – Run the latest PHP pre-release alongside stable versions
-- **Node.js 16 & 24** – Additional Node.js versions now available
-- **Stale vhost cleanup** – Virtual host configs are removed automatically when a project is deleted, preventing ghost entries
-- **Optimized Projects tab** – Redesigned project list UI with faster load and better layout
-- **Project detail polish** – Cleaner layout and quicker access to common actions
+- Fixed multi-server version bugs when running multiple web server versions simultaneously
+- Fixed port conflict issues across services
+- Fixed WordPress installation bugs and added PHP extension toggles
+- Fixed terminal consuming excessive memory
+- Improved Nginx and Apache readiness check timeouts
+- Added MySQL error log handling and phpMyAdmin loading state management
+- Fixed bugs in PHP binary downloading
+- Compatibility management service with remote rule updates integrated into project creation
+- Added binary URL checking script to validate download URLs before build
+- Comprehensive test coverage: new unit tests for vhost configs, CLI, database, project services, and lifecycle utilities
 
 ---
 
@@ -178,8 +148,8 @@ mysqldump -u root mydb > backup.sql  # Dump with the active DB version
 
 | File | Description |
 |------|-------------|
-| **DevBox-Pro-Setup-1.0.4.exe** | Installer version (recommended) |
-| **DevBox-Pro-1.0.4.exe** | Portable version – no installation required |
+| **DevBox-Pro-Setup-1.0.5.exe** | Installer version (recommended) |
+| **DevBox-Pro-1.0.5.exe** | Portable version – no installation required |
 
 ### System Requirements (Windows)
 - **OS**: Windows 10/11 (64-bit)
