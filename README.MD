@@ -129,6 +129,7 @@ DevBox Pro is an Electron desktop app with a React renderer and a Node.js main p
 1. **Download** the latest release for your platform:
   - Windows: `DevBox-Pro-Setup-1.0.6.exe`
   - macOS: `DevBox-Pro-1.0.6.dmg`
+  - Linux: `DevBox Pro-1.0.6-linux-x64.AppImage` or `DevBox Pro-1.0.6-linux-x64.deb`
 
 2. **Install** the application
 
@@ -219,7 +220,7 @@ npm run build:renderer
 
 # Build platform packages
 npm run build:win
-npm run build:mac
+npm run build:linux
 npm run build:all
 ```
 

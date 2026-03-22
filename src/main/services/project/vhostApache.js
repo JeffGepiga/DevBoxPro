@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs-extra');
 const { isPortAvailable } = require('../../utils/PortUtils');
+const { getPlatformKey, resolvePhpCgiPath } = require('../../utils/PhpPathResolver');
 
 module.exports = {
   async createApacheVhost(project, targetApacheVersion = null) {
@@ -62,9 +63,11 @@ module.exports = {
     const httpsServerAlias = allApacheDomains.join(' ');
 
     const phpVersion = project.phpVersion || '8.4';
-    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+    const platform = getPlatformKey();
     const resourcesPath = this.getResourcesPath();
-    const phpCgiPath = path.join(resourcesPath, 'php', phpVersion, platform, 'php-cgi.exe').replace(/\\/g, '/');
+    const phpCgiPath = (resolvePhpCgiPath(resourcesPath, phpVersion, platform)
+      || path.join(resourcesPath, 'php', phpVersion, platform, platform === 'win' ? 'php-cgi.exe' : 'php-cgi')).replace(/\\/g, '/');
+    const phpCgiAction = platform === 'win' ? '/php-cgi/php-cgi.exe' : '/php-cgi/php-cgi';
 
     let config = `
 # DevBox Pro - ${project.name}
@@ -104,7 +107,7 @@ module.exports = {
         Require all granted
     </Directory>
     
-    Action application/x-httpd-php "/php-cgi/php-cgi.exe"
+    Action application/x-httpd-php "${phpCgiAction}"
     AddHandler application/x-httpd-php .php
 
     DirectoryIndex index.php index.html
@@ -166,7 +169,7 @@ module.exports = {
         Require all granted
     </Directory>
     
-    Action application/x-httpd-php "/php-cgi/php-cgi.exe"
+    Action application/x-httpd-php "${phpCgiAction}"
     AddHandler application/x-httpd-php .php
 
     DirectoryIndex index.php index.html

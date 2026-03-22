@@ -141,7 +141,7 @@ module.exports = {
         arch: ['x64'],
       },
     ],
-    icon: 'resources/icons',
+    icon: 'build/icon.png',
     category: 'Development',
     artifactName: '${productName}-${version}-${os}-${arch}.${ext}',
   },

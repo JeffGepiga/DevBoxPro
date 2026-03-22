@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs-extra');
 const { v4: uuidv4 } = require('uuid');
+const { getPlatformKey, resolvePhpBinaryPath, resolvePhpCgiPath } = require('../../../utils/PhpPathResolver');
 
 module.exports = {
   async createProject(config, mainWindow = null) {
@@ -56,12 +57,12 @@ module.exports = {
 
     if (projectType !== 'nodejs') {
       const phpVersion = config.phpVersion || '8.3';
-      const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
-      const phpExe = platform === 'win' ? 'php.exe' : 'php';
-      const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
+      const resolvedPlatform = getPlatformKey();
+      const phpPath = resolvePhpBinaryPath(resourcePath, phpVersion, resolvedPlatform);
+      const phpCgiPath = resolvePhpCgiPath(resourcePath, phpVersion, resolvedPlatform);
       const isPlaywright = process.env.PLAYWRIGHT_TEST === 'true';
 
-      if (!isPlaywright && (!await fs.pathExists(path.join(phpDir, phpExe)) || !await fs.pathExists(path.join(phpDir, phpCgiExe)))) {
+      if (!isPlaywright && (!phpPath || !phpCgiPath)) {
         throw new Error(`PHP ${phpVersion} is not installed. Please download it from the Binary Manager before creating a project.`);
       }
     }

@@ -1,8 +1,9 @@
 const path = require('path');
 const fs = require('fs-extra');
+const { getPlatformKey, resolvePhpBinaryPath } = require('../../utils/PhpPathResolver');
 
 function getPlatform() {
-  return process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+  return getPlatformKey();
 }
 
 module.exports = {
@@ -43,10 +44,7 @@ module.exports = {
   getPhpPath(version) {
     if (!this.resourcesPath) return null;
     const platform = getPlatform();
-    const phpDir = path.join(this.resourcesPath, 'php', version, platform);
-    const phpExe = process.platform === 'win32' ? 'php.exe' : 'php';
-    const phpPath = path.join(phpDir, phpExe);
-    return fs.existsSync(phpPath) ? phpPath : null;
+    return resolvePhpBinaryPath(this.resourcesPath, version, platform);
   },
 
   buildProjectEnv(project) {

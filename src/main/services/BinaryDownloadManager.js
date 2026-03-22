@@ -144,6 +144,7 @@ class BinaryDownloadManager {
     this.downloads = buildDefaultDownloads();
     this.versionMeta = buildVersionMeta();
     this.configVersion = bundledBinaryConfig.version || 'built-in';
+    this.bundledConfig = cloneConfig(bundledBinaryConfig);
     this.remoteConfig = null;
     this.lastRemoteCheck = null;
     this.managers = null;

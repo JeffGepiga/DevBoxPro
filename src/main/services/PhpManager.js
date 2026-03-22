@@ -1,6 +1,13 @@
 const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
+const {
+  getPlatformKey,
+  getPhpRootPath,
+  resolvePhpBinaryPath,
+  resolvePhpCgiPath,
+  resolvePhpExtensionDir,
+} = require('../utils/PhpPathResolver');
 
 class PhpManager {
   constructor(resourcePath, configStore, managers = {}) {
@@ -8,25 +15,20 @@ class PhpManager {
     this.configStore = configStore;
     this.managers = managers;
     this.phpVersions = {};
-    this.supportedVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
+    this.supportedVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
   }
 
   async initialize() {
-    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-    const phpBasePath = path.join(this.resourcePath, 'php');
+    const platform = getPlatformKey();
 
     // Discover available PHP versions
     for (const version of this.supportedVersions) {
-      const versionPath = path.join(phpBasePath, version, platform);
-      const phpBinary = this.getPhpBinaryName();
-      const binaryPath = path.join(versionPath, phpBinary);
+      const versionPath = getPhpRootPath(this.resourcePath, version, platform);
+      const binaryPath = resolvePhpBinaryPath(this.resourcePath, version, platform);
+      const phpCgiPath = resolvePhpCgiPath(this.resourcePath, version, platform);
 
-      // Also check for php-cgi which is required for web serving
-      const phpCgiBinary = process.platform === 'win32' ? 'php-cgi.exe' : 'php-cgi';
-      const phpCgiPath = path.join(versionPath, phpCgiBinary);
-
-      const phpExists = await fs.pathExists(binaryPath);
-      const phpCgiExists = await fs.pathExists(phpCgiPath);
+      const phpExists = !!binaryPath;
+      const phpCgiExists = !!phpCgiPath;
 
       if (phpExists && phpCgiExists) {
         this.phpVersions[version] = {
@@ -108,7 +110,7 @@ class PhpManager {
   }
 
   async discoverExtensions(phpPath, version) {
-    const extPath = path.join(phpPath, 'ext');
+    const extPath = resolvePhpExtensionDir(this.resourcePath, version, getPlatformKey());
     const iniPath = path.join(phpPath, 'php.ini');
 
     const allExtensions = [];
@@ -195,6 +197,7 @@ class PhpManager {
   async createDefaultIni(phpPath, version) {
     const iniPath = path.join(phpPath, 'php.ini');
     const templatePath = path.join(phpPath, 'php.ini-development');
+    const extDir = resolvePhpExtensionDir(this.resourcePath, version, getPlatformKey());
 
     // Get timezone from settings
     const settings = this.configStore?.get('settings', {}) || {};
@@ -233,7 +236,7 @@ max_file_uploads = 20
 date.timezone = ${timezone}
 
 ; Extensions (uncomment to enable)
-extension_dir = "${path.join(phpPath, 'ext').replace(/\\/g, '/')}"
+extension_dir = "${extDir.replace(/\\/g, '/')}"
 
 ; Common extensions
 extension=curl

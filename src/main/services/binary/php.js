@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const https = require('https');
 const { createWriteStream } = require('fs');
+const { resolvePhpExtensionDir } = require('../../utils/PhpPathResolver');
 
 module.exports = {
   async enablePhpExtensions() {
@@ -138,7 +139,7 @@ module.exports = {
 
   async createPhpIni(phpPath, version) {
     const platform = this.getPlatform();
-    const extDir = platform === 'win' ? path.join(phpPath, 'ext').replace(/\\/g, '/') : path.join(phpPath, 'lib', 'php', 'extensions');
+    const extDir = resolvePhpExtensionDir(this.resourcesPath, version, platform).replace(/\\/g, '/');
     const extPrefix = platform === 'win' ? 'php_' : '';
     const extSuffix = platform === 'win' ? '.dll' : '.so';
 
@@ -264,6 +265,38 @@ ${extensionLines.join('\n')}
 
     const iniPath = path.join(phpPath, 'php.ini');
     await fs.writeFile(iniPath, iniContent);
+
+    if (platform === 'linux') {
+      await this.createLinuxPhpLaunchers(phpPath, version);
+    }
+  },
+
+  async createLinuxPhpLaunchers(phpPath, version) {
+    const launcherSpecs = [
+      {
+        launcherPath: path.join(phpPath, 'php'),
+        targetBinary: path.join(phpPath, 'usr', 'bin', `php${version}`),
+      },
+      {
+        launcherPath: path.join(phpPath, 'php-cgi'),
+        targetBinary: path.join(phpPath, 'usr', 'bin', `php-cgi${version}`),
+      },
+    ];
+
+    for (const { launcherPath, targetBinary } of launcherSpecs) {
+      if (!await fs.pathExists(targetBinary)) {
+        continue;
+      }
+
+      const launcherScript = `#!/usr/bin/env bash
+ROOT_DIR="$(cd "$(dirname "${'$'}{BASH_SOURCE[0]}")" && pwd)"
+export PHP_INI_SCAN_DIR=""
+exec "${'${ROOT_DIR}'}/${path.relative(phpPath, targetBinary).replace(/\\/g, '/')}" -c "${'${ROOT_DIR}'}/php.ini" "${'$'}@"
+`;
+
+      await fs.writeFile(launcherPath, launcherScript);
+      await fs.chmod(launcherPath, 0o755);
+    }
   },
 
   async ensureCaCertBundle(phpPath) {
