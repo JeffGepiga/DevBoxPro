@@ -141,6 +141,45 @@ describe('MigrationManager legacy install migration', () => {
         expect(await migration.needsLegacyInstallMigration()).toBe(false);
     });
 
+    it('does not repeat the portable migration after the marker is written', async () => {
+        const tempRoot = path.join(os.tmpdir(), `devboxpro-portable-marker-${Date.now()}`);
+        tempRoots.push(tempRoot);
+
+        const portableRoot = path.join(tempRoot, 'Portable', 'DevBox Pro');
+        const newDataPath = path.join(portableRoot, 'data');
+        const newResourcesPath = path.join(portableRoot, 'resources-user');
+        const oldDataPath = path.join(tempRoot, 'legacy-home', '.devbox-pro');
+
+        await fs.outputFile(path.join(oldDataPath, 'devbox-pro-config.json'), '{"projects":[]}');
+
+        const fakeApp = {
+            getPath(name) {
+                if (name === 'exe') {
+                    return path.join(portableRoot, 'DevBox Pro.exe');
+                }
+                if (name === 'userData') {
+                    return path.join(tempRoot, 'Roaming', 'devbox-pro');
+                }
+                return tempRoot;
+            }
+        };
+
+        const pathResolver = {
+            getPortableRoot: () => portableRoot,
+            getDataPath: () => newDataPath,
+            getResourcesPath: () => newResourcesPath,
+        };
+
+        const migration = new MigrationManager(pathResolver, fakeApp);
+        migration.oldDataPath = oldDataPath;
+
+        expect(await migration.needsMigration()).toBe(true);
+
+        await migration.markDone();
+
+        expect(await migration.needsMigration()).toBe(false);
+    });
+
     it('skips versioned database data when migrating into a portable install', async () => {
         const tempRoot = path.join(os.tmpdir(), `devboxpro-portable-migration-${Date.now()}`);
         tempRoots.push(tempRoot);

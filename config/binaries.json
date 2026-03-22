@@ -14,8 +14,8 @@
     "downloads": {
       "8.5": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.5.1-nts-Win32-vs17-x64.zip",
-          "filename": "php-8.5.1-nts-Win32-vs17-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.5.4-nts-Win32-vs17-x64.zip",
+          "filename": "php-8.5.4-nts-Win32-vs17-x64.zip"
         },
         "mac": {
           "url": "https://github.com/shivammathur/php-builder/releases/download/8.5.1/php-8.5.1-darwin-arm64.tar.gz",
@@ -29,8 +29,8 @@
       },
       "8.4": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.4.16-nts-Win32-vs17-x64.zip",
-          "filename": "php-8.4.16-nts-Win32-vs17-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.4.19-nts-Win32-vs17-x64.zip",
+          "filename": "php-8.4.19-nts-Win32-vs17-x64.zip"
         },
         "mac": {
           "url": "https://github.com/shivammathur/php-builder/releases/download/8.4.16/php-8.4.16-darwin-arm64.tar.gz",
@@ -44,8 +44,8 @@
       },
       "8.3": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.3.29-nts-Win32-vs16-x64.zip",
-          "filename": "php-8.3.29-nts-Win32-vs16-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.3.30-nts-Win32-vs16-x64.zip",
+          "filename": "php-8.3.30-nts-Win32-vs16-x64.zip"
         },
         "mac": {
           "url": "https://github.com/shivammathur/php-builder/releases/download/8.3.30/php-8.3.30-darwin-arm64.tar.gz",
