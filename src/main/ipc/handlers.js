@@ -18,6 +18,22 @@ const {
 
 function setupIpcHandlers(ipcMain, managers, mainWindow) {
   const { config, project, php, service, database, ssl, supervisor, log } = managers;
+  const getMainWindow = typeof mainWindow === 'function' ? mainWindow : () => mainWindow;
+  const getLiveMainWindow = () => {
+    const currentWindow = getMainWindow();
+    if (!currentWindow) {
+      return null;
+    }
+
+    if (typeof currentWindow.isDestroyed === 'function' && currentWindow.isDestroyed()) {
+      return null;
+    }
+
+    return currentWindow;
+  };
+  const sendToMainWindow = (channel, payload) => {
+    getLiveMainWindow()?.webContents.send(channel, payload);
+  };
 
   // ============ PROJECT HANDLERS ============
   ipcMain.handle('projects:getAll', async () => {
@@ -29,8 +45,8 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('projects:create', async (event, projectConfig) => {
-    const newProject = await project.createProject(projectConfig, mainWindow);
-    mainWindow?.webContents.send('project:statusChanged', {
+    const newProject = await project.createProject(projectConfig, getLiveMainWindow());
+    sendToMainWindow('project:statusChanged', {
       id: newProject.id,
       status: 'created',
     });
@@ -67,7 +83,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('projects:start', async (event, id) => {
     const result = await project.startProject(id);
-    mainWindow?.webContents.send('project:statusChanged', {
+    sendToMainWindow('project:statusChanged', {
       id,
       status: 'running',
     });
@@ -76,7 +92,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('projects:stop', async (event, id) => {
     const result = await project.stopProject(id);
-    mainWindow?.webContents.send('project:statusChanged', {
+    sendToMainWindow('project:statusChanged', {
       id,
       status: 'stopped',
     });
@@ -85,7 +101,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('projects:stopAll', async () => {
     const result = await project.stopAllProjects();
-    mainWindow?.webContents.send('project:statusChanged', {
+    sendToMainWindow('project:statusChanged', {
       id: null,
       status: 'stopped',
     });
@@ -186,7 +202,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('projects:exportConfig', async (event, id) => {
-    return project.exportProjectConfig(id, mainWindow);
+    return project.exportProjectConfig(id, getLiveMainWindow());
   });
 
   ipcMain.handle('projects:move', async (event, id, newPath) => {
@@ -195,7 +211,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('projects:switchWebServer', async (event, id, webServer, webServerVersion) => {
     const result = await project.switchWebServer(id, webServer, webServerVersion);
-    mainWindow?.webContents.send('project:webServerChanged', {
+    sendToMainWindow('project:webServerChanged', {
       id,
       webServer,
     });
@@ -251,7 +267,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('services:start', async (event, serviceName, version = null) => {
     const result = await service.startService(serviceName, version);
-    mainWindow?.webContents.send('service:statusChanged', {
+    sendToMainWindow('service:statusChanged', {
       service: serviceName,
       version,
       status: 'running',
@@ -261,7 +277,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('services:stop', async (event, serviceName, version = null) => {
     const result = await service.stopService(serviceName, version);
-    mainWindow?.webContents.send('service:statusChanged', {
+    sendToMainWindow('service:statusChanged', {
       service: serviceName,
       version,
       status: 'stopped',
@@ -375,14 +391,14 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('database:importDatabase', async (event, name, filePath, mode) => {
     const progressCallback = (progress) => {
-      mainWindow?.webContents.send('database:importProgress', progress);
+      sendToMainWindow('database:importProgress', progress);
     };
     return database.importDatabase(name, filePath, progressCallback, mode);
   });
 
   ipcMain.handle('database:exportDatabase', async (event, name, filePath) => {
     const progressCallback = (progress) => {
-      mainWindow?.webContents.send('database:exportProgress', progress);
+      sendToMainWindow('database:exportProgress', progress);
     };
     return database.exportDatabase(name, filePath, progressCallback);
   });
@@ -510,7 +526,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('logs:streamLogs', async (event, projectId) => {
     log.streamLogs(projectId, (entry) => {
-      mainWindow?.webContents.send('log:newEntry', { projectId, entry });
+      sendToMainWindow('log:newEntry', { projectId, entry });
     });
     return true;
   });
@@ -558,14 +574,14 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   // ============ SYSTEM HANDLERS ============
   ipcMain.handle('system:selectDirectory', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+    const result = await dialog.showOpenDialog(getLiveMainWindow(), {
       properties: ['openDirectory'],
     });
     return result.canceled ? null : result.filePaths[0];
   });
 
   ipcMain.handle('system:selectFile', async (event, filters) => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+    const result = await dialog.showOpenDialog(getLiveMainWindow(), {
       properties: ['openFile'],
       filters: filters || [{ name: 'All Files', extensions: ['*'] }],
     });
@@ -573,7 +589,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('system:saveFile', async (event, options) => {
-    const result = await dialog.showSaveDialog(mainWindow, {
+    const result = await dialog.showSaveDialog(getLiveMainWindow(), {
       defaultPath: options?.defaultPath,
       filters: options?.filters || [{ name: 'All Files', extensions: ['*'] }],
     });
@@ -877,7 +893,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     terminals.set(terminalId, term);
 
     term.onData((data) => {
-      mainWindow?.webContents.send('terminal:output', { terminalId, data });
+      sendToMainWindow('terminal:output', { terminalId, data });
     });
 
     term.onExit(() => {
@@ -1232,7 +1248,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   const setupBinaryProgressListener = () => {
     if (managers.binaryDownload) {
       managers.binaryDownload.addProgressListener((id, progress) => {
-        mainWindow?.webContents.send('binaries:progress', { id, progress });
+        sendToMainWindow('binaries:progress', { id, progress });
       });
     } else {
       // Retry after a delay if not ready yet
@@ -1346,7 +1362,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         stdout += text;
         if (stdout.length > MAX_BUFFER) stdout = stdout.slice(-MAX_BUFFER);
         // Send real-time output to renderer
-        mainWindow?.webContents.send('terminal:output', {
+        sendToMainWindow('terminal:output', {
           projectId,
           text,
           type: 'stdout',
@@ -1357,7 +1373,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         const text = stripCursorCodes(data.toString());
         stderr += text;
         if (stderr.length > MAX_BUFFER) stderr = stderr.slice(-MAX_BUFFER);
-        mainWindow?.webContents.send('terminal:output', {
+        sendToMainWindow('terminal:output', {
           projectId,
           text,
           type: 'stderr',
@@ -1500,13 +1516,13 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   // Resource monitoring interval
   const resourceInterval = setInterval(async () => {
     try {
-      // Check if window still exists and is not destroyed
-      if (!mainWindow || mainWindow.isDestroyed()) {
+      const currentWindow = getLiveMainWindow();
+      if (!currentWindow) {
         clearInterval(resourceInterval);
         return;
       }
       const usage = await service.getResourceUsage();
-      mainWindow.webContents.send('resource:update', usage);
+      currentWindow.webContents.send('resource:update', usage);
     } catch (error) {
       // Silently ignore errors during shutdown
       if (!error.message?.includes('destroyed')) {
@@ -1526,7 +1542,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
     // Set up progress callback to send to renderer
     const onProgress = (progress) => {
-      mainWindow?.webContents.send('git:cloneProgress', progress);
+      sendToMainWindow('git:cloneProgress', progress);
     };
 
     return managers.git.cloneRepository(url, destPath, { ...options, onProgress });

@@ -26,6 +26,7 @@ const { MigrationManager } = require('./services/MigrationManager');
 const { ConfigStore } = require('./utils/ConfigStore');
 const pathResolver = require('./utils/PathResolver');
 const { cleanupStaleManagedWebServerProcesses } = require('./utils/StartupCleanup');
+const { showAndFocusWindow } = require('./utils/WindowUtils');
 const { setupIpcHandlers } = require('./ipc/handlers');
 
 const GENERATED_CONFIG_SCHEMA_VERSION = 2;
@@ -44,15 +45,8 @@ if (!gotTheLock) {
   // This is the first instance - set up handler for second instance attempts
   app.on('second-instance', (event, commandLine, workingDirectory) => {
     // Someone tried to run a second instance, focus our window instead
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-      mainWindow.show();
-      mainWindow.focus();
-    } else {
-      // Window was destroyed, recreate it
-      createWindow();
+    if (!showAndFocusWindow(mainWindow, app)) {
+      void ensureMainWindow();
     }
   });
 }
@@ -60,6 +54,7 @@ if (!gotTheLock) {
 // Keep references to prevent garbage collection
 let mainWindow = null;
 let tray = null;
+let pendingMainWindowPromise = null;
 
 // Manager instances
 const managers = {};
@@ -101,7 +96,9 @@ async function checkAndRepairGeneratedConfigs() {
 async function checkAndMigrate() {
   const migration = new MigrationManager(pathResolver, app);
 
-  await migration.migrateLegacyInstallData();
+  if (await migration.needsLegacyInstallMigration()) {
+    await migration.migrateLegacyInstallData();
+  }
 
   if (!(await migration.needsMigration())) {
     return;
@@ -204,7 +201,9 @@ async function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+    if (mainWindow && !(typeof mainWindow.isDestroyed === 'function' && mainWindow.isDestroyed())) {
+      mainWindow.show();
+    }
   });
 
   // Show window immediately in dev mode for debugging
@@ -214,7 +213,7 @@ async function createWindow() {
 
   // Fallback: show window after timeout if ready-to-show doesn't fire
   setTimeout(() => {
-    if (mainWindow && !mainWindow.isVisible()) {
+    if (mainWindow && typeof mainWindow.isVisible === 'function' && !mainWindow.isVisible()) {
       mainWindow.show();
     }
   }, 3000);
@@ -231,6 +230,37 @@ async function createWindow() {
   });
 
   return mainWindow;
+}
+
+async function ensureMainWindow(options = {}) {
+  const { focusExisting = false } = options;
+
+  if (mainWindow && !(typeof mainWindow.isDestroyed === 'function' && mainWindow.isDestroyed())) {
+    if (typeof mainWindow.isMinimized === 'function' && mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+
+    if (typeof mainWindow.show === 'function') {
+      mainWindow.show();
+    }
+
+    if (focusExisting) {
+      showAndFocusWindow(mainWindow, app);
+    }
+
+    return mainWindow;
+  }
+
+  if (pendingMainWindowPromise) {
+    return pendingMainWindowPromise;
+  }
+
+  pendingMainWindowPromise = createWindow()
+    .finally(() => {
+      pendingMainWindowPromise = null;
+    });
+
+  return pendingMainWindowPromise;
 }
 
 function createTray() {
@@ -287,9 +317,7 @@ function createTray() {
       {
         label: 'Open DevBox Pro',
         click: () => {
-          if (mainWindow) {
-            mainWindow.show();
-          }
+          void ensureMainWindow({ focusExisting: true });
         },
       },
       { type: 'separator' },
@@ -315,9 +343,7 @@ function createTray() {
     tray.setContextMenu(contextMenu);
 
     tray.on('double-click', () => {
-      if (mainWindow) {
-        mainWindow.show();
-      }
+      void ensureMainWindow({ focusExisting: true });
     });
   } catch (error) {
     managers.log?.systemError('Failed to create tray', { error: error.message });
@@ -392,14 +418,15 @@ async function startup() {
     await checkAndRepairGeneratedConfigs();
     await cleanupStaleManagedWebServerProcesses(getResourcePath(), managers.log);
 
+    // Register IPC handlers before loading the renderer so initial data requests
+    // cannot beat handler setup during installer-launched startup.
+    setupIpcHandlers(ipcMain, managers, () => mainWindow);
+
     // Create main window immediately so user sees the app
-    await createWindow();
+    await ensureMainWindow();
 
     // Create system tray
     createTray();
-
-    // Setup IPC handlers
-    setupIpcHandlers(ipcMain, managers, mainWindow);
 
     // Set mainWindow on supervisor for real-time output events
     managers.supervisor.setMainWindow(mainWindow);
@@ -459,6 +486,9 @@ async function startup() {
       managers.log?.systemError('Error auto-starting projects', { error: err.message });
     }
   } catch (error) {
+    managers.log?.systemError('Startup failed', { error: error.message, stack: error.stack });
+    dialog.showErrorBox('DevBox Pro could not start', error.message);
+    app.quit();
   }
 }
 
@@ -482,8 +512,14 @@ app.on('window-all-closed', async () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  } else if (mainWindow) {
+    void ensureMainWindow();
+    return;
+  }
+
+  if (mainWindow && !(typeof mainWindow.isDestroyed === 'function' && mainWindow.isDestroyed())) {
+    if (typeof mainWindow.isMinimized === 'function' && mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
     mainWindow.show();
   }
 });

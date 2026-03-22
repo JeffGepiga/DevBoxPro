@@ -112,6 +112,10 @@ class MigrationManager {
   }
 
   async migrateLegacyInstallData(onProgress) {
+    if (await fs.pathExists(this.getLegacyInstallMigrationMarkerPath())) {
+      return false;
+    }
+
     const sources = await this.getLegacyInstallSources();
     if (sources.length === 0) {
       await this.markLegacyInstallMigrationDone();
@@ -147,7 +151,33 @@ class MigrationManager {
       return false;
     }
 
+    if (await this.hasExistingPortableInstallationState()) {
+      return false;
+    }
+
     return fs.pathExists(this.oldDataPath);
+  }
+
+  async hasExistingPortableInstallationState() {
+    if (await this.hasMeaningfulEntries(this.newDataPath, [
+      path.basename(this.getMigrationMarkerPath()),
+      path.basename(this.getLegacyInstallMigrationMarkerPath()),
+      path.basename(this.getRegenerationPendingPath()),
+      path.basename(this.getConfigRegeneratedMarkerPath()),
+    ])) {
+      return true;
+    }
+
+    return this.hasMeaningfulEntries(this.newResourcesPath);
+  }
+
+  async hasMeaningfulEntries(targetPath, ignoredNames = []) {
+    if (!await fs.pathExists(targetPath)) {
+      return false;
+    }
+
+    const entries = await fs.readdir(targetPath);
+    return entries.some((entry) => !ignoredNames.includes(entry));
   }
 
   async migrate(onProgress) {
