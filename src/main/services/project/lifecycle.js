@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { isPortAvailable, findAvailablePort } = require('../../utils/PortUtils');
+const { getPlatformKey, resolvePhpBinaryPath, resolvePhpCgiPath } = require('../../utils/PhpPathResolver');
 
 const SERVICE_STOP_GRACE_PERIOD_MS = 15000;
 
@@ -354,18 +355,15 @@ module.exports = {
 
     const phpVersion = project.phpVersion || '8.3';
     const resourcePath = this.getResourcesPath();
-    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-    const phpExe = platform === 'win' ? 'php.exe' : 'php';
-    const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
-    const phpDir = path.join(resourcePath, 'php', phpVersion, platform);
-    const phpPath = path.join(phpDir, phpExe);
-    const phpCgiPath = path.join(phpDir, phpCgiExe);
+    const platform = getPlatformKey();
+    const phpPath = resolvePhpBinaryPath(resourcePath, phpVersion, platform);
+    const phpCgiPath = resolvePhpCgiPath(resourcePath, phpVersion, platform);
 
-    if (!await fs.pathExists(phpPath)) {
+    if (!phpPath || !await fs.pathExists(phpPath)) {
       throw new Error(`PHP ${phpVersion} is not installed at:\n${phpPath}\n\nPlease install PHP ${phpVersion} from the Binary Manager.`);
     }
 
-    if (!await fs.pathExists(phpCgiPath)) {
+    if (!phpCgiPath || !await fs.pathExists(phpCgiPath)) {
       throw new Error(`PHP-CGI not found for PHP ${phpVersion} at:\n${phpCgiPath}\n\nThe PHP installation may be incomplete. Please reinstall PHP ${phpVersion} from the Binary Manager.`);
     }
 

@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs-extra');
+const { resolvePhpBinaryPath, resolvePhpCgiPath } = require('../../utils/PhpPathResolver');
 
 module.exports = {
   async getInstalledBinaries() {
@@ -19,11 +20,8 @@ module.exports = {
     };
 
     for (const version of this.versionMeta.php) {
-      const phpPath = path.join(this.resourcesPath, 'php', version, platform);
-      const phpExe = platform === 'win' ? 'php.exe' : 'php';
-      const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
-      const phpExists = await fs.pathExists(path.join(phpPath, phpExe));
-      const phpCgiExists = await fs.pathExists(path.join(phpPath, phpCgiExe));
+      const phpExists = !!resolvePhpBinaryPath(this.resourcesPath, version, platform);
+      const phpCgiExists = !!resolvePhpCgiPath(this.resourcesPath, version, platform);
       installed.php[version] = phpExists && phpCgiExists;
     }
     await this.scanCustomPhpVersions(installed.php, platform);
@@ -160,17 +158,12 @@ module.exports = {
       const serviceDir = path.join(this.resourcesPath, 'php');
       if (!await fs.pathExists(serviceDir)) return;
 
-      const phpExe = platform === 'win' ? 'php.exe' : 'php';
-      const phpCgiExe = platform === 'win' ? 'php-cgi.exe' : 'php-cgi';
-
       const dirs = await fs.readdir(serviceDir);
       for (const dir of dirs) {
         if (installedObj[dir] !== undefined || dir === 'win' || dir === 'mac') continue;
 
-        const phpPath = path.join(serviceDir, dir, platform, phpExe);
-        const phpCgiPath = path.join(serviceDir, dir, platform, phpCgiExe);
-        const phpExists = await fs.pathExists(phpPath);
-        const phpCgiExists = await fs.pathExists(phpCgiPath);
+        const phpExists = !!resolvePhpBinaryPath(this.resourcesPath, dir, platform);
+        const phpCgiExists = !!resolvePhpCgiPath(this.resourcesPath, dir, platform);
 
         if (phpExists && phpCgiExists) {
           installedObj[dir] = true;

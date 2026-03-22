@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { spawnAsync, killProcessesByPath } = require('../../utils/SpawnUtils');
+const { resolvePhpBinaryPath } = require('../../utils/PhpPathResolver');
 
 module.exports = {
   async downloadNodejs(version = '20') {
@@ -107,6 +108,7 @@ module.exports = {
       } catch (error) {
         this.managers?.log?.systemWarn('Failed to stop existing Node.js processes before reinstall', { error: error.message, nodejsPath });
       }
+        const { resolvePhpBinaryPath } = require('../../utils/PhpPathResolver');
 
       await new Promise((resolve) => setTimeout(resolve, 750));
     }
@@ -172,6 +174,7 @@ module.exports = {
         const meta = await this.fetchRemoteMetadata(this.downloads.composer.all.url);
         await this.saveServiceMetadata('composer', meta);
       } catch {
+        // Metadata is optional; Composer itself is already downloaded.
       }
 
       await fs.remove(downloadPath);
@@ -237,8 +240,7 @@ exit 1
 
   async runComposer(projectPath, command, phpVersion = '8.3', onOutput = null) {
     const platform = this.getPlatform();
-    const phpDir = path.join(this.resourcesPath, 'php', phpVersion, platform);
-    const phpPath = path.join(phpDir, platform === 'win' ? 'php.exe' : 'php');
+    const phpPath = resolvePhpBinaryPath(this.resourcesPath, phpVersion, platform);
     const composerPhar = this.getComposerPath();
 
     if (!await fs.pathExists(phpPath)) {
@@ -254,11 +256,12 @@ exit 1
     }
 
     const args = [composerPhar, ...command.split(' ')];
+    const phpBinDir = path.dirname(phpPath);
     const spawnEnv = {
       ...process.env,
       PATH: platform === 'win'
-        ? `${phpDir};${process.env.PATH || ''}`
-        : `${phpDir}:${process.env.PATH || ''}`,
+        ? `${phpBinDir};${process.env.PATH || ''}`
+        : `${phpBinDir}:${process.env.PATH || ''}`,
       COMPOSER_HOME: path.join(this.resourcesPath, 'composer'),
       COMPOSER_NO_INTERACTION: '1',
     };

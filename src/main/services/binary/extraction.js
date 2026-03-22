@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const tar = require('tar');
 const { Worker } = require('worker_threads');
+const { spawn } = require('child_process');
 
 module.exports = {
   async extractArchive(archivePath, destPath, id) {
@@ -23,6 +24,8 @@ module.exports = {
         throw new Error('Invalid ZIP file. The download may have been corrupted or blocked.');
       }
       await this.extractZipAsync(archivePath, destPath, id);
+    } else if (basename.endsWith('.tar.xz')) {
+      await this.extractTarXz(archivePath, destPath);
     } else if (basename.endsWith('.tar.gz') || ext === '.tgz') {
       await tar.x({
         file: archivePath,
@@ -32,6 +35,34 @@ module.exports = {
     }
 
     this.emitProgress(id, { status: 'extracting', progress: 100 });
+  },
+
+  async extractTarXz(archivePath, destPath) {
+    await new Promise((resolve, reject) => {
+      const proc = spawn('tar', ['-xJf', archivePath, '-C', destPath, '--strip-components=1'], {
+        shell: false,
+        windowsHide: true,
+      });
+
+      let stderr = '';
+
+      proc.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+      });
+
+      proc.on('error', (error) => {
+        reject(error);
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+
+        reject(new Error(stderr.trim() || `tar exited with code ${code}`));
+      });
+    });
   },
 
   async validateZipFile(filePath) {

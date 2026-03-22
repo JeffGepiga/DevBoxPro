@@ -65,8 +65,8 @@ module.exports = {
         if (!isValid) {
           throw new Error('Invalid ZIP file.');
         }
-      } else if (!filePath.endsWith('.tar.gz') && ext !== '.tgz') {
-        throw new Error('Unsupported archive format. Please use .zip or .tar.gz');
+      } else if (!filePath.endsWith('.tar.gz') && !filePath.endsWith('.tar.xz') && ext !== '.tgz') {
+        throw new Error('Unsupported archive format. Please use .zip, .tar.gz, or .tar.xz');
       }
 
       const extractPath = path.join(this.resourcesPath, serviceName, version, platform);

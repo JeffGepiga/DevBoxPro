@@ -6,6 +6,40 @@ const https = require('https');
 const REMOTE_CONFIG_URL = 'https://raw.githubusercontent.com/JeffGepiga/DevBoxPro/main/config/binaries.json';
 
 module.exports = {
+  isConfigMetadataNewer(candidateConfig, currentConfig) {
+    if (!candidateConfig) {
+      return false;
+    }
+
+    if (!currentConfig) {
+      return true;
+    }
+
+    const candidateVersion = candidateConfig.version;
+    const currentVersion = currentConfig.version;
+
+    if (this.isVersionNewer(candidateVersion, currentVersion)) {
+      return true;
+    }
+
+    if (this.isVersionNewer(currentVersion, candidateVersion)) {
+      return false;
+    }
+
+    const candidateUpdatedAt = Date.parse(candidateConfig.lastUpdated || '');
+    const currentUpdatedAt = Date.parse(currentConfig.lastUpdated || '');
+
+    if (Number.isNaN(candidateUpdatedAt)) {
+      return false;
+    }
+
+    if (Number.isNaN(currentUpdatedAt)) {
+      return true;
+    }
+
+    return candidateUpdatedAt > currentUpdatedAt;
+  },
+
   async checkForUpdates() {
     try {
       const remoteConfig = await this.fetchRemoteConfig();
@@ -161,6 +195,10 @@ module.exports = {
       if (await fs.pathExists(this.localConfigPath)) {
         const cachedData = await fs.readJson(this.localConfigPath);
         if (cachedData && cachedData.config) {
+          if (!this.isConfigMetadataNewer(cachedData.config, this.bundledConfig)) {
+            return false;
+          }
+
           this.remoteConfig = cachedData.config;
           this.configVersion = cachedData.config.version;
           await this.applyConfigToDownloads(cachedData.config);

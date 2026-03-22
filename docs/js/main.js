@@ -9,6 +9,22 @@ document.addEventListener('DOMContentLoaded', () => {
   updateDownloadLinks();
 });
 
+const RELEASES_LATEST_URL = 'https://github.com/JeffGepiga/DevBoxPro/releases/latest';
+
+function setDownloadTargets(selector, asset, label) {
+  document.querySelectorAll(selector).forEach(button => {
+    button.href = asset?.browser_download_url || RELEASES_LATEST_URL;
+    if (label) {
+      button.textContent = label;
+    }
+    if (!asset) {
+      button.dataset.downloadFallback = 'true';
+    } else {
+      delete button.dataset.downloadFallback;
+    }
+  });
+}
+
 function normalizeReleaseVersion(value) {
   return String(value || '').trim().replace(/^v/i, '');
 }
@@ -54,20 +70,15 @@ async function updateDownloadLinks() {
     
     if (data && data.assets) {
       const releaseVersion = data.tag_name || data.name;
-      const setupAsset = pickReleaseAsset(data.assets, name => /setup/i.test(name) && name.endsWith('.exe'), releaseVersion);
-      const portableAsset = pickReleaseAsset(data.assets, name => !/setup/i.test(name) && name.endsWith('.exe'), releaseVersion);
-      
-      if (setupAsset) {
-        document.querySelectorAll('.download-setup-btn').forEach(btn => {
-          btn.href = setupAsset.browser_download_url;
-        });
-      }
-      
-      if (portableAsset) {
-        document.querySelectorAll('.download-portable-btn').forEach(btn => {
-          btn.href = portableAsset.browser_download_url;
-        });
-      }
+      const windowsInstaller = pickReleaseAsset(data.assets, name => /setup/i.test(name) && name.endsWith('.exe'), releaseVersion);
+      const windowsPortable = pickReleaseAsset(data.assets, name => !/setup/i.test(name) && name.endsWith('.exe'), releaseVersion);
+      const linuxAppImage = pickReleaseAsset(data.assets, name => name.endsWith('.AppImage'), releaseVersion);
+      const linuxDeb = pickReleaseAsset(data.assets, name => name.endsWith('.deb'), releaseVersion);
+
+      setDownloadTargets('.download-setup-btn', windowsInstaller || linuxAppImage, 'Downloads');
+      setDownloadTargets('.download-windows-btn', windowsInstaller || windowsPortable, 'Download for Windows');
+      setDownloadTargets('.download-linux-btn', linuxAppImage || linuxDeb, linuxAppImage ? 'Download for Linux' : 'Download Linux Preview');
+      setDownloadTargets('.download-portable-btn', windowsPortable || linuxDeb, windowsPortable ? 'Download Portable' : 'Download .deb');
     }
   } catch (err) {
     console.error('Failed to fetch latest release:', err);
