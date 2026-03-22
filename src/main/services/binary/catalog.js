@@ -2,6 +2,14 @@ const path = require('path');
 const fs = require('fs-extra');
 
 module.exports = {
+  createBinaryFilesInUseError(type, version = null, originalError = null) {
+    const label = `${type}${version ? ` ${version}` : ''}`;
+    const lockedError = new Error(`${label} cannot be fully deleted because one or more files inside its binary folder are still in use. Stop the project or service using this binary, then try deleting it again.`);
+    lockedError.code = 'BINARY_FILES_IN_USE';
+    lockedError.originalError = originalError?.message || originalError || null;
+    return lockedError;
+  },
+
   async getRunningConflicts(type, version) {
     const items = [];
     const projectManager = this.managers?.project;
@@ -99,7 +107,17 @@ module.exports = {
     }
 
     await this.assertBinaryFolderDeletable(targetPath, type, version);
-    await fs.remove(targetPath);
+
+    try {
+      await fs.remove(targetPath);
+    } catch (error) {
+      if (['EBUSY', 'EPERM', 'EACCES'].includes(error.code)) {
+        throw this.createBinaryFilesInUseError(type, version, error);
+      }
+
+      throw error;
+    }
+
     return { success: true };
   },
 
@@ -121,11 +139,7 @@ module.exports = {
       }
 
       if (['EBUSY', 'EPERM', 'EACCES'].includes(error.code)) {
-        const label = `${type}${version ? ` ${version}` : ''}`;
-        const lockedError = new Error(`${label} cannot be deleted because one or more files inside its binary folder are currently in use by another process. Close the app or process using those files, then try deleting the binary again.`);
-        lockedError.code = 'BINARY_FILES_IN_USE';
-        lockedError.originalError = error.message;
-        throw lockedError;
+        throw this.createBinaryFilesInUseError(type, version, error);
       }
 
       throw error;

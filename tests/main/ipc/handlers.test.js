@@ -143,6 +143,43 @@ describe('IPC Handlers', () => {
                 quitAndInstall: vi.fn(),
                 getStatus: vi.fn(() => ({ currentVersion: '1.0.0' })),
             },
+            binaryDownload: {
+                getInstalledBinaries: vi.fn(async () => ({})),
+                getActiveDownloads: vi.fn(async () => ({})),
+                checkForUpdates: vi.fn(async () => ({ success: true })),
+                checkForServiceUpdates: vi.fn(async () => ({ composer: { updateAvailable: false }, phpmyadmin: { updateAvailable: false } })),
+                applyUpdates: vi.fn(async () => ({ success: true })),
+                getVersionMeta: vi.fn(() => ({})),
+                getDownloadUrls: vi.fn(() => ({})),
+                downloadPhp: vi.fn(async () => ({ success: true })),
+                downloadMysql: vi.fn(async () => ({ success: true })),
+                downloadMariadb: vi.fn(async () => ({ success: true })),
+                downloadRedis: vi.fn(async () => ({ success: true })),
+                downloadMailpit: vi.fn(async () => ({ success: true })),
+                downloadPhpMyAdmin: vi.fn(async () => ({ success: true })),
+                downloadNginx: vi.fn(async () => ({ success: true })),
+                downloadApache: vi.fn(async () => ({ success: true })),
+                importApache: vi.fn(async () => ({ success: true })),
+                importBinary: vi.fn(async () => ({ success: true })),
+                downloadNodejs: vi.fn(async () => ({ success: true })),
+                downloadComposer: vi.fn(async () => ({ success: true })),
+                downloadGit: vi.fn(async () => ({ success: true })),
+                downloadPostgresql: vi.fn(async () => ({ success: true })),
+                downloadPython: vi.fn(async () => ({ success: true })),
+                downloadMongodb: vi.fn(async () => ({ success: true })),
+                downloadSqlite: vi.fn(async () => ({ success: true })),
+                downloadMinio: vi.fn(async () => ({ success: true })),
+                downloadMemcached: vi.fn(async () => ({ success: true })),
+                runPip: vi.fn(async () => ({ success: true })),
+                cancelDownload: vi.fn(async () => ({ success: true })),
+                runComposer: vi.fn(async () => ({ success: true })),
+                runNpm: vi.fn(async () => ({ success: true })),
+                getRunningConflicts: vi.fn(async () => ({ hasConflicts: false, items: [] })),
+                removeBinary: vi.fn(async () => ({ success: true })),
+                scanCustomVersions: vi.fn(async () => ({})),
+                addProgressListener: vi.fn(),
+                resourcesPath: '/app-cache/resources',
+            },
         };
 
         setupIpcHandlers(mockIpcMain, mockManagers, mockMainWindow);
@@ -269,6 +306,19 @@ describe('IPC Handlers', () => {
                 'compatibility:getConfigInfo',
             ];
             for (const channel of compatChannels) {
+                expect(handlers[channel], `Missing handler: ${channel}`).toBeDefined();
+            }
+        });
+
+        it('registers binary handlers including Composer download', () => {
+            const binaryChannels = [
+                'binaries:getInstalled', 'binaries:getDownloadUrls',
+                'binaries:downloadPhp', 'binaries:downloadPhpMyAdmin',
+                'binaries:downloadNodejs', 'binaries:downloadComposer',
+                'binaries:downloadGit', 'binaries:runComposer',
+                'binaries:getRunningConflicts', 'binaries:remove',
+            ];
+            for (const channel of binaryChannels) {
                 expect(handlers[channel], `Missing handler: ${channel}`).toBeDefined();
             }
         });
@@ -541,6 +591,18 @@ describe('IPC Handlers', () => {
         it('compatibility:getConfigInfo routes to project.getCompatibilityConfigInfo', async () => {
             await handlers['compatibility:getConfigInfo'](fakeEvent);
             expect(mockManagers.project.getCompatibilityConfigInfo).toHaveBeenCalled();
+        });
+    });
+
+    describe('Binary handler routing', () => {
+        it('binaries:downloadComposer routes to binaryDownload.downloadComposer', async () => {
+            await handlers['binaries:downloadComposer'](fakeEvent);
+            expect(mockManagers.binaryDownload.downloadComposer).toHaveBeenCalled();
+        });
+
+        it('binaries:remove routes to binaryDownload.removeBinary', async () => {
+            await handlers['binaries:remove'](fakeEvent, 'php', '8.3', false);
+            expect(mockManagers.binaryDownload.removeBinary).toHaveBeenCalledWith('php', '8.3', false);
         });
     });
 });

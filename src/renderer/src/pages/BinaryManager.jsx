@@ -540,6 +540,15 @@ function BinaryManager() {
 
   const handleDownloadService = async (service, version = null) => {
     const id = version ? `${service}-${version}` : service;
+    const serviceLabel = service === 'phpmyadmin'
+      ? 'phpMyAdmin'
+      : service === 'nodejs'
+        ? 'Node.js'
+        : service === 'minio'
+          ? 'MinIO'
+          : service === 'memcached'
+            ? 'Memcached'
+            : service.charAt(0).toUpperCase() + service.slice(1);
 
     // Don't start if already downloading
     if (downloading[id]) return;
@@ -600,6 +609,26 @@ function BinaryManager() {
     downloadPromise?.catch((error) => {
       setProgressGlobal(id, { status: 'error', error: error.message });
       setDownloadingGlobal(id, false);
+
+      if (/No handler registered for 'binaries:downloadComposer'/i.test(error?.message || '')) {
+        showAlert({
+          title: 'Composer Download Unavailable',
+          message: 'This app session cannot start the Composer download.',
+          detail: 'The main process did not register the Composer download IPC handler. Restart DevBox Pro and try again. If it still fails, use the Import button to add composer.phar manually.',
+          type: 'warning',
+        });
+        return;
+      }
+
+      if (/No handler registered for /i.test(error?.message || '')) {
+        showAlert({
+          title: 'Download Unavailable',
+          message: `${serviceLabel} download is not available in this app session.`,
+          detail: 'The main process is missing the IPC handler for this action. Restart DevBox Pro and try again.',
+          type: 'warning',
+        });
+      }
+
       // Alert is handled by the onProgress listener to prevent duplicates
     });
   };
@@ -932,7 +961,8 @@ function BinaryManager() {
       await forceRefreshInstalled();
     } catch (error) {
       const isBinaryInUse = error?.code === 'BINARY_IN_USE' || /currently in use|used by/i.test(error?.message || '');
-      const isBinaryFilesInUse = error?.code === 'BINARY_FILES_IN_USE' || /files inside .*binary folder are currently in use/i.test(error?.message || '');
+      const isBinaryFilesInUse = error?.code === 'BINARY_FILES_IN_USE'
+        || /files inside .*binary folder are currently in use|cannot be fully deleted because .* still in use|stop the project or service using this binary/i.test(error?.message || '');
       if (isBinaryInUse) {
         showAlert({
           title: 'Binary In Use',
@@ -945,9 +975,9 @@ function BinaryManager() {
 
       if (isBinaryFilesInUse) {
         showAlert({
-          title: 'Files Still In Use',
-          message: `${label} cannot be deleted yet.`,
-          detail: error.message || 'Some files in this binary folder are still open in another process. Close that process, then try again.',
+          title: 'Binary In Use',
+          message: `Cannot remove ${label} while it is still being used.`,
+          detail: error.message || `Stop the project or service using ${label}, then try deleting it again.`,
           type: 'warning',
         });
         return;

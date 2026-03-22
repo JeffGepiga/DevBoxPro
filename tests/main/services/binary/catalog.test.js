@@ -74,6 +74,19 @@ describe('binary/catalog', () => {
     expect(removeSpy).toHaveBeenCalledWith(path.join('/resources', 'mysql', '8.4', 'win'));
   });
 
+  it('maps locked-file delete failures to a binary-in-use error after the delete starts', async () => {
+    const ctx = makeContext();
+    vi.spyOn(fs, 'remove').mockRejectedValue(Object.assign(new Error('EPERM: operation not permitted, unlink libssh2.dll'), { code: 'EPERM' }));
+
+    await expect(ctx.removeBinary('php', '8.3')).rejects.toMatchObject({
+      code: 'BINARY_FILES_IN_USE',
+      message: expect.stringContaining('Stop the project or service using this binary'),
+      originalError: 'EPERM: operation not permitted, unlink libssh2.dll',
+    });
+
+    expect(ctx.assertBinaryFolderDeletable).toHaveBeenCalledWith(path.join('/resources', 'php', '8.3', 'win'), 'php', '8.3');
+  });
+
   it('flags update availability for latest services when remote metadata changes', async () => {
     const ctx = makeContext({
       getLocalServiceMetadata: vi.fn((serviceName) => {
