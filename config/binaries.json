@@ -1,6 +1,7 @@
 {
   "version": "1.1.2",
   "lastUpdated": "2026-04-01",
+  "lastUpdated": "2026-04-01",
   "php": {
     "versions": [
       "8.5",
@@ -303,9 +304,11 @@
           "requiresBuild": true
         },
         "linux": {
-          "url": "https://nginx.org/download/nginx-1.28.2.tar.gz",
-          "filename": "nginx-1.28.2.tar.gz",
-          "requiresBuild": true
+          "url": "builtin",
+          "manageWithPackageManager": true,
+          "packageName": "nginx",
+          "filename": "nginx-system-package",
+          "note": "DevBox Pro can install the system nginx package for development use and manage it from the app."
         },
         "label": "Stable"
       },
@@ -320,9 +323,11 @@
           "requiresBuild": true
         },
         "linux": {
-          "url": "https://nginx.org/download/nginx-1.26.3.tar.gz",
-          "filename": "nginx-1.26.3.tar.gz",
-          "requiresBuild": true
+          "url": "builtin",
+          "manageWithPackageManager": true,
+          "packageName": "nginx",
+          "filename": "nginx-system-package",
+          "note": "DevBox Pro can install the system nginx package for development use and manage it from the app."
         },
         "label": "Previous Stable"
       },
@@ -337,9 +342,11 @@
           "requiresBuild": true
         },
         "linux": {
-          "url": "https://nginx.org/download/nginx-1.24.0.tar.gz",
-          "filename": "nginx-1.24.0.tar.gz",
-          "requiresBuild": true
+          "url": "builtin",
+          "manageWithPackageManager": true,
+          "packageName": "nginx",
+          "filename": "nginx-system-package",
+          "note": "DevBox Pro can install the system nginx package for development use and manage it from the app."
         },
         "label": "Legacy Stable"
       }
