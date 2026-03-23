@@ -20,10 +20,21 @@ function spawnHidden(command, args, options = {}) {
 }
 
 module.exports = {
+  getNginxExecutablePath(version = '1.28') {
+    const nginxPath = this.getNginxPath(version);
+    if (process.platform === 'win32') {
+      return path.join(nginxPath, 'nginx.exe');
+    }
+
+    const managedPath = path.join(nginxPath, 'nginx');
+    const legacyPath = path.join(nginxPath, 'sbin', 'nginx');
+    return fs.existsSync(managedPath) ? managedPath : legacyPath;
+  },
+
   // Nginx
   async startNginx(version = '1.28') {
     const nginxPath = this.getNginxPath(version);
-    const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'nginx');
+    const nginxExe = this.getNginxExecutablePath(version);
 
     // Check if Nginx binary exists
     if (!await fs.pathExists(nginxExe)) {
@@ -341,7 +352,7 @@ module.exports = {
     }
 
     const nginxPath = this.getNginxPath(version);
-    const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'sbin/nginx');
+    const nginxExe = this.getNginxExecutablePath(version);
     const dataPath = this.getDataPath();
     const confPath = path.join(dataPath, 'nginx', version, 'nginx.conf');
 
@@ -375,7 +386,7 @@ module.exports = {
     }
 
     const nginxPath = this.getNginxPath(version);
-    const nginxExe = path.join(nginxPath, process.platform === 'win32' ? 'nginx.exe' : 'sbin/nginx');
+    const nginxExe = this.getNginxExecutablePath(version);
     const dataPath = this.getDataPath();
     const confPath = path.join(dataPath, 'nginx', version, 'nginx.conf');
 

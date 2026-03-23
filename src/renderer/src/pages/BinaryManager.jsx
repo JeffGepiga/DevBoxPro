@@ -31,7 +31,7 @@ import { useModal } from '../context/ModalContext';
 
 // ── Module-level sub-components (must NOT be defined inside BinaryManager) ──
 
-const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLatest, isCustom, requiresManual, onDownload, onRemove, onManualOpen, onImport, isPhp, getProgressDisplay, setPhpIniEditor }) => (
+const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLatest, isCustom, actionMode, actionLabel, onDownload, onRemove, onManualOpen, onImport, isPhp, getProgressDisplay, setPhpIniEditor }) => (
   <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/40 border-b last:border-b-0 border-gray-100 dark:border-gray-700/50">
     <div className="flex items-center gap-2.5 min-w-0">
       <span className={clsx(
@@ -64,14 +64,22 @@ const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLat
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         </>
-      ) : requiresManual ? (
+      ) : actionMode === 'managed-install' ? (
+        <div className="flex items-center gap-1">
+          <button onClick={onDownload} className="btn-primary text-xs px-2.5 py-1 flex items-center gap-1">
+            <Download className="w-3 h-3" /> {actionLabel || 'Install'}
+          </button>
+        </div>
+      ) : actionMode !== 'download' ? (
         <>
-          <button onClick={onManualOpen} className="btn-secondary text-xs px-2 py-1 flex items-center gap-1" title="Open download page">
-            <ExternalLink className="w-3 h-3" /> Get
+          <button onClick={onManualOpen} className="btn-secondary text-xs px-2 py-1 flex items-center gap-1" title="Open download instructions">
+            <ExternalLink className="w-3 h-3" /> {actionLabel || 'Get'}
           </button>
-          <button onClick={onImport} className="btn-primary text-xs px-2 py-1 flex items-center gap-1" title="Import ZIP">
-            <Upload className="w-3 h-3" /> Import
-          </button>
+          {actionMode !== 'builtin' && onImport && (
+            <button onClick={onImport} className="btn-primary text-xs px-2 py-1 flex items-center gap-1" title="Import archive">
+              <Upload className="w-3 h-3" /> Import
+            </button>
+          )}
         </>
       ) : (
         <div className="flex items-center gap-1">
@@ -84,12 +92,14 @@ const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLat
   </div>
 );
 
-const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, isPhp, isNodejs, installed, downloading, progress, expandedSections, toggleSection, downloadSources, getProgressDisplay, setPhpIniEditor, handleImportApache, getInstalledVersionsCount }) => {
+const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, isPhp, isNodejs, installed, downloading, progress, expandedSections, toggleSection, downloadSources, getProgressDisplay, setPhpIniEditor, handleImportApache, getInstalledVersionsCount, getVersionActionMeta, canImportVersion }) => {
   const installedCount = getInstalledVersionsCount(service.id);
   const hasInstalled = installedCount > 0;
   const isExpanded = expandedSections[service.id];
   const hasSource = !!downloadSources[service.id]?.url;
-  const hasImport = !service.noImport && (service.id === 'apache' ? !!handleImportApache : !!onImport);
+  const hasImport = !service.noImport && (service.id === 'apache'
+    ? (service.versions || []).some((version) => canImportVersion(service.id, version))
+    : !!onImport);
 
   const handleHeaderImport = () => {
     if (service.id === 'apache') {
@@ -162,6 +172,7 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
             const isInstalled = installed[service.id]?.[version];
             const isDownloading = downloading[id] || progress?.[id]?.status === 'error';
             const isCustom = service.predefinedVersions && !service.predefinedVersions.includes(version);
+            const actionMeta = getVersionActionMeta(service.id, version);
 
             return (
               <VersionRow
@@ -174,11 +185,16 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
                 size={service.sizes?.[version]}
                 isLatest={!isCustom && version === service.defaultVersion}
                 isCustom={isCustom}
-                requiresManual={service.requiresManualDownload}
+                actionMode={actionMeta.mode}
+                actionLabel={actionMeta.label}
                 onDownload={() => onDownload(service.id, version)}
                 onRemove={() => onRemove(service.id, version)}
                 onManualOpen={() => onManualOpen?.(service.id, version)}
-                onImport={() => handleImportApache(version)}
+                onImport={actionMeta.mode === 'builtin'
+                  ? null
+                  : (service.id === 'apache'
+                    ? () => handleImportApache(version)
+                    : () => onImport?.(service.id))}
                 isPhp={isPhp}
                 getProgressDisplay={getProgressDisplay}
                 setPhpIniEditor={setPhpIniEditor}
@@ -704,14 +720,6 @@ function BinaryManager() {
     }
   };
 
-  const handleOpenApacheDownloadPage = async () => {
-    try {
-      await window.devbox?.binaries.openApacheDownloadPage();
-    } catch (error) {
-      // Error opening Apache download page
-    }
-  };
-
   // Download source URLs for manual download
   const downloadSources = {
     php: {
@@ -775,6 +783,73 @@ function BinaryManager() {
       note: 'Download the Windows embeddable package (ZIP)',
     },
   };
+
+  const getVersionDownloadInfo = useCallback((service, version) => {
+    return downloadUrls?.[service]?.[version] || null;
+  }, [downloadUrls]);
+
+  const getVersionActionMeta = useCallback((service, version) => {
+    const info = getVersionDownloadInfo(service, version);
+
+    if (!info) {
+      return { mode: 'download', label: 'Download' };
+    }
+
+    if (info.manageWithPackageManager) {
+      return { mode: 'managed-install', label: 'Install' };
+    }
+
+    if (info.url === 'builtin') {
+      return { mode: 'builtin', label: 'Install' };
+    }
+
+    if (info.requiresBuild) {
+      return { mode: 'source', label: 'Get Source' };
+    }
+
+    if (info.url === 'manual') {
+      return { mode: 'manual', label: 'Get' };
+    }
+
+    return { mode: 'download', label: 'Download' };
+  }, [getVersionDownloadInfo]);
+
+  const canImportVersion = useCallback((service, version) => {
+    const info = getVersionDownloadInfo(service, version);
+    if (!info) {
+      return true;
+    }
+
+    if (info.url === 'builtin' || info.manageWithPackageManager) {
+      return false;
+    }
+
+    return true;
+  }, [getVersionDownloadInfo]);
+
+  const handleOpenVersionSource = useCallback(async (service, version) => {
+    const info = getVersionDownloadInfo(service, version);
+
+    if (info?.url && /^https?:/i.test(info.url)) {
+      await window.devbox?.system.openExternal(info.url);
+      return;
+    }
+
+    const fallbackSource = downloadSources[service];
+    if (fallbackSource?.url) {
+      await window.devbox?.system.openExternal(fallbackSource.url);
+      return;
+    }
+
+    if (info?.note) {
+      await showAlert({
+        title: 'Installation Required',
+        message: `${service.charAt(0).toUpperCase() + service.slice(1)} ${version}`,
+        detail: info.note,
+        type: 'info',
+      });
+    }
+  }, [downloadSources, getVersionDownloadInfo, showAlert]);
 
   // Version detection patterns for different services
   const versionPatterns = {
@@ -1282,13 +1357,12 @@ function BinaryManager() {
     {
       id: 'apache',
       name: 'Apache',
-      description: 'Web server (manual download for Windows)',
+      description: 'Web server',
       icon: Globe,
       versions: getMergedVersions('apache'),
       predefinedVersions: serviceVersions.apache,
       defaultVersion: serviceVersions.apache[0] || '2.4',
       sizes: { '2.4': '~60 MB' },
-      requiresManualDownload: true,
     },
   ];
 
@@ -1317,6 +1391,8 @@ function BinaryManager() {
     setPhpIniEditor,
     handleImportApache,
     getInstalledVersionsCount,
+    getVersionActionMeta,
+    canImportVersion,
   };
   const sharedSimpleProps = { downloading, progress, downloadSources, getProgressDisplay };
 
@@ -1668,7 +1744,7 @@ function BinaryManager() {
               onDownload={(s, v) => handleDownloadService(s, v)}
               onRemove={(s, v) => handleRemove(s, v)}
               onImport={(s) => s === 'apache' ? null : handleImportBinary(s)}
-              onManualOpen={() => handleOpenApacheDownloadPage()}
+              onManualOpen={(service, version) => handleOpenVersionSource(service, version)}
             />
           ))}
         </div>
