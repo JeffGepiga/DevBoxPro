@@ -25,6 +25,28 @@ function getAllPlaywrightTunnelStatuses() {
   return Object.fromEntries(playwrightTunnelStatuses.entries());
 }
 
+function getDefaultTerminalShell() {
+  if (process.platform === 'win32') {
+    return 'powershell.exe';
+  }
+
+  const preferredShells = [
+    process.env.SHELL,
+    process.platform === 'darwin' ? '/bin/zsh' : null,
+    '/bin/bash',
+    '/bin/sh',
+    'sh',
+  ].filter(Boolean);
+
+  return preferredShells.find((shellPath) => {
+    if (!shellPath.includes('/') && !shellPath.includes('\\')) {
+      return true;
+    }
+
+    return fs.existsSync(shellPath);
+  }) || 'sh';
+}
+
 
 function setupIpcHandlers(ipcMain, managers, mainWindow) {
   const { config, project, php, service, database, ssl, supervisor, log } = managers;
@@ -891,8 +913,8 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     const pty = require('node-pty');
     const projectData = project.getProject(projectId);
 
-    const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
-    const term = pty.spawn(shell, [], {
+    const shellPath = getDefaultTerminalShell();
+    const term = pty.spawn(shellPath, [], {
       name: 'xterm-color',
       cols: 80,
       rows: 30,

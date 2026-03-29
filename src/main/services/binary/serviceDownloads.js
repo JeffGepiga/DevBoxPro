@@ -3,6 +3,74 @@ const fs = require('fs-extra');
 const https = require('https');
 const { execFile } = require('child_process');
 
+const SERVICE_DISPLAY_NAMES = {
+  mysql: 'MySQL',
+  mariadb: 'MariaDB',
+  postgresql: 'PostgreSQL',
+  mongodb: 'MongoDB',
+  redis: 'Redis',
+  python: 'Python',
+  memcached: 'Memcached',
+  minio: 'MinIO',
+};
+
+const LINUX_COMMAND_FALLBACKS = {
+  bash: ['/bin/bash', '/usr/bin/bash'],
+  sudo: ['/usr/bin/sudo', '/bin/sudo'],
+  pkexec: ['/usr/bin/pkexec', '/bin/pkexec'],
+  'apt-get': ['/usr/bin/apt-get', '/bin/apt-get'],
+  dnf: ['/usr/bin/dnf', '/bin/dnf'],
+  yum: ['/usr/bin/yum', '/bin/yum'],
+  zypper: ['/usr/bin/zypper', '/bin/zypper'],
+  pacman: ['/usr/bin/pacman', '/bin/pacman'],
+  'wsl.exe': ['/mnt/c/Windows/System32/wsl.exe'],
+};
+
+const LINUX_SHARED_LIBRARY_PACKAGE_MAP = {
+  'libaio.so.1': {
+    'apt-get': ['libaio1'],
+    dnf: ['libaio'],
+    yum: ['libaio'],
+    zypper: ['libaio1', 'libaio'],
+    pacman: ['libaio'],
+  },
+  'libnuma.so.1': {
+    'apt-get': ['libnuma1'],
+    dnf: ['numactl-libs', 'numactl'],
+    yum: ['numactl-libs', 'numactl'],
+    zypper: ['libnuma1', 'numactl'],
+    pacman: ['numactl'],
+  },
+  'libncurses.so.5': {
+    'apt-get': ['libncurses5', 'libncurses6'],
+    dnf: ['ncurses-compat-libs', 'ncurses-libs'],
+    yum: ['ncurses-compat-libs', 'ncurses-libs'],
+    zypper: ['libncurses5', 'libncurses6'],
+    pacman: ['ncurses'],
+  },
+  'libtinfo.so.5': {
+    'apt-get': ['libtinfo5', 'libncurses6'],
+    dnf: ['ncurses-compat-libs', 'ncurses-libs'],
+    yum: ['ncurses-compat-libs', 'ncurses-libs'],
+    zypper: ['libtinfo5', 'libncurses6'],
+    pacman: ['ncurses'],
+  },
+  'libssl.so.1.1': {
+    'apt-get': ['libssl1.1', 'libssl3'],
+    dnf: ['compat-openssl11', 'openssl-libs'],
+    yum: ['compat-openssl11', 'openssl-libs'],
+    zypper: ['libopenssl1_1', 'libopenssl3'],
+    pacman: ['openssl'],
+  },
+  'libcrypto.so.1.1': {
+    'apt-get': ['libssl1.1', 'libssl3'],
+    dnf: ['compat-openssl11', 'openssl-libs'],
+    yum: ['compat-openssl11', 'openssl-libs'],
+    zypper: ['libopenssl1_1', 'libopenssl3'],
+    pacman: ['openssl'],
+  },
+};
+
 function execFileAsync(command, args = [], options = {}) {
   return new Promise((resolve, reject) => {
     execFile(command, args, options, (error, stdout, stderr) => {
@@ -87,6 +155,10 @@ module.exports = {
     return this.findExecutableRecursive(dir, exeName, 0, 3);
   },
 
+  async execLinuxCommand(command, args = [], options = {}) {
+    return execFileAsync(command, args, options);
+  },
+
   async isRunningInWsl() {
     if (process.platform !== 'linux') {
       return false;
@@ -97,8 +169,8 @@ module.exports = {
     }
 
     try {
-      const { stdout } = await execFileAsync('bash', ['-lc', 'cat /proc/version'], { encoding: 'utf8' });
-      return /microsoft/i.test(String(stdout || ''));
+      const procVersion = await fs.readFile('/proc/version', 'utf8');
+      return /microsoft/i.test(String(procVersion || ''));
     } catch (_error) {
       return false;
     }
@@ -118,11 +190,9 @@ module.exports = {
     ];
 
     for (const manager of managers) {
-      try {
-        await execFileAsync('bash', ['-lc', `command -v ${manager.command}`], { encoding: 'utf8' });
+      const resolved = await this.findLinuxCommand(manager.command);
+      if (resolved) {
         return manager;
-      } catch (_error) {
-        // try next package manager
       }
     }
 
@@ -134,13 +204,173 @@ module.exports = {
       return null;
     }
 
+    for (const fallbackPath of LINUX_COMMAND_FALLBACKS[command] || []) {
+      if (await fs.pathExists(fallbackPath)) {
+        return fallbackPath;
+      }
+    }
+
+    const bashPath = (LINUX_COMMAND_FALLBACKS.bash || []).find((candidate) => fs.existsSync(candidate)) || '/bin/bash';
+
     try {
-      const { stdout } = await execFileAsync('bash', ['-lc', `command -v ${command}`], { encoding: 'utf8' });
+      const { stdout } = await this.execLinuxCommand(bashPath, ['-lc', `command -v ${command}`], { encoding: 'utf8' });
       const resolved = String(stdout || '').trim();
       return resolved || null;
     } catch (_error) {
       return null;
     }
+  },
+
+  async hasLinuxSharedLibrary(libraryNames = []) {
+    if (process.platform !== 'linux') {
+      return false;
+    }
+
+    const names = Array.isArray(libraryNames) ? libraryNames : [libraryNames];
+    try {
+      const { stdout } = await this.execLinuxCommand('bash', ['-lc', 'ldconfig -p 2>/dev/null || true'], { encoding: 'utf8' });
+      return names.some((name) => String(stdout || '').includes(name));
+    } catch (_error) {
+      return false;
+    }
+  },
+
+  async resolveLinuxPackageName(packageManager, packageCandidates = []) {
+    const candidates = Array.isArray(packageCandidates) ? packageCandidates.filter(Boolean) : [packageCandidates].filter(Boolean);
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    if (!packageManager || packageManager.command !== 'apt-get') {
+      return candidates[0];
+    }
+
+    for (const candidate of candidates) {
+      try {
+        const { stdout } = await this.execLinuxCommand('bash', ['-lc', `apt-cache policy ${candidate}`], { encoding: 'utf8' });
+        if (!/Candidate:\s*\(none\)/i.test(String(stdout || ''))) {
+          return candidate;
+        }
+      } catch (_error) {
+        // try next candidate
+      }
+    }
+
+    return candidates[0];
+  },
+
+  getLinuxServiceDisplayName(serviceName, version = null) {
+    const baseLabel = SERVICE_DISPLAY_NAMES[serviceName] || serviceName;
+    return version ? `${baseLabel} ${version}` : baseLabel;
+  },
+
+  parseMissingLinuxSharedLibraries(output = '') {
+    const missingLibraries = new Set();
+    const regex = /^\s*(\S+)\s+=>\s+not found\s*$/gim;
+    let match;
+
+    while ((match = regex.exec(String(output || ''))) !== null) {
+      missingLibraries.add(match[1]);
+    }
+
+    return Array.from(missingLibraries);
+  },
+
+  async findMissingLinuxSharedLibraries(binaryPaths = []) {
+    if (process.platform !== 'linux') {
+      return [];
+    }
+
+    const candidates = Array.isArray(binaryPaths) ? binaryPaths : [binaryPaths];
+    const missingLibraries = new Set();
+
+    for (const binaryPath of candidates.filter(Boolean)) {
+      if (!await fs.pathExists(binaryPath)) {
+        continue;
+      }
+
+      try {
+        const { stdout, stderr } = await this.execLinuxCommand('ldd', [binaryPath], { encoding: 'utf8' });
+        for (const library of this.parseMissingLinuxSharedLibraries(`${stdout || ''}\n${stderr || ''}`)) {
+          missingLibraries.add(library);
+        }
+      } catch (error) {
+        const output = `${error?.stdout || ''}\n${error?.stderr || ''}\n${error?.message || ''}`;
+        if (/not a dynamic executable|statically linked/i.test(output)) {
+          continue;
+        }
+
+        for (const library of this.parseMissingLinuxSharedLibraries(output)) {
+          missingLibraries.add(library);
+        }
+      }
+    }
+
+    return Array.from(missingLibraries);
+  },
+
+  async ensureLinuxBinarySystemDependencies(serviceName, version = null, binaryPaths = [], options = {}) {
+    if (process.platform !== 'linux') {
+      return { success: true, skipped: true };
+    }
+
+    const candidates = Array.isArray(binaryPaths) ? binaryPaths.filter(Boolean) : [binaryPaths].filter(Boolean);
+    if (candidates.length === 0) {
+      return { success: true, skipped: true };
+    }
+
+    const missingLibraries = await this.findMissingLinuxSharedLibraries(candidates);
+    if (missingLibraries.length === 0) {
+      return { success: true, installed: [], alreadyInstalled: true };
+    }
+
+    const packageManager = await this.detectLinuxPackageManager();
+    if (!packageManager) {
+      throw new Error(`No supported Linux package manager was found. DevBox Pro could not install the runtime dependencies for ${this.getLinuxServiceDisplayName(serviceName, version)} automatically.`);
+    }
+
+    const packagesToInstall = [];
+    const unresolvedLibraries = [];
+
+    for (const libraryName of missingLibraries) {
+      const packageCandidates = LINUX_SHARED_LIBRARY_PACKAGE_MAP[libraryName]?.[packageManager.command] || [];
+      const packageName = await this.resolveLinuxPackageName(packageManager, packageCandidates);
+      if (packageName) {
+        if (!packagesToInstall.includes(packageName)) {
+          packagesToInstall.push(packageName);
+        }
+        continue;
+      }
+
+      unresolvedLibraries.push(libraryName);
+    }
+
+    if (packagesToInstall.length === 0) {
+      throw new Error(`DevBox Pro found missing Linux runtime libraries for ${this.getLinuxServiceDisplayName(serviceName, version)} (${missingLibraries.join(', ')}), but it does not yet know which ${packageManager.command} packages provide them.`);
+    }
+
+    if (options.id) {
+      this.emitProgress(options.id, {
+        status: 'installing',
+        progress: options.progress ?? 88,
+        message: options.message || `Installing ${this.getLinuxServiceDisplayName(serviceName, version)} runtime dependencies with ${packageManager.command}...`,
+      });
+    }
+
+    await this.runPrivilegedLinuxCommand(packageManager.install(packagesToInstall.join(' ')));
+
+    const remainingLibraries = await this.findMissingLinuxSharedLibraries(candidates);
+    if (remainingLibraries.length > 0) {
+      throw new Error(`Installed Linux packages for ${this.getLinuxServiceDisplayName(serviceName, version)}, but these libraries are still missing: ${remainingLibraries.join(', ')}.`);
+    }
+
+    if (unresolvedLibraries.length > 0) {
+      this.managers?.log?.systemWarn(`Installed partial Linux runtime dependencies for ${this.getLinuxServiceDisplayName(serviceName, version)}`, {
+        unresolvedLibraries,
+      });
+    }
+
+    return { success: true, installed: packagesToInstall, missingLibraries };
   },
 
   async runPrivilegedLinuxCommand(command) {
@@ -162,17 +392,39 @@ module.exports = {
       });
     }
 
+    const bashPath = await this.findLinuxCommand('bash') || '/bin/bash';
+
     try {
-      const { stdout } = await execFileAsync('bash', ['-lc', 'id -u'], { encoding: 'utf8' });
+      const { stdout } = await this.execLinuxCommand(bashPath, ['-lc', 'id -u'], { encoding: 'utf8' });
       if (String(stdout || '').trim() === '0') {
-        return execFileAsync('bash', ['-lc', command], { encoding: 'utf8' });
+        return this.execLinuxCommand(bashPath, ['-lc', command], { encoding: 'utf8' });
       }
     } catch (_error) {
       // continue with other elevation strategies
     }
 
+    if (await this.isRunningInWsl()) {
+      const distroName = String(process.env.WSL_DISTRO_NAME || '').trim();
+      const wslExecutable = await this.findLinuxCommand('wsl.exe') || '/mnt/c/Windows/System32/wsl.exe';
+      if (wslExecutable) {
+        const wslArgs = distroName
+          ? ['-d', distroName, '-u', 'root', '--', 'bash', '-lc', command]
+          : ['-u', 'root', '--', 'bash', '-lc', command];
+        try {
+          return await this.execLinuxCommand(
+            wslExecutable,
+            wslArgs,
+            { encoding: 'utf8' }
+          );
+        } catch (_error) {
+          // fall through to sudo/pkexec strategies
+        }
+      }
+    }
+
     try {
-      return await execFileAsync('sudo', ['-n', 'bash', '-lc', command], { encoding: 'utf8' });
+      const sudoPath = await this.findLinuxCommand('sudo') || '/usr/bin/sudo';
+      return await this.execLinuxCommand(sudoPath, ['-n', bashPath, '-lc', command], { encoding: 'utf8' });
     } catch (error) {
       const stderr = String(error?.stderr || error?.message || '');
       const requiresPassword = /password is required|a password is required|sudo:/i.test(stderr);
@@ -184,7 +436,7 @@ module.exports = {
     const hasPkexec = await this.findLinuxCommand('pkexec');
     if (hasPkexec) {
       try {
-        return await execFileAsync('pkexec', ['bash', '-lc', command], { encoding: 'utf8' });
+        return await this.execLinuxCommand(hasPkexec, [bashPath, '-lc', command], { encoding: 'utf8' });
       } catch (error) {
         const detail = `${error?.stderr || ''} ${error?.message || ''}`.trim();
         if (/No polkit authentication agent found|No session for cookie|Not authorized/i.test(detail)) {
@@ -242,6 +494,33 @@ exec "${nginxBinary}" "$@"
     await this.createNginxConfig(extractPath);
   },
 
+  async ensureManagedLinuxRedisRuntime(version = '7.4') {
+    const redisServerBinary = await this.findLinuxCommand('redis-server');
+    if (!redisServerBinary) {
+      throw new Error('redis-server was not found after installation. Verify the package manager install succeeded and try again.');
+    }
+
+    const redisCliBinary = await this.findLinuxCommand('redis-cli');
+    const platform = this.getPlatform();
+    const extractPath = path.join(this.resourcesPath, 'redis', version, platform);
+
+    await fs.ensureDir(extractPath);
+
+    const redisServerWrapper = `#!/usr/bin/env bash
+exec "${redisServerBinary}" "$@"
+`;
+    await fs.writeFile(path.join(extractPath, 'redis-server'), redisServerWrapper, { mode: 0o755 });
+    await fs.chmod(path.join(extractPath, 'redis-server'), 0o755);
+
+    if (redisCliBinary) {
+      const redisCliWrapper = `#!/usr/bin/env bash
+exec "${redisCliBinary}" "$@"
+`;
+      await fs.writeFile(path.join(extractPath, 'redis-cli'), redisCliWrapper, { mode: 0o755 });
+      await fs.chmod(path.join(extractPath, 'redis-cli'), 0o755);
+    }
+  },
+
   async installManagedLinuxNginx(version = '1.28', downloadInfo = {}) {
     const id = `nginx-${version}`;
     const packageName = downloadInfo.packageName || 'nginx';
@@ -273,6 +552,48 @@ exec "${nginxBinary}" "$@"
     }
   },
 
+  async installManagedLinuxRedis(version = '7.4', downloadInfo = {}) {
+    const id = `redis-${version}`;
+    const packageCandidatesByManager = downloadInfo.packageNames || {
+      'apt-get': ['redis-server', 'redis'],
+      dnf: ['redis'],
+      yum: ['redis'],
+      zypper: ['redis'],
+      pacman: ['redis'],
+    };
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      let redisBinary = await this.findLinuxCommand('redis-server');
+
+      if (!redisBinary) {
+        const packageManager = await this.detectLinuxPackageManager();
+        if (!packageManager) {
+          throw new Error('No supported Linux package manager was found. Install Redis manually, then try Install again so DevBox Pro can stage it for management.');
+        }
+
+        const packageName = await this.resolveLinuxPackageName(packageManager, packageCandidatesByManager[packageManager.command] || []);
+        if (!packageName) {
+          throw new Error(`DevBox Pro could not determine which ${packageManager.command} package provides Redis.`);
+        }
+
+        this.emitProgress(id, { status: 'installing', progress: 40, message: `Installing ${packageName} with ${packageManager.command}...` });
+        await this.runPrivilegedLinuxCommand(packageManager.install(packageName));
+        redisBinary = await this.findLinuxCommand('redis-server');
+      }
+
+      this.emitProgress(id, { status: 'installing', progress: 80, message: 'Preparing DevBox Pro Redis runtime...' });
+      await this.ensureManagedLinuxRedisRuntime(version);
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true, version, systemManaged: true, binary: redisBinary };
+    } catch (error) {
+      this.managers?.log?.systemError(`Failed to install managed Linux Redis ${version}`, { error: error.message });
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  },
+
   async downloadMysql(version = '8.4') {
     const id = `mysql-${version}`;
     const platform = this.getPlatform();
@@ -294,6 +615,7 @@ exec "${nginxBinary}" "$@"
       await this.downloadFile(downloadInfo.url, downloadPath, id);
       await this.checkCancelled(id, downloadPath);
       await this.extractArchive(downloadPath, extractPath, id);
+      await this.ensureLinuxBinarySystemDependencies('mysql', version, [path.join(extractPath, 'bin', 'mysqld')], { id });
       await fs.remove(downloadPath);
 
       this.emitProgress(id, { status: 'completed', progress: 100 });
@@ -329,6 +651,10 @@ exec "${nginxBinary}" "$@"
       await this.downloadFile(downloadInfo.url, downloadPath, id);
       await this.checkCancelled(id, downloadPath);
       await this.extractArchive(downloadPath, extractPath, id);
+      await this.ensureLinuxBinarySystemDependencies('mariadb', version, [
+        path.join(extractPath, 'bin', 'mariadbd'),
+        path.join(extractPath, 'bin', 'mariadb-install-db'),
+      ], { id });
       await fs.remove(downloadPath);
 
       this.emitProgress(id, { status: 'completed', progress: 100 });
@@ -352,6 +678,18 @@ exec "${nginxBinary}" "$@"
       throw new Error(`Redis ${version} not available for ${platform}`);
     }
 
+    if (process.platform === 'linux' && (downloadInfo.manageWithPackageManager || downloadInfo.url === 'builtin' || downloadInfo.requiresBuild)) {
+      return this.installManagedLinuxRedis(version, downloadInfo);
+    }
+
+    if (downloadInfo.url === 'builtin') {
+      throw new Error(downloadInfo.note || `Redis ${version} is provided by the operating system on ${platform}. Install it with your package manager.`);
+    }
+
+    if (downloadInfo.requiresBuild) {
+      throw new Error(`Redis ${version} for ${platform} is only available as source and requires a manual build. Use the source link or import a prebuilt archive instead.`);
+    }
+
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
 
@@ -364,6 +702,7 @@ exec "${nginxBinary}" "$@"
       await this.downloadFile(downloadInfo.url, downloadPath, id);
       await this.checkCancelled(id, downloadPath);
       await this.extractArchive(downloadPath, extractPath, id);
+      await this.ensureLinuxBinarySystemDependencies('redis', version, [path.join(extractPath, 'redis-server')], { id });
       await fs.remove(downloadPath);
 
       this.emitProgress(id, { status: 'completed', progress: 100 });

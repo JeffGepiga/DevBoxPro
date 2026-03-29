@@ -29,6 +29,8 @@ module.exports = {
       return;
     }
 
+    await this.ensureLinuxServiceRuntimeDependencies('mysql', version, [mysqldPath]);
+
     const processKey = this.getProcessKey('mysql', version);
     if (this.processes.has(processKey)) {
       return;
@@ -263,6 +265,8 @@ module.exports = {
       throw new Error(`MySQL ${version} binary not found`);
     }
 
+    await this.ensureLinuxServiceRuntimeDependencies('mysql', version, [mysqldPath]);
+
     const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mysql', version, 'data');
     const configPath = path.join(dataPath, 'mysql', version, 'my.cnf');
@@ -350,6 +354,8 @@ module.exports = {
       throw new Error(`MySQL ${version} binary not found`);
     }
 
+    await this.ensureLinuxServiceRuntimeDependencies('mysql', version, [mysqldPath]);
+
     const processKey = this.getProcessKey('mysql', version);
     const existingProc = this.processes.get(processKey);
     if (existingProc) {
@@ -410,6 +416,8 @@ module.exports = {
     if (!await fs.pathExists(shareMessagesFile)) {
       throw new Error(`MySQL ${version} installation is incomplete (missing share/messages_to_error_log.txt). Please re-download from Binary Manager.`);
     }
+
+    await this.ensureLinuxServiceRuntimeDependencies('mysql', version, [mysqldPath]);
 
     await fs.emptyDir(dataDir);
 

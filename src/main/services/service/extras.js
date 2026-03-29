@@ -27,6 +27,8 @@ module.exports = {
       return;
     }
 
+    await this.ensureLinuxServiceRuntimeDependencies('postgresql', version, [postgresExe, initdbExe]);
+
     const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'postgresql', version, 'data');
     await fs.ensureDir(dataDir);
@@ -133,6 +135,8 @@ module.exports = {
       return;
     }
 
+    await this.ensureLinuxServiceRuntimeDependencies('mongodb', version, [mongodExe]);
+
     const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mongodb', version, 'data');
     const logFile = path.join(dataPath, 'logs', `mongodb-${version}.log`);
@@ -192,6 +196,8 @@ module.exports = {
       return;
     }
 
+    await this.ensureLinuxServiceRuntimeDependencies('memcached', version, [memcachedExe]);
+
     const defaultPort = this.getVersionPort('memcached', version, this.serviceConfigs.memcached.defaultPort);
     let port = defaultPort;
     if (!await isPortAvailable(port)) {
@@ -242,6 +248,8 @@ module.exports = {
       status.error = 'MinIO binary not found. Please download from Binary Manager.';
       return;
     }
+
+    await this.ensureLinuxServiceRuntimeDependencies('minio', null, [minioExe]);
 
     const dataPath = this.getDataPath();
     const minioDataDir = path.join(dataPath, 'minio', 'data');

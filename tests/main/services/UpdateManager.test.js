@@ -7,7 +7,9 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockAutoUpdater } = require('../../helpers/mockElectronCjs');
+const fs = require('fs');
+const childProcess = require('child_process');
+const { mockApp, mockAutoUpdater, mockShell } = require('../../helpers/mockElectronCjs');
 const { UpdateManager } = require('../../../src/main/services/UpdateManager');
 
 describe('UpdateManager', () => {
@@ -15,11 +17,16 @@ describe('UpdateManager', () => {
     let mockManagers;
 
     beforeEach(() => {
+        vi.restoreAllMocks();
+
         // Reset autoUpdater mock
         mockAutoUpdater.on = vi.fn();
         mockAutoUpdater.checkForUpdates = vi.fn(async () => null);
         mockAutoUpdater.downloadUpdate = vi.fn(async () => { });
         mockAutoUpdater.quitAndInstall = vi.fn();
+        mockShell.openPath = vi.fn(async () => '');
+        mockApp.isPackaged = false;
+        mockApp.quit = vi.fn();
 
         mockManagers = {
             log: {
@@ -106,6 +113,47 @@ describe('UpdateManager', () => {
             const result = await um.downloadUpdate();
             expect(result.success).toBe(false);
             expect(result.error).toContain('development mode');
+        });
+    });
+
+    describe('_launchDownloadedInstaller()', () => {
+        it('launches AppImage rollback installers on Linux', async () => {
+            const originalPlatform = process.platform;
+            const chmodSpy = vi.spyOn(fs.promises, 'chmod').mockResolvedValue();
+            const unref = vi.fn();
+            const spawnSpy = vi.spyOn(childProcess, 'spawn').mockReturnValue({ unref });
+
+            Object.defineProperty(process, 'platform', { value: 'linux' });
+
+            try {
+                await um._launchDownloadedInstaller('/tmp/DevBoxPro.AppImage');
+            } finally {
+                Object.defineProperty(process, 'platform', { value: originalPlatform });
+            }
+
+            expect(chmodSpy).toHaveBeenCalledWith('/tmp/DevBoxPro.AppImage', 0o755);
+            expect(spawnSpy).toHaveBeenCalledWith('/tmp/DevBoxPro.AppImage', [], {
+                detached: true,
+                stdio: 'ignore',
+            });
+            expect(unref).toHaveBeenCalled();
+            expect(mockShell.openPath).not.toHaveBeenCalled();
+        });
+
+        it('opens Linux package installers with the desktop shell', async () => {
+            const originalPlatform = process.platform;
+            const spawnSpy = vi.spyOn(childProcess, 'spawn');
+
+            Object.defineProperty(process, 'platform', { value: 'linux' });
+
+            try {
+                await um._launchDownloadedInstaller('/tmp/DevBoxPro.deb');
+            } finally {
+                Object.defineProperty(process, 'platform', { value: originalPlatform });
+            }
+
+            expect(mockShell.openPath).toHaveBeenCalledWith('/tmp/DevBoxPro.deb');
+            expect(spawnSpy).not.toHaveBeenCalled();
         });
     });
 

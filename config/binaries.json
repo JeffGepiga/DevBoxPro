@@ -244,9 +244,18 @@
           "requiresBuild": true
         },
         "linux": {
-          "url": "https://github.com/redis/redis/archive/refs/tags/7.4.8.tar.gz",
-          "filename": "redis-7.4.8.tar.gz",
-          "requiresBuild": true
+          "url": "builtin",
+          "manageWithPackageManager": true,
+          "packageName": "redis",
+          "packageNames": {
+            "apt-get": ["redis-server", "redis"],
+            "dnf": ["redis"],
+            "yum": ["redis"],
+            "zypper": ["redis"],
+            "pacman": ["redis"]
+          },
+          "filename": "redis-system-package",
+          "note": "DevBox Pro can install the system Redis package for development use and manage it from the app."
         },
         "label": "Latest"
       },
@@ -261,9 +270,18 @@
           "requiresBuild": true
         },
         "linux": {
-          "url": "https://github.com/redis/redis/archive/refs/tags/7.2.13.tar.gz",
-          "filename": "redis-7.2.13.tar.gz",
-          "requiresBuild": true
+          "url": "builtin",
+          "manageWithPackageManager": true,
+          "packageName": "redis",
+          "packageNames": {
+            "apt-get": ["redis-server", "redis"],
+            "dnf": ["redis"],
+            "yum": ["redis"],
+            "zypper": ["redis"],
+            "pacman": ["redis"]
+          },
+          "filename": "redis-system-package",
+          "note": "DevBox Pro can install the system Redis package for development use and manage it from the app."
         },
         "label": "LTS"
       },
@@ -278,9 +296,18 @@
           "requiresBuild": true
         },
         "linux": {
-          "url": "https://github.com/redis/redis/archive/refs/tags/6.2.21.tar.gz",
-          "filename": "redis-6.2.21.tar.gz",
-          "requiresBuild": true
+          "url": "builtin",
+          "manageWithPackageManager": true,
+          "packageName": "redis",
+          "packageNames": {
+            "apt-get": ["redis-server", "redis"],
+            "dnf": ["redis"],
+            "yum": ["redis"],
+            "zypper": ["redis"],
+            "pacman": ["redis"]
+          },
+          "filename": "redis-system-package",
+          "note": "DevBox Pro can install the system Redis package for development use and manage it from the app."
         },
         "label": "Legacy LTS"
       }

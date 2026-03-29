@@ -88,8 +88,12 @@ module.exports = {
       const pythonPath = this.getPythonPath(pyVersion);
       if (pythonPath) {
         const pythonDir = path.dirname(pythonPath);
-        const scriptsDir = path.join(pythonDir, 'Scripts');
-        env.PATH = `${pythonDir}${path.delimiter}${scriptsDir}${path.delimiter}${env.PATH}`;
+        if (process.platform === 'win32') {
+          const scriptsDir = path.join(pythonDir, 'Scripts');
+          env.PATH = `${pythonDir}${path.delimiter}${scriptsDir}${path.delimiter}${env.PATH}`;
+        } else {
+          env.PATH = `${pythonDir}${path.delimiter}${env.PATH}`;
+        }
       }
     }
 

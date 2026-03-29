@@ -1,8 +1,60 @@
 const path = require('path');
 const fs = require('fs-extra');
+const { spawnSync } = require('child_process');
 const { isPortAvailable } = require('../../utils/PortUtils');
 
 module.exports = {
+  getDefaultNginxHttp2Config(version = '1.28') {
+    const useDirective = parseFloat(version) >= 1.25;
+    return {
+      enabled: true,
+      listenSuffix: useDirective ? '' : ' http2',
+      directive: useDirective ? '\n    http2 on;' : '',
+    };
+  },
+
+  async getNginxHttp2Config(version = '1.28') {
+    const serviceManager = this.managers?.service;
+    const fallbackConfig = this.getDefaultNginxHttp2Config(version);
+
+    if (typeof serviceManager?.getNginxExecutablePath !== 'function') {
+      return fallbackConfig;
+    }
+
+    const nginxExe = serviceManager.getNginxExecutablePath(version);
+    if (!nginxExe || !await fs.pathExists(nginxExe)) {
+      return fallbackConfig;
+    }
+
+    const result = spawnSync(nginxExe, ['-V'], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+
+    if (result.error) {
+      return fallbackConfig;
+    }
+
+    const output = `${result.stdout || ''}\n${result.stderr || ''}`;
+    const actualVersion = output.match(/nginx\/(\d+(?:\.\d+)+)/i)?.[1] || version;
+    const hasHttp2Module = /--with-http_v2_module/i.test(output);
+
+    if (!hasHttp2Module) {
+      return {
+        enabled: false,
+        listenSuffix: '',
+        directive: '',
+      };
+    }
+
+    const useDirective = parseFloat(actualVersion) >= 1.25;
+    return {
+      enabled: true,
+      listenSuffix: useDirective ? '' : ' http2',
+      directive: useDirective ? '\n    http2 on;' : '',
+    };
+  },
+
   async createNginxVhost(project, overridePhpFpmPort = null, targetNginxVersion = null) {
     const dataPath = this.getDataPath();
     const resourcesPath = this.getResourcesPath();
@@ -72,14 +124,14 @@ module.exports = {
     const listenDirective = networkAccess
       ? `0.0.0.0:${finalHttpPort}${canUsePort80 ? ' default_server' : ''}`
       : `${httpPort}`;
-    const effectiveNginxVersion = effectiveVersion;
-    const useHttp2Directive = parseFloat(effectiveNginxVersion) >= 1.25;
-    const http2ListenSuffix = useHttp2Directive ? '' : ' http2';
-    const http2Directive = useHttp2Directive ? '\n    http2 on;' : '';
+    const effectiveNginxVersion = targetNginxVersion
+      || this.managers.service?.serviceStatus?.get('nginx')?.version
+      || nginxVersion;
+    const http2Config = await this.getNginxHttp2Config(effectiveNginxVersion);
 
     const listenDirectiveSsl = networkAccess
-      ? `0.0.0.0:${httpsPort} ssl${http2ListenSuffix}`
-      : `${httpsPort} ssl${http2ListenSuffix}`;
+      ? `0.0.0.0:${httpsPort} ssl${http2Config.listenSuffix}`
+      : `${httpsPort} ssl${http2Config.listenSuffix}`;
 
     const allNginxDomains = this.getProjectServerNameEntries(project);
     if (networkAccess && canUsePort80) {
@@ -147,7 +199,7 @@ server {
       config += `
 # HTTPS Server (SSL)
 server {
-    listen ${listenDirectiveSsl};${http2Directive}
+    listen ${listenDirectiveSsl};${http2Config.directive}
     server_name ${serverName};
     root "${documentRoot.replace(/\\/g, '/')}";
     index index.php index.html index.htm;
@@ -250,13 +302,11 @@ server {
 `;
 
     if (project.ssl && certsExist) {
-      const useHttp2Directive = parseFloat(effectiveVersion) >= 1.25;
-      const http2ListenSuffix = useHttp2Directive ? '' : ' http2';
-      const http2Directive = useHttp2Directive ? '\n    http2 on;' : '';
+      const http2Config = await this.getNginxHttp2Config(effectiveVersion);
 
       config += `
 server {
-    listen ${httpsPort} ssl${http2ListenSuffix};${http2Directive}
+    listen ${httpsPort} ssl${http2Config.listenSuffix};${http2Config.directive}
     server_name ${serverName};
 
     ssl_certificate "${sslDir.replace(/\\/g, '/')}/cert.pem";

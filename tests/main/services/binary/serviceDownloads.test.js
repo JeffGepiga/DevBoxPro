@@ -24,6 +24,22 @@ function makeContext(overrides = {}) {
           filename: 'phpmyadmin.zip',
         },
       },
+      redis: {
+        '7.4': {
+          win: {
+            url: 'https://example.com/redis.zip',
+            filename: 'redis.zip',
+          },
+          linux: {
+            url: 'builtin',
+            manageWithPackageManager: true,
+            packageNames: {
+              'apt-get': ['redis-server', 'redis'],
+            },
+            filename: 'redis-system-package',
+          },
+        },
+      },
       apache: {
         '2.4': {
           win: {
@@ -68,6 +84,16 @@ function makeContext(overrides = {}) {
 describe('binary/serviceDownloads', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('parses missing Linux shared libraries from ldd output', () => {
+    const ctx = makeContext();
+
+    expect(ctx.parseMissingLinuxSharedLibraries(`
+      libaio.so.1 => not found
+      libnuma.so.1 => /lib/x86_64-linux-gnu/libnuma.so.1 (0x00007f)
+      libssl.so.1.1 => not found
+    `)).toEqual(['libaio.so.1', 'libssl.so.1.1']);
   });
 
   it('orchestrates MySQL download through extract and cleanup', async () => {
@@ -199,5 +225,94 @@ describe('binary/serviceDownloads', () => {
       etag: 'zrok-etag',
       tagName: 'v2.0.1',
     });
+  });
+
+  it('uses wsl.exe root handoff for privileged Linux commands inside WSL', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    process.env.WSL_DISTRO_NAME = 'Ubuntu';
+
+    const ctx = makeContext({
+      isRunningInWsl: vi.fn().mockResolvedValue(true),
+      findLinuxCommand: vi.fn(async (command) => command === 'wsl.exe' ? '/mnt/c/Windows/System32/wsl.exe' : null),
+      execLinuxCommand: vi.fn(async (command, args) => {
+        if (command === 'bash' && args[1] === 'id -u') {
+          return { stdout: '1000\n', stderr: '' };
+        }
+
+        if (command === '/mnt/c/Windows/System32/wsl.exe') {
+          return { stdout: 'ok\n', stderr: '' };
+        }
+
+        throw new Error(`Unexpected command: ${command} ${args.join(' ')}`);
+      }),
+    });
+
+    try {
+      const result = await ctx.runPrivilegedLinuxCommand('apt-get install -y nginx');
+      expect(result).toEqual({ stdout: 'ok\n', stderr: '' });
+      expect(ctx.execLinuxCommand).toHaveBeenCalledWith(
+        '/mnt/c/Windows/System32/wsl.exe',
+        ['-d', 'Ubuntu', '-u', 'root', '--', 'bash', '-lc', 'apt-get install -y nginx'],
+        { encoding: 'utf8' }
+      );
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+      delete process.env.WSL_DISTRO_NAME;
+    }
+  });
+
+  it('installs missing Linux runtime packages for bundled service binaries', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+
+    const ctx = makeContext({
+      findMissingLinuxSharedLibraries: vi.fn()
+        .mockResolvedValueOnce(['libaio.so.1'])
+        .mockResolvedValueOnce([]),
+      detectLinuxPackageManager: vi.fn().mockResolvedValue({
+        command: 'apt-get',
+        install: (pkg) => `apt-get install -y ${pkg}`,
+      }),
+      resolveLinuxPackageName: vi.fn().mockResolvedValue('libaio1'),
+      runPrivilegedLinuxCommand: vi.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+    });
+
+    try {
+      const result = await ctx.ensureLinuxBinarySystemDependencies('mysql', '8.4', ['/resources/mysql/8.4/linux/bin/mysqld'], { id: 'mysql-8.4' });
+
+      expect(result).toEqual({
+        success: true,
+        installed: ['libaio1'],
+        missingLibraries: ['libaio.so.1'],
+      });
+      expect(ctx.runPrivilegedLinuxCommand).toHaveBeenCalledWith('apt-get install -y libaio1');
+      expect(ctx.emitProgress).toHaveBeenCalledWith('mysql-8.4', expect.objectContaining({
+        status: 'installing',
+        progress: 88,
+      }));
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+  });
+
+  it('installs managed Linux Redis instead of extracting source archives', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+
+    const ctx = makeContext({
+      getPlatform: vi.fn(() => 'linux'),
+      installManagedLinuxRedis: vi.fn().mockResolvedValue({ success: true, version: '7.4', systemManaged: true }),
+    });
+
+    try {
+      const result = await ctx.downloadRedis('7.4');
+
+      expect(result).toEqual({ success: true, version: '7.4', systemManaged: true });
+      expect(ctx.installManagedLinuxRedis).toHaveBeenCalledWith('7.4', ctx.downloads.redis['7.4'].linux);
+      expect(ctx.downloadFile).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
   });
 });
