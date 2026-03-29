@@ -39,10 +39,16 @@ function makeContext(overrides = {}) {
       },
     },
     managers: {
+      php: {
+        getDefaultVersion: vi.fn(() => '8.4'),
+      },
       log: {
         systemError: vi.fn(),
         systemWarn: vi.fn(),
       },
+    },
+    versionMeta: {
+      php: ['8.5', '8.4', '8.3', '8.2', '8.1', '8.0', '7.4'],
     },
     getPlatform: vi.fn(() => 'win'),
     emitProgress: vi.fn(),
@@ -130,6 +136,21 @@ describe('binary/runtimeTools', () => {
 
     expect(onOutput).toHaveBeenCalledWith(
       'PHP 8.3 is not installed. Please download it from the Binary Manager.',
+      'error'
+    );
+  });
+
+  it('resolves Composer to the configured default PHP version when none is specified', async () => {
+    const ctx = makeContext();
+    const onOutput = vi.fn();
+    vi.spyOn(fs, 'pathExists').mockResolvedValue(false);
+
+    await expect(ctx.runComposer('/project', 'install --no-dev', null, onOutput)).rejects.toThrow(
+      'PHP 8.4 is not installed. Please download it from the Binary Manager.'
+    );
+
+    expect(onOutput).toHaveBeenCalledWith(
+      'PHP 8.4 is not installed. Please download it from the Binary Manager.',
       'error'
     );
   });

@@ -40,6 +40,52 @@ class UpdateManager {
         this.managers?.log?.systemInfo?.('UpdateManager initialized');
     }
 
+    async _launchDownloadedInstaller(destPath) {
+        const { shell } = require('electron');
+        const { spawn } = require('child_process');
+        const fs = require('fs');
+        const path = require('path');
+        const fileName = path.basename(destPath).toLowerCase();
+
+        if (process.platform === 'win32') {
+            const child = spawn(destPath, [], {
+                detached: true,
+                stdio: 'ignore',
+                windowsHide: false,
+            });
+            child.unref();
+            return;
+        }
+
+        if (process.platform === 'darwin') {
+            const launchError = await shell.openPath(destPath);
+            if (launchError) {
+                throw new Error(launchError);
+            }
+            return;
+        }
+
+        if (process.platform === 'linux') {
+            if (fileName.endsWith('.appimage')) {
+                await fs.promises.chmod(destPath, 0o755);
+                const child = spawn(destPath, [], {
+                    detached: true,
+                    stdio: 'ignore',
+                });
+                child.unref();
+                return;
+            }
+
+            const launchError = await shell.openPath(destPath);
+            if (launchError) {
+                throw new Error(launchError);
+            }
+            return;
+        }
+
+        throw new Error(`Unsupported platform: ${process.platform}`);
+    }
+
     /**
      * Set up auto-updater event handlers
      */
@@ -343,7 +389,7 @@ class UpdateManager {
 
                     file.on('finish', () => {
                         // Wait for the file handle to be fully released before spawning
-                        file.close((closeErr) => {
+                        file.close(async (closeErr) => {
                             if (closeErr) {
                                 this.managers?.log?.systemError?.(`Failed to close installer file: ${closeErr.message}`);
                                 resolve({ success: false, error: `Failed to close installer file: ${closeErr.message}` });
@@ -360,20 +406,8 @@ class UpdateManager {
                                 downloadUrl,
                             });
 
-                            const { spawn } = require('child_process');
-
                             try {
-                                if (process.platform === 'win32') {
-                                    const child = spawn(destPath, [], {
-                                        detached: true,
-                                        stdio: 'ignore',
-                                        windowsHide: false,
-                                    });
-                                    child.unref();
-                                } else if (process.platform === 'darwin') {
-                                    const { shell } = require('electron');
-                                    shell.openPath(destPath);
-                                }
+                                await this._launchDownloadedInstaller(destPath);
                             } catch (spawnErr) {
                                 this.managers?.log?.systemError?.(`Failed to launch installer: ${spawnErr.message}`);
                                 resolve({ success: false, error: `Failed to launch installer: ${spawnErr.message}` });

@@ -64,6 +64,11 @@ module.exports = {
         await fs.remove(pgsqlDir);
       }
 
+      await this.ensureLinuxBinarySystemDependencies('postgresql', version, [
+        path.join(extractPath, 'bin', 'postgres'),
+        path.join(extractPath, 'bin', 'initdb'),
+      ], { id });
+
       await fs.remove(downloadPath);
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true, version };
@@ -115,6 +120,7 @@ module.exports = {
       }
 
       await this.bootstrapPip(extractPath, platform, id);
+      await this.ensureLinuxBinarySystemDependencies('python', version, [path.join(extractPath, 'bin', 'python3')], { id });
 
       await fs.remove(downloadPath);
       this.emitProgress(id, { status: 'completed', progress: 100 });
@@ -257,6 +263,7 @@ module.exports = {
       }
 
       await this.downloadMongosh(version);
+      await this.ensureLinuxBinarySystemDependencies('mongodb', version, [path.join(extractPath, 'bin', 'mongod')], { id });
 
       await fs.remove(downloadPath);
       this.emitProgress(id, { status: 'completed', progress: 100 });
@@ -389,6 +396,8 @@ module.exports = {
         await fs.chmod(destPath, '755');
       }
 
+      await this.ensureLinuxBinarySystemDependencies('minio', null, [destPath], { id });
+
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true };
     } catch (error) {
@@ -454,6 +463,8 @@ module.exports = {
           await fs.remove(binPath);
         }
       }
+
+      await this.ensureLinuxBinarySystemDependencies('memcached', version, [path.join(extractPath, 'memcached')], { id });
 
       await fs.remove(downloadPath);
       this.emitProgress(id, { status: 'completed', progress: 100 });

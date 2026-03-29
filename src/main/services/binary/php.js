@@ -5,6 +5,83 @@ const { createWriteStream } = require('fs');
 const { resolvePhpExtensionDir } = require('../../utils/PhpPathResolver');
 
 module.exports = {
+  async ensureLinuxPhpSystemDependencies(version, id = null) {
+    if (this.getPlatform() !== 'linux') {
+      return { success: true, skipped: true };
+    }
+
+    const dependencyPlan = [
+      {
+        libraryNames: ['libonig.so.5'],
+        packages: {
+          'apt-get': ['libonig5'],
+          dnf: ['oniguruma'],
+          yum: ['oniguruma'],
+          zypper: ['libonig5', 'oniguruma5'],
+          pacman: ['oniguruma'],
+        },
+      },
+      {
+        libraryNames: ['libzip.so.4'],
+        packages: {
+          'apt-get': ['libzip4t64', 'libzip4'],
+          dnf: ['libzip'],
+          yum: ['libzip'],
+          zypper: ['libzip4', 'libzip5', 'libzip'],
+          pacman: ['libzip'],
+        },
+      },
+    ];
+
+    const missingDependencies = [];
+    for (const dependency of dependencyPlan) {
+      const isPresent = await this.hasLinuxSharedLibrary(dependency.libraryNames);
+      if (!isPresent) {
+        missingDependencies.push(dependency);
+      }
+    }
+
+    if (missingDependencies.length === 0) {
+      return { success: true, installed: [], alreadyInstalled: true };
+    }
+
+    const packageManager = await this.detectLinuxPackageManager();
+    if (!packageManager) {
+      throw new Error('No supported Linux package manager was found. DevBox Pro could not install the PHP runtime dependencies automatically.');
+    }
+
+    const packagesToInstall = [];
+    for (const dependency of missingDependencies) {
+      const packageName = await this.resolveLinuxPackageName(packageManager, dependency.packages[packageManager.command] || []);
+      if (packageName && !packagesToInstall.includes(packageName)) {
+        packagesToInstall.push(packageName);
+      }
+    }
+
+    if (packagesToInstall.length === 0) {
+      throw new Error(`DevBox Pro could not determine the Linux packages required for PHP ${version}.`);
+    }
+
+    if (id) {
+      this.emitProgress(id, {
+        status: 'installing',
+        progress: 70,
+        message: `Installing PHP runtime dependencies with ${packageManager.command}...`,
+      });
+    }
+
+    await this.runPrivilegedLinuxCommand(packageManager.install(packagesToInstall.join(' ')));
+
+    for (const dependency of missingDependencies) {
+      const isPresent = await this.hasLinuxSharedLibrary(dependency.libraryNames);
+      if (!isPresent) {
+        throw new Error(`Installed Linux packages but ${dependency.libraryNames.join(', ')} is still missing for PHP ${version}.`);
+      }
+    }
+
+    return { success: true, installed: packagesToInstall };
+  },
+
   async enablePhpExtensions() {
     const platform = this.getPlatform();
 
@@ -26,13 +103,26 @@ module.exports = {
           let iniContent = await fs.readFile(iniPath, 'utf8');
           let modified = false;
 
-          const extDir = path.join(phpPath, 'ext').replace(/\\/g, '/');
+          const extDir = resolvePhpExtensionDir(this.resourcesPath, version, platform).replace(/\\/g, '/');
           if (!iniContent.includes('extension_dir')) {
             iniContent = iniContent.replace('[PHP]', `[PHP]\nextension_dir = "${extDir}"`);
             modified = true;
           } else if (!iniContent.includes(extDir)) {
             iniContent = iniContent.replace(/extension_dir\s*=\s*"[^"]*"/g, `extension_dir = "${extDir}"`);
             modified = true;
+          }
+
+          if (platform === 'linux') {
+            const normalizedExtensionBlock = await this.buildPhpExtensionBlock(version, platform);
+            if (iniContent.includes('; Extensions - enabled by default for Laravel compatibility')) {
+              iniContent = iniContent.replace(
+                /; Extensions - enabled by default for Laravel compatibility[\s\S]*$/,
+                `; Extensions - enabled by default for Laravel compatibility\n${normalizedExtensionBlock}\n`
+              );
+              modified = true;
+            }
+
+            await this.createLinuxPhpLaunchers(phpPath, version);
           }
 
           if (platform === 'win') {
@@ -118,6 +208,11 @@ module.exports = {
       const { downloadPath } = await this.downloadWithVersionProbe('php', version, id, downloadInfo);
       await this.checkCancelled(id, downloadPath);
       await this.extractArchive(downloadPath, extractPath, id);
+
+      if (platform === 'linux') {
+        await this.ensureLinuxPhpSystemDependencies(version, id);
+      }
+
       await this.createPhpIni(extractPath, version);
 
       if (platform === 'win') {
@@ -140,8 +235,6 @@ module.exports = {
   async createPhpIni(phpPath, version) {
     const platform = this.getPlatform();
     const extDir = resolvePhpExtensionDir(this.resourcesPath, version, platform).replace(/\\/g, '/');
-    const extPrefix = platform === 'win' ? 'php_' : '';
-    const extSuffix = platform === 'win' ? '.dll' : '.so';
 
     const settings = this.configStore?.get('settings', {}) || {};
     const timezone = settings.serverTimezone || 'UTC';
@@ -150,19 +243,7 @@ module.exports = {
     if (platform === 'win') {
       cacertPath = await this.ensureCaCertBundle(phpPath);
     }
-
-    const extensions = ['curl', 'fileinfo', 'mbstring', 'openssl', 'pdo_mysql', 'pdo_sqlite', 'mysqli', 'sqlite3', 'zip', 'gd'];
-    const extensionLines = [];
-
-    for (const ext of extensions) {
-      const extFile = `${extPrefix}${ext}${extSuffix}`;
-      const extPath = path.join(extDir.replace(/\//g, path.sep), extFile);
-      if (await fs.pathExists(extPath)) {
-        extensionLines.push(`extension=${extFile}`);
-      } else {
-        extensionLines.push(`; extension=${extFile} ; Not available in this PHP version`);
-      }
-    }
+    const extensionBlock = await this.buildPhpExtensionBlock(version, platform);
 
     const iniContent = `[PHP]
 ; DevBox Pro PHP ${version} Configuration
@@ -260,7 +341,7 @@ ${cacertPath ? `curl.cainfo = "${cacertPath}"` : '; curl.cainfo = '}
 ${cacertPath ? `openssl.cafile = "${cacertPath}"` : '; openssl.cafile = '}
 
 ; Extensions - enabled by default for Laravel compatibility
-${extensionLines.join('\n')}
+${extensionBlock}
 `;
 
     const iniPath = path.join(phpPath, 'php.ini');
@@ -290,6 +371,16 @@ ${extensionLines.join('\n')}
 
       const launcherScript = `#!/usr/bin/env bash
 ROOT_DIR="$(cd "$(dirname "${'$'}{BASH_SOURCE[0]}")" && pwd)"
+LD_LIBRARY_DIRS=()
+for dir in "${'${ROOT_DIR}'}/lib" "${'${ROOT_DIR}'}/lib/x86_64-linux-gnu" "${'${ROOT_DIR}'}/usr/lib" "${'${ROOT_DIR}'}/usr/lib/x86_64-linux-gnu" "${'${ROOT_DIR}'}/usr/local/lib"; do
+  if [ -d "${'$'}dir" ]; then
+    LD_LIBRARY_DIRS+=("${'$'}dir")
+  fi
+done
+if [ ${'$'}{#LD_LIBRARY_DIRS[@]} -gt 0 ]; then
+  EXTRA_LD_LIBRARY_PATH="$(IFS=:; echo "${'$'}{LD_LIBRARY_DIRS[*]}")"
+  export LD_LIBRARY_PATH="${'$'}{EXTRA_LD_LIBRARY_PATH}${'$'}{LD_LIBRARY_PATH:+:${'$'}LD_LIBRARY_PATH}"
+fi
 export PHP_INI_SCAN_DIR=""
 exec "${'${ROOT_DIR}'}/${path.relative(phpPath, targetBinary).replace(/\\/g, '/')}" -c "${'${ROOT_DIR}'}/php.ini" "${'$'}@"
 `;
@@ -297,6 +388,28 @@ exec "${'${ROOT_DIR}'}/${path.relative(phpPath, targetBinary).replace(/\\/g, '/'
       await fs.writeFile(launcherPath, launcherScript);
       await fs.chmod(launcherPath, 0o755);
     }
+  },
+
+  async buildPhpExtensionBlock(version, platform) {
+    const extDir = resolvePhpExtensionDir(this.resourcesPath, version, platform);
+    const extPrefix = platform === 'win' ? 'php_' : '';
+    const extSuffix = platform === 'win' ? '.dll' : '.so';
+    const extensionOrder = platform === 'linux'
+      ? ['curl', 'fileinfo', 'ctype', 'iconv', 'mbstring', 'phar', 'pdo', 'mysqlnd', 'pdo_mysql', 'pdo_sqlite', 'mysqli', 'sqlite3', 'zip', 'gd', 'tokenizer', 'xml', 'dom', 'simplexml', 'xmlreader', 'xmlwriter']
+      : ['curl', 'fileinfo', 'mbstring', 'openssl', 'pdo_mysql', 'pdo_sqlite', 'mysqli', 'sqlite3', 'zip', 'gd'];
+    const extensionLines = [];
+
+    for (const ext of extensionOrder) {
+      const extFile = `${extPrefix}${ext}${extSuffix}`;
+      const extPath = path.join(extDir, extFile);
+      if (await fs.pathExists(extPath)) {
+        extensionLines.push(`extension=${extFile}`);
+      } else {
+        extensionLines.push(`; extension=${extFile} ; Not available in this PHP version`);
+      }
+    }
+
+    return extensionLines.join('\n');
   },
 
   async ensureCaCertBundle(phpPath) {

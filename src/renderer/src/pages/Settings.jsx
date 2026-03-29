@@ -1292,23 +1292,27 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
     }
   };
 
+  const getReleaseAssetForCurrentPlatform = (assets = []) => {
+    const platform = navigator.platform.toLowerCase();
+    if (platform.includes('win')) {
+      return assets.find((asset) => asset.name.toLowerCase().includes('setup') && asset.name.endsWith('.exe'))
+        || assets.find((asset) => asset.name.endsWith('.exe'));
+    }
+
+    if (platform.includes('mac') || platform.includes('darwin')) {
+      return assets.find((asset) => asset.name.endsWith('.dmg'));
+    }
+
+    return assets.find((asset) => asset.name.toLowerCase().endsWith('.appimage'))
+      || assets.find((asset) => asset.name.endsWith('.deb'));
+  };
+
   const handleRollbackToVersion = async (version, assets) => {
     setRollbackError(null);
     setRollbackProgress(null);
     setRollbackDownloadUrl(null);
 
-    // Pick the right asset for this platform
-    const platform = navigator.platform.toLowerCase();
-    let asset = null;
-    if (platform.includes('win')) {
-      // Prefer NSIS setup installer over portable
-      asset = assets.find((a) => a.name.toLowerCase().includes('setup') && a.name.endsWith('.exe'))
-        || assets.find((a) => a.name.endsWith('.exe'));
-    } else if (platform.includes('mac') || platform.includes('darwin')) {
-      asset = assets.find((a) => a.name.endsWith('.dmg'));
-    } else {
-      asset = assets.find((a) => a.name.endsWith('.AppImage')) || assets.find((a) => a.name.endsWith('.deb'));
-    }
+    const asset = getReleaseAssetForCurrentPlatform(assets);
 
     if (!asset) {
       setRollbackError(`No compatible installer found for this platform in v${version}.`);
@@ -1678,12 +1682,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
                           ) : release.isCurrent ? (
                             <>
                               {(() => {
-                                const plat = navigator.platform.toLowerCase();
-                                const asset = plat.includes('win')
-                                  ? (release.assets?.find(a => a.name.toLowerCase().includes('setup') && a.name.endsWith('.exe')) || release.assets?.find(a => a.name.endsWith('.exe')))
-                                  : plat.includes('mac') || plat.includes('darwin')
-                                    ? release.assets?.find(a => a.name.endsWith('.dmg'))
-                                    : (release.assets?.find(a => a.name.endsWith('.AppImage')) || release.assets?.find(a => a.name.endsWith('.deb')));
+                                const asset = getReleaseAssetForCurrentPlatform(release.assets);
                                 return asset ? (
                                   <button
                                     onClick={() => window.devbox?.system.openExternal(asset.downloadUrl)}
@@ -1705,12 +1704,7 @@ function AdvancedSettings({ settings, updateSetting, onExport, onImport }) {
                           ) : (
                             <>
                               {(() => {
-                                const plat = navigator.platform.toLowerCase();
-                                const asset = plat.includes('win')
-                                  ? (release.assets?.find(a => a.name.toLowerCase().includes('setup') && a.name.endsWith('.exe')) || release.assets?.find(a => a.name.endsWith('.exe')))
-                                  : plat.includes('mac') || plat.includes('darwin')
-                                    ? release.assets?.find(a => a.name.endsWith('.dmg'))
-                                    : (release.assets?.find(a => a.name.endsWith('.AppImage')) || release.assets?.find(a => a.name.endsWith('.deb')));
+                                const asset = getReleaseAssetForCurrentPlatform(release.assets);
                                 return asset ? (
                                   <button
                                     onClick={() => window.devbox?.system.openExternal(asset.downloadUrl)}

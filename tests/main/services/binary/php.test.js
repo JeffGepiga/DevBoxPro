@@ -98,6 +98,88 @@ describe('binary/php', () => {
     );
   });
 
+  it('writes Linux php.ini with mysqlnd and pdo before dependent extensions', async () => {
+    const ctx = makeContext({
+      getPlatform: vi.fn(() => 'linux'),
+      createLinuxPhpLaunchers: vi.fn().mockResolvedValue(undefined),
+    });
+    vi.spyOn(fs, 'pathExists').mockImplementation(async (checkPath) => {
+      const normalizedPath = checkPath.toString().replace(/\\/g, '/');
+      return normalizedPath.endsWith('/curl.so')
+        || normalizedPath.endsWith('/ctype.so')
+        || normalizedPath.endsWith('/iconv.so')
+        || normalizedPath.endsWith('/mbstring.so')
+        || normalizedPath.endsWith('/phar.so')
+        || normalizedPath.endsWith('/pdo.so')
+        || normalizedPath.endsWith('/mysqlnd.so')
+        || normalizedPath.endsWith('/pdo_mysql.so')
+        || normalizedPath.endsWith('/pdo_sqlite.so')
+        || normalizedPath.endsWith('/mysqli.so')
+        || normalizedPath.endsWith('/sqlite3.so')
+        || normalizedPath.endsWith('/zip.so')
+        || normalizedPath.endsWith('/gd.so')
+        || normalizedPath.endsWith('/fileinfo.so')
+        || normalizedPath.endsWith('/tokenizer.so')
+        || normalizedPath.endsWith('/xml.so')
+        || normalizedPath.endsWith('/dom.so')
+        || normalizedPath.endsWith('/simplexml.so')
+        || normalizedPath.endsWith('/xmlreader.so')
+        || normalizedPath.endsWith('/xmlwriter.so');
+    });
+    const writeFileSpy = vi.spyOn(fs, 'writeFile').mockResolvedValue(undefined);
+
+    await binaryPhp.createPhpIni.call(ctx, '/resources/php/8.3/linux', '8.3');
+
+    const iniContents = writeFileSpy.mock.calls.find(([, content]) => content.includes('DevBox Pro PHP 8.3 Configuration'))?.[1];
+    expect(iniContents).toContain('extension=phar.so');
+    expect(iniContents).toContain('extension=pdo.so');
+    expect(iniContents).toContain('extension=mysqlnd.so');
+    expect(iniContents.indexOf('extension=pdo.so')).toBeLessThan(iniContents.indexOf('extension=pdo_mysql.so'));
+    expect(iniContents.indexOf('extension=mysqlnd.so')).toBeLessThan(iniContents.indexOf('extension=mysqli.so'));
+    expect(ctx.createLinuxPhpLaunchers).toHaveBeenCalledWith('/resources/php/8.3/linux', '8.3');
+  });
+
+  it('writes Linux launcher scripts with LD_LIBRARY_PATH fallbacks', async () => {
+    const ctx = makeContext();
+    vi.spyOn(fs, 'pathExists').mockResolvedValue(true);
+    const writeFileSpy = vi.spyOn(fs, 'writeFile').mockResolvedValue(undefined);
+    vi.spyOn(fs, 'chmod').mockResolvedValue(undefined);
+
+    await binaryPhp.createLinuxPhpLaunchers.call(ctx, '/resources/php/8.4/linux', '8.4');
+
+    const launcherContent = writeFileSpy.mock.calls.find(([filePath]) => filePath.toString().replace(/\\/g, '/').endsWith('/php'))?.[1];
+    expect(launcherContent).toContain('LD_LIBRARY_DIRS=()');
+    expect(launcherContent).toContain('export LD_LIBRARY_PATH=');
+    expect(launcherContent).toContain('exec "${ROOT_DIR}/usr/bin/php8.4" -c "${ROOT_DIR}/php.ini" "$@"');
+  });
+
+  it('installs missing Linux PHP shared-library packages automatically', async () => {
+    const ctx = makeContext({
+      getPlatform: vi.fn(() => 'linux'),
+      hasLinuxSharedLibrary: vi.fn()
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValue(true),
+      detectLinuxPackageManager: vi.fn().mockResolvedValue({
+        command: 'apt-get',
+        install: (pkg) => `apt-get install -y ${pkg}`,
+      }),
+      resolveLinuxPackageName: vi.fn()
+        .mockResolvedValueOnce('libonig5')
+        .mockResolvedValueOnce('libzip4t64'),
+      runPrivilegedLinuxCommand: vi.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+    });
+
+    const result = await ctx.ensureLinuxPhpSystemDependencies('8.4', 'php-8.4');
+
+    expect(result).toEqual({ success: true, installed: ['libonig5', 'libzip4t64'] });
+    expect(ctx.runPrivilegedLinuxCommand).toHaveBeenCalledWith('apt-get install -y libonig5 libzip4t64');
+    expect(ctx.emitProgress).toHaveBeenCalledWith('php-8.4', expect.objectContaining({
+      status: 'installing',
+      progress: 70,
+    }));
+  });
+
   it('updates existing php.ini files with extension_dir and available extensions', async () => {
     const ctx = makeContext({
       ensureCaCertBundle: vi.fn().mockResolvedValue('/resources/php/8.3/win/cacert.pem'),

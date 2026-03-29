@@ -19,6 +19,11 @@ module.exports = {
       return;
     }
 
+    await this.ensureLinuxServiceRuntimeDependencies('mariadb', version, [
+      mariadbd,
+      path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadb-install-db.exe' : 'mariadb-install-db'),
+    ]);
+
     const processKey = this.getProcessKey('mariadb', version);
     if (this.processes.has(processKey)) {
       return;
@@ -122,6 +127,11 @@ module.exports = {
       throw new Error(`MariaDB ${version} binary not found`);
     }
 
+    await this.ensureLinuxServiceRuntimeDependencies('mariadb', version, [
+      mariadbd,
+      path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadb-install-db.exe' : 'mariadb-install-db'),
+    ]);
+
     const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mariadb', version, 'data');
     const configPath = path.join(dataPath, 'mariadb', version, 'my.cnf');
@@ -187,6 +197,11 @@ module.exports = {
       throw new Error(`MariaDB ${version} binary not found`);
     }
 
+    await this.ensureLinuxServiceRuntimeDependencies('mariadb', version, [
+      mariadbd,
+      path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadb-install-db.exe' : 'mariadb-install-db'),
+    ]);
+
     const processKey = this.getProcessKey('mariadb', version);
     const existingProc = this.processes.get(processKey);
     if (existingProc) {
@@ -231,6 +246,8 @@ module.exports = {
 
   async initializeMariaDBData(mariadbPath, dataDir) {
     const installDb = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadb-install-db.exe' : 'mariadb-install-db');
+
+    await this.ensureLinuxServiceRuntimeDependencies('mariadb', null, [installDb]);
 
     await fs.ensureDir(dataDir);
 

@@ -133,6 +133,19 @@ module.exports = {
     }
   },
 
+  async ensureLinuxServiceRuntimeDependencies(serviceName, version = null, binaryPaths = []) {
+    if (process.platform !== 'linux') {
+      return { success: true, skipped: true };
+    }
+
+    const binaryManager = this.managers?.binaryDownload;
+    if (!binaryManager?.ensureLinuxBinarySystemDependencies) {
+      return { success: true, skipped: true };
+    }
+
+    return binaryManager.ensureLinuxBinarySystemDependencies(serviceName, version, binaryPaths);
+  },
+
   appendProcessOutputSnippet(existingOutput, chunk, maxLength = 4000) {
     const normalizedChunk = String(chunk || '').trim();
     if (!normalizedChunk) {

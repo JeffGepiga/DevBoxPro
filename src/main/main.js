@@ -366,6 +366,7 @@ async function initializeManagers() {
   managers.service = new ServiceManager(resourcePath, configStore, managers);
   managers.project = new ProjectManager(configStore, managers);
   managers.binaryDownload = new BinaryDownloadManager();
+  managers.binaryDownload.managers = managers;
 
   managers.cli = new CliManager(configStore, managers);
   managers.git = new GitManager(configStore, managers);

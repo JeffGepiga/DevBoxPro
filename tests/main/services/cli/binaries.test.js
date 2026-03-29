@@ -87,6 +87,32 @@ describe('cli/binaries', () => {
     process.env.PATH = originalPath;
   });
 
+  it('adds only the Python bin directory on Linux', () => {
+    const originalPath = process.env.PATH;
+    const originalPlatform = process.platform;
+    process.env.PATH = 'SYSTEM_PATH';
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+
+    const ctx = makeContext({
+      getPythonPath: vi.fn(() => path.join('/resources', 'python', '3.13', 'linux', 'bin', 'python3')),
+    });
+
+    try {
+      const env = ctx.buildProjectEnv({
+        phpVersion: '8.3',
+        services: {
+          python: true,
+        },
+      });
+
+      expect(env.PATH).toContain(path.join('/resources', 'python', '3.13', 'linux', 'bin'));
+      expect(env.PATH).not.toContain(path.join('/resources', 'python', '3.13', 'linux', 'bin', 'Scripts'));
+    } finally {
+      process.env.PATH = originalPath;
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+  });
+
   it('falls back to sqlite3 on non-Windows platforms', () => {
     const originalPlatform = process.platform;
     Object.defineProperty(process, 'platform', { value: 'darwin' });

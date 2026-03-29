@@ -5,6 +5,22 @@ const { spawnAsync, killProcessesByPath } = require('../../utils/SpawnUtils');
 const { resolvePhpBinaryPath } = require('../../utils/PhpPathResolver');
 
 module.exports = {
+  resolveComposerPhpVersion(requestedVersion = null) {
+    if (requestedVersion) {
+      return requestedVersion;
+    }
+
+    const configuredDefault = this.managers?.php?.getDefaultVersion?.();
+    if (configuredDefault) {
+      return configuredDefault;
+    }
+
+    const knownVersions = this.versionMeta?.php || ['8.5', '8.4', '8.3', '8.2', '8.1', '8.0', '7.4'];
+    const platform = this.getPlatform();
+    const installedVersion = knownVersions.find((version) => resolvePhpBinaryPath(this.resourcesPath, version, platform));
+    return installedVersion || '8.4';
+  },
+
   async downloadNodejs(version = '20') {
     const id = `nodejs-${version}`;
     const platform = this.getPlatform();
@@ -217,14 +233,15 @@ exit /b 1
       return;
     }
 
+    const phpSearchPlatform = platform === 'mac' ? 'mac' : 'linux';
     const composerSh = `#!/bin/bash
-PHP_PATHS="${path.join(this.resourcesPath, 'php')}"
-for VERSION in 8.3 8.2 8.1 8.0 7.4; do
-    if [ -x "$PHP_PATHS/$VERSION/mac/php" ]; then
-        "$PHP_PATHS/$VERSION/mac/php" "${composerPhar}" "$@"
-        exit $?
+  PHP_PATHS="${path.join(this.resourcesPath, 'php')}"
+  for VERSION in 8.5 8.4 8.3 8.2 8.1 8.0 7.4; do
+    if [ -x "$PHP_PATHS/$VERSION/${phpSearchPlatform}/php" ]; then
+      "$PHP_PATHS/$VERSION/${phpSearchPlatform}/php" "${composerPhar}" "$@"
+      exit $?
     fi
-done
+  done
 echo "No PHP installation found. Please install PHP first."
 exit 1
 `;
@@ -238,13 +255,23 @@ exit 1
     return path.join(this.resourcesPath, 'composer', 'composer.phar');
   },
 
-  async runComposer(projectPath, command, phpVersion = '8.3', onOutput = null) {
+  async runComposer(projectPath, command, phpVersion = null, onOutput = null) {
     const platform = this.getPlatform();
-    const phpPath = resolvePhpBinaryPath(this.resourcesPath, phpVersion, platform);
+    const effectivePhpVersion = this.resolveComposerPhpVersion(phpVersion);
+    const phpPath = resolvePhpBinaryPath(this.resourcesPath, effectivePhpVersion, platform);
     const composerPhar = this.getComposerPath();
 
+    if (platform === 'linux') {
+      onOutput?.('Checking Linux PHP runtime dependencies...', 'info');
+      const dependencyResult = await this.ensureLinuxPhpSystemDependencies(effectivePhpVersion);
+      if (dependencyResult?.installed?.length) {
+        onOutput?.(`Installed Linux PHP runtime dependencies: ${dependencyResult.installed.join(', ')}`, 'info');
+      }
+      await this.enablePhpExtensions();
+    }
+
     if (!await fs.pathExists(phpPath)) {
-      const error = `PHP ${phpVersion} is not installed. Please download it from the Binary Manager.`;
+      const error = `PHP ${effectivePhpVersion} is not installed. Please download it from the Binary Manager.`;
       if (onOutput) onOutput(error, 'error');
       throw new Error(error);
     }

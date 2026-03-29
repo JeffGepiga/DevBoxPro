@@ -73,4 +73,34 @@ describe('service/helpers', () => {
     expect(result.length).toBeLessThanOrEqual(20);
     expect(result).toContain('longer');
   });
+
+  it('delegates Linux runtime dependency repair to the binary manager', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+
+    const ensureLinuxBinarySystemDependencies = vi.fn().mockResolvedValue({ success: true });
+    const ctx = makeContext({
+      managers: {
+        log: {
+          systemWarn: vi.fn(),
+          systemInfo: vi.fn(),
+        },
+        binaryDownload: {
+          ensureLinuxBinarySystemDependencies,
+        },
+      },
+    });
+
+    try {
+      await ctx.ensureLinuxServiceRuntimeDependencies('mysql', '8.4', ['/resources/mysql/8.4/linux/bin/mysqld']);
+
+      expect(ensureLinuxBinarySystemDependencies).toHaveBeenCalledWith(
+        'mysql',
+        '8.4',
+        ['/resources/mysql/8.4/linux/bin/mysqld']
+      );
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+  });
 });

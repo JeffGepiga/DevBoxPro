@@ -67,4 +67,51 @@ describe('project/vhostNginx', () => {
     expect(config).toContain('location ~ \\.php$ {');
     expect(config).toContain('location ~ /\\.(?!well-known).* {');
   });
+
+  it('falls back to legacy listen syntax when the installed nginx only supports listen http2', async () => {
+    const ctx = makeContext({
+      getNginxHttp2Config: vi.fn().mockResolvedValue({
+        enabled: true,
+        listenSuffix: ' http2',
+        directive: '',
+      }),
+    });
+
+    await ctx.createNginxVhost({
+      id: 'legacy-http2',
+      name: 'Legacy HTTP2',
+      domain: 'legacy-http2.test',
+      path: 'C:/laragon/www/legacy-http2',
+      ssl: true,
+      networkAccess: true,
+    }, 9957, '1.28');
+
+    const [, config] = fs.writeFile.mock.calls.at(-1);
+    expect(config).toContain('listen 0.0.0.0:443 ssl http2;');
+    expect(config).not.toContain('http2 on;');
+  });
+
+  it('omits HTTP/2 directives entirely when the installed nginx lacks the module', async () => {
+    const ctx = makeContext({
+      getNginxHttp2Config: vi.fn().mockResolvedValue({
+        enabled: false,
+        listenSuffix: '',
+        directive: '',
+      }),
+    });
+
+    await ctx.createNginxVhost({
+      id: 'no-h2',
+      name: 'No H2',
+      domain: 'no-h2.test',
+      path: 'C:/laragon/www/no-h2',
+      ssl: true,
+      networkAccess: true,
+    }, 9957, '1.28');
+
+    const [, config] = fs.writeFile.mock.calls.at(-1);
+    expect(config).toContain('listen 0.0.0.0:443 ssl;');
+    expect(config).not.toContain('http2 on;');
+    expect(config).not.toContain('ssl http2;');
+  });
 });

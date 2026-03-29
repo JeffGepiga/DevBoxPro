@@ -28,6 +28,8 @@ module.exports = {
       return;
     }
 
+    await this.ensureLinuxServiceRuntimeDependencies('redis', version, [redisServerPath]);
+
     const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'redis', version, 'data');
 

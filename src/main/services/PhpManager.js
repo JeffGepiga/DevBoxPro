@@ -240,14 +240,25 @@ extension_dir = "${extDir.replace(/\\/g, '/')}"
 
 ; Common extensions
 extension=curl
+extension=ctype
 extension=fileinfo
 extension=gd
+extension=iconv
 extension=intl
 extension=mbstring
+extension=phar
+extension=pdo
+extension=mysqlnd
 extension=mysqli
 extension=openssl
 extension=pdo_mysql
 extension=pdo_sqlite
+extension=tokenizer
+extension=xml
+extension=dom
+extension=simplexml
+extension=xmlreader
+extension=xmlwriter
 ;extension=xdebug
 
 [Session]
