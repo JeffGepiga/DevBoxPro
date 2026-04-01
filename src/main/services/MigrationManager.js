@@ -34,8 +34,15 @@ class MigrationManager {
     const roots = [];
     const exePath = typeof this.app?.getPath === 'function' ? this.app.getPath('exe') : '';
     const exeDir = exePath ? path.dirname(exePath) : null;
+    const envPortableRoot = process.env.PORTABLE_EXECUTABLE_DIR
+      ? path.resolve(process.env.PORTABLE_EXECUTABLE_DIR)
+      : null;
+    const shouldIgnoreExeDir = envPortableRoot
+      && exeDir
+      && path.resolve(exeDir) === envPortableRoot
+      && !this.portableRoot;
 
-    if (exeDir) {
+    if (exeDir && !shouldIgnoreExeDir) {
       roots.push(exeDir);
     }
 

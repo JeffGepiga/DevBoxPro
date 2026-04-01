@@ -74,6 +74,10 @@ module.exports = {
         target: 'nsis',
         arch: ['x64'],
       },
+      {
+        target: 'portable',
+        arch: ['x64'],
+      },
     ],
     icon: 'build/icon.png',
   },
@@ -85,6 +89,9 @@ module.exports = {
     shortcutName: 'DevBox Pro',
     include: 'resources/installer.nsh',
     artifactName: 'DevBox-Pro-Setup-${version}.${ext}',
+  },
+  portable: {
+    artifactName: 'DevBox-Pro-${version}.${ext}',
   },
   mac: {
     target: [

@@ -9,6 +9,8 @@ describe('PathResolver', () => {
     const exeDir = path.join(os.tmpdir(), 'devboxpro-portable-test');
     const exePath = path.join(exeDir, 'DevBox Pro.exe');
     const userDataPath = path.join(os.tmpdir(), 'devboxpro-electron-userdata');
+    const portableDir = path.join(os.tmpdir(), 'devboxpro-electron-builder-portable');
+    const mockedHomeDir = path.join(os.tmpdir(), 'devboxpro-pathresolver-home');
     const app = {
         getPath(name) {
             if (name === 'exe') return exePath;
@@ -20,12 +22,21 @@ describe('PathResolver', () => {
     beforeEach(() => {
         pathResolver.__resetForTests();
         fs.rmSync(exeDir, { recursive: true, force: true });
+        fs.rmSync(userDataPath, { recursive: true, force: true });
+        fs.rmSync(portableDir, { recursive: true, force: true });
+        fs.rmSync(mockedHomeDir, { recursive: true, force: true });
         fs.mkdirSync(exeDir, { recursive: true });
+        delete process.env.PORTABLE_EXECUTABLE_DIR;
     });
 
     afterEach(() => {
         pathResolver.__resetForTests();
         fs.rmSync(exeDir, { recursive: true, force: true });
+        fs.rmSync(userDataPath, { recursive: true, force: true });
+        fs.rmSync(portableDir, { recursive: true, force: true });
+        fs.rmSync(mockedHomeDir, { recursive: true, force: true });
+        delete process.env.PORTABLE_EXECUTABLE_DIR;
+        vi.restoreAllMocks();
     });
 
     it('returns null when portable.flag is absent', () => {
@@ -35,6 +46,28 @@ describe('PathResolver', () => {
     it('returns the exe directory when portable.flag exists', () => {
         fs.writeFileSync(path.join(exeDir, 'portable.flag'), '');
         expect(pathResolver.getPortableRoot(app)).toBe(exeDir);
+    });
+
+    it('returns the portable executable directory when launched from an electron-builder portable app', () => {
+        process.env.PORTABLE_EXECUTABLE_DIR = portableDir;
+        vi.spyOn(os, 'homedir').mockReturnValue(mockedHomeDir);
+        pathResolver.__resetForTests();
+
+        expect(pathResolver.getPortableRoot(app)).toBe(portableDir);
+        expect(pathResolver.getDataPath(app)).toBe(path.join(portableDir, 'data'));
+        expect(pathResolver.getResourcesPath(app)).toBe(path.join(portableDir, 'resources-user'));
+    });
+
+    it('prefers the existing standard install paths over the portable executable directory', () => {
+        process.env.PORTABLE_EXECUTABLE_DIR = portableDir;
+        fs.mkdirSync(path.join(userDataPath, 'resources'), { recursive: true });
+        fs.writeFileSync(path.join(userDataPath, 'resources', 'marker.txt'), 'installed');
+
+        pathResolver.__resetForTests();
+
+        expect(pathResolver.getPortableRoot(app)).toBeNull();
+        expect(pathResolver.getDataPath(app)).toBe(path.join(os.homedir(), '.devbox-pro'));
+        expect(pathResolver.getResourcesPath(app)).toBe(path.join(userDataPath, 'resources'));
     });
 
     it('returns standard paths when not portable', () => {

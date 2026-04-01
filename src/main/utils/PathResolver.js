@@ -48,10 +48,55 @@ function isLikelyStandardInstallDir(exeDir) {
   return candidateRoots.some((rootPath) => isPathInside(rootPath, exeDir));
 }
 
+function pathHasMeaningfulEntries(targetPath) {
+  if (!targetPath || !fs.existsSync(targetPath)) {
+    return false;
+  }
+
+  const stat = fs.statSync(targetPath);
+  if (!stat.isDirectory()) {
+    return true;
+  }
+
+  return fs.readdirSync(targetPath).length > 0;
+}
+
+function hasExistingStandardInstallState(app) {
+  const userDataPath = typeof app?.getPath === 'function' ? app.getPath('userData') : null;
+  const candidatePaths = [
+    path.join(os.homedir(), '.devbox-pro'),
+    userDataPath ? path.join(userDataPath, 'data') : null,
+    userDataPath ? path.join(userDataPath, 'resources') : null,
+  ].filter(Boolean);
+
+  return candidatePaths.some((targetPath) => pathHasMeaningfulEntries(targetPath));
+}
+
+function getPortableRootFromEnv(app) {
+  const envPortableDir = process.env.PORTABLE_EXECUTABLE_DIR;
+
+  if (!envPortableDir) {
+    return null;
+  }
+
+  if (hasExistingStandardInstallState(app)) {
+    return null;
+  }
+
+  return path.normalize(envPortableDir);
+}
+
 function getPortableRoot(app) {
   const exePath = typeof app?.getPath === 'function' ? app.getPath('exe') : '';
+  const envPortableRoot = getPortableRootFromEnv(app);
 
   if (exePath === cachedExePath && cachedPortableRoot !== undefined) {
+    return cachedPortableRoot;
+  }
+
+  if (envPortableRoot) {
+    cachedExePath = exePath;
+    cachedPortableRoot = envPortableRoot;
     return cachedPortableRoot;
   }
 

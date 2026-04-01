@@ -10,11 +10,13 @@ describe('MigrationManager legacy install migration', () => {
     const originalLocalAppData = process.env.LOCALAPPDATA;
     const originalProgramFiles = process.env.ProgramFiles;
     const originalProgramFilesX86 = process.env['ProgramFiles(x86)'];
+    const originalPortableExecutableDir = process.env.PORTABLE_EXECUTABLE_DIR;
 
     afterEach(async () => {
         process.env.LOCALAPPDATA = originalLocalAppData;
         process.env.ProgramFiles = originalProgramFiles;
         process.env['ProgramFiles(x86)'] = originalProgramFilesX86;
+        process.env.PORTABLE_EXECUTABLE_DIR = originalPortableExecutableDir;
 
         while (tempRoots.length > 0) {
             const root = tempRoots.pop();
@@ -137,6 +139,43 @@ describe('MigrationManager legacy install migration', () => {
 
         const migration = new MigrationManager(pathResolver, fakeApp);
         await migration.markLegacyInstallMigrationDone();
+
+        expect(await migration.needsLegacyInstallMigration()).toBe(false);
+    });
+
+    it('ignores the portable executable directory as a legacy source when standard paths are active', async () => {
+        const tempRoot = path.join(os.tmpdir(), `devboxpro-portable-fallback-${Date.now()}`);
+        tempRoots.push(tempRoot);
+
+        const portableRoot = path.join(tempRoot, 'Portable', 'DevBox Pro');
+        const userDataRoot = path.join(tempRoot, 'Roaming', 'devbox-pro');
+        const newDataPath = path.join(tempRoot, '.devbox-pro');
+        const newResourcesPath = path.join(userDataRoot, 'resources');
+
+        process.env.PORTABLE_EXECUTABLE_DIR = portableRoot;
+
+        await fs.outputFile(path.join(portableRoot, 'data', 'devbox-pro-config.json'), '{"projects":[]}');
+        await fs.outputFile(path.join(portableRoot, 'resources-user', 'php', '8.4', 'win', 'php.exe'), 'binary');
+
+        const fakeApp = {
+            getPath(name) {
+                if (name === 'exe') {
+                    return path.join(portableRoot, 'DevBox Pro.exe');
+                }
+                if (name === 'userData') {
+                    return userDataRoot;
+                }
+                return tempRoot;
+            }
+        };
+
+        const pathResolver = {
+            getPortableRoot: () => null,
+            getDataPath: () => newDataPath,
+            getResourcesPath: () => newResourcesPath,
+        };
+
+        const migration = new MigrationManager(pathResolver, fakeApp);
 
         expect(await migration.needsLegacyInstallMigration()).toBe(false);
     });
