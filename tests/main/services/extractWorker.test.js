@@ -85,9 +85,8 @@ describe('extractWorker', () => {
       expect(content).toBe('Hello, World!');
     });
 
-    it('strips common root folder (e.g. nginx-1.28.0/)', async () => {
+    it('strips a common root folder when every entry shares it', async () => {
       const zip = new AdmZip();
-      // All entries share the "nginx-1.28.0/" prefix
       zip.addFile('nginx-1.28.0/conf/nginx.conf', Buffer.from('worker_processes 1;'));
       zip.addFile('nginx-1.28.0/logs/.keep', Buffer.from(''));
 
@@ -97,11 +96,11 @@ describe('extractWorker', () => {
 
       await runWorker({ archivePath, destPath });
 
-      // Root folder should be stripped
       expect(await fs.pathExists(path.join(destPath, 'conf', 'nginx.conf'))).toBe(true);
+      expect(await fs.pathExists(path.join(destPath, 'nginx-1.28.0', 'conf', 'nginx.conf'))).toBe(false);
     });
 
-    it('does NOT strip root when entries have mixed roots', async () => {
+    it('preserves root folders when entries do not share one root', async () => {
       const zip = new AdmZip();
       zip.addFile('rootA/file1.txt', Buffer.from('A'));
       zip.addFile('rootB/file2.txt', Buffer.from('B'));
@@ -112,10 +111,10 @@ describe('extractWorker', () => {
 
       await runWorker({ archivePath, destPath });
 
-      // Both root folders should be preserved
       expect(await fs.pathExists(path.join(destPath, 'rootA', 'file1.txt'))).toBe(true);
       expect(await fs.pathExists(path.join(destPath, 'rootB', 'file2.txt'))).toBe(true);
     });
+
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -192,4 +191,65 @@ describe('extractWorker', () => {
       }
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // .asar / pgAdmin 4 skip behaviour
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('ASAR and pgAdmin 4 skip behaviour', () => {
+    it('skips pgAdmin 4 entries and .asar files, but still extracts server binaries', async () => {
+      // Reproduce the exact structure of EDB postgresql-*-windows-x64-binaries.zip.
+      const zip = new AdmZip();
+      // Server binary that MUST be extracted.
+      zip.addFile('pgsql/bin/postgres.exe', Buffer.from('fake-postgres-binary'));
+      zip.addFile('pgsql/lib/libpq.dll', Buffer.from('fake-libpq'));
+      // pgAdmin 4 entries that MUST be skipped (contain .asar files).
+      zip.addFile('pgsql/pgAdmin 4/runtime/resources/default_app.asar', Buffer.from('fake-asar'));
+      zip.addFile('pgsql/pgAdmin 4/runtime/app.asar', Buffer.from('fake-app-asar'));
+      zip.addFile('pgsql/pgAdmin 4/pgAdmin4.exe', Buffer.from('fake-pgadmin-exe'));
+      // StackBuilder that MUST be skipped.
+      zip.addFile('pgsql/StackBuilder/StackBuilder.exe', Buffer.from('fake-stackbuilder'));
+
+      const archivePath = path.join(tmpDir, 'pg-skip-test.zip');
+      const destPath = path.join(tmpDir, 'pg-skip-out');
+      zip.writeZip(archivePath);
+
+      // Must resolve without "Invalid package" error.
+      const messages = await runWorker({ archivePath, destPath });
+      expect(messages[messages.length - 1].type).toBe('done');
+
+      // Server binaries MUST be present.
+      expect(await fs.pathExists(path.join(destPath, 'bin', 'postgres.exe'))).toBe(true);
+      expect(await fs.pathExists(path.join(destPath, 'lib', 'libpq.dll'))).toBe(true);
+
+      // pgAdmin 4 MUST have been skipped entirely.
+      expect(await fs.pathExists(path.join(destPath, 'pgAdmin 4'))).toBe(false);
+      expect(await fs.pathExists(path.join(destPath, 'pgAdmin 4', 'runtime', 'resources', 'default_app.asar'))).toBe(false);
+
+      // StackBuilder MUST have been skipped.
+      expect(await fs.pathExists(path.join(destPath, 'StackBuilder'))).toBe(false);
+    });
+
+    it('skips standalone .asar files that are not inside pgAdmin 4', async () => {
+      // Any .asar file in any location should be skipped to prevent Electron interception.
+      const zip = new AdmZip();
+      zip.addFile('app/server.exe', Buffer.from('server'));
+      zip.addFile('app/config.json', Buffer.from('{}'));
+      zip.addFile('app/resources/app.asar', Buffer.from('asar-content'));
+
+      const archivePath = path.join(tmpDir, 'standalone-asar.zip');
+      const destPath = path.join(tmpDir, 'standalone-asar-out');
+      zip.writeZip(archivePath);
+
+      await runWorker({ archivePath, destPath });
+
+      // Regular files should be extracted.
+      expect(await fs.pathExists(path.join(destPath, 'server.exe'))).toBe(true);
+      expect(await fs.pathExists(path.join(destPath, 'config.json'))).toBe(true);
+
+      // .asar file should be skipped.
+      expect(await fs.pathExists(path.join(destPath, 'resources', 'app.asar'))).toBe(false);
+    });
+  });
 });
+

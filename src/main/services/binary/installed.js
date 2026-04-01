@@ -97,6 +97,7 @@ module.exports = {
       const pgExe = platform === 'win' ? 'postgres.exe' : 'postgres';
       installed.postgresql[version] = await fs.pathExists(path.join(pgPath, pgExe));
     }
+    await this.scanCustomVersions('postgresql', installed.postgresql, platform, platform === 'win' ? 'bin/postgres.exe' : 'bin/postgres');
 
     installed.python = {};
     for (const version of (this.versionMeta.python || [])) {
@@ -104,6 +105,7 @@ module.exports = {
       const pyExe = platform === 'win' ? 'python.exe' : 'bin/python3';
       installed.python[version] = await fs.pathExists(path.join(pyPath, pyExe));
     }
+    await this.scanCustomVersions('python', installed.python, platform, platform === 'win' ? 'python.exe' : 'bin/python3');
 
     installed.mongodb = {};
     for (const version of (this.versionMeta.mongodb || [])) {
@@ -116,6 +118,7 @@ module.exports = {
         || await fs.pathExists(path.join(mongoPath, legacyMongoShellExe));
       installed.mongodb[version] = serverInstalled && shellInstalled;
     }
+    await this.scanCustomMongoDbVersions(installed.mongodb, platform);
 
     const sqlitePath = path.join(this.resourcesPath, 'sqlite', '3', platform);
     const sqliteExe = platform === 'win' ? 'sqlite3.exe' : 'sqlite3';
@@ -132,6 +135,7 @@ module.exports = {
       const memcachedExe = platform === 'win' ? 'memcached.exe' : 'memcached';
       installed.memcached[version] = await fs.pathExists(path.join(memcachedPath, memcachedExe));
     }
+    await this.scanCustomVersions('memcached', installed.memcached, platform, platform === 'win' ? 'memcached.exe' : 'memcached');
 
     return installed;
   },
@@ -178,6 +182,33 @@ module.exports = {
       }
     } catch (error) {
       this.managers?.log?.systemWarn('Error scanning custom PHP versions', { error: error.message });
+    }
+  },
+
+  async scanCustomMongoDbVersions(installedObj, platform) {
+    try {
+      const serviceDir = path.join(this.resourcesPath, 'mongodb');
+      if (!await fs.pathExists(serviceDir)) return;
+
+      const mongoExe = platform === 'win' ? 'mongod.exe' : 'mongod';
+      const mongoShellExe = platform === 'win' ? 'mongosh.exe' : 'mongosh';
+      const legacyMongoShellExe = platform === 'win' ? 'mongo.exe' : 'mongo';
+
+      const dirs = await fs.readdir(serviceDir);
+      for (const dir of dirs) {
+        if (installedObj[dir] !== undefined || dir === 'win' || dir === 'mac') continue;
+
+        const binDir = path.join(serviceDir, dir, platform, 'bin');
+        const serverInstalled = await fs.pathExists(path.join(binDir, mongoExe));
+        const shellInstalled = await fs.pathExists(path.join(binDir, mongoShellExe))
+          || await fs.pathExists(path.join(binDir, legacyMongoShellExe));
+
+        if (serverInstalled && shellInstalled) {
+          installedObj[dir] = true;
+        }
+      }
+    } catch (error) {
+      this.managers?.log?.systemWarn('Error scanning custom MongoDB versions', { error: error.message });
     }
   },
 

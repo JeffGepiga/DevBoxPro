@@ -6,6 +6,15 @@ module.exports = {
     const id = version && version !== 'default' ? `${serviceName}-${version}` : serviceName;
     const platform = this.getPlatform();
 
+    // Disable Electron's ASAR filesystem interception for the duration of this import.
+    // Some packages (e.g. PostgreSQL's bundled pgAdmin 4) contain .asar files inside their
+    // ZIP archives. Without this, Electron intercepts ALL fs operations on .asar paths
+    // (stat, readdir, createWriteStream, rename, remove, etc.) and throws "Invalid package".
+    // This covers: fs.remove (corrupted-folder cleanup), ZIP extraction, and
+    // normalizeExtractedStructure (which moves the pgAdmin directory tree).
+    const prevNoAsar = process.noAsar;
+    process.noAsar = true;
+
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
 
@@ -71,8 +80,32 @@ module.exports = {
 
       const extractPath = path.join(this.resourcesPath, serviceName, version, platform);
 
+      // Pre-delete directories known to contain .asar files using the OS shell
+      // (rmdir /s /q on Windows) rather than Node's fs. Electron's ASAR fs patch
+      // intercepts lstat/unlink on .asar paths and throws "Invalid package", which
+      // would cause fs.remove(extractPath) to fail on re-imports over old extractions.
+      const asarBundleDirs = ['pgAdmin 4', 'StackBuilder'];
+      for (const dir of asarBundleDirs) {
+        const dirPath = path.join(extractPath, dir);
+        try {
+          if (await fs.pathExists(dirPath)) {
+            await new Promise((resolve) => {
+              require('child_process').exec(
+                process.platform === 'win32'
+                  ? `rmdir /s /q "${dirPath}"`
+                  : `rm -rf "${dirPath}"`,
+                () => resolve(), // resolve regardless of error — best-effort
+              );
+            });
+          }
+        } catch {
+          // Non-fatal: best-effort pre-cleanup.
+        }
+      }
+
       await fs.remove(extractPath);
       await fs.ensureDir(extractPath);
+
 
       this.emitProgress(id, { status: 'extracting', progress: 50 });
 
@@ -106,6 +139,8 @@ module.exports = {
     } catch (error) {
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
+    } finally {
+      process.noAsar = prevNoAsar;
     }
   },
 

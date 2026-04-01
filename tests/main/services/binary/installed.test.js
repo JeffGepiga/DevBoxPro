@@ -116,4 +116,93 @@ describe('binary/installed', () => {
 
     expect(installed.mongodb['8.0']).toBe(false);
   });
+
+  it('detects custom imported PostgreSQL versions', async () => {
+    const ctx = makeContext();
+    vi.spyOn(fs, 'readdir').mockResolvedValue(['18.3.1.2']);
+    vi.spyOn(fs, 'pathExists').mockImplementation(async (targetPath) => {
+      const normalized = targetPath.replace(/\\/g, '/');
+      return normalized === '/resources/postgresql'
+        || normalized.endsWith('/postgresql/18.3.1.2/win/bin/postgres.exe');
+    });
+
+    const installed = await ctx.getInstalledBinaries();
+
+    expect(installed.postgresql['18.3.1.2']).toBe(true);
+  });
+
+  it('detects custom imported Python and Memcached versions', async () => {
+    const ctx = makeContext({
+      versionMeta: {
+        php: ['8.4'],
+        mysql: [],
+        mariadb: [],
+        redis: [],
+        nginx: [],
+        apache: [],
+        nodejs: ['20'],
+        postgresql: [],
+        python: [],
+        mongodb: ['8.0'],
+        memcached: [],
+      },
+    });
+
+    vi.spyOn(fs, 'readdir').mockImplementation(async (targetPath) => {
+      const normalized = String(targetPath).replace(/\\/g, '/');
+      if (normalized === '/resources/python') return ['3.13.2-custom'];
+      if (normalized === '/resources/memcached') return ['1.6.38-custom'];
+      return [];
+    });
+
+    vi.spyOn(fs, 'pathExists').mockImplementation(async (targetPath) => {
+      const normalized = targetPath.replace(/\\/g, '/');
+      return normalized === '/resources/python'
+        || normalized === '/resources/memcached'
+        || normalized.endsWith('/python/3.13.2-custom/win/python.exe')
+        || normalized.endsWith('/memcached/1.6.38-custom/win/memcached.exe');
+    });
+
+    const installed = await ctx.getInstalledBinaries();
+
+    expect(installed.python['3.13.2-custom']).toBe(true);
+    expect(installed.memcached['1.6.38-custom']).toBe(true);
+  });
+
+  it('detects custom MongoDB versions only when server and shell are both present', async () => {
+    const ctx = makeContext({
+      versionMeta: {
+        php: ['8.4'],
+        mysql: [],
+        mariadb: [],
+        redis: [],
+        nginx: [],
+        apache: [],
+        nodejs: ['20'],
+        postgresql: [],
+        python: [],
+        mongodb: [],
+        memcached: [],
+      },
+    });
+
+    vi.spyOn(fs, 'readdir').mockImplementation(async (targetPath) => {
+      const normalized = String(targetPath).replace(/\\/g, '/');
+      if (normalized === '/resources/mongodb') return ['8.1-custom', '8.2-broken'];
+      return [];
+    });
+
+    vi.spyOn(fs, 'pathExists').mockImplementation(async (targetPath) => {
+      const normalized = targetPath.replace(/\\/g, '/');
+      return normalized === '/resources/mongodb'
+        || normalized.endsWith('/mongodb/8.1-custom/win/bin/mongod.exe')
+        || normalized.endsWith('/mongodb/8.1-custom/win/bin/mongosh.exe')
+        || normalized.endsWith('/mongodb/8.2-broken/win/bin/mongod.exe');
+    });
+
+    const installed = await ctx.getInstalledBinaries();
+
+    expect(installed.mongodb['8.1-custom']).toBe(true);
+    expect(installed.mongodb['8.2-broken']).toBeUndefined();
+  });
 });

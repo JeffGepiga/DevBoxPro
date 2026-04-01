@@ -94,4 +94,57 @@ describe('binary/imports', () => {
     expect(fs.move).toHaveBeenCalledWith(path.join('/extract', 'nested', 'file.txt'), path.join('/extract', 'file.txt'), { overwrite: true });
     expect(fs.remove).toHaveBeenCalledWith(path.join('/extract', 'nested'));
   });
-});
+  it('sets process.noAsar = true during import and restores it afterward', async () => {
+    process.noAsar = false; // Start with it explicitly off.
+    let noAsarDuringExtract;
+
+    const ctx = makeContext({
+      extractArchive: vi.fn(async () => {
+        // Capture the value while the import is running.
+        noAsarDuringExtract = process.noAsar;
+      }),
+    });
+
+    vi.spyOn(fs, 'pathExists').mockResolvedValue(true);
+    vi.spyOn(fs, 'remove').mockResolvedValue(undefined);
+    vi.spyOn(fs, 'ensureDir').mockResolvedValue(undefined);
+
+    await ctx.importBinary('postgresql', '18.3.2', '/tmp/pg.zip');
+
+    // process.noAsar must have been true while extractArchive ran.
+    expect(noAsarDuringExtract).toBe(true);
+    // process.noAsar must be restored to its original value after the call.
+    expect(process.noAsar).toBe(false);
+  });
+
+  it('restores process.noAsar even when the import fails', async () => {
+    process.noAsar = false;
+
+    const ctx = makeContext({
+      extractArchive: vi.fn().mockRejectedValue(new Error('disk full')),
+    });
+
+    vi.spyOn(fs, 'pathExists').mockResolvedValue(true);
+    vi.spyOn(fs, 'remove').mockResolvedValue(undefined);
+    vi.spyOn(fs, 'ensureDir').mockResolvedValue(undefined);
+
+    await expect(ctx.importBinary('postgresql', '18.3.2', '/tmp/pg.zip')).rejects.toThrow('disk full');
+
+    // Must be restored even on failure.
+    expect(process.noAsar).toBe(false);
+  });
+
+  it('calls fs.remove to clean up a corrupted prior extraction before re-importing', async () => {
+    const ctx = makeContext();
+
+    vi.spyOn(fs, 'pathExists').mockResolvedValue(true);
+    const removeSpy = vi.spyOn(fs, 'remove').mockResolvedValue(undefined);
+    vi.spyOn(fs, 'ensureDir').mockResolvedValue(undefined);
+
+    await ctx.importBinary('postgresql', '18.3.2', '/tmp/pg.zip');
+
+    // The corrupted destination must have been removed before extraction starts.
+    const expectedPath = path.join('/resources', 'postgresql', '18.3.2', 'win');
+    expect(removeSpy).toHaveBeenCalledWith(expectedPath);
+  });
+});

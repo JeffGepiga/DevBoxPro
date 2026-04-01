@@ -1,68 +1,90 @@
 /**
- * Extract Worker - Runs ZIP extraction in a separate thread
- * This prevents the main Electron process from freezing
+ * Extract Worker - Runs ZIP extraction in a separate thread.
+ * This prevents the main Electron process from freezing.
  */
+process.noAsar = true;
+
 const { parentPort, workerData } = require('worker_threads');
 const AdmZip = require('adm-zip');
 const path = require('path');
 const fs = require('fs-extra');
 
+function detectCommonRoot(entries) {
+  const firstEntry = entries.find((entry) => !entry.isDirectory && entry.entryName.includes('/'));
+  if (!firstEntry) {
+    return null;
+  }
+
+  const parts = firstEntry.entryName.split('/');
+  if (parts.length < 2) {
+    return null;
+  }
+
+  const commonRoot = `${parts[0]}/`;
+  const allShareRoot = entries.every((entry) => entry.entryName.startsWith(commonRoot) || entry.entryName === parts[0]);
+  return allShareRoot ? commonRoot : null;
+}
+
+function normalizeEntryPath(entryName, commonRoot) {
+  if (commonRoot && entryName.startsWith(commonRoot)) {
+    return entryName.substring(commonRoot.length);
+  }
+
+  return entryName;
+}
+
+function shouldSkipEntry(entryPath) {
+  const normalized = entryPath.replace(/\\/g, '/');
+
+  if (/\.asar(\/|$)/i.test(normalized) || normalized.toLowerCase().endsWith('.asar')) {
+    return true;
+  }
+
+  if (/^(pgsql\/)?pgAdmin 4\//i.test(normalized) || /^(pgsql\/)?StackBuilder\//i.test(normalized)) {
+    return true;
+  }
+
+  return false;
+}
+
+function isSafeExtractPath(destPath, targetPath) {
+  const rootPath = path.resolve(destPath);
+  const fullPath = path.resolve(destPath, targetPath);
+  return fullPath === rootPath || fullPath.startsWith(`${rootPath}${path.sep}`);
+}
+
 async function extractZip() {
   const { archivePath, destPath } = workerData;
-  
+
   try {
     const zip = new AdmZip(archivePath);
     const entries = zip.getEntries();
     const totalEntries = entries.length;
     let processed = 0;
-    
-    // Detect common root folder to strip (like nginx-1.28.0/, mysql-8.4.7-winx64/, etc.)
-    let commonRoot = null;
-    const firstEntry = entries.find(e => !e.isDirectory && e.entryName.includes('/'));
-    if (firstEntry) {
-      const parts = firstEntry.entryName.split('/');
-      if (parts.length > 1) {
-        commonRoot = parts[0] + '/';
-        // Verify all entries share this root
-        const allShareRoot = entries.every(e => 
-          e.entryName.startsWith(commonRoot) || e.entryName === parts[0]
-        );
-        if (!allShareRoot) {
-          commonRoot = null; // Don't strip if not all entries share root
-        }
-      }
-    }
-    
+    const commonRoot = detectCommonRoot(entries);
+
     for (const entry of entries) {
-      if (!entry.isDirectory) {
-        let targetPath = entry.entryName;
-        
-        // Strip common root folder if detected
-        if (commonRoot && targetPath.startsWith(commonRoot)) {
-          targetPath = targetPath.substring(commonRoot.length);
+      const targetPath = normalizeEntryPath(entry.entryName, commonRoot);
+      const skipEntry = !targetPath || shouldSkipEntry(targetPath) || shouldSkipEntry(entry.entryName);
+
+      if (!skipEntry && !entry.isDirectory) {
+        if (!isSafeExtractPath(destPath, targetPath)) {
+          throw new Error(`Unsafe ZIP entry path: ${entry.entryName}`);
         }
-        
-        if (targetPath) {
-          const fullPath = path.join(destPath, targetPath);
-          const dir = path.dirname(fullPath);
-          
-          // Ensure directory exists
-          await fs.ensureDir(dir);
-          
-          // Extract file content
-          const content = entry.getData();
-          await fs.writeFile(fullPath, content);
-        }
+
+        const fullPath = path.resolve(destPath, targetPath);
+        await fs.ensureDir(path.dirname(fullPath));
+        await fs.writeFile(fullPath, entry.getData());
       }
+
       processed++;
-      
-      // Report progress every 50 entries to reduce IPC overhead
+
       if (processed % 50 === 0 || processed === totalEntries) {
         const progress = Math.round((processed / totalEntries) * 100);
         parentPort.postMessage({ type: 'progress', progress });
       }
     }
-    
+
     parentPort.postMessage({ type: 'done' });
   } catch (error) {
     parentPort.postMessage({ type: 'error', error: error.message });
