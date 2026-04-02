@@ -67,8 +67,8 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return newProject;
   });
 
-  ipcMain.handle('projects:update', async (event, id, projectConfig) => {
-    return project.updateProject(id, projectConfig);
+  ipcMain.handle('projects:update', async (event, id, projectConfig, options) => {
+    return project.updateProject(id, projectConfig, options);
   });
 
   ipcMain.handle('projects:reorder', async (event, projectIds) => {

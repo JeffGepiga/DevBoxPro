@@ -26,7 +26,20 @@ class ProjectManager {
     this.networkPort80Owner = null;
   }
 
-  async updateProject(id, updates) {
+  shouldRestartProjectForUpdates(updates = {}) {
+    const nonRestartKeys = new Set([
+      'name',
+      'autoStart',
+      'shareOnInternet',
+      'tunnelProvider',
+      'tunnelAutoStart',
+      'updatedAt',
+    ]);
+
+    return Object.keys(updates).some((key) => !nonRestartKeys.has(key));
+  }
+
+  async updateProject(id, updates, options = {}) {
     const projects = this.configStore.get('projects', []);
     const index = projects.findIndex((project) => project.id === id);
 
@@ -35,10 +48,11 @@ class ProjectManager {
     }
 
     const isRunning = this.runningProjects.has(id);
+    const shouldRestart = isRunning && !options.deferRestart && this.shouldRestartProjectForUpdates(updates);
     const oldProject = { ...projects[index] };
     const oldDomains = this.getProjectDomains(oldProject);
 
-    if (isRunning) {
+    if (shouldRestart) {
       await this.stopProject(id);
     }
 
@@ -123,7 +137,7 @@ class ProjectManager {
       }
     }
 
-    if (isRunning) {
+    if (shouldRestart) {
       await this.startProject(id);
     }
 

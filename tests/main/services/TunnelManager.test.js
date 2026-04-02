@@ -29,6 +29,8 @@ function makeManager(overrides = {}) {
       })),
       getProjectLocalAccessPorts: vi.fn(() => ({ httpPort: 80, sslPort: 443 })),
       getProjectPrimaryDomain: vi.fn(() => 'myapp.test'),
+      startingProjects: new Set(),
+      pendingProjectStops: new Map(),
       runningProjects: new Map([['proj-1', true]]),
     },
     log: {
@@ -127,5 +129,48 @@ describe('TunnelManager', () => {
       hostHeader: 'myapp.test',
     });
     expect(args).toEqual(['share', 'public', 'http://myapp.test', '--headless']);
+  });
+
+  it('normalizes bare zrok hostnames into public https URLs', () => {
+    const { manager } = makeManager();
+
+    const publicUrl = TunnelManager.prototype.extractPublicUrl.call(
+      manager,
+      'zrok',
+      '[  11.355]    INFO main.(*sharePublicCommand).shareLocal access your zrok share at the following endpoints:\n kqxfkboe3dpn.shares.zrok.io\n'
+    );
+
+    expect(publicUrl).toBe('https://kqxfkboe3dpn.shares.zrok.io');
+  });
+
+  it('waits for a project that is still transitioning to running before starting a tunnel', async () => {
+    vi.useFakeTimers();
+
+    const { manager, managers } = makeManager();
+    managers.project.runningProjects.clear();
+    managers.project.startingProjects.add('proj-1');
+    managers.project.getProject = vi.fn(() => ({
+      id: 'proj-1',
+      name: 'My App',
+      domain: 'myapp.test',
+      isRunning: managers.project.runningProjects.has('proj-1'),
+      tunnelProvider: 'cloudflared',
+    }));
+
+    const startPromise = manager.startTunnel('proj-1', 'cloudflared');
+
+    setTimeout(() => {
+      managers.project.runningProjects.set('proj-1', true);
+      managers.project.startingProjects.delete('proj-1');
+    }, 50);
+
+    await vi.advanceTimersByTimeAsync(200);
+
+    await expect(startPromise).resolves.toEqual(expect.objectContaining({
+      projectId: 'proj-1',
+      status: 'starting',
+    }));
+
+    vi.useRealTimers();
   });
 });

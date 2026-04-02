@@ -1,13 +1,59 @@
 const treeKill = require('tree-kill');
 
 module.exports = {
+  async waitForProjectToBeRunning(projectId, timeoutMs = 4000) {
+    const projectManager = this.managers?.project;
+    if (!projectManager) {
+      return false;
+    }
+
+    const isRunning = () => {
+      const project = projectManager.getProject?.(projectId);
+      return Boolean(project?.isRunning || projectManager.runningProjects?.has(projectId));
+    };
+
+    if (isRunning()) {
+      return true;
+    }
+
+    const isTransitioning = () => Boolean(
+      projectManager.startingProjects?.has(projectId)
+      || projectManager.pendingProjectStops?.has(projectId)
+    );
+
+    if (!isTransitioning()) {
+      return false;
+    }
+
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeoutMs) {
+      if (isRunning()) {
+        return true;
+      }
+
+      if (!isTransitioning()) {
+        break;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    return isRunning();
+  },
+
   async startTunnel(projectId, requestedProvider = null) {
     const project = this.managers?.project?.getProject?.(projectId);
     if (!project) {
       throw new Error('Project not found');
     }
 
-    if (!project.isRunning && !this.managers?.project?.runningProjects?.has(projectId)) {
+    const isProjectRunning = Boolean(
+      project.isRunning
+      || this.managers?.project?.runningProjects?.has(projectId)
+      || await this.waitForProjectToBeRunning(projectId)
+    );
+
+    if (!isProjectRunning) {
       throw new Error('Project must be running before it can be shared on the internet.');
     }
 

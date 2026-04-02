@@ -142,8 +142,17 @@ module.exports = {
     }
 
     if (provider === 'zrok') {
-      const match = text.match(/https:\/\/[^\s"'<>]+/iu);
-      return match?.[0] || null;
+      const fullUrlMatch = text.match(/https?:\/\/[^\s"'<>]+/iu);
+      if (fullUrlMatch?.[0]) {
+        return fullUrlMatch[0];
+      }
+
+      const hostnameMatch = text.match(/([a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:shares\.)?zrok\.io)(?:[\/\?#][^\s"'<>]*)?/iu);
+      if (hostnameMatch?.[0]) {
+        return `https://${hostnameMatch[0]}`;
+      }
+
+      return null;
     }
 
     return null;

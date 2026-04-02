@@ -225,6 +225,64 @@ describe('ProjectManager', () => {
             expect(updated.phpVersion).toBe('8.3');
         });
 
+        it('does not restart a running project for tunnel-only setting changes', async () => {
+            const project = {
+                id: 'abc1234',
+                name: 'OldName',
+                type: 'static',
+                phpVersion: '8.2',
+                path: '/foo/old',
+                domain: 'example.test',
+                services: {},
+                shareOnInternet: true,
+                tunnelProvider: 'cloudflared',
+                tunnelAutoStart: false,
+            };
+            configStore.set('projects', [project]);
+            mgr.runningProjects.set('abc1234', { startedAt: new Date() });
+            mgr.stopProject = vi.fn().mockResolvedValue({ success: true });
+            mgr.startProject = vi.fn().mockResolvedValue({ success: true });
+
+            const updated = await mgr.updateProject('abc1234', {
+                tunnelProvider: 'zrok',
+                tunnelAutoStart: true,
+            });
+
+            expect(updated.tunnelProvider).toBe('zrok');
+            expect(updated.tunnelAutoStart).toBe(true);
+            expect(mgr.stopProject).not.toHaveBeenCalled();
+            expect(mgr.startProject).not.toHaveBeenCalled();
+        });
+
+        it('can defer restart for restart-worthy project updates', async () => {
+            const project = {
+                id: 'abc1234',
+                name: 'OldName',
+                type: 'static',
+                phpVersion: '8.2',
+                path: '/foo/old',
+                domain: 'example.test',
+                domains: ['example.test'],
+                ssl: false,
+                networkAccess: false,
+                webServer: 'nginx',
+                webServerVersion: '1.28',
+                services: {},
+            };
+            configStore.set('projects', [project]);
+            mgr.runningProjects.set('abc1234', { startedAt: new Date() });
+            mgr.stopProject = vi.fn().mockResolvedValue({ success: true });
+            mgr.startProject = vi.fn().mockResolvedValue({ success: true });
+            mgr.createVirtualHost = vi.fn().mockResolvedValue();
+
+            const updated = await mgr.updateProject('abc1234', { networkAccess: true }, { deferRestart: true });
+
+            expect(updated.networkAccess).toBe(true);
+            expect(mgr.stopProject).not.toHaveBeenCalled();
+            expect(mgr.startProject).not.toHaveBeenCalled();
+            expect(mgr.createVirtualHost).toHaveBeenCalled();
+        });
+
         it('removes stale configs and regenerates the vhost when web server version changes', async () => {
             const project = {
                 id: 'abc1234',

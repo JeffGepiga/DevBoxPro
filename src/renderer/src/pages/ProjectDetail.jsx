@@ -39,6 +39,8 @@ const NodeJsIcon = ({ className }) => (
   </svg>
 );
 
+const AUTO_SAVE_SETTING_KEYS = new Set(['autoStart', 'networkAccess', 'shareOnInternet', 'tunnelProvider', 'tunnelAutoStart']);
+
 function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
   const params = useParams();
   const id = propProjectId || params.id;
@@ -565,6 +567,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
   const [tunnelStatus, setTunnelStatus] = useState(null);
   const [tunnelAction, setTunnelAction] = useState(null);
   const [zrokAppStatus, setZrokAppStatus] = useState({ enabled: false, configuredAt: null });
+  const [savingSettingKeys, setSavingSettingKeys] = useState([]);
   const [versionOptions, setVersionOptions] = useState({
     mysql: [],
     mariadb: [],
@@ -710,7 +713,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
   }, [project?.id, project?.webServer, project?.networkAccess, project?.isRunning]);
 
   // Check if there are pending changes
-  const hasPendingChanges = Object.keys(pendingChanges).length > 0;
+  const hasPendingChanges = Object.keys(pendingChanges).some((key) => !AUTO_SAVE_SETTING_KEYS.has(key));
 
   // Get effective value (pending change or current project value)
   const getEffectiveValue = (key) => {
@@ -722,7 +725,6 @@ function OverviewTab({ project, processes, refreshProjects }) {
   const effectiveShareOnInternet = getEffectiveValue('shareOnInternet') || false;
   const effectiveTunnelProvider = getEffectiveValue('tunnelProvider') || '';
   const effectiveTunnelAutoStart = getEffectiveValue('tunnelAutoStart') || false;
-  const tunnelConfigDirty = ['shareOnInternet', 'tunnelProvider', 'tunnelAutoStart'].some((key) => key in pendingChanges);
   const cloudflaredInstalled = binariesStatus?.cloudflared?.installed === true;
   const zrokInstalled = binariesStatus?.zrok?.installed === true;
   const providerReady = effectiveTunnelProvider === 'cloudflared'
@@ -749,7 +751,113 @@ function OverviewTab({ project, processes, refreshProjects }) {
           ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800'
           : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
   const isTunnelStarting = tunnelAction === 'starting' || tunnelStatus?.status === 'starting';
-  const isTunnelBusy = tunnelAction !== null || tunnelStatus?.status === 'starting';
+  const isSettingSaving = (key) => savingSettingKeys.includes(key);
+  const isTunnelSettingSaving = ['shareOnInternet', 'tunnelProvider', 'tunnelAutoStart'].some(isSettingSaving);
+  const isTunnelBusy = tunnelAction !== null || tunnelStatus?.status === 'starting' || isTunnelSettingSaving;
+
+  const syncTunnelWithSettings = async (changes) => {
+    if (!project?.isRunning) {
+      return;
+    }
+
+    const hasTunnelConfigChanges = ['shareOnInternet', 'tunnelProvider', 'tunnelAutoStart'].some((key) => key in changes);
+    if (!hasTunnelConfigChanges) {
+      return;
+    }
+
+    const nextShareOnInternet = 'shareOnInternet' in changes ? changes.shareOnInternet : (project.shareOnInternet || false);
+    const nextTunnelProvider = 'tunnelProvider' in changes ? changes.tunnelProvider : (project.tunnelProvider || '');
+    const nextTunnelAutoStart = 'tunnelAutoStart' in changes ? changes.tunnelAutoStart : (project.tunnelAutoStart || false);
+
+    if (nextShareOnInternet && nextTunnelAutoStart && nextTunnelProvider) {
+      const nextStatus = await window.devbox?.tunnel?.start?.(project.id, nextTunnelProvider);
+      setTunnelStatus(nextStatus || null);
+      return;
+    }
+
+    await window.devbox?.tunnel?.stop?.(project.id);
+    setTunnelStatus((current) => current ? { ...current, status: 'stopped' } : null);
+  };
+
+  const saveProjectChanges = async (changes, options = {}) => {
+    const keys = Object.keys(changes);
+    const previousPendingValues = Object.fromEntries(
+      keys
+        .filter((key) => Object.prototype.hasOwnProperty.call(pendingChanges, key))
+        .map((key) => [key, pendingChanges[key]])
+    );
+
+    setSavingSettingKeys((current) => [...new Set([...current, ...keys])]);
+    setPendingChanges((current) => ({ ...current, ...changes }));
+
+    try {
+      await window.devbox?.projects.update(project.id, changes, { deferRestart: true });
+
+      if (options.syncTunnel) {
+        await syncTunnelWithSettings(changes);
+      }
+
+      await refreshProjects?.();
+
+      if (options.restartRequired && project.isRunning) {
+        const shouldRestart = await showConfirm({
+          title: 'Restart Project?',
+          message: options.restartMessage || 'This setting change requires a restart to fully apply. Restart now?',
+          confirmText: 'Restart',
+          type: 'question',
+        });
+
+        if (shouldRestart) {
+          await window.devbox?.projects.restart(project.id);
+          await refreshProjects?.();
+        }
+      }
+    } catch (error) {
+      setPendingChanges((current) => {
+        const next = { ...current };
+        keys.forEach((key) => {
+          if (Object.prototype.hasOwnProperty.call(previousPendingValues, key)) {
+            next[key] = previousPendingValues[key];
+          } else {
+            delete next[key];
+          }
+        });
+        return next;
+      });
+
+      await showAlert({
+        title: 'Unable to Save Setting',
+        message: error.message || 'The project setting could not be saved.',
+        type: 'error',
+      });
+    } finally {
+      setSavingSettingKeys((current) => current.filter((key) => !keys.includes(key)));
+    }
+  };
+
+  useEffect(() => {
+    if (!project) {
+      return;
+    }
+
+    setPendingChanges((current) => {
+      let changed = false;
+      const next = { ...current };
+
+      AUTO_SAVE_SETTING_KEYS.forEach((key) => {
+        if (!Object.prototype.hasOwnProperty.call(next, key) || savingSettingKeys.includes(key)) {
+          return;
+        }
+
+        if (next[key] === (project[key] ?? false)) {
+          delete next[key];
+          changed = true;
+        }
+      });
+
+      return changed ? next : current;
+    });
+  }, [project, savingSettingKeys]);
 
   const handleStartInternetShare = async () => {
     if (!effectiveTunnelProvider) {
@@ -758,6 +866,10 @@ function OverviewTab({ project, processes, refreshProjects }) {
         message: 'Choose Cloudflare Tunnel or zrok first.',
         type: 'warning',
       });
+      return;
+    }
+
+    if (isTunnelSettingSaving) {
       return;
     }
 
@@ -947,7 +1059,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
         delete otherChanges.webServerVersion;
       }
       if (Object.keys(otherChanges).length > 0) {
-        await window.devbox?.projects.update(project.id, otherChanges);
+        await window.devbox?.projects.update(project.id, otherChanges, { deferRestart: true });
       }
 
       if (project.isRunning && hasTunnelConfigChanges) {
@@ -1170,8 +1282,12 @@ function OverviewTab({ project, processes, refreshProjects }) {
                 <input type="checkbox" checked={getEffectiveValue('autoStart') || false}
                   onChange={(e) => {
                     const newValue = e.target.checked;
-                    if (newValue === (project.autoStart || false)) { const { autoStart, ...rest } = pendingChanges; setPendingChanges(rest); }
-                    else { setPendingChanges({ ...pendingChanges, autoStart: newValue }); }
+                    if (newValue === (project.autoStart || false)) {
+                      const { autoStart, ...rest } = pendingChanges;
+                      setPendingChanges(rest);
+                      return;
+                    }
+                    saveProjectChanges({ autoStart: newValue });
                   }} className="sr-only peer" />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
               </label>
@@ -1187,8 +1303,15 @@ function OverviewTab({ project, processes, refreshProjects }) {
                 <input type="checkbox" checked={getEffectiveValue('networkAccess') || false}
                   onChange={(e) => {
                     const newValue = e.target.checked;
-                    if (newValue === (project.networkAccess || false)) { const { networkAccess, ...rest } = pendingChanges; setPendingChanges(rest); }
-                    else { setPendingChanges({ ...pendingChanges, networkAccess: newValue }); }
+                    if (newValue === (project.networkAccess || false)) {
+                      const { networkAccess, ...rest } = pendingChanges;
+                      setPendingChanges(rest);
+                      return;
+                    }
+                    saveProjectChanges(
+                      { networkAccess: newValue },
+                      { restartRequired: true, restartMessage: 'Share on Local Network needs a project restart to fully apply. Restart now?' }
+                    );
                   }} className="sr-only peer" />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
               </label>
@@ -1226,9 +1349,9 @@ function OverviewTab({ project, processes, refreshProjects }) {
                     if (newValue === (project.shareOnInternet || false)) {
                       const { shareOnInternet, ...rest } = pendingChanges;
                       setPendingChanges(rest);
-                    } else {
-                      setPendingChanges({ ...pendingChanges, shareOnInternet: newValue });
+                      return;
                     }
+                    saveProjectChanges({ shareOnInternet: newValue }, { syncTunnel: true });
                   }}
                   className="sr-only peer"
                 />
@@ -1263,9 +1386,9 @@ function OverviewTab({ project, processes, refreshProjects }) {
                         if (newValue === (project.tunnelProvider || '')) {
                           const { tunnelProvider, ...rest } = pendingChanges;
                           setPendingChanges(rest);
-                        } else {
-                          setPendingChanges({ ...pendingChanges, tunnelProvider: newValue });
+                          return;
                         }
+                        saveProjectChanges({ tunnelProvider: newValue }, { syncTunnel: true });
                       }}
                       className="input"
                     >
@@ -1289,9 +1412,9 @@ function OverviewTab({ project, processes, refreshProjects }) {
                           if (newValue === (project.tunnelAutoStart || false)) {
                             const { tunnelAutoStart, ...rest } = pendingChanges;
                             setPendingChanges(rest);
-                          } else {
-                            setPendingChanges({ ...pendingChanges, tunnelAutoStart: newValue });
+                            return;
                           }
+                          saveProjectChanges({ tunnelAutoStart: newValue }, { syncTunnel: true });
                         }}
                         className="sr-only peer"
                       />
@@ -1303,7 +1426,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={handleStartInternetShare}
-                    disabled={!project.isRunning || !effectiveShareOnInternet || !effectiveTunnelProvider || !providerReady || tunnelConfigDirty || isTunnelBusy}
+                    disabled={!project.isRunning || !effectiveShareOnInternet || !effectiveTunnelProvider || !providerReady || isTunnelBusy}
                     className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isTunnelStarting ? (
@@ -1348,7 +1471,6 @@ function OverviewTab({ project, processes, refreshProjects }) {
 
                 <div className="grid grid-cols-1 gap-2 text-xs">
                   {!project.isRunning && <p className="text-yellow-600 dark:text-yellow-400">Start the project before opening a public tunnel.</p>}
-                  {tunnelConfigDirty && <p className="text-yellow-600 dark:text-yellow-400">Save project changes before starting the tunnel.</p>}
                   {effectiveTunnelProvider === 'zrok' && zrokInstalled && !zrokAppStatus.enabled && <p className="text-yellow-600 dark:text-yellow-400">zrok is installed, but the one-time app-wide enable step is not complete yet. Finish it in Binary Manager → Tools.</p>}
                   {effectiveTunnelProvider === 'zrok' && !zrokInstalled && <p className="text-yellow-600 dark:text-yellow-400">Install zrok first in Binary Manager → Tools.</p>}
                   {effectiveTunnelProvider && !providerReady && effectiveTunnelProvider !== 'zrok' && <p className="text-yellow-600 dark:text-yellow-400">Install the selected tunnel provider in Binary Manager first.</p>}
