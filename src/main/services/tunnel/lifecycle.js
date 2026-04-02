@@ -118,7 +118,7 @@ module.exports = {
   },
 
   async prepareTunnelTarget(provider, tunnelTarget, projectId) {
-    if (provider !== 'cloudflared') {
+    if (!['cloudflared', 'zrok'].includes(provider)) {
       return tunnelTarget;
     }
 
@@ -203,7 +203,7 @@ module.exports = {
     });
 
     proxy.on('error', (error, req, res) => {
-      this.managers?.log?.project?.(projectId, `[cloudflared:proxy] ${error.message}`);
+      this.managers?.log?.project?.(projectId, `[${provider}:proxy] ${error.message}`);
       if (res && !res.headersSent) {
         res.writeHead(502, { 'Content-Type': 'text/plain' });
       }

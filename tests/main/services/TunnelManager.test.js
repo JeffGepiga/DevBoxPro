@@ -236,6 +236,40 @@ describe('TunnelManager', () => {
     expect(rewritten).not.toContain('hrms.test');
   });
 
+  it('prepares zrok tunnels through the local rewrite proxy before sharing', async () => {
+    const { manager, processRef } = makeManager({
+      getZrokStatus: vi.fn().mockResolvedValue({ enabled: true, configuredAt: '2026-04-01T00:00:00.000Z' }),
+      buildTunnelTarget: vi.fn(() => ({
+        targetUrl: 'http://myapp.test',
+        displayUrl: 'http://myapp.test',
+        hostHeader: 'myapp.test',
+      })),
+      prepareTunnelTarget: vi.fn(async (_provider, target) => ({
+        ...target,
+        targetUrl: 'http://127.0.0.1:62100',
+      })),
+      getTunnelStartArgs: vi.fn((provider, target) => ['share', 'public', target.targetUrl, '--headless']),
+    });
+
+    await manager.startTunnel('proj-1', 'zrok');
+
+    expect(manager.prepareTunnelTarget).toHaveBeenCalledWith(
+      'zrok',
+      expect.objectContaining({
+        targetUrl: 'http://myapp.test',
+        hostHeader: 'myapp.test',
+      }),
+      'proj-1'
+    );
+    expect(manager.spawnTunnelProcess).toHaveBeenCalledWith(
+      '/resources/cloudflared.exe',
+      ['share', 'public', 'http://127.0.0.1:62100', '--headless'],
+      expect.any(Object)
+    );
+
+    processRef.emit('exit', 0, null);
+  });
+
   it('waits for a project that is still transitioning to running before starting a tunnel', async () => {
     vi.useFakeTimers();
 
