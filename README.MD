@@ -67,6 +67,14 @@ DevBox Pro is an Electron desktop app with a React renderer and a Node.js main p
 - One-click certificate trust
 - `.test` domain support (e.g., `myproject.test`)
 
+### 🌍 Public Internet Sharing
+- Share a running project publicly with **Cloudflare Tunnel** or **zrok**
+- Per-project **Share on Internet** toggle with optional **auto-start tunnel** when the project starts
+- Works with both **Nginx** and **Apache** projects, including mixed front-door proxy setups
+- Tunnel proxy rewrites redirects, cookies, and absolute local `.test` URLs so public sessions stay on the tunnel hostname
+- Cloudflare Quick Tunnels use random `*.trycloudflare.com` URLs
+- zrok requires a one-time app-wide enable token in **Binary Manager → Tools**
+
 ### 🎯 Framework Support
 - **Laravel** - Full support with Artisan, Queue Workers, Scheduler
 - **Symfony** - Console commands, Doctrine integration
@@ -131,6 +139,16 @@ DevBox Pro is an Electron desktop app with a React renderer and a Node.js main p
 4. Configure **services** (MySQL, Redis, etc.)
 5. Set your **domain** (e.g., `myproject.test`)
 6. Click **Create** and you're ready!
+
+### Sharing a Project on the Internet
+
+1. Open the project detail page and enable **Share on Internet**
+2. Choose **Cloudflare Tunnel** or **zrok** as the provider
+3. Optionally enable **Auto-start tunnel** if the project should publish automatically on startup
+4. Start the project, then click **Start Sharing**
+5. Use the generated public URL to access the project from outside your local machine
+
+> **Provider notes:** Cloudflare uses disposable random public URLs on `trycloudflare.com`. zrok requires a one-time app-wide enable step before any project can use it.
 
 ### Using Terminal Commands
 

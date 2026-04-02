@@ -8,6 +8,14 @@
 
 ### ✨ New Features
 
+#### 🌍 Public Internet Sharing
+- Share running projects publicly with **Cloudflare Tunnel** or **zrok** from the project detail screen
+- Per-project **Share on Internet** toggle with optional **auto-start tunnel** support
+- Public tunnels now support both **Nginx** and **Apache** projects, including mixed front-door proxy setups
+- Cloudflare tunnel traffic is now stabilized with local proxy handling for redirects, cookies, and absolute local `.test` URLs
+- Cloudflare public URLs are only surfaced once the `trycloudflare.com` hostname is resolvable, reducing broken fresh-tunnel links
+- zrok public URL detection has been updated for current CLI output formats
+
 #### ⚡ Improved Project Lifecycle Management
 - Immediate service stopping when the last active project is closed
 - Pending service shutdowns are automatically cancelled when starting new project services
@@ -59,6 +67,10 @@
 
 ### 🧹 Bug Fixes & Improvements
 
+- Fixed public tunnel routing when multiple projects are running across Nginx and Apache
+- Fixed Cloudflare tunnel sessions showing the wrong project when multiple projects are shared
+- Fixed public tunnel flows that redirected browsers back to local `.test` URLs
+- Fixed stale or not-yet-ready Cloudflare Quick Tunnel hostnames being shown as live too early
 - Fixed multi-server version bugs when running multiple web server versions simultaneously
 - Fixed port conflict issues across services
 - Fixed WordPress installation bugs and added PHP extension toggles
