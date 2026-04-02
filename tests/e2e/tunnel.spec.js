@@ -74,12 +74,7 @@ test.describe('DevBoxPro Tunnel Smoke Tests', () => {
 
     const providerSelect = page.locator('text=Provider').locator('xpath=ancestor::div[1]').locator('select');
     await providerSelect.selectOption('cloudflared');
-
-    const saveChangesButton = page.getByRole('button', { name: /Save Changes/i });
-    await expect(saveChangesButton).toBeVisible();
-    await saveChangesButton.click();
-
-    await expect(saveChangesButton).not.toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('You have unsaved changes')).not.toBeVisible();
 
     if (await startProjectButton.isVisible().catch(() => false)) {
       await startProjectButton.click();
@@ -87,8 +82,9 @@ test.describe('DevBoxPro Tunnel Smoke Tests', () => {
     }
 
     await expect(page.locator('text=Share on Internet')).toBeVisible();
-    await expect(page.getByRole('button', { name: /Start Sharing/i })).toBeEnabled();
-    await page.getByRole('button', { name: /Start Sharing/i }).click();
+    const startSharingButton = page.getByRole('button', { name: /Start Sharing/i });
+    await expect(startSharingButton).toBeEnabled({ timeout: 15000 });
+    await startSharingButton.click();
 
     await expect(page.locator('text=https://playwright-share.trycloudflare.com')).toBeVisible();
 

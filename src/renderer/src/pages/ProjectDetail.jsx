@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
@@ -568,6 +568,9 @@ function OverviewTab({ project, processes, refreshProjects }) {
   const [tunnelAction, setTunnelAction] = useState(null);
   const [zrokAppStatus, setZrokAppStatus] = useState({ enabled: false, configuredAt: null });
   const [savingSettingKeys, setSavingSettingKeys] = useState([]);
+  const projectRef = useRef(project);
+  const pendingChangesRef = useRef(pendingChanges);
+  const autoSaveQueueRef = useRef(Promise.resolve());
   const [versionOptions, setVersionOptions] = useState({
     mysql: [],
     mariadb: [],
@@ -755,8 +758,29 @@ function OverviewTab({ project, processes, refreshProjects }) {
   const isTunnelSettingSaving = ['shareOnInternet', 'tunnelProvider', 'tunnelAutoStart'].some(isSettingSaving);
   const isTunnelBusy = tunnelAction !== null || tunnelStatus?.status === 'starting' || isTunnelSettingSaving;
 
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
+
+  useEffect(() => {
+    pendingChangesRef.current = pendingChanges;
+  }, [pendingChanges]);
+
+  const getLatestSettingValue = (key) => {
+    if (Object.prototype.hasOwnProperty.call(pendingChangesRef.current, key)) {
+      return pendingChangesRef.current[key];
+    }
+
+    if (key === 'services') {
+      return projectRef.current?.services || {};
+    }
+
+    return projectRef.current?.[key];
+  };
+
   const syncTunnelWithSettings = async (changes) => {
-    if (!project?.isRunning) {
+    const currentProject = projectRef.current;
+    if (!currentProject?.isRunning) {
       return;
     }
 
@@ -765,74 +789,87 @@ function OverviewTab({ project, processes, refreshProjects }) {
       return;
     }
 
-    const nextShareOnInternet = 'shareOnInternet' in changes ? changes.shareOnInternet : (project.shareOnInternet || false);
-    const nextTunnelProvider = 'tunnelProvider' in changes ? changes.tunnelProvider : (project.tunnelProvider || '');
-    const nextTunnelAutoStart = 'tunnelAutoStart' in changes ? changes.tunnelAutoStart : (project.tunnelAutoStart || false);
+    const nextShareOnInternet = 'shareOnInternet' in changes ? changes.shareOnInternet : (getLatestSettingValue('shareOnInternet') || false);
+    const nextTunnelProvider = 'tunnelProvider' in changes ? changes.tunnelProvider : (getLatestSettingValue('tunnelProvider') || '');
+    const nextTunnelAutoStart = 'tunnelAutoStart' in changes ? changes.tunnelAutoStart : (getLatestSettingValue('tunnelAutoStart') || false);
 
     if (nextShareOnInternet && nextTunnelAutoStart && nextTunnelProvider) {
-      const nextStatus = await window.devbox?.tunnel?.start?.(project.id, nextTunnelProvider);
+      const nextStatus = await window.devbox?.tunnel?.start?.(currentProject.id, nextTunnelProvider);
       setTunnelStatus(nextStatus || null);
       return;
     }
 
-    await window.devbox?.tunnel?.stop?.(project.id);
+    await window.devbox?.tunnel?.stop?.(currentProject.id);
     setTunnelStatus((current) => current ? { ...current, status: 'stopped' } : null);
   };
 
-  const saveProjectChanges = async (changes, options = {}) => {
+  const saveProjectChanges = (changes, options = {}) => {
     const keys = Object.keys(changes);
     const previousPendingValues = Object.fromEntries(
       keys
-        .filter((key) => Object.prototype.hasOwnProperty.call(pendingChanges, key))
-        .map((key) => [key, pendingChanges[key]])
+        .filter((key) => Object.prototype.hasOwnProperty.call(pendingChangesRef.current, key))
+        .map((key) => [key, pendingChangesRef.current[key]])
     );
 
     setSavingSettingKeys((current) => [...new Set([...current, ...keys])]);
     setPendingChanges((current) => ({ ...current, ...changes }));
+    pendingChangesRef.current = { ...pendingChangesRef.current, ...changes };
 
-    try {
-      await window.devbox?.projects.update(project.id, changes, { deferRestart: true });
-
-      if (options.syncTunnel) {
-        await syncTunnelWithSettings(changes);
-      }
-
-      await refreshProjects?.();
-
-      if (options.restartRequired && project.isRunning) {
-        const shouldRestart = await showConfirm({
-          title: 'Restart Project?',
-          message: options.restartMessage || 'This setting change requires a restart to fully apply. Restart now?',
-          confirmText: 'Restart',
-          type: 'question',
-        });
-
-        if (shouldRestart) {
-          await window.devbox?.projects.restart(project.id);
-          await refreshProjects?.();
+    const queuedSave = autoSaveQueueRef.current
+      .catch(() => {})
+      .then(async () => {
+        const currentProject = projectRef.current;
+        if (!currentProject?.id) {
+          return;
         }
-      }
-    } catch (error) {
-      setPendingChanges((current) => {
-        const next = { ...current };
-        keys.forEach((key) => {
-          if (Object.prototype.hasOwnProperty.call(previousPendingValues, key)) {
-            next[key] = previousPendingValues[key];
-          } else {
-            delete next[key];
+
+        try {
+          await window.devbox?.projects.update(currentProject.id, changes, { deferRestart: true });
+
+          if (options.syncTunnel) {
+            await syncTunnelWithSettings(changes);
           }
-        });
-        return next;
+
+          await refreshProjects?.();
+
+          if (options.restartRequired && currentProject.isRunning) {
+            const shouldRestart = await showConfirm({
+              title: 'Restart Project?',
+              message: options.restartMessage || 'This setting change requires a restart to fully apply. Restart now?',
+              confirmText: 'Restart',
+              type: 'question',
+            });
+
+            if (shouldRestart) {
+              await window.devbox?.projects.restart(currentProject.id);
+              await refreshProjects?.();
+            }
+          }
+        } catch (error) {
+          const restoredPendingChanges = { ...pendingChangesRef.current };
+          keys.forEach((key) => {
+            if (Object.prototype.hasOwnProperty.call(previousPendingValues, key)) {
+              restoredPendingChanges[key] = previousPendingValues[key];
+            } else {
+              delete restoredPendingChanges[key];
+            }
+          });
+
+          pendingChangesRef.current = restoredPendingChanges;
+          setPendingChanges(restoredPendingChanges);
+
+          await showAlert({
+            title: 'Unable to Save Setting',
+            message: error.message || 'The project setting could not be saved.',
+            type: 'error',
+          });
+        } finally {
+          setSavingSettingKeys((current) => current.filter((key) => !keys.includes(key)));
+        }
       });
 
-      await showAlert({
-        title: 'Unable to Save Setting',
-        message: error.message || 'The project setting could not be saved.',
-        type: 'error',
-      });
-    } finally {
-      setSavingSettingKeys((current) => current.filter((key) => !keys.includes(key)));
-    }
+    autoSaveQueueRef.current = queuedSave;
+    return queuedSave;
   };
 
   useEffect(() => {
