@@ -163,6 +163,13 @@ describe('BinaryManager', () => {
 
         fireEvent.click(await screen.findByRole('button', { name: /Tools/i }));
 
+        fireEvent.click(await screen.findByRole('button', { name: /Configure zrok app-wide setup/i }));
+
+        expect(await screen.findByText('zrok App-Wide Setup')).toBeInTheDocument();
+        expect(screen.getByText(/Sign in at myzrok\.io/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Open myzrok\.io/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Open API Console/i })).toBeInTheDocument();
+
         fireEvent.change(await screen.findByPlaceholderText(/Paste your zrok enable token/i), {
             target: { value: 'zrok-token-123' },
         });
@@ -172,6 +179,25 @@ describe('BinaryManager', () => {
         await waitFor(() => {
             expect(mockDevbox.tunnel.zrokEnable).toHaveBeenCalledWith('zrok-token-123');
         });
+    });
+
+    it('opens the zrok token help links from the setup modal', async () => {
+        mockDevbox.binaries.getInstalled.mockResolvedValue({ zrok: true });
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <BinaryManager />
+            </MemoryRouter>
+        );
+
+        fireEvent.click(await screen.findByRole('button', { name: /Tools/i }));
+        fireEvent.click(await screen.findByRole('button', { name: /Configure zrok app-wide setup/i }));
+
+        fireEvent.click(await screen.findByRole('button', { name: /Open myzrok\.io/i }));
+        fireEvent.click(await screen.findByRole('button', { name: /Open API Console/i }));
+
+        expect(mockDevbox.system.openExternal).toHaveBeenCalledWith('https://myzrok.io/');
+        expect(mockDevbox.system.openExternal).toHaveBeenCalledWith('https://api-v2.zrok.io/');
     });
 
     it('shows tunnel update checks when the binaries are installed', async () => {
@@ -190,6 +216,7 @@ describe('BinaryManager', () => {
 
         expect(cloudflareRow ? within(cloudflareRow).getByRole('button', { name: /Check Updates/i }) : null).toBeTruthy();
         expect(zrokRow ? within(zrokRow).getByRole('button', { name: /Check Updates/i }) : null).toBeTruthy();
+        expect(zrokRow ? within(zrokRow).getByRole('button', { name: /Configure zrok app-wide setup/i }) : null).toBeTruthy();
 
         fireEvent.click(within(cloudflareRow).getByRole('button', { name: /Check Updates/i }));
 

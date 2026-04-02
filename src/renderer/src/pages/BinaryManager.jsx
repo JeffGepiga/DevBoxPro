@@ -203,7 +203,7 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
   );
 };
 
-const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst, installedLabel = 'Installed', canRemove = true, size, onDownload, onRemove, onImport, sourceKey, importLabel, downloading, progress, downloadSources, getProgressDisplay, hasUpdate, onCheckUpdate, checkingUpdate }) => {
+const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst, installedLabel = 'Installed', canRemove = true, size, onDownload, onRemove, onImport, sourceKey, importLabel, downloading, progress, downloadSources, getProgressDisplay, hasUpdate, onCheckUpdate, checkingUpdate, extraActions = null }) => {
   const isDownloading = downloading[id] || ['completed', 'error'].includes(progress?.[id]?.status);
   const hasSource = !!downloadSources[sourceKey]?.url;
 
@@ -233,6 +233,8 @@ const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst
         {isDownloading ? getProgressDisplay(id) : inst ? (
           <>
             <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium"><Check className="w-3 h-3" /> {installedLabel}</span>
+
+            {extraActions}
             
             {onCheckUpdate && !hasUpdate && (
               <button 
@@ -361,6 +363,7 @@ function BinaryManager() {
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [updateResult, setUpdateResult] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [showZrokSetupModal, setShowZrokSetupModal] = useState(false);
   const [serviceUpdates, setServiceUpdates] = useState({ composer: false, phpmyadmin: false, cloudflared: false, zrok: false });
   const [checkingServiceUpdate, setCheckingServiceUpdate] = useState({ composer: false, phpmyadmin: false, cloudflared: false, zrok: false });
   const [zrokToken, setZrokToken] = useState('');
@@ -787,6 +790,7 @@ function BinaryManager() {
       await window.devbox?.tunnel?.zrokEnable?.(token);
       setZrokToken('');
       await loadZrokStatus();
+      setShowZrokSetupModal(false);
       showAlert({
         title: 'zrok Enabled',
         message: 'zrok is now enabled for the entire app.',
@@ -1505,6 +1509,103 @@ function BinaryManager() {
         </div>
       )}
 
+      {/* zrok Setup Modal */}
+      {showZrokSetupModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full mx-4 overflow-hidden">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-amber-500" />
+                  zrok App-Wide Setup
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Enable zrok once here, then any project can use it for internet sharing.
+                </p>
+              </div>
+              <span className={clsx(
+                'text-xs font-medium px-2 py-1 rounded-full border shrink-0',
+                zrokStatus.enabled
+                  ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
+                  : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+              )}>
+                {zrokStatus.enabled ? 'Enabled' : 'Not Enabled'}
+              </span>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-4 py-3 space-y-2">
+                <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Where to get the token</p>
+                <p className="text-xs text-blue-800 dark:text-blue-200">
+                  Sign in at myzrok.io, open the zrok API console, then click the green getting-started button and copy the account token shown in step 2.
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => window.devbox?.system.openExternal('https://myzrok.io/')}
+                    className="btn-secondary text-xs px-2.5 py-1 flex items-center gap-1"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Open myzrok.io
+                  </button>
+                  <button
+                    onClick={() => window.devbox?.system.openExternal('https://api-v2.zrok.io/')}
+                    className="btn-secondary text-xs px-2.5 py-1 flex items-center gap-1"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Open API Console
+                  </button>
+                </div>
+              </div>
+
+              <label className="block">
+                <span className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Enable Token</span>
+                <input
+                  type="password"
+                  value={zrokToken}
+                  onChange={(event) => setZrokToken(event.target.value)}
+                  placeholder="Paste your zrok enable token"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </label>
+
+              <div className="rounded-lg bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-700 px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                {!installed.zrok
+                  ? 'Install the zrok binary first.'
+                  : zrokStatus.configuredAt
+                    ? `Last enabled ${new Date(zrokStatus.configuredAt).toLocaleString()}`
+                    : 'zrok has not been enabled on this app yet.'}
+              </div>
+            </div>
+
+            <div className="p-4 bg-gray-50 dark:bg-gray-700/50 flex justify-end gap-3">
+              <button
+                onClick={() => setShowZrokSetupModal(false)}
+                className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={handleEnableZrok}
+                disabled={!installed.zrok || enablingZrok || !zrokToken.trim()}
+                className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {enablingZrok ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Enabling...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4" />
+                    {zrokStatus.enabled ? 'Re-enable zrok' : 'Enable zrok'}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Import Version Modal */}
       {importModal.open && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1913,10 +2014,21 @@ function BinaryManager() {
             description="Public sharing with an app-wide enable token"
             icon={Zap}
             isInstalled={!!installed.zrok}
+            installedLabel={zrokStatus.enabled ? 'Installed + Enabled' : 'Installed'}
             size="~20 MB"
             hasUpdate={serviceUpdates.zrok}
             onCheckUpdate={() => handleCheckServiceUpdate('zrok')}
             checkingUpdate={checkingServiceUpdate.zrok}
+            extraActions={installed.zrok ? (
+              <button
+                onClick={() => setShowZrokSetupModal(true)}
+                className="btn-icon text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20"
+                title="Configure zrok app-wide setup"
+                aria-label="Configure zrok app-wide setup"
+              >
+                <Settings className="w-3.5 h-3.5" />
+              </button>
+            ) : null}
             sourceKey="zrok"
             {...sharedSimpleProps}
             onDownload={() => handleDownloadService('zrok')}
@@ -1967,64 +2079,6 @@ function BinaryManager() {
             onRemove={installed.git ? () => handleRemove('git') : undefined}
           />
 
-          <div className="card p-5 border border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-900/10">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">zrok App-Wide Setup</h3>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                  Enable zrok once here, then any project can use it for internet sharing.
-                </p>
-              </div>
-              <span className={clsx(
-                'text-xs font-medium px-2 py-1 rounded-full border',
-                zrokStatus.enabled
-                  ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
-                  : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
-              )}>
-                {zrokStatus.enabled ? 'Enabled' : 'Not Enabled'}
-              </span>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <label className="block">
-                <span className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Enable Token</span>
-                <input
-                  type="password"
-                  value={zrokToken}
-                  onChange={(event) => setZrokToken(event.target.value)}
-                  placeholder="Paste your zrok enable token"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
-              </label>
-
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  {!installed.zrok
-                    ? 'Install the zrok binary first.'
-                    : zrokStatus.configuredAt
-                      ? `Last enabled ${new Date(zrokStatus.configuredAt).toLocaleString()}`
-                      : 'zrok has not been enabled on this app yet.'}
-                </div>
-                <button
-                  onClick={handleEnableZrok}
-                  disabled={!installed.zrok || enablingZrok || !zrokToken.trim()}
-                  className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {enablingZrok ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Enabling...
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-4 h-4" />
-                      {zrokStatus.enabled ? 'Re-enable zrok' : 'Enable zrok'}
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
       )}
 

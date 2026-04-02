@@ -45,14 +45,13 @@ test.describe('DevBoxPro Tunnel Smoke Tests', () => {
 
     await page.getByRole('button', { name: /Tools/i }).click();
     await expect(page.locator('text=Cloudflare Tunnel')).toBeVisible();
-    await expect(page.locator('text=zrok App-Wide Setup')).toBeVisible();
-    await expect(page.locator('text=Enable zrok once here, then any project can use it for internet sharing.')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Configure zrok app-wide setup/i })).toBeVisible();
 
     await page.click('a:has-text("Services")');
     await expect(page.locator('text=Cloudflare Tunnel')).toBeVisible();
     await expect(page.locator('text=Active Public Tunnels')).toBeVisible();
     await expect(page.locator('text=No app setup required')).toBeVisible();
-    await expect(page.locator('text=Needs app-wide setup').or(page.locator('text=App-wide setup complete'))).toBeVisible();
+    await expect(page.locator('text=Installed. Complete the app-wide enable step in Binary Manager.').or(page.locator('text=Ready for projects'))).toBeVisible();
   });
 
   test('starts a public tunnel from Project Detail and surfaces it in Services', async ({ page }) => {

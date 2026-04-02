@@ -653,6 +653,9 @@ function OverviewTab({ project, processes, refreshProjects }) {
     };
 
     loadTunnelData();
+    const intervalId = setInterval(loadTunnelData, 5000);
+
+    return () => clearInterval(intervalId);
   }, [project?.id, project?.isRunning]);
 
   useEffect(() => {
@@ -727,6 +730,24 @@ function OverviewTab({ project, processes, refreshProjects }) {
     : effectiveTunnelProvider === 'zrok'
       ? zrokInstalled && zrokAppStatus.enabled
       : false;
+  const tunnelStatusLabel = effectiveTunnelProvider === 'zrok' && zrokInstalled && !zrokAppStatus.enabled
+    ? 'Setup Required'
+    : tunnelStatus?.status === 'running'
+      ? 'Live'
+      : tunnelStatus?.status === 'starting'
+        ? 'Starting'
+        : tunnelStatus?.status === 'error'
+          ? 'Error'
+          : 'Stopped';
+  const tunnelStatusBadgeClass = effectiveTunnelProvider === 'zrok' && zrokInstalled && !zrokAppStatus.enabled
+    ? 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800'
+    : tunnelStatus?.status === 'running'
+      ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
+      : tunnelStatus?.status === 'starting'
+        ? 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800'
+        : tunnelStatus?.status === 'error'
+          ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800'
+          : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
 
   const handleStartInternetShare = async () => {
     if (!effectiveTunnelProvider) {
@@ -1224,21 +1245,9 @@ function OverviewTab({ project, processes, refreshProjects }) {
                   </div>
                   <span className={clsx(
                     'text-xs font-medium px-2 py-1 rounded-full border',
-                    tunnelStatus?.status === 'running'
-                      ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
-                      : tunnelStatus?.status === 'starting'
-                        ? 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800'
-                        : tunnelStatus?.status === 'error'
-                          ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800'
-                          : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+                    tunnelStatusBadgeClass
                   )}>
-                    {tunnelStatus?.status === 'running'
-                      ? 'Live'
-                      : tunnelStatus?.status === 'starting'
-                        ? 'Starting'
-                        : tunnelStatus?.status === 'error'
-                          ? 'Error'
-                          : 'Stopped'}
+                    {tunnelStatusLabel}
                   </span>
                 </div>
 
@@ -1260,7 +1269,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
                     >
                       <option value="">Select provider</option>
                       <option value="cloudflared" disabled={!cloudflaredInstalled}>Cloudflare Tunnel{cloudflaredInstalled ? '' : ' (install in Binary Manager)'}</option>
-                      <option value="zrok" disabled={!zrokInstalled}>zrok{zrokInstalled ? '' : ' (install in Binary Manager)'}</option>
+                      <option value="zrok" disabled={!zrokInstalled}>zrok{!zrokInstalled ? ' (install in Binary Manager)' : !zrokAppStatus.enabled ? ' (complete app-wide setup)' : ''}</option>
                     </select>
                   </div>
 
@@ -1338,7 +1347,8 @@ function OverviewTab({ project, processes, refreshProjects }) {
                 <div className="grid grid-cols-1 gap-2 text-xs">
                   {!project.isRunning && <p className="text-yellow-600 dark:text-yellow-400">Start the project before opening a public tunnel.</p>}
                   {tunnelConfigDirty && <p className="text-yellow-600 dark:text-yellow-400">Save project changes before starting the tunnel.</p>}
-                  {effectiveTunnelProvider === 'zrok' && !zrokAppStatus.enabled && <p className="text-yellow-600 dark:text-yellow-400">Enable zrok first in Binary Manager → Tools.</p>}
+                  {effectiveTunnelProvider === 'zrok' && zrokInstalled && !zrokAppStatus.enabled && <p className="text-yellow-600 dark:text-yellow-400">zrok is installed, but the one-time app-wide enable step is not complete yet. Finish it in Binary Manager → Tools.</p>}
+                  {effectiveTunnelProvider === 'zrok' && !zrokInstalled && <p className="text-yellow-600 dark:text-yellow-400">Install zrok first in Binary Manager → Tools.</p>}
                   {effectiveTunnelProvider && !providerReady && effectiveTunnelProvider !== 'zrok' && <p className="text-yellow-600 dark:text-yellow-400">Install the selected tunnel provider in Binary Manager first.</p>}
                   {tunnelStatus?.publicUrl && (
                     <div className="rounded-lg bg-white/70 dark:bg-gray-900/20 border border-white/70 dark:border-gray-800 px-3 py-2">

@@ -131,6 +131,7 @@ function Services() {
     };
 
     loadTunnelStatuses();
+    const intervalId = setInterval(loadTunnelStatuses, 5000);
     const unsubscribe = window.devbox?.tunnel?.onStatusChanged?.((payload) => {
       if (!payload?.projectId) {
         return;
@@ -150,7 +151,10 @@ function Services() {
       });
     });
 
-    return () => unsubscribe?.();
+    return () => {
+      clearInterval(intervalId);
+      unsubscribe?.();
+    };
   }, []);
 
   // Helper to check if a specific version is installed
@@ -601,7 +605,9 @@ function Services() {
           name="zrok"
           description="Public sharing with one app-wide enable step"
           installed={binariesStatus?.zrok?.installed === true}
-          secondaryStatus={zrokStatus.enabled ? 'App-wide setup complete' : 'Needs app-wide setup'}
+          secondaryStatus={binariesStatus?.zrok?.installed === true
+            ? (zrokStatus.enabled ? 'Ready for projects' : 'Installed. Complete the app-wide enable step in Binary Manager.')
+            : 'Install in Binary Manager first'}
           color="teal"
         />
 
