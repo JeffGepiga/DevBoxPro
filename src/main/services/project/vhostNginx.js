@@ -72,9 +72,7 @@ module.exports = {
     const listenDirective = networkAccess
       ? `0.0.0.0:${finalHttpPort}${canUsePort80 ? ' default_server' : ''}`
       : `${httpPort}`;
-    const effectiveNginxVersion = targetNginxVersion
-      || this.managers.service?.serviceStatus?.get('nginx')?.version
-      || nginxVersion;
+    const effectiveNginxVersion = effectiveVersion;
     const useHttp2Directive = parseFloat(effectiveNginxVersion) >= 1.25;
     const http2ListenSuffix = useHttp2Directive ? '' : ' http2';
     const http2Directive = useHttp2Directive ? '\n    http2 on;' : '';

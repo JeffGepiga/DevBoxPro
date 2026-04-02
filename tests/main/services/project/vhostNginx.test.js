@@ -67,4 +67,46 @@ describe('project/vhostNginx', () => {
     expect(config).toContain('location ~ \\.php$ {');
     expect(config).toContain('location ~ /\\.(?!well-known).* {');
   });
+
+  it('uses the target nginx version for SSL http2 syntax in mixed-version setups', async () => {
+    const ctx = makeContext({
+      managers: {
+        service: {
+          getServicePorts: vi.fn((serviceName, version) => {
+            if (serviceName === 'nginx' && version === '1.24') {
+              return { httpPort: 8083, sslPort: 8445 };
+            }
+
+            if (serviceName === 'nginx' && version === '1.28') {
+              return { httpPort: 80, sslPort: 443 };
+            }
+
+            return { httpPort: 80, sslPort: 443 };
+          }),
+          serviceStatus: new Map([['nginx', { version: '1.28' }]]),
+          standardPortOwner: 'nginx',
+        },
+        log: {
+          systemWarn: vi.fn(),
+        },
+      },
+      getEffectiveWebServerVersion: vi.fn(() => '1.24'),
+    });
+    const project = {
+      id: 'mixed-version-project',
+      name: 'Legacy App',
+      domain: 'legacy.test',
+      path: 'C:/laragon/www/legacy',
+      ssl: true,
+      webServer: 'nginx',
+      webServerVersion: '1.24',
+      networkAccess: false,
+    };
+
+    await ctx.createNginxVhost(project, 9957, '1.24');
+
+    const [, config] = fs.writeFile.mock.calls.at(-1);
+    expect(config).toContain('listen 8445 ssl http2;');
+    expect(config).not.toContain('http2 on;');
+  });
 });

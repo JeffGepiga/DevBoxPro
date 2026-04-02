@@ -19,7 +19,12 @@ function spawnHidden(command, args, options = {}) {
   }
 }
 
+function hasStandardPortListenDirective(content = '') {
+  return /^\s*listen\s+(?:[^;\s]+:)?(?:80|443)\b/m.test(content);
+}
+
 module.exports = {
+  hasStandardPortListenDirective,
   // Nginx
   async startNginx(version = '1.28') {
     const nginxPath = this.getNginxPath(version);
@@ -131,11 +136,10 @@ module.exports = {
       try {
         if (await fs.pathExists(sitesDir)) {
           const files = await fs.readdir(sitesDir);
-          const stalePortRegex = /listen\s+(80|443)(?:\s|;)/;
           for (const file of files) {
             if (file.endsWith('.conf')) {
               const content = await fs.readFile(path.join(sitesDir, file), 'utf8');
-              if (stalePortRegex.test(content)) {
+              if (hasStandardPortListenDirective(content)) {
                 this.managers.log?.systemInfo(`Removing stale vhost ${file} with port 80/443 (nginx using ${httpPort}/${sslPort})`);
                 await fs.remove(path.join(sitesDir, file));
               }
