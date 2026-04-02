@@ -748,6 +748,8 @@ function OverviewTab({ project, processes, refreshProjects }) {
         : tunnelStatus?.status === 'error'
           ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800'
           : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
+  const isTunnelStarting = tunnelAction === 'starting' || tunnelStatus?.status === 'starting';
+  const isTunnelBusy = tunnelAction !== null || tunnelStatus?.status === 'starting';
 
   const handleStartInternetShare = async () => {
     if (!effectiveTunnelProvider) {
@@ -1301,10 +1303,10 @@ function OverviewTab({ project, processes, refreshProjects }) {
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={handleStartInternetShare}
-                    disabled={!project.isRunning || !effectiveShareOnInternet || !effectiveTunnelProvider || !providerReady || tunnelConfigDirty || tunnelAction !== null}
+                    disabled={!project.isRunning || !effectiveShareOnInternet || !effectiveTunnelProvider || !providerReady || tunnelConfigDirty || isTunnelBusy}
                     className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {tunnelAction === 'starting' ? (
+                    {isTunnelStarting ? (
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin" />
                         Starting...

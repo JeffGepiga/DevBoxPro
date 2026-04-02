@@ -37,8 +37,11 @@ module.exports = {
     }
 
     const binaryPath = await this.ensureProviderInstalled(provider);
-    const targetUrl = this.buildTunnelTarget(project);
-    const args = this.getTunnelStartArgs(provider, targetUrl);
+    const tunnelTarget = this.buildTunnelTarget(project, provider);
+    const targetUrl = typeof tunnelTarget === 'string'
+      ? tunnelTarget
+      : (tunnelTarget?.displayUrl || tunnelTarget?.targetUrl || null);
+    const args = this.getTunnelStartArgs(provider, tunnelTarget);
     const processRef = this.spawnTunnelProcess(binaryPath, args, project);
     const state = {
       provider,

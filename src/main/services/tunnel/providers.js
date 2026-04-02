@@ -85,7 +85,7 @@ module.exports = {
     return binaryPath;
   },
 
-  buildTunnelTarget(project) {
+  buildTunnelTarget(project, provider = null) {
     const httpPort = this.managers?.project?.getProjectLocalAccessPorts?.(project)?.httpPort || 80;
     const primaryDomain = this.managers?.project?.getProjectPrimaryDomain?.(project) || project?.domain;
 
@@ -94,16 +94,40 @@ module.exports = {
     }
 
     const suffix = httpPort === 80 ? '' : `:${httpPort}`;
-    return `http://${primaryDomain}${suffix}`;
+    const projectUrl = `http://${primaryDomain}${suffix}`;
+
+    if (provider === 'cloudflared') {
+      return {
+        targetUrl: `http://127.0.0.1:${httpPort}`,
+        displayUrl: projectUrl,
+        hostHeader: primaryDomain,
+      };
+    }
+
+    return {
+      targetUrl: projectUrl,
+      displayUrl: projectUrl,
+      hostHeader: primaryDomain,
+    };
   },
 
-  getTunnelStartArgs(provider, targetUrl) {
+  getTunnelStartArgs(provider, tunnelTarget) {
+    const target = typeof tunnelTarget === 'string'
+      ? { targetUrl: tunnelTarget, hostHeader: null }
+      : (tunnelTarget || {});
+
     if (provider === 'cloudflared') {
-      return ['tunnel', '--url', targetUrl, '--no-autoupdate'];
+      const args = ['tunnel', '--url', target.targetUrl, '--no-autoupdate'];
+
+      if (target.hostHeader) {
+        args.push('--http-host-header', target.hostHeader);
+      }
+
+      return args;
     }
 
     if (provider === 'zrok') {
-      return ['share', 'public', targetUrl, '--headless'];
+      return ['share', 'public', target.targetUrl, '--headless'];
     }
 
     throw new Error(`Unsupported tunnel provider: ${provider}`);

@@ -27,6 +27,8 @@ function makeManager(overrides = {}) {
         isRunning: true,
         tunnelProvider: 'cloudflared',
       })),
+      getProjectLocalAccessPorts: vi.fn(() => ({ httpPort: 80, sslPort: 443 })),
+      getProjectPrimaryDomain: vi.fn(() => 'myapp.test'),
       runningProjects: new Map([['proj-1', true]]),
     },
     log: {
@@ -88,5 +90,42 @@ describe('TunnelManager', () => {
     });
 
     await expect(manager.startTunnel('proj-1', 'zrok')).rejects.toThrow(/zrok is not enabled/i);
+  });
+
+  it('routes cloudflared to localhost with the project domain as host header', () => {
+    const { manager, managers } = makeManager();
+    const project = managers.project.getProject();
+
+    const tunnelTarget = TunnelManager.prototype.buildTunnelTarget.call(manager, project, 'cloudflared');
+    const args = TunnelManager.prototype.getTunnelStartArgs.call(manager, 'cloudflared', tunnelTarget);
+
+    expect(tunnelTarget).toEqual({
+      targetUrl: 'http://127.0.0.1:80',
+      displayUrl: 'http://myapp.test',
+      hostHeader: 'myapp.test',
+    });
+    expect(args).toEqual([
+      'tunnel',
+      '--url',
+      'http://127.0.0.1:80',
+      '--no-autoupdate',
+      '--http-host-header',
+      'myapp.test',
+    ]);
+  });
+
+  it('keeps zrok targeting the project domain URL', () => {
+    const { manager, managers } = makeManager();
+    const project = managers.project.getProject();
+
+    const tunnelTarget = TunnelManager.prototype.buildTunnelTarget.call(manager, project, 'zrok');
+    const args = TunnelManager.prototype.getTunnelStartArgs.call(manager, 'zrok', tunnelTarget);
+
+    expect(tunnelTarget).toEqual({
+      targetUrl: 'http://myapp.test',
+      displayUrl: 'http://myapp.test',
+      hostHeader: 'myapp.test',
+    });
+    expect(args).toEqual(['share', 'public', 'http://myapp.test', '--headless']);
   });
 });
