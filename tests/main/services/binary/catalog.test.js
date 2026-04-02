@@ -103,6 +103,14 @@ describe('binary/catalog', () => {
           return Promise.resolve({ lastModified: 'same' });
         }
 
+        if (serviceName === 'cloudflared') {
+          return Promise.resolve({ lastModified: 'cf-old', etag: 'cf-old-tag' });
+        }
+
+        if (serviceName === 'zrok') {
+          return Promise.resolve({ tagName: 'v2.0.0', lastModified: 'same-zrok' });
+        }
+
         return Promise.resolve(null);
       }),
       fetchRemoteMetadata: vi.fn((url) => {
@@ -110,7 +118,20 @@ describe('binary/catalog', () => {
           return Promise.resolve({ lastModified: 'new-1' });
         }
 
+        if (url === 'cloudflared.exe') {
+          return Promise.resolve({ lastModified: 'cf-new', etag: 'cf-new-tag' });
+        }
+
+        if (url === 'https://downloads.example.com/zrok_2.0.1_windows_amd64.tar.gz') {
+          return Promise.resolve({ lastModified: 'same-zrok' });
+        }
+
         return Promise.resolve({ lastModified: 'same' });
+      }),
+      resolveGithubReleaseAsset: vi.fn().mockResolvedValue({
+        url: 'https://downloads.example.com/zrok_2.0.1_windows_amd64.tar.gz',
+        filename: 'zrok_2.0.1_windows_amd64.tar.gz',
+        tagName: 'v2.0.1',
       }),
     });
 
@@ -118,6 +139,8 @@ describe('binary/catalog', () => {
 
     expect(result.composer.updateAvailable).toBe(true);
     expect(result.phpmyadmin.updateAvailable).toBe(false);
+    expect(result.cloudflared.updateAvailable).toBe(true);
+    expect(result.zrok.updateAvailable).toBe(true);
   });
 
   it('stops active tunnel sessions before force-removing their provider binary', async () => {

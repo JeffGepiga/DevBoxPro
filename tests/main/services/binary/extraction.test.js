@@ -27,6 +27,9 @@ describe('binary/extraction', () => {
   it('extracts tar archives with a stripped top-level directory', async () => {
     const ctx = makeContext();
     vi.spyOn(fs, 'ensureDir').mockResolvedValue(undefined);
+    vi.spyOn(tar, 't').mockImplementation(async ({ onentry }) => {
+      onentry({ path: 'package/bin/tool.exe', type: 'File' });
+    });
     const tarSpy = vi.spyOn(tar, 'x').mockResolvedValue(undefined);
 
     await ctx.extractArchive('archive.tar.gz', '/dest/path', 'dl-tar');
@@ -35,6 +38,23 @@ describe('binary/extraction', () => {
       file: 'archive.tar.gz',
       cwd: '/dest/path',
       strip: 1,
+    });
+  });
+
+  it('extracts flat tar archives without stripping entries', async () => {
+    const ctx = makeContext();
+    vi.spyOn(fs, 'ensureDir').mockResolvedValue(undefined);
+    vi.spyOn(tar, 't').mockImplementation(async ({ onentry }) => {
+      onentry({ path: 'zrok2.exe', type: 'File' });
+    });
+    const tarSpy = vi.spyOn(tar, 'x').mockResolvedValue(undefined);
+
+    await ctx.extractArchive('archive.tar.gz', '/dest/path', 'dl-flat-tar');
+
+    expect(tarSpy).toHaveBeenCalledWith({
+      file: 'archive.tar.gz',
+      cwd: '/dest/path',
+      strip: 0,
     });
   });
 

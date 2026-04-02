@@ -24,14 +24,54 @@ module.exports = {
       }
       await this.extractZipAsync(archivePath, destPath, id);
     } else if (basename.endsWith('.tar.gz') || ext === '.tgz') {
+      const strip = await this.getTarStripCount(archivePath);
       await tar.x({
         file: archivePath,
         cwd: destPath,
-        strip: 1,
+        strip,
       });
     }
 
     this.emitProgress(id, { status: 'extracting', progress: 100 });
+  },
+
+  async getTarStripCount(archivePath) {
+    let firstSegment = null;
+    let hasNestedEntries = false;
+    let hasRootFiles = false;
+
+    await tar.t({
+      file: archivePath,
+      onentry: (entry) => {
+        if (!entry?.path || entry.type === 'Directory') {
+          return;
+        }
+
+        const normalizedPath = String(entry.path).replace(/\\/g, '/').replace(/^\.\//, '');
+        const segments = normalizedPath.split('/').filter(Boolean);
+
+        if (segments.length <= 1) {
+          hasRootFiles = true;
+          return;
+        }
+
+        hasNestedEntries = true;
+        if (firstSegment === null) {
+          firstSegment = segments[0];
+          return;
+        }
+
+        if (firstSegment !== segments[0]) {
+          firstSegment = false;
+        }
+      },
+    });
+
+    if (hasRootFiles || !hasNestedEntries || !firstSegment) {
+      return 0;
+    }
+
+    return 1;
   },
 
   async validateZipFile(filePath) {

@@ -247,6 +247,13 @@ module.exports = {
         }
       }
 
+      try {
+        const meta = await this.fetchRemoteMetadata(downloadInfo.url);
+        await this.saveServiceMetadata('cloudflared', meta);
+      } catch (metaErr) {
+        this.managers?.log?.systemWarn('Failed to fetch cloudflared metadata', { error: metaErr.message });
+      }
+
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true };
     } catch (error) {
@@ -290,9 +297,40 @@ module.exports = {
       await this.extractArchive(downloadPath, extractPath, id);
       await fs.remove(downloadPath);
 
-      const binaryPath = await this.findBinaryInDir(extractPath, platform === 'win' ? 'zrok.exe' : 'zrok');
-      if (binaryPath && platform !== 'win') {
+      const expectedBinaryName = platform === 'win' ? 'zrok.exe' : 'zrok';
+      const binaryCandidates = platform === 'win' ? ['zrok.exe', 'zrok2.exe'] : ['zrok', 'zrok2'];
+      let binaryPath = null;
+
+      for (const candidate of binaryCandidates) {
+        binaryPath = await this.findBinaryInDir(extractPath, candidate);
+        if (!binaryPath) {
+          continue;
+        }
+
+        const normalizedBinaryPath = path.join(path.dirname(binaryPath), expectedBinaryName);
+        if (binaryPath !== normalizedBinaryPath) {
+          await fs.move(binaryPath, normalizedBinaryPath, { overwrite: true });
+          binaryPath = normalizedBinaryPath;
+        }
+        break;
+      }
+
+      if (!binaryPath) {
+        throw new Error('zrok executable was not found after extraction');
+      }
+
+      if (platform !== 'win') {
         await fs.chmod(binaryPath, '755');
+      }
+
+      try {
+        const meta = await this.fetchRemoteMetadata(resolvedInfo.url);
+        await this.saveServiceMetadata('zrok', {
+          ...meta,
+          tagName: resolvedInfo.tagName || null,
+        });
+      } catch (metaErr) {
+        this.managers?.log?.systemWarn('Failed to fetch zrok metadata', { error: metaErr.message });
       }
 
       this.emitProgress(id, { status: 'completed', progress: 100 });

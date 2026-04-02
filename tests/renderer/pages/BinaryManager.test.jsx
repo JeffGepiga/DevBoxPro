@@ -29,6 +29,12 @@ const mockDevbox = {
         getInstalled: vi.fn().mockResolvedValue({}),
         getDownloadUrls: vi.fn().mockResolvedValue({}),
         getServiceConfig: vi.fn().mockResolvedValue({}),
+        checkForServiceUpdates: vi.fn().mockResolvedValue({
+            composer: { updateAvailable: false },
+            phpmyadmin: { updateAvailable: false },
+            cloudflared: { updateAvailable: false },
+            zrok: { updateAvailable: false },
+        }),
         downloadCloudflared: vi.fn().mockResolvedValue({ success: true }),
         downloadZrok: vi.fn().mockResolvedValue({ success: true }),
         downloadGit: vi.fn().mockResolvedValue({ success: true }),
@@ -46,30 +52,38 @@ const mockDevbox = {
     },
 };
 
+const appContextMock = {
+    projects: [],
+    loading: false,
+    services: {},
+    downloading: {},
+    downloadProgress: {},
+    projectLoadingStates: {},
+    setDownloading: vi.fn(),
+    setDownloadProgress: vi.fn(),
+    clearDownload: vi.fn(),
+    refreshServices: vi.fn(),
+};
+
+const modalMock = {
+    showAlert: vi.fn(),
+    showConfirm: vi.fn().mockResolvedValue(false),
+};
+
 beforeEach(() => {
     Object.defineProperty(window, 'devbox', { value: mockDevbox, writable: true, configurable: true });
     vi.clearAllMocks();
     mockDevbox.binaries.getStatus.mockResolvedValue({ php: {}, nginx: {}, apache: {}, mysql: {}, mariadb: {}, redis: {}, nodejs: {}, phpmyadmin: {}, mailpit: {} });
     mockDevbox.git.isAvailable.mockResolvedValue({ available: false, source: null, version: null });
+    mockDevbox.binaries.getInstalled.mockResolvedValue({});
 });
 
 vi.mock('@/context/AppContext', () => ({
-    useApp: () => ({
-        projects: [],
-        loading: false,
-        services: {},
-        downloading: {},
-        downloadProgress: {},
-        projectLoadingStates: {},
-        setDownloading: vi.fn(),
-        setDownloadProgress: vi.fn(),
-        clearDownload: vi.fn(),
-        refreshServices: vi.fn(),
-    }),
+    useApp: () => appContextMock,
 }));
 
 vi.mock('@/context/ModalContext', () => ({
-    useModal: () => ({ showAlert: vi.fn(), showConfirm: vi.fn().mockResolvedValue(false) }),
+    useModal: () => modalMock,
 }));
 
 import BinaryManager from '@/pages/BinaryManager';
@@ -139,7 +153,7 @@ describe('BinaryManager', () => {
     });
 
     it('enables zrok app-wide from the tools tab', async () => {
-        mockDevbox.binaries.getInstalled.mockResolvedValueOnce({ zrok: true });
+        mockDevbox.binaries.getInstalled.mockResolvedValue({ zrok: true });
 
         render(
             <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -157,6 +171,30 @@ describe('BinaryManager', () => {
 
         await waitFor(() => {
             expect(mockDevbox.tunnel.zrokEnable).toHaveBeenCalledWith('zrok-token-123');
+        });
+    });
+
+    it('shows tunnel update checks when the binaries are installed', async () => {
+        mockDevbox.binaries.getInstalled.mockResolvedValue({ cloudflared: true, zrok: true });
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <BinaryManager />
+            </MemoryRouter>
+        );
+
+        fireEvent.click(await screen.findByRole('button', { name: /Tools/i }));
+
+        const cloudflareRow = (await screen.findByText('Cloudflare Tunnel')).closest('div.flex.items-center.justify-between');
+        const zrokRow = (await screen.findByText('zrok')).closest('div.flex.items-center.justify-between');
+
+        expect(cloudflareRow ? within(cloudflareRow).getByRole('button', { name: /Check Updates/i }) : null).toBeTruthy();
+        expect(zrokRow ? within(zrokRow).getByRole('button', { name: /Check Updates/i }) : null).toBeTruthy();
+
+        fireEvent.click(within(cloudflareRow).getByRole('button', { name: /Check Updates/i }));
+
+        await waitFor(() => {
+            expect(mockDevbox.binaries.checkForServiceUpdates).toHaveBeenCalledTimes(1);
         });
     });
 

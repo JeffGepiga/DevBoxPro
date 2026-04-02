@@ -29,6 +29,18 @@ import PhpIniEditor from '../components/PhpIniEditor';
 import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
 
+const VERSIONED_BINARY_SERVICES = ['php', 'mysql', 'mariadb', 'redis', 'nginx', 'apache', 'nodejs', 'postgresql', 'python', 'mongodb', 'memcached'];
+const SERVICE_UPDATE_KEYS = ['composer', 'phpmyadmin', 'cloudflared', 'zrok'];
+const SERVICE_LABELS = {
+  phpmyadmin: 'phpMyAdmin',
+  nodejs: 'Node.js',
+  minio: 'MinIO',
+  memcached: 'Memcached',
+  cloudflared: 'Cloudflare Tunnel',
+  zrok: 'zrok',
+  composer: 'Composer',
+};
+
 // ── Module-level sub-components (must NOT be defined inside BinaryManager) ──
 
 const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLatest, isCustom, requiresManual, onDownload, onRemove, onManualOpen, onImport, isPhp, getProgressDisplay, setPhpIniEditor }) => (
@@ -160,7 +172,7 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
           {(service.versions || []).map((version) => {
             const id = `${service.id}-${version}`;
             const isInstalled = installed[service.id]?.[version];
-            const isDownloading = downloading[id] || progress?.[id]?.status === 'error';
+            const isDownloading = downloading[id] || ['completed', 'error'].includes(progress?.[id]?.status);
             const isCustom = service.predefinedVersions && !service.predefinedVersions.includes(version);
 
             return (
@@ -192,7 +204,7 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
 };
 
 const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst, installedLabel = 'Installed', canRemove = true, size, onDownload, onRemove, onImport, sourceKey, importLabel, downloading, progress, downloadSources, getProgressDisplay, hasUpdate, onCheckUpdate, checkingUpdate }) => {
-  const isDownloading = downloading[id] || progress?.[id]?.status === 'error';
+  const isDownloading = downloading[id] || ['completed', 'error'].includes(progress?.[id]?.status);
   const hasSource = !!downloadSources[sourceKey]?.url;
 
   return (
@@ -349,8 +361,8 @@ function BinaryManager() {
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [updateResult, setUpdateResult] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const [serviceUpdates, setServiceUpdates] = useState({ composer: false, phpmyadmin: false });
-  const [checkingServiceUpdate, setCheckingServiceUpdate] = useState({ composer: false, phpmyadmin: false });
+  const [serviceUpdates, setServiceUpdates] = useState({ composer: false, phpmyadmin: false, cloudflared: false, zrok: false });
+  const [checkingServiceUpdate, setCheckingServiceUpdate] = useState({ composer: false, phpmyadmin: false, cloudflared: false, zrok: false });
   const [zrokToken, setZrokToken] = useState('');
   const [zrokStatus, setZrokStatus] = useState({ enabled: false, configuredAt: null });
   const [enablingZrok, setEnablingZrok] = useState(false);
@@ -439,6 +451,49 @@ function BinaryManager() {
     }
   }, []);
 
+  const parseBinaryDownloadId = useCallback((id) => {
+    for (const serviceName of VERSIONED_BINARY_SERVICES) {
+      if (id.startsWith(`${serviceName}-`)) {
+        return {
+          serviceName,
+          version: id.slice(serviceName.length + 1),
+        };
+      }
+    }
+
+    return { serviceName: id, version: null };
+  }, []);
+
+  const isBinaryInstalled = useCallback((installedState, id) => {
+    const { serviceName, version } = parseBinaryDownloadId(id);
+
+    if (!serviceName) {
+      return false;
+    }
+
+    if (version) {
+      return installedState?.[serviceName]?.[version] === true;
+    }
+
+    return installedState?.[serviceName] === true;
+  }, [parseBinaryDownloadId]);
+
+  const refreshInstalledUntilDetected = useCallback(async (id) => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const result = await forceRefreshInstalled();
+      if (isBinaryInstalled(result, id)) {
+        clearDownload(id);
+        return true;
+      }
+
+      if (attempt < 4) {
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      }
+    }
+
+    return false;
+  }, [clearDownload, forceRefreshInstalled, isBinaryInstalled]);
+
   // Clean up stale downloads when installed state changes
   // This handles cases where the 'completed' event was missed
   useEffect(() => {
@@ -448,16 +503,7 @@ function BinaryManager() {
     Object.entries(downloading).forEach(([id, isDownloading]) => {
       if (!isDownloading) return;
 
-      const [type, version] = id.split('-');
-      let isInstalled = false;
-
-      if (version) {
-        // Versioned binary (e.g., php-8.4, nodejs-20)
-        isInstalled = installed[type]?.[version] === true;
-      } else {
-        // Non-versioned binary (e.g., composer, mailpit)
-        isInstalled = installed[type] === true;
-      }
+      const isInstalled = isBinaryInstalled(installed, id);
 
       // If binary is installed but still showing as downloading, clear it
       if (isInstalled) {
@@ -465,7 +511,7 @@ function BinaryManager() {
         clearDownload(id);
       }
     });
-  }, [installed, downloading, clearDownload]);
+  }, [installed, downloading, clearDownload, isBinaryInstalled]);
 
   useEffect(() => {
     const activeDownloadIds = Object.entries(downloading)
@@ -521,10 +567,7 @@ function BinaryManager() {
 
     const unsubscribe = window.devbox?.binaries.onProgress((id, progressData) => {
       if (progressData.status === 'completed') {
-        // Slight delay ensures filesystem is fully synced before checking install status
-        setTimeout(() => {
-          forceRefreshInstalled();
-        }, 500);
+        void refreshInstalledUntilDetected(id);
       } else if (progressData.status === 'error') {
         const label = id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
         showAlert({
@@ -537,7 +580,7 @@ function BinaryManager() {
     });
 
     return () => unsubscribe?.();
-  }, [forceRefreshInstalled, loadDownloadUrls, loadServiceConfig, loadGitStatus, loadZrokStatus]); // showAlert is intentionally omitted — it's a stable context function
+  }, [forceRefreshInstalled, loadDownloadUrls, loadServiceConfig, loadGitStatus, loadZrokStatus, refreshInstalledUntilDetected]); // showAlert is intentionally omitted — it's a stable context function
 
   const handleDownloadPhp = async (version) => {
     const id = `php-${version}`;
@@ -558,15 +601,8 @@ function BinaryManager() {
 
   const handleDownloadService = async (service, version = null) => {
     const id = version ? `${service}-${version}` : service;
-    const serviceLabel = service === 'phpmyadmin'
-      ? 'phpMyAdmin'
-      : service === 'nodejs'
-        ? 'Node.js'
-        : service === 'minio'
-          ? 'MinIO'
-          : service === 'memcached'
-            ? 'Memcached'
-            : service.charAt(0).toUpperCase() + service.slice(1);
+    const serviceLabel = SERVICE_LABELS[service]
+      || service.charAt(0).toUpperCase() + service.slice(1);
 
     // Don't start if already downloading
     if (downloading[id]) return;
@@ -677,13 +713,12 @@ function BinaryManager() {
     try {
       const result = await window.devbox?.binaries.checkForServiceUpdates();
       if (result) {
-        setServiceUpdates(prev => ({
-          ...prev,
-          composer: result.composer?.updateAvailable ?? prev.composer,
-          phpmyadmin: result.phpmyadmin?.updateAvailable ?? prev.phpmyadmin,
-        }));
+        setServiceUpdates(prev => SERVICE_UPDATE_KEYS.reduce((nextState, key) => ({
+          ...nextState,
+          [key]: result[key]?.updateAvailable ?? prev[key],
+        }), { ...prev }));
         if (!result[service]?.updateAvailable) {
-          showAlert({ title: 'Up to Date', message: `${service === 'phpmyadmin' ? 'phpMyAdmin' : 'Composer'} is already up to date.`, type: 'success' });
+          showAlert({ title: 'Up to Date', message: `${SERVICE_LABELS[service] || service} is already up to date.`, type: 'success' });
         }
       }
     } catch (error) {
@@ -1125,7 +1160,7 @@ function BinaryManager() {
           // id format is "service-version" or just "service" (e.g. "python-3.13", "mailpit")
           const parts = id.split('-');
           // Some services have version-like names (mariadb, mysqldump...) — find a known service prefix
-          const knownServices = ['php', 'mysql', 'mariadb', 'redis', 'nginx', 'apache', 'nodejs', 'python', 'postgresql', 'mongodb', 'memcached', 'mailpit', 'phpmyadmin', 'composer'];
+          const knownServices = ['php', 'mysql', 'mariadb', 'redis', 'nginx', 'apache', 'nodejs', 'python', 'postgresql', 'mongodb', 'memcached', 'mailpit', 'phpmyadmin', 'composer', 'cloudflared', 'zrok', 'minio', 'sqlite', 'git'];
           for (const svc of knownServices) {
             if (id === svc) return [svc, null];
             if (id.startsWith(svc + '-')) return [svc, id.slice(svc.length + 1)];
@@ -1864,6 +1899,9 @@ function BinaryManager() {
             icon={CloudCog}
             isInstalled={!!installed.cloudflared}
             size="~15 MB"
+            hasUpdate={serviceUpdates.cloudflared}
+            onCheckUpdate={() => handleCheckServiceUpdate('cloudflared')}
+            checkingUpdate={checkingServiceUpdate.cloudflared}
             sourceKey="cloudflared"
             {...sharedSimpleProps}
             onDownload={() => handleDownloadService('cloudflared')}
@@ -1876,6 +1914,9 @@ function BinaryManager() {
             icon={Zap}
             isInstalled={!!installed.zrok}
             size="~20 MB"
+            hasUpdate={serviceUpdates.zrok}
+            onCheckUpdate={() => handleCheckServiceUpdate('zrok')}
+            checkingUpdate={checkingServiceUpdate.zrok}
             sourceKey="zrok"
             {...sharedSimpleProps}
             onDownload={() => handleDownloadService('zrok')}

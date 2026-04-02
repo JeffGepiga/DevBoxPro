@@ -236,30 +236,44 @@ module.exports = {
     const updates = {
       composer: { updateAvailable: false },
       phpmyadmin: { updateAvailable: false },
+      cloudflared: { updateAvailable: false },
+      zrok: { updateAvailable: false },
       lastChecked: new Date().toISOString(),
     };
 
     try {
-      const composerMeta = await this.getLocalServiceMetadata('composer');
-      if (composerMeta?.lastModified) {
-        const composerDownload = this.downloads.composer?.all;
-        if (composerDownload) {
-          const remoteMeta = await this.fetchRemoteMetadata(composerDownload.url).catch(() => null);
-          if (remoteMeta?.lastModified && remoteMeta.lastModified !== composerMeta.lastModified) {
-            updates.composer.updateAvailable = true;
-          }
-        }
-      }
+      const platform = this.getPlatform();
+      const serviceChecks = {
+        composer: this.downloads.composer?.all,
+        phpmyadmin: this.downloads.phpmyadmin?.all,
+        cloudflared: this.downloads.cloudflared?.[platform],
+        zrok: this.downloads.zrok?.[platform],
+      };
 
-      const pmaMeta = await this.getLocalServiceMetadata('phpmyadmin');
-      if (pmaMeta?.lastModified) {
-        const pmaDownload = this.downloads.phpmyadmin?.all;
-        if (pmaDownload) {
-          const remoteMeta = await this.fetchRemoteMetadata(pmaDownload.url).catch(() => null);
-          if (remoteMeta?.lastModified && remoteMeta.lastModified !== pmaMeta.lastModified) {
-            updates.phpmyadmin.updateAvailable = true;
-          }
+      for (const [serviceName, configuredDownload] of Object.entries(serviceChecks)) {
+        const localMeta = await this.getLocalServiceMetadata(serviceName);
+        if (!localMeta || !configuredDownload) {
+          continue;
         }
+
+        const resolvedDownload = configuredDownload.githubRepo
+          ? await this.resolveGithubReleaseAsset(
+            configuredDownload.githubRepo,
+            configuredDownload.assetPattern,
+            configuredDownload.fallbackAssetPatterns || []
+          ).catch(() => null)
+          : configuredDownload;
+
+        if (!resolvedDownload?.url) {
+          continue;
+        }
+
+        const remoteMeta = await this.fetchRemoteMetadata(resolvedDownload.url).catch(() => null);
+        const tagChanged = Boolean(resolvedDownload.tagName && resolvedDownload.tagName !== localMeta.tagName);
+        const lastModifiedChanged = Boolean(remoteMeta?.lastModified && localMeta?.lastModified && remoteMeta.lastModified !== localMeta.lastModified);
+        const etagChanged = Boolean(remoteMeta?.etag && localMeta?.etag && remoteMeta.etag !== localMeta.etag);
+
+        updates[serviceName].updateAvailable = tagChanged || lastModifiedChanged || etagChanged;
       }
     } catch (error) {
       this.managers?.log?.systemWarn('Error during service update check', { error: error.message });

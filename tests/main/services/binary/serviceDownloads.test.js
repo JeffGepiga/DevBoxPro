@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const path = require('path');
+
 const fs = require('fs-extra');
 const serviceDownloads = require('../../../../src/main/services/binary/serviceDownloads');
 
@@ -138,7 +140,10 @@ describe('binary/serviceDownloads', () => {
   });
 
   it('downloads cloudflared directly to its executable path on Windows', async () => {
-    const ctx = makeContext();
+    const ctx = makeContext({
+      fetchRemoteMetadata: vi.fn().mockResolvedValue({ lastModified: 'cf-last-modified' }),
+      saveServiceMetadata: vi.fn().mockResolvedValue(undefined),
+    });
     vi.spyOn(fs, 'remove').mockResolvedValue(undefined);
     vi.spyOn(fs, 'ensureDir').mockResolvedValue(undefined);
 
@@ -150,16 +155,23 @@ describe('binary/serviceDownloads', () => {
       expect.stringContaining('cloudflared.exe'),
       'cloudflared'
     );
+    expect(ctx.saveServiceMetadata).toHaveBeenCalledWith('cloudflared', { lastModified: 'cf-last-modified' });
     expect(ctx.extractArchive).not.toHaveBeenCalled();
   });
 
   it('downloads zrok using the resolved latest GitHub release asset', async () => {
+    const moveSpy = vi.spyOn(fs, 'move').mockResolvedValue(undefined);
     const ctx = makeContext({
       resolveGithubReleaseAsset: vi.fn().mockResolvedValue({
         url: 'https://example.com/zrok_2.0.1_windows_amd64.tar.gz',
         filename: 'zrok_2.0.1_windows_amd64.tar.gz',
+        tagName: 'v2.0.1',
       }),
-      findBinaryInDir: vi.fn().mockResolvedValue('/resources/zrok/win/zrok.exe'),
+      fetchRemoteMetadata: vi.fn().mockResolvedValue({ lastModified: 'zrok-last-modified', etag: 'zrok-etag' }),
+      saveServiceMetadata: vi.fn().mockResolvedValue(undefined),
+      findBinaryInDir: vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce('/resources/zrok/win/zrok2.exe'),
     });
     vi.spyOn(fs, 'remove').mockResolvedValue(undefined);
     vi.spyOn(fs, 'ensureDir').mockResolvedValue(undefined);
@@ -177,5 +189,15 @@ describe('binary/serviceDownloads', () => {
       expect.stringContaining('zrok'),
       'zrok'
     );
+    expect(moveSpy).toHaveBeenCalledWith(
+      '/resources/zrok/win/zrok2.exe',
+      path.join('/resources', 'zrok', 'win', 'zrok.exe'),
+      { overwrite: true }
+    );
+    expect(ctx.saveServiceMetadata).toHaveBeenCalledWith('zrok', {
+      lastModified: 'zrok-last-modified',
+      etag: 'zrok-etag',
+      tagName: 'v2.0.1',
+    });
   });
 });

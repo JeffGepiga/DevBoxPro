@@ -4,14 +4,26 @@ const https = require('https');
 const http = require('http');
 
 module.exports = {
+  getServiceMetadataPath(serviceName) {
+    if (serviceName === 'composer') {
+      return path.join(this.resourcesPath, 'composer');
+    }
+
+    if (serviceName === 'phpmyadmin') {
+      return path.join(this.resourcesPath, 'phpmyadmin');
+    }
+
+    if (['cloudflared', 'zrok'].includes(serviceName)) {
+      return path.join(this.resourcesPath, serviceName, this.getPlatform());
+    }
+
+    return null;
+  },
+
   async saveServiceMetadata(serviceName, data) {
     try {
-      let targetPath;
-      if (serviceName === 'composer') {
-        targetPath = path.join(this.resourcesPath, 'composer');
-      } else if (serviceName === 'phpmyadmin') {
-        targetPath = path.join(this.resourcesPath, 'phpmyadmin');
-      } else {
+      const targetPath = this.getServiceMetadataPath(serviceName);
+      if (!targetPath) {
         return;
       }
 
@@ -27,12 +39,8 @@ module.exports = {
 
   async getLocalServiceMetadata(serviceName) {
     try {
-      let targetPath;
-      if (serviceName === 'composer') {
-        targetPath = path.join(this.resourcesPath, 'composer');
-      } else if (serviceName === 'phpmyadmin') {
-        targetPath = path.join(this.resourcesPath, 'phpmyadmin');
-      } else {
+      const targetPath = this.getServiceMetadataPath(serviceName);
+      if (!targetPath) {
         return null;
       }
 

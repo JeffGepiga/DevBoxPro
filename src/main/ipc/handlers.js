@@ -980,7 +980,14 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   // Check for updates to unversioned services (like Composer, phpMyAdmin)
   ipcMain.handle('binaries:checkForServiceUpdates', async () => {
-    if (!managers.binaryDownload) return { composer: { updateAvailable: false }, phpmyadmin: { updateAvailable: false } };
+    if (!managers.binaryDownload) {
+      return {
+        composer: { updateAvailable: false },
+        phpmyadmin: { updateAvailable: false },
+        cloudflared: { updateAvailable: false },
+        zrok: { updateAvailable: false },
+      };
+    }
     return managers.binaryDownload.checkForServiceUpdates();
   });
 

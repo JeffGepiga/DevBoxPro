@@ -220,6 +220,9 @@ describe('BinaryDownloadManager', () => {
     describe('Archive Extraction', () => {
         it('extracts a tar archive', async () => {
             const tar = require('tar');
+            vi.spyOn(tar, 't').mockImplementation(async ({ onentry }) => {
+                onentry({ path: 'package/bin/tool.exe', type: 'File' });
+            });
             vi.spyOn(tar, 'x').mockResolvedValue();
 
             await mgr.extractArchive('file.tar.gz', '/dest/path', 'dl-tar');
