@@ -85,9 +85,33 @@ module.exports = {
     return binaryPath;
   },
 
+  getProjectsSharingWebServerTarget(project) {
+    const projectManager = this.managers?.project;
+    const effectiveWebServer = projectManager?.getEffectiveWebServer?.(project) || project?.webServer || 'nginx';
+    const effectiveVersion = projectManager?.getEffectiveWebServerVersion?.(project, effectiveWebServer)
+      || project?.webServerVersion
+      || null;
+    const projects = this.configStore?.get('projects', []) || [];
+
+    return projects.filter((entry) => {
+      if (!entry?.id) {
+        return false;
+      }
+
+      const entryWebServer = projectManager?.getEffectiveWebServer?.(entry) || entry?.webServer || 'nginx';
+      const entryVersion = projectManager?.getEffectiveWebServerVersion?.(entry, entryWebServer)
+        || entry?.webServerVersion
+        || null;
+
+      return entryWebServer === effectiveWebServer && entryVersion === effectiveVersion;
+    });
+  },
+
   buildTunnelTarget(project, provider = null) {
-    const httpPort = this.managers?.project?.getProjectLocalAccessPorts?.(project)?.httpPort || 80;
-    const primaryDomain = this.managers?.project?.getProjectPrimaryDomain?.(project) || project?.domain;
+    const projectManager = this.managers?.project;
+    const httpPort = projectManager?.getProjectLocalAccessPorts?.(project)?.httpPort || 80;
+    const backendHttpPort = projectManager?.getProjectProxyBackendHttpPort?.(project) || httpPort;
+    const primaryDomain = projectManager?.getProjectPrimaryDomain?.(project) || project?.domain;
 
     if (!primaryDomain) {
       throw new Error('Project domain is not configured');
@@ -97,6 +121,17 @@ module.exports = {
     const projectUrl = `http://${primaryDomain}${suffix}`;
 
     if (provider === 'cloudflared') {
+      const sharedBackendProjects = this.getProjectsSharingWebServerTarget(project);
+      const canUseDedicatedBackendPort = sharedBackendProjects.length <= 1;
+
+      if (canUseDedicatedBackendPort) {
+        return {
+          targetUrl: `http://127.0.0.1:${backendHttpPort}`,
+          displayUrl: projectUrl,
+          hostHeader: null,
+        };
+      }
+
       return {
         targetUrl: `http://127.0.0.1:${httpPort}`,
         displayUrl: projectUrl,

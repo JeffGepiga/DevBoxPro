@@ -13,8 +13,26 @@ function createProcessStub() {
 }
 
 function makeManager(overrides = {}) {
+  const storedProjects = [
+    {
+      id: 'proj-1',
+      name: 'My App',
+      domain: 'myapp.test',
+      isRunning: true,
+      tunnelProvider: 'cloudflared',
+      webServer: 'nginx',
+      webServerVersion: '1.28',
+    },
+  ];
+
   const configStore = {
-    get: vi.fn((key, defaultValue) => defaultValue),
+    get: vi.fn((key, defaultValue) => {
+      if (key === 'projects') {
+        return storedProjects;
+      }
+
+      return defaultValue;
+    }),
     set: vi.fn(),
   };
 
@@ -26,9 +44,14 @@ function makeManager(overrides = {}) {
         domain: 'myapp.test',
         isRunning: true,
         tunnelProvider: 'cloudflared',
+        webServer: 'nginx',
+        webServerVersion: '1.28',
       })),
       getProjectLocalAccessPorts: vi.fn(() => ({ httpPort: 80, sslPort: 443 })),
-      getProjectPrimaryDomain: vi.fn(() => 'myapp.test'),
+      getProjectProxyBackendHttpPort: vi.fn(() => 8081),
+      getProjectPrimaryDomain: vi.fn((project) => project?.domain || 'myapp.test'),
+      getEffectiveWebServer: vi.fn((project) => project?.webServer || 'nginx'),
+      getEffectiveWebServerVersion: vi.fn((project, webServer) => project?.webServerVersion || (webServer === 'apache' ? '2.4' : '1.28')),
       startingProjects: new Set(),
       pendingProjectStops: new Map(),
       runningProjects: new Map([['proj-1', true]]),
@@ -44,6 +67,9 @@ function makeManager(overrides = {}) {
   Object.assign(manager, {
     ensureProviderInstalled: vi.fn().mockResolvedValue('/resources/cloudflared.exe'),
     buildTunnelTarget: vi.fn(() => 'https://myapp.test'),
+    prepareTunnelTarget: vi.fn(async (_provider, target) => target),
+    ensurePublicUrlReady: vi.fn().mockResolvedValue(true),
+    cleanupPreparedTunnel: vi.fn().mockResolvedValue(undefined),
     getTunnelStartArgs: vi.fn(() => ['tunnel', '--url', 'https://myapp.test']),
     spawnTunnelProcess: vi.fn(() => processRef),
     extractPublicUrl: vi.fn((provider, output) => {
@@ -77,6 +103,8 @@ describe('TunnelManager', () => {
     }));
 
     processRef.stdout.emit('data', Buffer.from('INF tunnel ready at https://myapp.trycloudflare.com'));
+    await Promise.resolve();
+    await Promise.resolve();
 
     expect(statusEmitter).toHaveBeenLastCalledWith(expect.objectContaining({
       projectId: 'proj-1',
@@ -94,7 +122,7 @@ describe('TunnelManager', () => {
     await expect(manager.startTunnel('proj-1', 'zrok')).rejects.toThrow(/zrok is not enabled/i);
   });
 
-  it('routes cloudflared to localhost with the project domain as host header', () => {
+  it('routes cloudflared to a dedicated backend port when the project has a single backend', () => {
     const { manager, managers } = makeManager();
     const project = managers.project.getProject();
 
@@ -102,9 +130,56 @@ describe('TunnelManager', () => {
     const args = TunnelManager.prototype.getTunnelStartArgs.call(manager, 'cloudflared', tunnelTarget);
 
     expect(tunnelTarget).toEqual({
-      targetUrl: 'http://127.0.0.1:80',
+      targetUrl: 'http://127.0.0.1:8081',
       displayUrl: 'http://myapp.test',
-      hostHeader: 'myapp.test',
+      hostHeader: null,
+    });
+    expect(args).toEqual([
+      'tunnel',
+      '--url',
+      'http://127.0.0.1:8081',
+      '--no-autoupdate',
+    ]);
+  });
+
+  it('keeps the host-header fallback when multiple projects share the same backend server target', () => {
+    const { manager, managers } = makeManager();
+    const project = {
+      id: 'proj-2',
+      name: 'Apache App',
+      domain: 'apache-app.test',
+      isRunning: true,
+      tunnelProvider: 'cloudflared',
+      webServer: 'apache',
+      webServerVersion: '2.4',
+    };
+
+    managers.project.getProjectLocalAccessPorts = vi.fn(() => ({ httpPort: 80, sslPort: 443 }));
+    managers.project.getProjectProxyBackendHttpPort = vi.fn(() => 8084);
+    manager.configStore.get = vi.fn((key, defaultValue) => {
+      if (key === 'projects') {
+        return [
+          project,
+          {
+            id: 'proj-3',
+            name: 'Apache Blog',
+            domain: 'apache-blog.test',
+            webServer: 'apache',
+            webServerVersion: '2.4',
+          },
+        ];
+      }
+
+      return defaultValue;
+    });
+
+    const tunnelTarget = TunnelManager.prototype.buildTunnelTarget.call(manager, project, 'cloudflared');
+    const args = TunnelManager.prototype.getTunnelStartArgs.call(manager, 'cloudflared', tunnelTarget);
+
+    expect(tunnelTarget).toEqual({
+      targetUrl: 'http://127.0.0.1:80',
+      displayUrl: 'http://apache-app.test',
+      hostHeader: 'apache-app.test',
     });
     expect(args).toEqual([
       'tunnel',
@@ -112,7 +187,7 @@ describe('TunnelManager', () => {
       'http://127.0.0.1:80',
       '--no-autoupdate',
       '--http-host-header',
-      'myapp.test',
+      'apache-app.test',
     ]);
   });
 
@@ -141,6 +216,24 @@ describe('TunnelManager', () => {
     );
 
     expect(publicUrl).toBe('https://kqxfkboe3dpn.shares.zrok.io');
+  });
+
+  it('rewrites absolute local URLs in proxied html responses to the public tunnel URL', () => {
+    const { manager } = makeManager();
+
+    const rewritten = TunnelManager.prototype.rewriteTunnelProxyBody.call(
+      manager,
+      Buffer.from('<img src="https://hrms.test/img/logo.png"><a href="http://hrms.test/dashboard">Go</a>'),
+      {
+        displayUrl: 'http://hrms.test',
+        hostHeader: 'hrms.test',
+      },
+      'https://warning-materials-degrees-steady.trycloudflare.com'
+    ).toString('utf8');
+
+    expect(rewritten).toContain('https://warning-materials-degrees-steady.trycloudflare.com/img/logo.png');
+    expect(rewritten).toContain('https://warning-materials-degrees-steady.trycloudflare.com/dashboard');
+    expect(rewritten).not.toContain('hrms.test');
   });
 
   it('waits for a project that is still transitioning to running before starting a tunnel', async () => {
