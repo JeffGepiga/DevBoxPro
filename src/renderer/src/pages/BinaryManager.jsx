@@ -283,6 +283,8 @@ function BinaryManager() {
     sqlite: false,
     minio: false,
     memcached: {},
+    cloudflared: false,
+    zrok: false,
   });
   const [downloadUrls, setDownloadUrls] = useState({});
   const [gitStatus, setGitStatus] = useState({ available: false, source: null, version: null });
@@ -349,6 +351,9 @@ function BinaryManager() {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [serviceUpdates, setServiceUpdates] = useState({ composer: false, phpmyadmin: false });
   const [checkingServiceUpdate, setCheckingServiceUpdate] = useState({ composer: false, phpmyadmin: false });
+  const [zrokToken, setZrokToken] = useState('');
+  const [zrokStatus, setZrokStatus] = useState({ enabled: false, configuredAt: null });
+  const [enablingZrok, setEnablingZrok] = useState(false);
 
   // Import modal state
   const [importModal, setImportModal] = useState({
@@ -404,6 +409,18 @@ function BinaryManager() {
       });
     } catch (error) {
       setGitStatus({ available: false, source: null, version: null });
+    }
+  }, []);
+
+  const loadZrokStatus = useCallback(async () => {
+    try {
+      const result = await window.devbox?.tunnel?.zrokStatus?.();
+      setZrokStatus({
+        enabled: result?.enabled === true,
+        configuredAt: result?.configuredAt || null,
+      });
+    } catch (error) {
+      setZrokStatus({ enabled: false, configuredAt: null });
     }
   }, []);
 
@@ -496,6 +513,7 @@ function BinaryManager() {
       }
 
       await loadGitStatus();
+      await loadZrokStatus();
 
       setLoading(false);
     };
@@ -519,7 +537,7 @@ function BinaryManager() {
     });
 
     return () => unsubscribe?.();
-  }, [forceRefreshInstalled, loadDownloadUrls, loadServiceConfig, loadGitStatus]); // showAlert is intentionally omitted — it's a stable context function
+  }, [forceRefreshInstalled, loadDownloadUrls, loadServiceConfig, loadGitStatus, loadZrokStatus]); // showAlert is intentionally omitted — it's a stable context function
 
   const handleDownloadPhp = async (version) => {
     const id = `php-${version}`;
@@ -603,6 +621,12 @@ function BinaryManager() {
         break;
       case 'memcached':
         downloadPromise = window.devbox?.binaries.downloadMemcached(version);
+        break;
+      case 'cloudflared':
+        downloadPromise = window.devbox?.binaries.downloadCloudflared();
+        break;
+      case 'zrok':
+        downloadPromise = window.devbox?.binaries.downloadZrok();
         break;
     }
 
@@ -712,6 +736,38 @@ function BinaryManager() {
     }
   };
 
+  const handleEnableZrok = async () => {
+    const token = zrokToken.trim();
+    if (!token) {
+      showAlert({
+        title: 'zrok Token Required',
+        message: 'Enter your zrok enable token before continuing.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    setEnablingZrok(true);
+    try {
+      await window.devbox?.tunnel?.zrokEnable?.(token);
+      setZrokToken('');
+      await loadZrokStatus();
+      showAlert({
+        title: 'zrok Enabled',
+        message: 'zrok is now enabled for the entire app.',
+        type: 'success',
+      });
+    } catch (error) {
+      showAlert({
+        title: 'zrok Enable Failed',
+        message: error.message || 'Unable to enable zrok.',
+        type: 'error',
+      });
+    } finally {
+      setEnablingZrok(false);
+    }
+  };
+
   // Download source URLs for manual download
   const downloadSources = {
     php: {
@@ -773,6 +829,16 @@ function BinaryManager() {
       url: 'https://www.python.org/downloads/',
       name: 'python.org',
       note: 'Download the Windows embeddable package (ZIP)',
+    },
+    cloudflared: {
+      url: 'https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/',
+      name: 'Cloudflare',
+      note: 'Cloudflare Tunnel binary used for Quick Tunnels',
+    },
+    zrok: {
+      url: 'https://github.com/openziti/zrok/releases',
+      name: 'GitHub (openziti/zrok)',
+      note: 'Install zrok, then enable it with your app-wide token below',
     },
   };
 
@@ -1791,6 +1857,30 @@ function BinaryManager() {
       {/* Tools Tab */}
       {activeTab === 'tools' && (
         <div className="space-y-3">
+          <SimpleRow
+            id="cloudflared"
+            name="Cloudflare Tunnel"
+            description="Quick public tunnels via trycloudflare.com URLs"
+            icon={CloudCog}
+            isInstalled={!!installed.cloudflared}
+            size="~15 MB"
+            sourceKey="cloudflared"
+            {...sharedSimpleProps}
+            onDownload={() => handleDownloadService('cloudflared')}
+            onRemove={() => handleRemove('cloudflared')}
+          />
+          <SimpleRow
+            id="zrok"
+            name="zrok"
+            description="Public sharing with an app-wide enable token"
+            icon={Zap}
+            isInstalled={!!installed.zrok}
+            size="~20 MB"
+            sourceKey="zrok"
+            {...sharedSimpleProps}
+            onDownload={() => handleDownloadService('zrok')}
+            onRemove={() => handleRemove('zrok')}
+          />
           {/* Mailpit */}
           <SimpleRow
             id="mailpit"
@@ -1835,6 +1925,65 @@ function BinaryManager() {
             onDownload={() => handleDownloadService('git')}
             onRemove={installed.git ? () => handleRemove('git') : undefined}
           />
+
+          <div className="card p-5 border border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-900/10">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">zrok App-Wide Setup</h3>
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                  Enable zrok once here, then any project can use it for internet sharing.
+                </p>
+              </div>
+              <span className={clsx(
+                'text-xs font-medium px-2 py-1 rounded-full border',
+                zrokStatus.enabled
+                  ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
+                  : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+              )}>
+                {zrokStatus.enabled ? 'Enabled' : 'Not Enabled'}
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <label className="block">
+                <span className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Enable Token</span>
+                <input
+                  type="password"
+                  value={zrokToken}
+                  onChange={(event) => setZrokToken(event.target.value)}
+                  placeholder="Paste your zrok enable token"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </label>
+
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  {!installed.zrok
+                    ? 'Install the zrok binary first.'
+                    : zrokStatus.configuredAt
+                      ? `Last enabled ${new Date(zrokStatus.configuredAt).toLocaleString()}`
+                      : 'zrok has not been enabled on this app yet.'}
+                </div>
+                <button
+                  onClick={handleEnableZrok}
+                  disabled={!installed.zrok || enablingZrok || !zrokToken.trim()}
+                  className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {enablingZrok ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Enabling...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4" />
+                      {zrokStatus.enabled ? 'Re-enable zrok' : 'Enable zrok'}
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -474,6 +474,57 @@
       }
     }
   },
+  "cloudflared": {
+    "versions": [
+      "latest"
+    ],
+    "downloads": {
+      "latest": {
+        "win": {
+          "url": "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe",
+          "filename": "cloudflared.exe"
+        },
+        "mac": {
+          "url": "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz",
+          "filename": "cloudflared-darwin-arm64.tgz"
+        },
+        "linux": {
+          "url": "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
+          "filename": "cloudflared"
+        }
+      }
+    }
+  },
+  "zrok": {
+    "versions": [
+      "latest"
+    ],
+    "downloads": {
+      "latest": {
+        "win": {
+          "url": "https://github.com/openziti/zrok/releases/latest",
+          "filename": "zrok-windows-amd64.zip",
+          "githubRepo": "openziti/zrok",
+          "assetPattern": "windows.*amd64.*\\.zip$"
+        },
+        "mac": {
+          "url": "https://github.com/openziti/zrok/releases/latest",
+          "filename": "zrok-darwin-arm64.tar.gz",
+          "githubRepo": "openziti/zrok",
+          "assetPattern": "darwin.*arm64.*\\.(?:tar\\.gz|tgz)$",
+          "fallbackAssetPatterns": [
+            "darwin.*amd64.*\\.(?:tar\\.gz|tgz)$"
+          ]
+        },
+        "linux": {
+          "url": "https://github.com/openziti/zrok/releases/latest",
+          "filename": "zrok-linux-amd64.tar.gz",
+          "githubRepo": "openziti/zrok",
+          "assetPattern": "linux.*amd64.*\\.(?:tar\\.gz|tgz)$"
+        }
+      }
+    }
+  },
   "phpmyadmin": {
     "versions": [
       "latest"

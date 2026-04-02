@@ -21,6 +21,8 @@ function makeContext(overrides = {}) {
       python: [],
       mongodb: ['8.0'],
       memcached: [],
+      cloudflared: ['latest'],
+      zrok: ['latest'],
     },
     managers: {
       log: {
@@ -204,5 +206,20 @@ describe('binary/installed', () => {
 
     expect(installed.mongodb['8.1-custom']).toBe(true);
     expect(installed.mongodb['8.2-broken']).toBeUndefined();
+  });
+
+  it('detects installed cloudflared and zrok binaries from platform paths', async () => {
+    const ctx = makeContext();
+    vi.spyOn(fs, 'readdir').mockResolvedValue([]);
+    vi.spyOn(fs, 'pathExists').mockImplementation(async (targetPath) => {
+      const normalized = targetPath.replace(/\\/g, '/');
+      return normalized.endsWith('/cloudflared/win/cloudflared.exe')
+        || normalized.endsWith('/zrok/win/zrok.exe');
+    });
+
+    const installed = await ctx.getInstalledBinaries();
+
+    expect(installed.cloudflared).toBe(true);
+    expect(installed.zrok).toBe(true);
   });
 });

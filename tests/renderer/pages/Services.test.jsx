@@ -25,8 +25,18 @@ const mockDevbox = {
         getStatus: vi.fn().mockResolvedValue({}),
         getServiceConfig: vi.fn().mockResolvedValue({ versions: {}, defaultPorts: {} }),
     },
+    tunnel: {
+        getAllStatuses: vi.fn().mockResolvedValue({}),
+        getStatus: vi.fn().mockResolvedValue(null),
+        stop: vi.fn().mockResolvedValue({ success: true }),
+        zrokStatus: vi.fn().mockResolvedValue({ enabled: false, configuredAt: null }),
+        onStatusChanged: vi.fn(() => vi.fn()),
+    },
     database: {
         getInfo: vi.fn().mockResolvedValue({}),
+    },
+    system: {
+        openExternal: vi.fn(),
     },
 };
 
@@ -149,5 +159,37 @@ describe('Services', () => {
         });
 
         expect(screen.getByRole('button', { name: /^Stop$/i })).toBeInTheDocument();
+    });
+
+    it('shows active public tunnels and allows stopping them', async () => {
+        mockDevbox.binaries.getStatus.mockResolvedValue({
+            cloudflared: { installed: true },
+            zrok: { installed: true },
+        });
+        mockDevbox.tunnel.getAllStatuses.mockResolvedValue({
+            'proj-1': {
+                projectId: 'proj-1',
+                provider: 'cloudflared',
+                status: 'running',
+                publicUrl: 'https://myapp.trycloudflare.com',
+            },
+        });
+        mockDevbox.tunnel.zrokStatus.mockResolvedValue({ enabled: true, configuredAt: '2026-04-01T10:00:00.000Z' });
+        mockAppContext.projects = [{ id: 'proj-1', name: 'My App', isRunning: true, webServer: 'nginx', services: {} }];
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <Services />
+            </MemoryRouter>
+        );
+
+        expect(await screen.findByText('Internet Sharing Readiness')).toBeInTheDocument();
+        expect(await screen.findByText('https://myapp.trycloudflare.com')).toBeInTheDocument();
+
+        fireEvent.click(screen.getAllByRole('button', { name: /^Stop$/i })[0]);
+
+        await waitFor(() => {
+            expect(mockDevbox.tunnel.stop).toHaveBeenCalledWith('proj-1');
+        });
     });
 });

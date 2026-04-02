@@ -562,6 +562,9 @@ function OverviewTab({ project, processes, refreshProjects }) {
     defaultPorts: {},
     portOffsets: {},
   });
+  const [tunnelStatus, setTunnelStatus] = useState(null);
+  const [tunnelLoading, setTunnelLoading] = useState(false);
+  const [zrokAppStatus, setZrokAppStatus] = useState({ enabled: false, configuredAt: null });
   const [versionOptions, setVersionOptions] = useState({
     mysql: [],
     mariadb: [],
@@ -626,6 +629,42 @@ function OverviewTab({ project, processes, refreshProjects }) {
     loadBinariesData();
   }, [loadBinariesData]);
 
+  useEffect(() => {
+    const loadTunnelData = async () => {
+      if (!project?.id) {
+        setTunnelStatus(null);
+        return;
+      }
+
+      try {
+        const [currentTunnelStatus, currentZrokStatus] = await Promise.all([
+          window.devbox?.tunnel?.getStatus?.(project.id),
+          window.devbox?.tunnel?.zrokStatus?.(),
+        ]);
+
+        setTunnelStatus(currentTunnelStatus || null);
+        setZrokAppStatus({
+          enabled: currentZrokStatus?.enabled === true,
+          configuredAt: currentZrokStatus?.configuredAt || null,
+        });
+      } catch (error) {
+        setTunnelStatus(null);
+      }
+    };
+
+    loadTunnelData();
+  }, [project?.id, project?.isRunning]);
+
+  useEffect(() => {
+    const unsubscribe = window.devbox?.tunnel?.onStatusChanged?.((payload) => {
+      if (payload?.projectId === project?.id) {
+        setTunnelStatus(payload);
+      }
+    });
+
+    return () => unsubscribe?.();
+  }, [project?.id]);
+
   // Re-fetch binaries status whenever a binary download completes (e.g. Python install)
   useEffect(() => {
     const unsubscribe = window.devbox?.binaries.onProgress((id, progressData) => {
@@ -675,6 +714,59 @@ function OverviewTab({ project, processes, refreshProjects }) {
     if (key in pendingChanges) return pendingChanges[key];
     if (key === 'services') return project.services || {};
     return project[key];
+  };
+
+  const effectiveShareOnInternet = getEffectiveValue('shareOnInternet') || false;
+  const effectiveTunnelProvider = getEffectiveValue('tunnelProvider') || '';
+  const effectiveTunnelAutoStart = getEffectiveValue('tunnelAutoStart') || false;
+  const tunnelConfigDirty = ['shareOnInternet', 'tunnelProvider', 'tunnelAutoStart'].some((key) => key in pendingChanges);
+  const cloudflaredInstalled = binariesStatus?.cloudflared?.installed === true;
+  const zrokInstalled = binariesStatus?.zrok?.installed === true;
+  const providerReady = effectiveTunnelProvider === 'cloudflared'
+    ? cloudflaredInstalled
+    : effectiveTunnelProvider === 'zrok'
+      ? zrokInstalled && zrokAppStatus.enabled
+      : false;
+
+  const handleStartInternetShare = async () => {
+    if (!effectiveTunnelProvider) {
+      await showAlert({
+        title: 'Tunnel Provider Required',
+        message: 'Choose Cloudflare Tunnel or zrok first.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    setTunnelLoading(true);
+    try {
+      const nextStatus = await window.devbox?.tunnel?.start?.(project.id, effectiveTunnelProvider);
+      setTunnelStatus(nextStatus || null);
+    } catch (error) {
+      await showAlert({
+        title: 'Unable to Start Tunnel',
+        message: error.message || 'The public tunnel could not be started.',
+        type: 'error',
+      });
+    } finally {
+      setTunnelLoading(false);
+    }
+  };
+
+  const handleStopInternetShare = async () => {
+    setTunnelLoading(true);
+    try {
+      await window.devbox?.tunnel?.stop?.(project.id);
+      setTunnelStatus((current) => current ? { ...current, status: 'stopped' } : null);
+    } catch (error) {
+      await showAlert({
+        title: 'Unable to Stop Tunnel',
+        message: error.message || 'The public tunnel could not be stopped.',
+        type: 'error',
+      });
+    } finally {
+      setTunnelLoading(false);
+    }
   };
 
   const handlePhpVersionChange = (newVersion) => {
@@ -812,6 +904,11 @@ function OverviewTab({ project, processes, refreshProjects }) {
 
     setSavingSettings(true);
     try {
+      const hasTunnelConfigChanges = ['shareOnInternet', 'tunnelProvider', 'tunnelAutoStart'].some((key) => key in pendingChanges);
+      const nextShareOnInternet = 'shareOnInternet' in pendingChanges ? pendingChanges.shareOnInternet : (project.shareOnInternet || false);
+      const nextTunnelProvider = 'tunnelProvider' in pendingChanges ? pendingChanges.tunnelProvider : (project.tunnelProvider || '');
+      const nextTunnelAutoStart = 'tunnelAutoStart' in pendingChanges ? pendingChanges.tunnelAutoStart : (project.tunnelAutoStart || false);
+
       // If web server is changing, use switchWebServer API
       if (pendingChanges.webServer) {
         await window.devbox?.projects.switchWebServer(
@@ -828,6 +925,16 @@ function OverviewTab({ project, processes, refreshProjects }) {
       }
       if (Object.keys(otherChanges).length > 0) {
         await window.devbox?.projects.update(project.id, otherChanges);
+      }
+
+      if (project.isRunning && hasTunnelConfigChanges) {
+        if (nextShareOnInternet && nextTunnelAutoStart && nextTunnelProvider) {
+          const nextStatus = await window.devbox?.tunnel?.start?.(project.id, nextTunnelProvider);
+          setTunnelStatus(nextStatus || null);
+        } else {
+          await window.devbox?.tunnel?.stop?.(project.id);
+          setTunnelStatus((current) => current ? { ...current, status: 'stopped' } : null);
+        }
       }
 
       // Clear pending changes
@@ -1078,6 +1185,149 @@ function OverviewTab({ project, processes, refreshProjects }) {
               <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">⚠️ Allow port {webServerPorts?.httpPort || 80} in Windows Firewall.</p>
             </div>
           )}
+
+          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700/60 space-y-3">
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <span className="text-sm text-gray-600 dark:text-gray-400">Share on Internet</span>
+                {!effectiveShareOnInternet && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Expose this project through a public tunnel</p>
+                )}
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={effectiveShareOnInternet}
+                  onChange={(e) => {
+                    const newValue = e.target.checked;
+                    if (newValue === (project.shareOnInternet || false)) {
+                      const { shareOnInternet, ...rest } = pendingChanges;
+                      setPendingChanges(rest);
+                    } else {
+                      setPendingChanges({ ...pendingChanges, shareOnInternet: newValue });
+                    }
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+              </label>
+            </div>
+
+            {(effectiveShareOnInternet || ['starting', 'running'].includes(tunnelStatus?.status)) && (
+              <div className="p-4 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-900/10 space-y-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">Public Tunnel</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Cloudflare Tunnel uses random trycloudflare.com URLs. zrok requires one app-wide enable token.
+                    </p>
+                  </div>
+                  <span className={clsx(
+                    'text-xs font-medium px-2 py-1 rounded-full border',
+                    tunnelStatus?.status === 'running'
+                      ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
+                      : tunnelStatus?.status === 'starting'
+                        ? 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800'
+                        : tunnelStatus?.status === 'error'
+                          ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800'
+                          : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+                  )}>
+                    {tunnelStatus?.status === 'running'
+                      ? 'Live'
+                      : tunnelStatus?.status === 'starting'
+                        ? 'Starting'
+                        : tunnelStatus?.status === 'error'
+                          ? 'Error'
+                          : 'Stopped'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Provider</label>
+                    <select
+                      value={effectiveTunnelProvider}
+                      onChange={(e) => {
+                        const newValue = e.target.value;
+                        if (newValue === (project.tunnelProvider || '')) {
+                          const { tunnelProvider, ...rest } = pendingChanges;
+                          setPendingChanges(rest);
+                        } else {
+                          setPendingChanges({ ...pendingChanges, tunnelProvider: newValue });
+                        }
+                      }}
+                      className="input"
+                    >
+                      <option value="">Select provider</option>
+                      <option value="cloudflared" disabled={!cloudflaredInstalled}>Cloudflare Tunnel{cloudflaredInstalled ? '' : ' (install in Binary Manager)'}</option>
+                      <option value="zrok" disabled={!zrokInstalled}>zrok{zrokInstalled ? '' : ' (install in Binary Manager)'}</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between py-1">
+                    <div>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Auto-start tunnel</span>
+                      <p className="text-xs text-gray-400 dark:text-gray-500">Start sharing automatically when the project starts</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={effectiveTunnelAutoStart}
+                        onChange={(e) => {
+                          const newValue = e.target.checked;
+                          if (newValue === (project.tunnelAutoStart || false)) {
+                            const { tunnelAutoStart, ...rest } = pendingChanges;
+                            setPendingChanges(rest);
+                          } else {
+                            setPendingChanges({ ...pendingChanges, tunnelAutoStart: newValue });
+                          }
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={handleStartInternetShare}
+                    disabled={!project.isRunning || !effectiveShareOnInternet || !effectiveTunnelProvider || !providerReady || tunnelConfigDirty || tunnelLoading}
+                    className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {tunnelLoading && tunnelStatus?.status !== 'running' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+                    Start Sharing
+                  </button>
+                  <button
+                    onClick={handleStopInternetShare}
+                    disabled={!['starting', 'running'].includes(tunnelStatus?.status) || tunnelLoading}
+                    className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Square className="w-4 h-4" />
+                    Stop Tunnel
+                  </button>
+                  {tunnelStatus?.publicUrl && (
+                    <button
+                      onClick={() => window.devbox?.system.openExternal(tunnelStatus.publicUrl)}
+                      className="btn-secondary"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      Open Public URL
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-1 text-xs">
+                  {!project.isRunning && <p className="text-yellow-600 dark:text-yellow-400">Start the project before opening a public tunnel.</p>}
+                  {tunnelConfigDirty && <p className="text-yellow-600 dark:text-yellow-400">Save project changes before starting the tunnel.</p>}
+                  {effectiveTunnelProvider === 'zrok' && !zrokAppStatus.enabled && <p className="text-yellow-600 dark:text-yellow-400">Enable zrok first in Binary Manager → Tools.</p>}
+                  {effectiveTunnelProvider && !providerReady && effectiveTunnelProvider !== 'zrok' && <p className="text-yellow-600 dark:text-yellow-400">Install the selected tunnel provider in Binary Manager first.</p>}
+                  {tunnelStatus?.publicUrl && <p className="font-mono text-indigo-700 dark:text-indigo-300 break-all">{tunnelStatus.publicUrl}</p>}
+                  {tunnelStatus?.error && <p className="text-red-600 dark:text-red-400">{tunnelStatus.error}</p>}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Domains + Web Server — middle column */}

@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Layers,
   Download,
+  Share2,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -27,6 +28,8 @@ function Services() {
   const [loadingServices, setLoadingServices] = useState(new Set());
   const [binariesStatus, setBinariesStatus] = useState({});
   const [runningVersions, setRunningVersions] = useState({});
+  const [tunnelStatuses, setTunnelStatuses] = useState({});
+  const [zrokStatus, setZrokStatus] = useState({ enabled: false, configuredAt: null });
   const [serviceConfig, setServiceConfig] = useState({
     versions: {},
     portOffsets: {},
@@ -110,6 +113,47 @@ function Services() {
     return () => clearInterval(intervalId);
   }, []);
 
+  useEffect(() => {
+    const loadTunnelStatuses = async () => {
+      try {
+        const [currentTunnelStatuses, currentZrokStatus] = await Promise.all([
+          window.devbox?.tunnel?.getAllStatuses?.(),
+          window.devbox?.tunnel?.zrokStatus?.(),
+        ]);
+
+        setTunnelStatuses(currentTunnelStatuses || {});
+        setZrokStatus({
+          enabled: currentZrokStatus?.enabled === true,
+          configuredAt: currentZrokStatus?.configuredAt || null,
+        });
+      } catch (err) {
+        // Error loading tunnel statuses
+      }
+    };
+
+    loadTunnelStatuses();
+    const unsubscribe = window.devbox?.tunnel?.onStatusChanged?.((payload) => {
+      if (!payload?.projectId) {
+        return;
+      }
+
+      setTunnelStatuses((prev) => {
+        if (payload.status === 'stopped' && !payload.publicUrl) {
+          const next = { ...prev };
+          delete next[payload.projectId];
+          return next;
+        }
+
+        return {
+          ...prev,
+          [payload.projectId]: payload,
+        };
+      });
+    });
+
+    return () => unsubscribe?.();
+  }, []);
+
   // Helper to check if a specific version is installed
   const isVersionInstalled = useCallback((serviceName, version) => {
     return binariesStatus?.[serviceName]?.[version]?.installed === true;
@@ -128,6 +172,18 @@ function Services() {
   const runningProjects = useMemo(() => {
     return projects.filter(p => p.isRunning);
   }, [projects]);
+
+  const activeTunnels = useMemo(() => {
+    return Object.values(tunnelStatuses).filter((status) => ['starting', 'running'].includes(status?.status));
+  }, [tunnelStatuses]);
+
+  const projectNamesById = useMemo(() => {
+    return Object.fromEntries(projects.map((project) => [project.id, project.name]));
+  }, [projects]);
+
+  const handleStopTunnel = useCallback(async (projectId) => {
+    await window.devbox?.tunnel?.stop?.(projectId);
+  }, []);
 
   // Determine required services based on running projects
   const requiredServices = useMemo(() => {
@@ -488,6 +544,116 @@ function Services() {
           value={`${runningCount}/${totalCount}`}
           color="purple"
         />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="card p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-3 rounded-xl bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
+              <Globe className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Internet Sharing Readiness</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Install a provider in Binary Manager, then enable sharing per project.</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">Cloudflare Tunnel</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Quick Tunnels on random trycloudflare.com URLs</p>
+              </div>
+              <span className={clsx(
+                'text-xs font-medium px-2 py-1 rounded-full border',
+                binariesStatus?.cloudflared?.installed
+                  ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
+                  : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+              )}>
+                {binariesStatus?.cloudflared?.installed ? 'Installed' : 'Not Installed'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">zrok</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Requires the binary plus one app-wide enable token</p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <span className={clsx(
+                  'text-xs font-medium px-2 py-1 rounded-full border',
+                  binariesStatus?.zrok?.installed
+                    ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
+                    : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+                )}>
+                  {binariesStatus?.zrok?.installed ? 'Installed' : 'Not Installed'}
+                </span>
+                <span className={clsx(
+                  'text-xs font-medium px-2 py-1 rounded-full border',
+                  zrokStatus.enabled
+                    ? 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'
+                    : 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800'
+                )}>
+                  {zrokStatus.enabled ? 'Enabled' : 'Needs Setup'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="card p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-3 rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+              <Share2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Active Public Tunnels</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Current internet-facing project shares.</p>
+            </div>
+          </div>
+
+          {activeTunnels.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-4 text-sm text-gray-500 dark:text-gray-400">
+              No public tunnels are active.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {activeTunnels.map((tunnel) => (
+                <div key={tunnel.projectId} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">{projectNamesById[tunnel.projectId] || tunnel.projectId}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{tunnel.provider === 'cloudflared' ? 'Cloudflare Tunnel' : 'zrok'}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={clsx(
+                        'text-xs font-medium px-2 py-1 rounded-full border',
+                        tunnel.status === 'running'
+                          ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
+                          : 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800'
+                      )}>
+                        {tunnel.status === 'running' ? 'Live' : 'Starting'}
+                      </span>
+                      <button onClick={() => handleStopTunnel(tunnel.projectId)} className="btn-secondary text-xs px-2 py-1">
+                        <Square className="w-3 h-3" />
+                        Stop
+                      </button>
+                    </div>
+                  </div>
+
+                  {tunnel.publicUrl && (
+                    <button
+                      onClick={() => window.devbox?.system.openExternal(tunnel.publicUrl)}
+                      className="mt-3 text-left w-full rounded-md bg-gray-50 dark:bg-gray-800 px-3 py-2 font-mono text-xs text-blue-700 dark:text-blue-300 hover:underline"
+                    >
+                      {tunnel.publicUrl}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Services Grid */}

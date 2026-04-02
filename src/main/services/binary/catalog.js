@@ -40,6 +40,23 @@ module.exports = {
       }
     }
 
+    if (['cloudflared', 'zrok'].includes(type)) {
+      const activeTunnels = this.managers?.tunnel?.getAllTunnelStatuses?.() || {};
+      for (const [projectId, tunnelState] of Object.entries(activeTunnels)) {
+        if (tunnelState?.provider !== type) {
+          continue;
+        }
+
+        const project = this.managers?.project?.getProject?.(projectId);
+        items.push({
+          kind: 'tunnel',
+          id: projectId,
+          name: project?.name || projectId,
+          reason: 'Tunnel provider is currently active for this project',
+        });
+      }
+    }
+
     const serviceTypes = ['mysql', 'mariadb', 'redis', 'postgresql', 'mongodb', 'memcached', 'nginx', 'apache', 'mailpit', 'minio'];
     if (serviceTypes.includes(type) && serviceManager) {
       const runningMap = serviceManager.runningVersions?.get(type);
@@ -76,6 +93,8 @@ module.exports = {
             await this.managers?.project?.stopProject(item.id);
           } else if (item.kind === 'service') {
             await this.managers?.service?.stopService(type, item.version ?? version ?? null);
+          } else if (item.kind === 'tunnel') {
+            await this.managers?.tunnel?.stopTunnel(item.id);
           }
         } catch (error) {
           this.managers?.log?.systemWarn(`Could not stop ${item.name} before removal`, { error: error.message });
@@ -154,6 +173,8 @@ module.exports = {
       mariadb: {},
       redis: {},
       mailpit: this.downloads.mailpit[platform],
+      cloudflared: this.downloads.cloudflared?.[platform],
+      zrok: this.downloads.zrok?.[platform],
       phpmyadmin: this.downloads.phpmyadmin.all,
       nginx: {},
       apache: {},

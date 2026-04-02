@@ -34,12 +34,18 @@ const mockDevbox = {
         start: vi.fn().mockResolvedValue({}),
         stop: vi.fn().mockResolvedValue({}),
         getAll: vi.fn().mockResolvedValue([MOCK_PROJECT]),
+        update: vi.fn().mockResolvedValue({ success: true }),
         openFolder: vi.fn(),
         openEditor: vi.fn(),
         getPhpIni: vi.fn().mockResolvedValue(''),
     },
     binaries: {
-        getStatus: vi.fn().mockResolvedValue({ php: { '8.3': { installed: true } }, mysql: { '8.4': { installed: true }, '8.0': { installed: true } } }),
+        getStatus: vi.fn().mockResolvedValue({
+            php: { '8.3': { installed: true } },
+            mysql: { '8.4': { installed: true }, '8.0': { installed: true } },
+            cloudflared: { installed: true },
+            zrok: { installed: true },
+        }),
         getServiceConfig: vi.fn().mockResolvedValue({
             defaultPorts: { mysql: 3306 },
             portOffsets: { mysql: { '8.4': 0, '8.0': 1 } },
@@ -65,12 +71,30 @@ const mockDevbox = {
         getLocalIpAddresses: vi.fn().mockResolvedValue([]),
         openExternal: vi.fn(),
     },
+    tunnel: {
+        getStatus: vi.fn().mockResolvedValue(null),
+        getAllStatuses: vi.fn().mockResolvedValue({}),
+        start: vi.fn().mockResolvedValue({
+            projectId: 'proj-1',
+            provider: 'cloudflared',
+            status: 'running',
+            publicUrl: 'https://myapp.trycloudflare.com',
+        }),
+        stop: vi.fn().mockResolvedValue({ success: true }),
+        zrokStatus: vi.fn().mockResolvedValue({ enabled: true, configuredAt: '2026-04-01T10:00:00.000Z' }),
+        onStatusChanged: vi.fn(() => vi.fn()),
+    },
 };
 
 beforeEach(() => {
     Object.defineProperty(window, 'devbox', { value: mockDevbox, writable: true, configurable: true });
     vi.clearAllMocks();
-    mockDevbox.binaries.getStatus.mockResolvedValue({ php: { '8.3': { installed: true } }, mysql: { '8.4': { installed: true }, '8.0': { installed: true } } });
+    mockDevbox.binaries.getStatus.mockResolvedValue({
+        php: { '8.3': { installed: true } },
+        mysql: { '8.4': { installed: true }, '8.0': { installed: true } },
+        cloudflared: { installed: true },
+        zrok: { installed: true },
+    });
     mockDevbox.binaries.getServiceConfig.mockResolvedValue({
         defaultPorts: { mysql: 3306 },
         portOffsets: { mysql: { '8.4': 0, '8.0': 1 } },
@@ -194,6 +218,27 @@ describe('ProjectDetail', () => {
             await waitFor(() => {
                 expect(mockDevbox.system.openExternal).toHaveBeenCalledWith('http://localhost:8080/index.php?server=1');
             });
+        });
+    });
+
+    describe('Internet sharing', () => {
+        it('shows internet sharing controls and starts a cloudflared tunnel', async () => {
+            MOCK_PROJECT.shareOnInternet = true;
+            MOCK_PROJECT.tunnelProvider = 'cloudflared';
+
+            renderProjectDetail();
+
+            const startButton = await screen.findByRole('button', { name: /Start Sharing/i });
+            fireEvent.click(startButton);
+
+            await waitFor(() => {
+                expect(mockDevbox.tunnel.start).toHaveBeenCalledWith('proj-1', 'cloudflared');
+            });
+
+            expect(await screen.findByText('https://myapp.trycloudflare.com')).toBeInTheDocument();
+
+            MOCK_PROJECT.shareOnInternet = undefined;
+            MOCK_PROJECT.tunnelProvider = undefined;
         });
     });
 });

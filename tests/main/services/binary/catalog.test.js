@@ -18,6 +18,8 @@ function makeContext(overrides = {}) {
       mariadb: {},
       redis: {},
       mailpit: { win: { url: 'mailpit.zip', filename: 'mailpit.zip' } },
+      cloudflared: { win: { url: 'cloudflared.exe', filename: 'cloudflared.exe' } },
+      zrok: { win: { url: 'zrok.zip', filename: 'zrok.zip' } },
       phpmyadmin: { all: { url: 'pma.zip', filename: 'pma.zip' } },
       nginx: {},
       apache: {},
@@ -33,6 +35,7 @@ function makeContext(overrides = {}) {
       log: { systemWarn: vi.fn() },
       project: { stopProject: vi.fn().mockResolvedValue(undefined) },
       service: { stopService: vi.fn().mockResolvedValue(undefined), runningVersions: new Map() },
+      tunnel: { getAllTunnelStatuses: vi.fn(() => ({})), stopTunnel: vi.fn().mockResolvedValue(undefined) },
     },
     getPlatform: vi.fn(() => 'win'),
     getRunningConflicts: vi.fn().mockResolvedValue({ hasConflicts: false, items: [] }),
@@ -59,6 +62,8 @@ describe('binary/catalog', () => {
         '8.4': { url: 'mysql.zip', filename: 'mysql.zip', label: 'MySQL 8.4', defaultPort: 3306 },
       },
       mailpit: { url: 'mailpit.zip', filename: 'mailpit.zip' },
+      cloudflared: { url: 'cloudflared.exe', filename: 'cloudflared.exe' },
+      zrok: { url: 'zrok.zip', filename: 'zrok.zip' },
       phpmyadmin: { url: 'pma.zip', filename: 'pma.zip' },
     }));
   });
@@ -113,5 +118,29 @@ describe('binary/catalog', () => {
 
     expect(result.composer.updateAvailable).toBe(true);
     expect(result.phpmyadmin.updateAvailable).toBe(false);
+  });
+
+  it('stops active tunnel sessions before force-removing their provider binary', async () => {
+    const ctx = makeContext({
+      getRunningConflicts: binaryCatalog.getRunningConflicts,
+      managers: {
+        log: { systemWarn: vi.fn() },
+        project: { stopProject: vi.fn().mockResolvedValue(undefined), getProject: vi.fn(() => ({ name: 'My App' })) },
+        service: { stopService: vi.fn().mockResolvedValue(undefined), runningVersions: new Map() },
+        tunnel: {
+          getAllTunnelStatuses: vi.fn(() => ({
+            'proj-1': { provider: 'cloudflared', status: 'running' },
+          })),
+          stopTunnel: vi.fn().mockResolvedValue(undefined),
+        },
+      },
+    });
+    const removeSpy = vi.spyOn(fs, 'remove').mockResolvedValue(undefined);
+
+    const result = await ctx.removeBinary('cloudflared', null, true);
+
+    expect(result).toEqual({ success: true });
+    expect(ctx.managers.tunnel.stopTunnel).toHaveBeenCalledWith('proj-1');
+    expect(removeSpy).toHaveBeenCalledWith(path.join('/resources', 'cloudflared', 'win'));
   });
 });

@@ -35,6 +35,10 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     getLiveMainWindow()?.webContents.send(channel, payload);
   };
 
+  managers.tunnel?.setStatusEmitter?.((payload) => {
+    sendToMainWindow('tunnel:statusChanged', payload);
+  });
+
   // ============ PROJECT HANDLERS ============
   ipcMain.handle('projects:getAll', async () => {
     return project.getAllProjects();
@@ -961,6 +965,8 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         mariadb: {},
         redis: {},
         mailpit: { installed: true },
+        cloudflared: { installed: false },
+        zrok: { installed: false },
         phpmyadmin: { installed: true },
         nginx: { '1.24': { installed: true, version: '1.24.0' } },
         apache: {},
@@ -969,7 +975,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       };
     }
 
-    if (!managers.binaryDownload) return { php: {}, mysql: {}, mariadb: {}, redis: {}, nginx: {}, apache: {}, nodejs: {}, mailpit: false, phpmyadmin: false, composer: false };
+    if (!managers.binaryDownload) return { php: {}, mysql: {}, mariadb: {}, redis: {}, nginx: {}, apache: {}, nodejs: {}, mailpit: false, cloudflared: false, zrok: false, phpmyadmin: false, composer: false };
     const installed = await managers.binaryDownload.getInstalledBinaries();
 
     // Transform to a more detailed status format for versioned services
@@ -979,6 +985,8 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       mariadb: {},     // Now versioned
       redis: {},       // Now versioned
       mailpit: { installed: installed.mailpit },
+      cloudflared: { installed: !!installed.cloudflared },
+      zrok: { installed: !!installed.zrok },
       phpmyadmin: { installed: installed.phpmyadmin },
       nginx: {},       // Now versioned
       apache: {},      // Now versioned
@@ -1097,6 +1105,16 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   ipcMain.handle('binaries:downloadMailpit', async () => {
     if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
     return managers.binaryDownload.downloadMailpit();
+  });
+
+  ipcMain.handle('binaries:downloadCloudflared', async () => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadCloudflared();
+  });
+
+  ipcMain.handle('binaries:downloadZrok', async () => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.downloadZrok();
   });
 
   ipcMain.handle('binaries:downloadPhpMyAdmin', async () => {
@@ -1256,6 +1274,37 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     }
   };
   setupBinaryProgressListener();
+
+  // ============ TUNNEL HANDLERS ============
+  ipcMain.handle('tunnel:start', async (event, projectId, provider) => {
+    if (!managers.tunnel) throw new Error('Tunnel manager not initialized');
+    return managers.tunnel.startTunnel(projectId, provider);
+  });
+
+  ipcMain.handle('tunnel:stop', async (event, projectId) => {
+    if (!managers.tunnel) throw new Error('Tunnel manager not initialized');
+    return managers.tunnel.stopTunnel(projectId);
+  });
+
+  ipcMain.handle('tunnel:getStatus', async (event, projectId) => {
+    if (!managers.tunnel) return null;
+    return managers.tunnel.getTunnelStatus(projectId);
+  });
+
+  ipcMain.handle('tunnel:getAllStatuses', async () => {
+    if (!managers.tunnel) return {};
+    return managers.tunnel.getAllTunnelStatuses();
+  });
+
+  ipcMain.handle('tunnel:zrokEnable', async (event, token) => {
+    if (!managers.tunnel) throw new Error('Tunnel manager not initialized');
+    return managers.tunnel.enableZrok(token);
+  });
+
+  ipcMain.handle('tunnel:zrokStatus', async () => {
+    if (!managers.tunnel) return { enabled: false, configuredAt: null };
+    return managers.tunnel.getZrokStatus();
+  });
 
 
 

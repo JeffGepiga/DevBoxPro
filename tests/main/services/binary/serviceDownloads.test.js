@@ -31,6 +31,18 @@ function makeContext(overrides = {}) {
           },
         },
       },
+      cloudflared: {
+        win: {
+          url: 'https://example.com/cloudflared.exe',
+          filename: 'cloudflared.exe',
+        },
+      },
+      zrok: {
+        win: {
+          githubRepo: 'openziti/zrok',
+          assetPattern: 'zrok-windows-amd64\\.zip$',
+        },
+      },
     },
     managers: {
       log: {
@@ -122,6 +134,48 @@ describe('binary/serviceDownloads', () => {
     expect(writeFileSpy).toHaveBeenCalledWith(
       expect.stringContaining('config.inc.php'),
       expect.stringContaining("$cfg['blowfish_secret'] = 'secret-value';")
+    );
+  });
+
+  it('downloads cloudflared directly to its executable path on Windows', async () => {
+    const ctx = makeContext();
+    vi.spyOn(fs, 'remove').mockResolvedValue(undefined);
+    vi.spyOn(fs, 'ensureDir').mockResolvedValue(undefined);
+
+    const result = await ctx.downloadCloudflared();
+
+    expect(result).toEqual({ success: true });
+    expect(ctx.downloadFile).toHaveBeenCalledWith(
+      'https://example.com/cloudflared.exe',
+      expect.stringContaining('cloudflared.exe'),
+      'cloudflared'
+    );
+    expect(ctx.extractArchive).not.toHaveBeenCalled();
+  });
+
+  it('downloads zrok using the resolved latest GitHub release asset', async () => {
+    const ctx = makeContext({
+      resolveGithubReleaseAsset: vi.fn().mockResolvedValue({
+        url: 'https://example.com/zrok-windows-amd64.zip',
+        filename: 'zrok-windows-amd64.zip',
+      }),
+      findBinaryInDir: vi.fn().mockResolvedValue('/resources/zrok/win/zrok.exe'),
+    });
+    vi.spyOn(fs, 'remove').mockResolvedValue(undefined);
+    vi.spyOn(fs, 'ensureDir').mockResolvedValue(undefined);
+
+    const result = await ctx.downloadZrok();
+
+    expect(result).toEqual({ success: true });
+    expect(ctx.resolveGithubReleaseAsset).toHaveBeenCalledWith(
+      'openziti/zrok',
+      'zrok-windows-amd64\\.zip$',
+      []
+    );
+    expect(ctx.extractArchive).toHaveBeenCalledWith(
+      expect.stringContaining('zrok-windows-amd64.zip'),
+      expect.stringContaining('zrok'),
+      'zrok'
     );
   });
 });

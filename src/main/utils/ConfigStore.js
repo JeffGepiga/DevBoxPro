@@ -188,6 +188,8 @@ class ConfigStore {
         dbUser: 'root',
         dbPassword: '',
         serverTimezone: 'UTC', // IANA timezone for PHP, MySQL, MariaDB
+        zrokEnabled: false,
+        zrokConfiguredAt: null,
         defaultProjectsPath, // Platform-specific default
       },
       projects: [],

@@ -240,6 +240,14 @@ module.exports = {
         await this.startSupervisorProcesses(project);
       }
 
+      if (project.shareOnInternet && project.tunnelAutoStart && project.tunnelProvider) {
+        try {
+          await this.managers.tunnel?.startTunnel(project.id, project.tunnelProvider);
+        } catch (error) {
+          this.managers.log?.systemWarn(`Failed to auto-start tunnel for ${project.name}`, { error: error.message });
+        }
+      }
+
       await this.updateHostsFile(project);
 
       const projects = this.configStore.get('projects', []);
@@ -493,6 +501,12 @@ module.exports = {
 
       if (project?.supervisor.processes.length > 0) {
         await this.managers.supervisor?.stopAllProcesses(id);
+      }
+
+      try {
+        await this.managers.tunnel?.stopTunnel(id);
+      } catch (error) {
+        this.managers.log?.systemWarn(`Error stopping tunnel for ${project?.name || id}`, { error: error.message });
       }
 
       this.runningProjects.delete(id);

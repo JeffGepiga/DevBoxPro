@@ -1,7 +1,76 @@
 const path = require('path');
 const fs = require('fs-extra');
+const https = require('https');
 
 module.exports = {
+  async resolveGithubReleaseAsset(repo, primaryPattern, fallbackPatterns = []) {
+    const patterns = [primaryPattern, ...fallbackPatterns]
+      .filter(Boolean)
+      .map((pattern) => new RegExp(pattern, 'i'));
+
+    const release = await new Promise((resolve, reject) => {
+      const request = https.get({
+        hostname: 'api.github.com',
+        path: `/repos/${repo}/releases/latest`,
+        headers: {
+          'User-Agent': 'DevBoxPro-App',
+          Accept: 'application/vnd.github.v3+json',
+        },
+      }, (response) => {
+        let raw = '';
+
+        response.on('data', (chunk) => {
+          raw += chunk.toString();
+        });
+
+        response.on('end', () => {
+          if (response.statusCode !== 200) {
+            reject(new Error(`GitHub API returned status ${response.statusCode}`));
+            return;
+          }
+
+          try {
+            resolve(JSON.parse(raw));
+          } catch {
+            reject(new Error('Failed to parse GitHub release response'));
+          }
+        });
+      });
+
+      request.on('error', reject);
+      request.setTimeout(15000, () => {
+        request.destroy(new Error('GitHub release lookup timed out'));
+      });
+    });
+
+    const assets = Array.isArray(release?.assets) ? release.assets : [];
+    for (const pattern of patterns) {
+      const asset = assets.find((entry) => pattern.test(entry.name || ''));
+      if (asset) {
+        return {
+          url: asset.browser_download_url,
+          filename: asset.name,
+          tagName: release.tag_name,
+        };
+      }
+    }
+
+    throw new Error(`No matching asset found in ${repo} latest release`);
+  },
+
+  async findBinaryInDir(dir, exeName) {
+    if (!dir || !await fs.pathExists(dir)) {
+      return null;
+    }
+
+    const directPath = path.join(dir, exeName);
+    if (await fs.pathExists(directPath)) {
+      return directPath;
+    }
+
+    return this.findExecutableRecursive(dir, exeName, 0, 3);
+  },
+
   async downloadMysql(version = '8.4') {
     const id = `mysql-${version}`;
     const platform = this.getPlatform();
@@ -137,6 +206,102 @@ module.exports = {
         return { success: false, cancelled: true };
       }
       this.managers?.log?.systemError('Failed to download Mailpit', { error: error.message });
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  },
+
+  async downloadCloudflared() {
+    const id = 'cloudflared';
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads.cloudflared?.[platform];
+
+    if (!downloadInfo) {
+      throw new Error(`cloudflared not available for ${platform}`);
+    }
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const targetDir = path.join(this.resourcesPath, 'cloudflared', platform);
+      await fs.remove(targetDir);
+      await fs.ensureDir(targetDir);
+
+      if (platform === 'win' || platform === 'linux') {
+        const destPath = path.join(targetDir, platform === 'win' ? 'cloudflared.exe' : 'cloudflared');
+        await this.downloadFile(downloadInfo.url, destPath, id);
+        await this.checkCancelled(id, destPath);
+        if (platform !== 'win') {
+          await fs.chmod(destPath, '755');
+        }
+      } else {
+        const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
+        await this.downloadFile(downloadInfo.url, downloadPath, id);
+        await this.checkCancelled(id, downloadPath);
+        await this.extractArchive(downloadPath, targetDir, id);
+        await fs.remove(downloadPath);
+
+        const binaryPath = await this.findBinaryInDir(targetDir, 'cloudflared');
+        if (binaryPath) {
+          await fs.chmod(binaryPath, '755');
+        }
+      }
+
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true };
+    } catch (error) {
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
+      this.managers?.log?.systemError('Failed to download cloudflared', { error: error.message });
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  },
+
+  async downloadZrok() {
+    const id = 'zrok';
+    const platform = this.getPlatform();
+    const configuredInfo = this.downloads.zrok?.[platform];
+
+    if (!configuredInfo) {
+      throw new Error(`zrok not available for ${platform}`);
+    }
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const resolvedInfo = configuredInfo.githubRepo
+        ? await this.resolveGithubReleaseAsset(
+          configuredInfo.githubRepo,
+          configuredInfo.assetPattern,
+          configuredInfo.fallbackAssetPatterns || []
+        )
+        : configuredInfo;
+
+      const downloadPath = path.join(this.resourcesPath, 'downloads', resolvedInfo.filename);
+      const extractPath = path.join(this.resourcesPath, 'zrok', platform);
+
+      await fs.remove(extractPath);
+      await fs.ensureDir(extractPath);
+
+      await this.downloadFile(resolvedInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
+      await this.extractArchive(downloadPath, extractPath, id);
+      await fs.remove(downloadPath);
+
+      const binaryPath = await this.findBinaryInDir(extractPath, platform === 'win' ? 'zrok.exe' : 'zrok');
+      if (binaryPath && platform !== 'win') {
+        await fs.chmod(binaryPath, '755');
+      }
+
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true };
+    } catch (error) {
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
+      this.managers?.log?.systemError('Failed to download zrok', { error: error.message });
       this.emitProgress(id, { status: 'error', error: error.message });
       throw error;
     }

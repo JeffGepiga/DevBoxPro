@@ -29,6 +29,8 @@ const mockDevbox = {
         getInstalled: vi.fn().mockResolvedValue({}),
         getDownloadUrls: vi.fn().mockResolvedValue({}),
         getServiceConfig: vi.fn().mockResolvedValue({}),
+        downloadCloudflared: vi.fn().mockResolvedValue({ success: true }),
+        downloadZrok: vi.fn().mockResolvedValue({ success: true }),
         downloadGit: vi.fn().mockResolvedValue({ success: true }),
         onProgress: vi.fn().mockImplementation(() => vi.fn()),
     },
@@ -37,6 +39,10 @@ const mockDevbox = {
     },
     git: {
         isAvailable: vi.fn().mockResolvedValue({ available: false, source: null, version: null }),
+    },
+    tunnel: {
+        zrokStatus: vi.fn().mockResolvedValue({ enabled: false, configuredAt: null }),
+        zrokEnable: vi.fn().mockResolvedValue({ success: true }),
     },
 };
 
@@ -108,6 +114,49 @@ describe('BinaryManager', () => {
 
         await waitFor(() => {
             expect(mockDevbox.binaries.downloadGit).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    it('shows tunnel tools and downloads cloudflared', async () => {
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <BinaryManager />
+            </MemoryRouter>
+        );
+
+        fireEvent.click(await screen.findByRole('button', { name: /Tools/i }));
+
+        const cloudflareName = await screen.findByText('Cloudflare Tunnel');
+        const row = cloudflareName.closest('div.flex.items-center.justify-between');
+        const downloadButton = row ? within(row).getByRole('button', { name: /Download/i }) : null;
+
+        expect(downloadButton).toBeTruthy();
+        fireEvent.click(downloadButton);
+
+        await waitFor(() => {
+            expect(mockDevbox.binaries.downloadCloudflared).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    it('enables zrok app-wide from the tools tab', async () => {
+        mockDevbox.binaries.getInstalled.mockResolvedValueOnce({ zrok: true });
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <BinaryManager />
+            </MemoryRouter>
+        );
+
+        fireEvent.click(await screen.findByRole('button', { name: /Tools/i }));
+
+        fireEvent.change(await screen.findByPlaceholderText(/Paste your zrok enable token/i), {
+            target: { value: 'zrok-token-123' },
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /Enable zrok/i }));
+
+        await waitFor(() => {
+            expect(mockDevbox.tunnel.zrokEnable).toHaveBeenCalledWith('zrok-token-123');
         });
     });
 

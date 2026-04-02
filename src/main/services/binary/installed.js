@@ -10,6 +10,8 @@ module.exports = {
       mariadb: {},
       redis: {},
       mailpit: false,
+      cloudflared: false,
+      zrok: false,
       phpmyadmin: false,
       nginx: {},
       apache: {},
@@ -53,6 +55,16 @@ module.exports = {
     const mailpitPath = path.join(this.resourcesPath, 'mailpit', platform);
     const mailpitExe = platform === 'win' ? 'mailpit.exe' : 'mailpit';
     installed.mailpit = await fs.pathExists(path.join(mailpitPath, mailpitExe));
+
+    const cloudflaredPath = path.join(this.resourcesPath, 'cloudflared', platform);
+    const cloudflaredExe = platform === 'win' ? 'cloudflared.exe' : 'cloudflared';
+    installed.cloudflared = await fs.pathExists(path.join(cloudflaredPath, cloudflaredExe))
+      || Boolean(await this.findExecutableRecursive(cloudflaredPath, cloudflaredExe, 0, 3));
+
+    const zrokPath = path.join(this.resourcesPath, 'zrok', platform);
+    const zrokExe = platform === 'win' ? 'zrok.exe' : 'zrok';
+    installed.zrok = await fs.pathExists(path.join(zrokPath, zrokExe))
+      || Boolean(await this.findExecutableRecursive(zrokPath, zrokExe, 0, 3));
 
     const pmaPath = path.join(this.resourcesPath, 'phpmyadmin', 'index.php');
     installed.phpmyadmin = await fs.pathExists(pmaPath);

@@ -252,6 +252,8 @@ contextBridge.exposeInMainWorld('devbox', {
     downloadMariadb: (version) => ipcRenderer.invoke('binaries:downloadMariadb', version),
     downloadRedis: (version) => ipcRenderer.invoke('binaries:downloadRedis', version),
     downloadMailpit: () => ipcRenderer.invoke('binaries:downloadMailpit'),
+    downloadCloudflared: () => ipcRenderer.invoke('binaries:downloadCloudflared'),
+    downloadZrok: () => ipcRenderer.invoke('binaries:downloadZrok'),
     downloadPhpMyAdmin: () => ipcRenderer.invoke('binaries:downloadPhpMyAdmin'),
     downloadNginx: (version) => ipcRenderer.invoke('binaries:downloadNginx', version),
     downloadApache: (version) => ipcRenderer.invoke('binaries:downloadApache', version),
@@ -281,6 +283,20 @@ contextBridge.exposeInMainWorld('devbox', {
       const handler = (event, data) => callback(data.id, data.progress);
       ipcRenderer.on('binaries:progress', handler);
       return () => ipcRenderer.removeListener('binaries:progress', handler);
+    },
+  },
+
+  tunnel: {
+    start: (projectId, provider) => ipcRenderer.invoke('tunnel:start', projectId, provider),
+    stop: (projectId) => ipcRenderer.invoke('tunnel:stop', projectId),
+    getStatus: (projectId) => ipcRenderer.invoke('tunnel:getStatus', projectId),
+    getAllStatuses: () => ipcRenderer.invoke('tunnel:getAllStatuses'),
+    zrokEnable: (token) => ipcRenderer.invoke('tunnel:zrokEnable', token),
+    zrokStatus: () => ipcRenderer.invoke('tunnel:zrokStatus'),
+    onStatusChanged: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('tunnel:statusChanged', handler);
+      return () => ipcRenderer.removeListener('tunnel:statusChanged', handler);
     },
   },
 
@@ -316,6 +332,7 @@ contextBridge.exposeInMainWorld('devbox', {
       'update:status',
       'update:progress',
       'binaries:progress',
+      'tunnel:statusChanged',
       'supervisor:output',
       'supervisor:statusChanged',
     ];

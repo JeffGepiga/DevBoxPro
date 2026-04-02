@@ -170,6 +170,8 @@ describe('IPC Handlers', () => {
                 downloadSqlite: vi.fn(async () => ({ success: true })),
                 downloadMinio: vi.fn(async () => ({ success: true })),
                 downloadMemcached: vi.fn(async () => ({ success: true })),
+                downloadCloudflared: vi.fn(async () => ({ success: true })),
+                downloadZrok: vi.fn(async () => ({ success: true })),
                 runPip: vi.fn(async () => ({ success: true })),
                 cancelDownload: vi.fn(async () => ({ success: true })),
                 runComposer: vi.fn(async () => ({ success: true })),
@@ -179,6 +181,15 @@ describe('IPC Handlers', () => {
                 scanCustomVersions: vi.fn(async () => ({})),
                 addProgressListener: vi.fn(),
                 resourcesPath: '/app-cache/resources',
+            },
+            tunnel: {
+                setStatusEmitter: vi.fn(),
+                startTunnel: vi.fn(async () => ({ status: 'running', publicUrl: 'https://example.trycloudflare.com' })),
+                stopTunnel: vi.fn(async () => ({ success: true })),
+                getTunnelStatus: vi.fn(() => null),
+                getAllTunnelStatuses: vi.fn(() => ({})),
+                enableZrok: vi.fn(async () => ({ success: true })),
+                getZrokStatus: vi.fn(async () => ({ enabled: true, configuredAt: '2026-04-01T10:00:00.000Z' })),
             },
         };
 
@@ -315,10 +326,22 @@ describe('IPC Handlers', () => {
                 'binaries:getInstalled', 'binaries:getDownloadUrls',
                 'binaries:downloadPhp', 'binaries:downloadPhpMyAdmin',
                 'binaries:downloadNodejs', 'binaries:downloadComposer',
+                'binaries:downloadCloudflared', 'binaries:downloadZrok',
                 'binaries:downloadGit', 'binaries:runComposer',
                 'binaries:getRunningConflicts', 'binaries:remove',
             ];
             for (const channel of binaryChannels) {
+                expect(handlers[channel], `Missing handler: ${channel}`).toBeDefined();
+            }
+        });
+
+        it('registers tunnel handlers', () => {
+            const tunnelChannels = [
+                'tunnel:start', 'tunnel:stop', 'tunnel:getStatus',
+                'tunnel:getAllStatuses', 'tunnel:zrokEnable', 'tunnel:zrokStatus',
+            ];
+
+            for (const channel of tunnelChannels) {
                 expect(handlers[channel], `Missing handler: ${channel}`).toBeDefined();
             }
         });
@@ -600,9 +623,31 @@ describe('IPC Handlers', () => {
             expect(mockManagers.binaryDownload.downloadComposer).toHaveBeenCalled();
         });
 
+        it('binaries:downloadCloudflared routes to binaryDownload.downloadCloudflared', async () => {
+            await handlers['binaries:downloadCloudflared'](fakeEvent);
+            expect(mockManagers.binaryDownload.downloadCloudflared).toHaveBeenCalled();
+        });
+
+        it('binaries:downloadZrok routes to binaryDownload.downloadZrok', async () => {
+            await handlers['binaries:downloadZrok'](fakeEvent);
+            expect(mockManagers.binaryDownload.downloadZrok).toHaveBeenCalled();
+        });
+
         it('binaries:remove routes to binaryDownload.removeBinary', async () => {
             await handlers['binaries:remove'](fakeEvent, 'php', '8.3', false);
             expect(mockManagers.binaryDownload.removeBinary).toHaveBeenCalledWith('php', '8.3', false);
+        });
+    });
+
+    describe('Tunnel handler routing', () => {
+        it('tunnel:start routes to tunnel.startTunnel', async () => {
+            await handlers['tunnel:start'](fakeEvent, 'proj-1', 'cloudflared');
+            expect(mockManagers.tunnel.startTunnel).toHaveBeenCalledWith('proj-1', 'cloudflared');
+        });
+
+        it('tunnel:zrokEnable routes to tunnel.enableZrok', async () => {
+            await handlers['tunnel:zrokEnable'](fakeEvent, 'token-123');
+            expect(mockManagers.tunnel.enableZrok).toHaveBeenCalledWith('token-123');
         });
     });
 });

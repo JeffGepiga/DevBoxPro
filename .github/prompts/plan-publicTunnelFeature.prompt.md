@@ -1,7 +1,7 @@
 # Plan: Public Tunnel Feature (cloudflared + zrok)
 
 ## TL;DR
-Add Cloudflare Tunnel (`cloudflared`) and OpenZiti `zrok` as downloadable binaries in the Tools tab. Introduce a `TunnelManager` in the main process to spawn/stop tunnel processes per project. Add a "Share on Internet" section in **ProjectDetail** where users pick which provider to use. Store tunnel preferences in project schema and global defaults in Settings → Network.
+Add Cloudflare Tunnel (`cloudflared`) and OpenZiti `zrok` as downloadable binaries in the Tools tab. Introduce a `TunnelManager` in the main process to spawn/stop tunnel processes per project. Add a "Share on Internet" section in **ProjectDetail** where users pick which provider to use. Store tunnel preferences in project schema, move app-wide zrok setup into **Binary Manager → Tools**, and surface provider readiness plus active tunnel visibility in the **Services** page.
 
 ---
 
@@ -60,6 +60,14 @@ Add `downloadCloudflared: () => ipcRenderer.invoke('binaries:downloadCloudflared
 ### Step 1.6: Add to BinaryManager Tools tab
 Add two `SimpleRow` entries in the Tools tab for cloudflared and zrok, following the Mailpit/MinIO/Git pattern. Add cases for `'cloudflared'` and `'zrok'` in `handleDownloadService()` switch.
 
+For zrok, extend the Tools tab with an app-wide setup panel or expandable row state that includes:
+- token input
+- `Enable zrok` action that calls `zrok enable <token>`
+- enabled / not enabled status badge
+- optional `Reconfigure` or `Reset` action
+
+Cloudflared stays install-only because Quick Tunnels do not require sign-in.
+
 **Files:** `src/renderer/src/pages/BinaryManager.jsx`
 
 ---
@@ -98,7 +106,8 @@ cloudflared tunnel --url http://projectDomain:httpPort --no-autoupdate
 zrok share public http://projectDomain:httpPort --headless
 ```
 - Parse public URL from stdout/stderr
-- Requires one-time `zrok enable <token>` (invite from zrok.io); store enabled state in ConfigStore under `settings.zrokEnabled`
+- Requires one-time app-wide `zrok enable <token>` setup from Binary Manager → Tools
+- Store only app-wide enabled status and optional metadata in ConfigStore; do not persist the raw token after enable succeeds
 
 **Port resolution:** Use `this.managers.project.getProjectLocalAccessPorts(project)` to resolve the correct HTTP port (handles front-door ownership, version offsets, network access ports). Point the tunnel at `http://<project.domain>:<resolvedHttpPort>` so nginx/apache vhosts handle routing correctly with the right Host header.
 
@@ -148,26 +157,40 @@ tunnel: {
 
 ---
 
-## Phase 4 — Project Schema & Settings
+## Phase 4 — Project Schema & Global Provider Setup
 
 ### Step 4.1: Add tunnel fields to project schema
 Projects gain optional fields:
-- `tunnelProvider: 'cloudflared' | 'zrok' | null` — which provider this project uses (null = use global default)
+- `tunnelProvider: 'cloudflared' | 'zrok' | null` — which provider this project uses
 - `tunnelAutoStart: boolean` — start tunnel automatically when project starts
 
 These are persisted via the existing `projects:update` flow (no schema migration needed — they're optional fields).
 
 **Files:** No new files; affects `src/main/services/project/helpers.js` (`getComparableVhostState` should NOT include tunnel fields since tunnels don't affect vhosts)
 
-### Step 4.2: Add global tunnel settings to Settings → Network
-Add a new card in the `NetworkSettings` component in Settings.jsx:
-- **Default Tunnel Provider** — dropdown: None / Cloudflare Tunnel / zrok
-- **zrok Setup** — Enable button + token input (only when zrok is selected/installed)
-- Info text explaining that cloudflared needs no account for ephemeral URLs, while zrok requires a free account
+### Step 4.2: Add app-wide zrok setup to Binary Manager → Tools
+Add a dedicated app-wide setup UI for zrok in BinaryManager.jsx instead of Settings:
+- token input
+- `Enable zrok` button that calls `window.devbox.tunnel.zrokEnable(token)`
+- enabled / not enabled / configuring states
+- help text explaining that the setup is shared across the whole app and all projects
+- optional `Reset zrok` or `Reconfigure` action for replacing the identity later
 
-Store as `settings.defaultTunnelProvider` ('cloudflared' | 'zrok' | '') and `settings.zrokEnabled` (boolean) in ConfigStore.
+Store app-wide state as `settings.zrokEnabled` plus optional metadata such as `settings.zrokConfiguredAt`. Do not store the raw token after setup succeeds unless there is a hard product requirement to reuse it.
 
-**Files:** `src/renderer/src/pages/Settings.jsx`
+**Files:** `src/renderer/src/pages/BinaryManager.jsx`
+
+### Step 4.3: Surface provider readiness in the Services page
+Add a lightweight Internet Tunnels status area to Services.jsx so users can see app-wide tunnel readiness without opening Binary Manager:
+- cloudflared installed / not installed
+- zrok installed / not installed
+- zrok enabled / not enabled
+- active tunnel count across projects
+- quick links to Binary Manager and running projects using tunnels
+
+This should be visibility-first, not a full duplicate of the Binary Manager setup UI.
+
+**Files:** `src/renderer/src/pages/Services.jsx`
 
 ---
 
@@ -178,14 +201,14 @@ Add below the existing "Share on Local Network" toggle in ProjectDetail.jsx over
 
 **UI elements:**
 1. **Toggle** — "Share on Internet" (enables/disables the tunnel for this project)
-2. **Provider selector** — dropdown: "Use Default (cloudflared)" / "Cloudflare Tunnel" / "zrok" — only shows installed providers
+2. **Provider selector** — dropdown: "Cloudflare Tunnel" / "zrok" — only shows installed providers
 3. **Start/Stop button** — starts or stops the tunnel process
 4. **Public URL display** — shows the generated URL with copy-to-clipboard and open-in-browser buttons
 5. **Status indicator** — connecting / active / error with spinner
 6. **Warning states:**
    - "Project must be running" if project is stopped
    - "cloudflared not installed — Install in Binary Manager" if binary missing
-   - "zrok not enabled — Configure in Settings → Network" if zrok selected but not enabled
+  - "zrok not enabled — Configure in Binary Manager → Tools" if zrok selected but not enabled
 
 **State:**
 - `tunnelStatus` — fetched via `window.devbox.tunnel.getStatus(projectId)` on mount and via `onStatusChanged` listener
@@ -202,7 +225,12 @@ In `stopProject()`, call `this.managers.tunnel?.stopTunnel(project.id)` before s
 
 **Files:** `src/main/services/project/lifecycle.js`
 
-### Step 5.3: Subscribe to tunnel events in AppContext
+### Step 5.3: Reflect active tunnel state in Services page
+Use the app-wide tunnel status data to show active tunnel counts and currently exposed projects in Services.jsx. If a public URL exists, the Services page can show a compact external-link action, but start/stop remains project-scoped in ProjectDetail.
+
+**Files:** `src/renderer/src/pages/Services.jsx`
+
+### Step 5.4: Subscribe to tunnel events in AppContext
 Add a `tunnel:statusChanged` listener in AppContext.jsx to keep tunnel state fresh across navigation. Store in a new `tunnelStatuses` reducer key: `Map<projectId, { provider, publicUrl, status }>`.
 
 **Files:** `src/renderer/src/context/AppContext.jsx`
@@ -264,10 +292,13 @@ Add a `tunnel:statusChanged` listener in AppContext.jsx to keep tunnel state fre
 **`tests/renderer/pages/BinaryManager.test.jsx`** — Add cases:
 - cloudflared and zrok rows render in Tools tab
 - Download button triggers correct IPC call
+- zrok setup input and enable action render in Tools tab
+- enabled / not enabled state updates correctly after setup
 
-**`tests/renderer/pages/Settings.test.jsx`** — Add cases:
-- Tunnel provider dropdown renders in Network tab
-- zrok enable section appears when zrok selected
+**`tests/renderer/pages/Services.test.jsx`** — Add cases:
+- Internet tunnel readiness panel renders in Services page
+- Active tunnel count displays correctly
+- zrok enabled / not enabled state is visible
 
 ### Step 6.5: Mock setup
 
@@ -310,7 +341,7 @@ Add `cloudflared` and `zrok` to binaries status mock objects.
 - `src/main/main.js` — Register TunnelManager, add cleanup on quit
 - `src/renderer/src/pages/BinaryManager.jsx` — Add SimpleRow entries + switch cases
 - `src/renderer/src/pages/ProjectDetail.jsx` — Add "Share on Internet" UI section
-- `src/renderer/src/pages/Settings.jsx` — Add tunnel config to Network tab
+- `src/renderer/src/pages/Services.jsx` — Add app-wide tunnel readiness and active tunnel visibility
 - `src/renderer/src/context/AppContext.jsx` — Add tunnel status reducer + listener
 - `src/main/services/project/lifecycle.js` — Auto-start/stop tunnel integration
 - `src/main/services/project/helpers.js` — Exclude tunnel fields from vhost comparison
@@ -319,7 +350,7 @@ Add `cloudflared` and `zrok` to binaries status mock objects.
 - `tests/main/ipc/handlers.test.js` — Add tunnel handler checks
 - `tests/renderer/pages/ProjectDetail.test.jsx` — Add tunnel UI tests
 - `tests/renderer/pages/BinaryManager.test.jsx` — Add cloudflared/zrok tool tests
-- `tests/renderer/pages/Settings.test.jsx` — Add tunnel settings tests
+- `tests/renderer/pages/Services.test.jsx` — Add tunnel visibility tests
 - `tests/main/services/binary/serviceDownloads.test.js` — Add download tests
 - `tests/main/services/binary/installed.test.js` — Add detection tests
 
@@ -333,17 +364,19 @@ Add `cloudflared` and `zrok` to binaries status mock objects.
 4. Manual: Open public URL in browser → verify project loads correctly
 5. Manual: Stop tunnel → verify process killed and UI updates
 6. Manual: Stop project → tunnel auto-stops
-7. Manual: Switch provider to zrok, enable with token, repeat tunnel test
+7. Manual: Enable zrok once from Binary Manager → Tools, then switch a project to zrok and repeat the tunnel test
 8. Manual: Verify `windowsHide: true` — no console window flashes on Windows
-9. `npm run test:renderer` — Tunnel UI tests pass
-10. `npm run test:main` — TunnelManager + binary tests pass
+9. Manual: Services page shows cloudflared/zrok readiness and active tunnel visibility
+10. `npm run test:renderer` — Tunnel UI tests pass
+11. `npm run test:main` — TunnelManager + binary tests pass
 
 ---
 
 ## Decisions
 
 - **Tunnel target**: Point at `http://<project.domain>:<resolvedHttpPort>` (not raw localhost port) so nginx/apache vhosts handle Host header routing correctly
-- **Token storage**: zrok enable token stored in ConfigStore (`settings.zrokEnabled` flag only); auth tokens are not persisted (zrok stores its own state in `~/.zrok/`)
+- **zrok setup location**: zrok is configured once at the app level from Binary Manager → Tools, then reused by every project
+- **Token storage**: persist only `settings.zrokEnabled` and optional metadata; do not keep the raw token after `zrok enable` succeeds because zrok stores its own state in `~/.zrok/`
 - **No custom domains in MVP**: Cloudflare named tunnels and zrok reserved shares are excluded from initial scope
 - **Separate from networkAccess**: Tunnel state is independent of the LAN sharing toggle; both can be active simultaneously
 - **cloudflared Windows**: The Windows release is a standalone .exe, not an archive — download method must handle direct file copy instead of extraction
@@ -354,3 +387,4 @@ Add `cloudflared` and `zrok` to binaries status mock objects.
 1. **zrok download URL**: zrok releases use version-tagged filenames (e.g., `zrok_1.0.0_windows_amd64.zip`). The download method will need to either query the GitHub API for the latest release asset URL, or use a redirect-following pattern. Recommend using the GitHub API approach (same as how UpdateManager queries releases).
 2. **macOS cloudflared**: The macOS release is a `.tgz` archive containing the binary. The download method should use `extractArchive()` like mailpit. But verify the actual archive structure.
 3. **Tunnel process cleanup on crash**: If the app crashes or force-closes, tunnel child processes may be orphaned. Consider adding orphan detection on startup (similar to how ServiceManager rehydrates running services on launch).
+4. **zrok reset flow**: Decide whether the first version needs a `Reset zrok identity` action in Binary Manager or if re-running `zrok enable` is enough for MVP.

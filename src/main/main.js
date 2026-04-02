@@ -18,6 +18,7 @@ const { SupervisorManager } = require('./services/SupervisorManager');
 const { DatabaseManager } = require('./services/DatabaseManager');
 const { LogManager } = require('./services/LogManager');
 const BinaryDownloadManager = require('./services/BinaryDownloadManager');
+const { TunnelManager } = require('./services/TunnelManager');
 
 const CliManager = require('./services/CliManager');
 const { GitManager } = require('./services/GitManager');
@@ -366,6 +367,8 @@ async function initializeManagers() {
   managers.service = new ServiceManager(resourcePath, configStore, managers);
   managers.project = new ProjectManager(configStore, managers);
   managers.binaryDownload = new BinaryDownloadManager();
+  managers.binaryDownload.managers = managers;
+  managers.tunnel = new TunnelManager(resourcePath, configStore, managers);
 
   managers.cli = new CliManager(configStore, managers);
   managers.git = new GitManager(configStore, managers);
@@ -548,6 +551,8 @@ async function forceKillAllProcesses() {
     'mongod.exe',
     'memcached.exe',
     'minio.exe',
+    'cloudflared.exe',
+    'zrok.exe',
   ];
 
   for (const processName of processesToKill) {
@@ -587,6 +592,10 @@ async function gracefulShutdown() {
     // Stop all running projects first
     if (managers.project) {
       await managers.project.stopAllProjects();
+    }
+
+    if (managers.tunnel) {
+      await managers.tunnel.stopAllTunnels();
     }
 
     // Then stop all services

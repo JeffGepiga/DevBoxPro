@@ -79,6 +79,14 @@ function buildDefaultDownloads() {
     downloads.mailpit = downloads.mailpit.latest;
   }
 
+  if (downloads.cloudflared?.latest) {
+    downloads.cloudflared = downloads.cloudflared.latest;
+  }
+
+  if (downloads.zrok?.latest) {
+    downloads.zrok = downloads.zrok.latest;
+  }
+
   if (downloads.phpmyadmin?.latest?.all) {
     downloads.phpmyadmin = { all: downloads.phpmyadmin.latest.all };
   }
@@ -111,6 +119,8 @@ function buildVersionMeta() {
   }
 
   meta.mailpit = ['latest'];
+  meta.cloudflared = ['latest'];
+  meta.zrok = ['latest'];
   meta.phpmyadmin = ['latest'];
   meta.composer = ['latest'];
   meta.git = ['portable'];
@@ -158,6 +168,8 @@ class BinaryDownloadManager {
       'mariadb',
       'redis',
       'mailpit',
+      'cloudflared',
+      'zrok',
       'phpmyadmin',
       'nginx',
       'apache',
