@@ -19,7 +19,6 @@ import {
   ChevronDown,
   Layers,
   Download,
-  Share2,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -546,116 +545,6 @@ function Services() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <div className="card p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-3 rounded-xl bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
-              <Globe className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Internet Sharing Readiness</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Install a provider in Binary Manager, then enable sharing per project.</p>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-              <div>
-                <p className="text-sm font-medium text-gray-900 dark:text-white">Cloudflare Tunnel</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Quick Tunnels on random trycloudflare.com URLs</p>
-              </div>
-              <span className={clsx(
-                'text-xs font-medium px-2 py-1 rounded-full border',
-                binariesStatus?.cloudflared?.installed
-                  ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
-                  : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
-              )}>
-                {binariesStatus?.cloudflared?.installed ? 'Installed' : 'Not Installed'}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-              <div>
-                <p className="text-sm font-medium text-gray-900 dark:text-white">zrok</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Requires the binary plus one app-wide enable token</p>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap justify-end">
-                <span className={clsx(
-                  'text-xs font-medium px-2 py-1 rounded-full border',
-                  binariesStatus?.zrok?.installed
-                    ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
-                    : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
-                )}>
-                  {binariesStatus?.zrok?.installed ? 'Installed' : 'Not Installed'}
-                </span>
-                <span className={clsx(
-                  'text-xs font-medium px-2 py-1 rounded-full border',
-                  zrokStatus.enabled
-                    ? 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'
-                    : 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800'
-                )}>
-                  {zrokStatus.enabled ? 'Enabled' : 'Needs Setup'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="card p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-3 rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-              <Share2 className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Active Public Tunnels</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Current internet-facing project shares.</p>
-            </div>
-          </div>
-
-          {activeTunnels.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-4 text-sm text-gray-500 dark:text-gray-400">
-              No public tunnels are active.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {activeTunnels.map((tunnel) => (
-                <div key={tunnel.projectId} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">{projectNamesById[tunnel.projectId] || tunnel.projectId}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{tunnel.provider === 'cloudflared' ? 'Cloudflare Tunnel' : 'zrok'}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={clsx(
-                        'text-xs font-medium px-2 py-1 rounded-full border',
-                        tunnel.status === 'running'
-                          ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
-                          : 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800'
-                      )}>
-                        {tunnel.status === 'running' ? 'Live' : 'Starting'}
-                      </span>
-                      <button onClick={() => handleStopTunnel(tunnel.projectId)} className="btn-secondary text-xs px-2 py-1">
-                        <Square className="w-3 h-3" />
-                        Stop
-                      </button>
-                    </div>
-                  </div>
-
-                  {tunnel.publicUrl && (
-                    <button
-                      onClick={() => window.devbox?.system.openExternal(tunnel.publicUrl)}
-                      className="mt-3 text-left w-full rounded-md bg-gray-50 dark:bg-gray-800 px-3 py-2 font-mono text-xs text-blue-700 dark:text-blue-300 hover:underline"
-                    >
-                      {tunnel.publicUrl}
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Services Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {serviceCards.map((card, index) => {
@@ -697,6 +586,30 @@ function Services() {
             );
           }
         })}
+
+        <TunnelProviderCard
+          provider="cloudflared"
+          name="Cloudflare Tunnel"
+          description="Quick public sharing on random trycloudflare.com URLs"
+          installed={binariesStatus?.cloudflared?.installed === true}
+          secondaryStatus="No app setup required"
+          color="blue"
+        />
+
+        <TunnelProviderCard
+          provider="zrok"
+          name="zrok"
+          description="Public sharing with one app-wide enable step"
+          installed={binariesStatus?.zrok?.installed === true}
+          secondaryStatus={zrokStatus.enabled ? 'App-wide setup complete' : 'Needs app-wide setup'}
+          color="teal"
+        />
+
+        <ActiveTunnelsCard
+          tunnels={activeTunnels}
+          projectNamesById={projectNamesById}
+          onStopTunnel={handleStopTunnel}
+        />
       </div>
 
       {serviceCards.length === 0 && (
@@ -962,6 +875,100 @@ function SimpleServiceCard({
             <ExternalLink className="w-4 h-4" />
             Open
           </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TunnelProviderCard({ provider, name, description, installed, secondaryStatus, color }) {
+  const colorClasses = {
+    blue: 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400',
+    teal: 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400',
+    gray: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400',
+  };
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="p-5">
+        <div className="flex items-start justify-between mb-3 gap-3">
+          <div className="flex items-center gap-3">
+            <div className={clsx('p-2.5 rounded-xl', colorClasses[color] || colorClasses.gray)}>
+              <Globe className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white">{name}</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
+            </div>
+          </div>
+          <span className={clsx('badge text-xs shrink-0', installed ? 'badge-success' : 'badge-neutral')}>
+            {installed ? 'installed' : 'not installed'}
+          </span>
+        </div>
+
+        <p className="text-sm text-gray-500 dark:text-gray-400">{secondaryStatus}</p>
+      </div>
+
+      <div className="px-5 py-3 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <span className="text-xs text-gray-500 dark:text-gray-400">Configure in Binary Manager and per-project settings</span>
+        <Link to="/binaries" className="btn-primary btn-sm inline-flex items-center gap-2">
+          <Download className="w-4 h-4" />
+          Open Binaries
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function ActiveTunnelsCard({ tunnels, projectNamesById, onStopTunnel }) {
+  return (
+    <div className="card overflow-hidden md:col-span-2 lg:col-span-1">
+      <div className="p-5">
+        <div className="flex items-start justify-between mb-3 gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+              <Globe className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white">Active Public Tunnels</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Current internet-facing project shares</p>
+            </div>
+          </div>
+          <span className={clsx('badge text-xs', tunnels.length > 0 ? 'badge-success' : 'badge-neutral')}>
+            {tunnels.length > 0 ? `${tunnels.length} active` : 'none'}
+          </span>
+        </div>
+
+        {tunnels.length === 0 ? (
+          <p className="text-sm text-gray-500 dark:text-gray-400">No public tunnels are active.</p>
+        ) : (
+          <div className="space-y-3">
+            {tunnels.map((tunnel) => (
+              <div key={tunnel.projectId} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{projectNamesById[tunnel.projectId] || tunnel.projectId}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      {tunnel.provider === 'cloudflared' ? 'Cloudflare Tunnel' : 'zrok'}
+                    </p>
+                  </div>
+                  <button onClick={() => onStopTunnel(tunnel.projectId)} className="btn-secondary btn-sm">
+                    <Square className="w-4 h-4" />
+                    Stop
+                  </button>
+                </div>
+
+                {tunnel.publicUrl && (
+                  <button
+                    onClick={() => window.devbox?.system.openExternal(tunnel.publicUrl)}
+                    className="mt-3 text-left w-full rounded-md bg-gray-50 dark:bg-gray-800 px-3 py-2 font-mono text-xs text-blue-700 dark:text-blue-300 hover:underline"
+                  >
+                    {tunnel.publicUrl}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

@@ -503,9 +503,9 @@
       "latest": {
         "win": {
           "url": "https://github.com/openziti/zrok/releases/latest",
-          "filename": "zrok-windows-amd64.zip",
+          "filename": "zrok-windows-amd64.tar.gz",
           "githubRepo": "openziti/zrok",
-          "assetPattern": "windows.*amd64.*\\.zip$"
+          "assetPattern": "windows.*amd64.*\\.(?:zip|tar\\.gz)$"
         },
         "mac": {
           "url": "https://github.com/openziti/zrok/releases/latest",

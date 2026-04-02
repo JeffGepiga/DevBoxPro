@@ -183,7 +183,8 @@ describe('Services', () => {
             </MemoryRouter>
         );
 
-        expect(await screen.findByText('Internet Sharing Readiness')).toBeInTheDocument();
+        expect(await screen.findByText('Cloudflare Tunnel')).toBeInTheDocument();
+        expect(await screen.findByText('Active Public Tunnels')).toBeInTheDocument();
         expect(await screen.findByText('https://myapp.trycloudflare.com')).toBeInTheDocument();
 
         fireEvent.click(screen.getAllByRole('button', { name: /^Stop$/i })[0]);

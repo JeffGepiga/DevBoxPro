@@ -15,6 +15,16 @@ const {
   getDefaultVersion
 } = require('../../shared/serviceConfig');
 
+const playwrightTunnelStatuses = new Map();
+
+function getPlaywrightTunnelStatus(projectId) {
+  return playwrightTunnelStatuses.get(projectId) || null;
+}
+
+function getAllPlaywrightTunnelStatuses() {
+  return Object.fromEntries(playwrightTunnelStatuses.entries());
+}
+
 
 function setupIpcHandlers(ipcMain, managers, mainWindow) {
   const { config, project, php, service, database, ssl, supervisor, log } = managers;
@@ -929,6 +939,30 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   // Note: binaryDownload may not be initialized immediately, access via managers object
 
   ipcMain.handle('binaries:getInstalled', async () => {
+    if (process.env.PLAYWRIGHT_TEST === 'true') {
+      return {
+        php: { '8.2': true },
+        mysql: { '8.0': true },
+        mariadb: {},
+        redis: {},
+        mailpit: true,
+        cloudflared: true,
+        zrok: true,
+        phpmyadmin: true,
+        nginx: { '1.24': true },
+        apache: {},
+        nodejs: {},
+        composer: true,
+        postgresql: {},
+        python: {},
+        mongodb: {},
+        sqlite: false,
+        minio: false,
+        memcached: {},
+        git: false,
+      };
+    }
+
     if (!managers.binaryDownload) return {};
     return managers.binaryDownload.getInstalledBinaries();
   });
@@ -965,8 +999,8 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         mariadb: {},
         redis: {},
         mailpit: { installed: true },
-        cloudflared: { installed: false },
-        zrok: { installed: false },
+        cloudflared: { installed: true },
+        zrok: { installed: true },
         phpmyadmin: { installed: true },
         nginx: { '1.24': { installed: true, version: '1.24.0' } },
         apache: {},
@@ -1277,31 +1311,80 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   // ============ TUNNEL HANDLERS ============
   ipcMain.handle('tunnel:start', async (event, projectId, provider) => {
+    if (process.env.PLAYWRIGHT_TEST === 'true') {
+      const status = {
+        projectId,
+        provider: provider || 'cloudflared',
+        publicUrl: provider === 'zrok'
+          ? 'https://share.zrok.io/playwright-share'
+          : 'https://playwright-share.trycloudflare.com',
+        status: 'running',
+        error: null,
+        startedAt: new Date().toISOString(),
+        targetUrl: 'http://localhost',
+      };
+      playwrightTunnelStatuses.set(projectId, status);
+      sendToMainWindow('tunnel:statusChanged', status);
+      return status;
+    }
+
     if (!managers.tunnel) throw new Error('Tunnel manager not initialized');
     return managers.tunnel.startTunnel(projectId, provider);
   });
 
   ipcMain.handle('tunnel:stop', async (event, projectId) => {
+    if (process.env.PLAYWRIGHT_TEST === 'true') {
+      const existing = getPlaywrightTunnelStatus(projectId);
+      const status = {
+        projectId,
+        provider: existing?.provider || 'cloudflared',
+        publicUrl: existing?.publicUrl || null,
+        status: 'stopped',
+        error: null,
+        startedAt: existing?.startedAt || new Date().toISOString(),
+        targetUrl: existing?.targetUrl || 'http://localhost',
+      };
+      playwrightTunnelStatuses.delete(projectId);
+      sendToMainWindow('tunnel:statusChanged', status);
+      return { success: true, wasRunning: Boolean(existing) };
+    }
+
     if (!managers.tunnel) throw new Error('Tunnel manager not initialized');
     return managers.tunnel.stopTunnel(projectId);
   });
 
   ipcMain.handle('tunnel:getStatus', async (event, projectId) => {
+    if (process.env.PLAYWRIGHT_TEST === 'true') {
+      return getPlaywrightTunnelStatus(projectId);
+    }
+
     if (!managers.tunnel) return null;
     return managers.tunnel.getTunnelStatus(projectId);
   });
 
   ipcMain.handle('tunnel:getAllStatuses', async () => {
+    if (process.env.PLAYWRIGHT_TEST === 'true') {
+      return getAllPlaywrightTunnelStatuses();
+    }
+
     if (!managers.tunnel) return {};
     return managers.tunnel.getAllTunnelStatuses();
   });
 
   ipcMain.handle('tunnel:zrokEnable', async (event, token) => {
+    if (process.env.PLAYWRIGHT_TEST === 'true') {
+      return { enabled: true, configuredAt: new Date().toISOString() };
+    }
+
     if (!managers.tunnel) throw new Error('Tunnel manager not initialized');
     return managers.tunnel.enableZrok(token);
   });
 
   ipcMain.handle('tunnel:zrokStatus', async () => {
+    if (process.env.PLAYWRIGHT_TEST === 'true') {
+      return { enabled: true, configuredAt: '2026-04-02T12:00:00.000Z' };
+    }
+
     if (!managers.tunnel) return { enabled: false, configuredAt: null };
     return managers.tunnel.getZrokStatus();
   });

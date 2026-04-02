@@ -563,7 +563,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
     portOffsets: {},
   });
   const [tunnelStatus, setTunnelStatus] = useState(null);
-  const [tunnelLoading, setTunnelLoading] = useState(false);
+  const [tunnelAction, setTunnelAction] = useState(null);
   const [zrokAppStatus, setZrokAppStatus] = useState({ enabled: false, configuredAt: null });
   const [versionOptions, setVersionOptions] = useState({
     mysql: [],
@@ -738,7 +738,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
       return;
     }
 
-    setTunnelLoading(true);
+    setTunnelAction('starting');
     try {
       const nextStatus = await window.devbox?.tunnel?.start?.(project.id, effectiveTunnelProvider);
       setTunnelStatus(nextStatus || null);
@@ -749,12 +749,12 @@ function OverviewTab({ project, processes, refreshProjects }) {
         type: 'error',
       });
     } finally {
-      setTunnelLoading(false);
+      setTunnelAction(null);
     }
   };
 
   const handleStopInternetShare = async () => {
-    setTunnelLoading(true);
+    setTunnelAction('stopping');
     try {
       await window.devbox?.tunnel?.stop?.(project.id);
       setTunnelStatus((current) => current ? { ...current, status: 'stopped' } : null);
@@ -765,7 +765,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
         type: 'error',
       });
     } finally {
-      setTunnelLoading(false);
+      setTunnelAction(null);
     }
   };
 
@@ -1214,8 +1214,8 @@ function OverviewTab({ project, processes, refreshProjects }) {
             </div>
 
             {(effectiveShareOnInternet || ['starting', 'running'].includes(tunnelStatus?.status)) && (
-              <div className="p-4 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-900/10 space-y-3">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="p-4 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-900/10 space-y-4">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">Public Tunnel</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -1242,8 +1242,8 @@ function OverviewTab({ project, processes, refreshProjects }) {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3">
-                  <div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="rounded-lg bg-white/70 dark:bg-gray-900/20 border border-white/70 dark:border-gray-800 p-3">
                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Provider</label>
                     <select
                       value={effectiveTunnelProvider}
@@ -1264,7 +1264,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
                     </select>
                   </div>
 
-                  <div className="flex items-center justify-between py-1">
+                  <div className="rounded-lg bg-white/70 dark:bg-gray-900/20 border border-white/70 dark:border-gray-800 p-3 flex items-center justify-between gap-3">
                     <div>
                       <span className="text-sm text-gray-600 dark:text-gray-400">Auto-start tunnel</span>
                       <p className="text-xs text-gray-400 dark:text-gray-500">Start sharing automatically when the project starts</p>
@@ -1292,19 +1292,37 @@ function OverviewTab({ project, processes, refreshProjects }) {
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={handleStartInternetShare}
-                    disabled={!project.isRunning || !effectiveShareOnInternet || !effectiveTunnelProvider || !providerReady || tunnelConfigDirty || tunnelLoading}
+                    disabled={!project.isRunning || !effectiveShareOnInternet || !effectiveTunnelProvider || !providerReady || tunnelConfigDirty || tunnelAction !== null}
                     className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {tunnelLoading && tunnelStatus?.status !== 'running' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
-                    Start Sharing
+                    {tunnelAction === 'starting' ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Starting...
+                      </>
+                    ) : (
+                      <>
+                        <Share2 className="w-4 h-4" />
+                        Start Sharing
+                      </>
+                    )}
                   </button>
                   <button
                     onClick={handleStopInternetShare}
-                    disabled={!['starting', 'running'].includes(tunnelStatus?.status) || tunnelLoading}
+                    disabled={!['starting', 'running'].includes(tunnelStatus?.status) || tunnelAction !== null}
                     className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Square className="w-4 h-4" />
-                    Stop Tunnel
+                    {tunnelAction === 'stopping' ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Stopping...
+                      </>
+                    ) : (
+                      <>
+                        <Square className="w-4 h-4" />
+                        Stop Tunnel
+                      </>
+                    )}
                   </button>
                   {tunnelStatus?.publicUrl && (
                     <button
@@ -1317,12 +1335,17 @@ function OverviewTab({ project, processes, refreshProjects }) {
                   )}
                 </div>
 
-                <div className="space-y-1 text-xs">
+                <div className="grid grid-cols-1 gap-2 text-xs">
                   {!project.isRunning && <p className="text-yellow-600 dark:text-yellow-400">Start the project before opening a public tunnel.</p>}
                   {tunnelConfigDirty && <p className="text-yellow-600 dark:text-yellow-400">Save project changes before starting the tunnel.</p>}
                   {effectiveTunnelProvider === 'zrok' && !zrokAppStatus.enabled && <p className="text-yellow-600 dark:text-yellow-400">Enable zrok first in Binary Manager → Tools.</p>}
                   {effectiveTunnelProvider && !providerReady && effectiveTunnelProvider !== 'zrok' && <p className="text-yellow-600 dark:text-yellow-400">Install the selected tunnel provider in Binary Manager first.</p>}
-                  {tunnelStatus?.publicUrl && <p className="font-mono text-indigo-700 dark:text-indigo-300 break-all">{tunnelStatus.publicUrl}</p>}
+                  {tunnelStatus?.publicUrl && (
+                    <div className="rounded-lg bg-white/70 dark:bg-gray-900/20 border border-white/70 dark:border-gray-800 px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Public URL</p>
+                      <p className="font-mono text-indigo-700 dark:text-indigo-300 break-all">{tunnelStatus.publicUrl}</p>
+                    </div>
+                  )}
                   {tunnelStatus?.error && <p className="text-red-600 dark:text-red-400">{tunnelStatus.error}</p>}
                 </div>
               </div>

@@ -240,5 +240,36 @@ describe('ProjectDetail', () => {
             MOCK_PROJECT.shareOnInternet = undefined;
             MOCK_PROJECT.tunnelProvider = undefined;
         });
+
+        it('shows a loading state while starting internet sharing', async () => {
+            MOCK_PROJECT.shareOnInternet = true;
+            MOCK_PROJECT.tunnelProvider = 'cloudflared';
+
+            let resolveTunnelStart;
+            mockDevbox.tunnel.start.mockImplementationOnce(() => new Promise((resolve) => {
+                resolveTunnelStart = resolve;
+            }));
+
+            renderProjectDetail();
+
+            const startButton = await screen.findByRole('button', { name: /Start Sharing/i });
+            fireEvent.click(startButton);
+
+            expect(screen.getByRole('button', { name: /Starting\.\.\./i })).toBeDisabled();
+
+            resolveTunnelStart({
+                projectId: 'proj-1',
+                provider: 'cloudflared',
+                status: 'running',
+                publicUrl: 'https://myapp.trycloudflare.com',
+            });
+
+            await waitFor(() => {
+                expect(screen.getByText('https://myapp.trycloudflare.com')).toBeInTheDocument();
+            });
+
+            MOCK_PROJECT.shareOnInternet = undefined;
+            MOCK_PROJECT.tunnelProvider = undefined;
+        });
     });
 });

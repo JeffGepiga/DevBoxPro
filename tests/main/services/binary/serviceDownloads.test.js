@@ -40,7 +40,7 @@ function makeContext(overrides = {}) {
       zrok: {
         win: {
           githubRepo: 'openziti/zrok',
-          assetPattern: 'zrok-windows-amd64\\.zip$',
+          assetPattern: 'windows.*amd64.*\\.(?:zip|tar\\.gz)$',
         },
       },
     },
@@ -156,8 +156,8 @@ describe('binary/serviceDownloads', () => {
   it('downloads zrok using the resolved latest GitHub release asset', async () => {
     const ctx = makeContext({
       resolveGithubReleaseAsset: vi.fn().mockResolvedValue({
-        url: 'https://example.com/zrok-windows-amd64.zip',
-        filename: 'zrok-windows-amd64.zip',
+        url: 'https://example.com/zrok_2.0.1_windows_amd64.tar.gz',
+        filename: 'zrok_2.0.1_windows_amd64.tar.gz',
       }),
       findBinaryInDir: vi.fn().mockResolvedValue('/resources/zrok/win/zrok.exe'),
     });
@@ -169,11 +169,11 @@ describe('binary/serviceDownloads', () => {
     expect(result).toEqual({ success: true });
     expect(ctx.resolveGithubReleaseAsset).toHaveBeenCalledWith(
       'openziti/zrok',
-      'zrok-windows-amd64\\.zip$',
+      'windows.*amd64.*\\.(?:zip|tar\\.gz)$',
       []
     );
     expect(ctx.extractArchive).toHaveBeenCalledWith(
-      expect.stringContaining('zrok-windows-amd64.zip'),
+      expect.stringContaining('zrok_2.0.1_windows_amd64.tar.gz'),
       expect.stringContaining('zrok'),
       'zrok'
     );
