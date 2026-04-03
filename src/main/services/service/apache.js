@@ -29,22 +29,6 @@ function hasStaleStandardPortBindings(content = '', httpPort = 80, httpsPort = 4
   return false;
 }
 
-async function waitForPortsAvailable(httpPort, httpsPort, timeoutMs = 8000) {
-  const start = Date.now();
-
-  while (Date.now() - start < timeoutMs) {
-    const httpAvailable = await isPortAvailable(httpPort);
-    const httpsAvailable = await isPortAvailable(httpsPort);
-    if (httpAvailable && httpsAvailable) {
-      return true;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-
-  return await isPortAvailable(httpPort) && await isPortAvailable(httpsPort);
-}
-
 module.exports = {
   hasStaleStandardPortBindings,
   // Apache
@@ -101,7 +85,7 @@ module.exports = {
       if (otherIsRunning) {
         canUseStandard = false;
       } else {
-        canUseStandard = await waitForPortsAvailable(standardHttp, standardHttps);
+        canUseStandard = await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps);
       }
 
       if (canUseStandard) {

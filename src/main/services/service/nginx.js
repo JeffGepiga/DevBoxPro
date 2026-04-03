@@ -44,22 +44,6 @@ function hasStaleStandardPortListenDirective(content = '', httpPort = 80, sslPor
   });
 }
 
-async function waitForPortsAvailable(httpPort, sslPort, timeoutMs = 8000) {
-  const start = Date.now();
-
-  while (Date.now() - start < timeoutMs) {
-    const httpAvailable = await isPortAvailable(httpPort);
-    const sslAvailable = await isPortAvailable(sslPort);
-    if (httpAvailable && sslAvailable) {
-      return true;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-
-  return await isPortAvailable(httpPort) && await isPortAvailable(sslPort);
-}
-
 module.exports = {
   hasStandardPortListenDirective,
   hasStaleStandardPortListenDirective,
@@ -98,7 +82,7 @@ module.exports = {
       if (otherIsRunning) {
         canUseStandard = false;
       } else {
-        canUseStandard = await waitForPortsAvailable(standardHttp, standardHttps);
+        canUseStandard = await isPortAvailable(standardHttp) && await isPortAvailable(standardHttps);
       }
 
       if (canUseStandard) {
