@@ -854,6 +854,7 @@ describe('ProjectManager', () => {
 
         it('returns standard local access ports when any web server owns the front door', () => {
             managers.service.standardPortOwner = 'nginx';
+            managers.service.standardPortOwnerVersion = '1.28';
             managers.service.getServicePorts.mockReturnValue({ httpPort: 8084, sslPort: 8446 });
 
             const ports = mgr.getProjectLocalAccessPorts({
@@ -861,7 +862,7 @@ describe('ProjectManager', () => {
                 webServerVersion: '2.4',
             });
 
-            expect(ports).toEqual({ httpPort: 80, sslPort: 443 });
+            expect(ports).toEqual({ httpPort: 8084, sslPort: 8446 });
         });
 
         it('preserves configured domain order for the primary domain', () => {
@@ -917,6 +918,80 @@ describe('ProjectManager', () => {
             expect(config).toContain('ProxyPreserveHost On');
             expect(config).toContain('RequestHeader set X-Forwarded-Proto "https"');
             expect(config).toContain('<VirtualHost *:80>');
+        });
+
+        it('uses the actual apache front-door ports for proxy vhosts', async () => {
+            const originalGetServicePorts = managers.service.getServicePorts.getMockImplementation();
+            const originalOwner = managers.service.standardPortOwner;
+            const originalOwnerVersion = managers.service.standardPortOwnerVersion;
+            managers.service.standardPortOwner = 'apache';
+            managers.service.standardPortOwnerVersion = '2.4';
+            managers.service.getServicePorts.mockImplementation((serviceName, version) => {
+                if (serviceName === 'apache' && version === '2.4') {
+                    return { httpPort: 80, sslPort: 444 };
+                }
+
+                return { httpPort: 8081, sslPort: 8443 };
+            });
+
+            const project = {
+                id: 'proxy-apache-nonstandard-ssl',
+                name: 'ProxyApacheNonstandardSsl',
+                domain: 'nginx.test',
+                domains: ['nginx.test'],
+                webServer: 'nginx',
+                ssl: true,
+            };
+
+            try {
+                await mgr.createProxyApacheVhost(project, 8081, '2.4');
+
+                const [, config] = fs.writeFile.mock.calls.at(-1);
+                expect(config).toContain('<VirtualHost *:80>');
+                expect(config).toContain('<VirtualHost *:444>');
+                expect(config).toContain('RequestHeader set X-Forwarded-Port "444"');
+            } finally {
+                managers.service.standardPortOwner = originalOwner;
+                managers.service.standardPortOwnerVersion = originalOwnerVersion;
+                managers.service.getServicePorts.mockImplementation(originalGetServicePorts || (() => ({ httpPort: 80, sslPort: 443 })));
+            }
+        });
+
+        it('uses the actual nginx front-door ports for proxy vhosts', async () => {
+            const originalGetServicePorts = managers.service.getServicePorts.getMockImplementation();
+            const originalOwner = managers.service.standardPortOwner;
+            const originalOwnerVersion = managers.service.standardPortOwnerVersion;
+            managers.service.standardPortOwner = 'nginx';
+            managers.service.standardPortOwnerVersion = '1.28';
+            managers.service.getServicePorts.mockImplementation((serviceName, version) => {
+                if (serviceName === 'nginx' && version === '1.28') {
+                    return { httpPort: 80, sslPort: 8443 };
+                }
+
+                return { httpPort: 8084, sslPort: 8446 };
+            });
+
+            const project = {
+                id: 'proxy-nginx-nonstandard-ssl',
+                name: 'ProxyNginxNonstandardSsl',
+                domain: 'apache.test',
+                domains: ['apache.test'],
+                webServer: 'apache',
+                ssl: true,
+            };
+
+            try {
+                await mgr.createProxyNginxVhost(project, 8084, '1.28');
+
+                const [, config] = fs.writeFile.mock.calls.at(-1);
+                expect(config).toContain('listen 80;');
+                expect(config).toContain('listen 8443 ssl');
+                expect(config).toContain('proxy_set_header X-Forwarded-Port 8443;');
+            } finally {
+                managers.service.standardPortOwner = originalOwner;
+                managers.service.standardPortOwnerVersion = originalOwnerVersion;
+                managers.service.getServicePorts.mockImplementation(originalGetServicePorts || (() => ({ httpPort: 80, sslPort: 443 })));
+            }
         });
 
         it('proxies network-access apache projects through nginx using the project port', async () => {
@@ -1031,6 +1106,36 @@ describe('ProjectManager', () => {
             await mgr.syncProjectLocalProxy(project);
 
             expect(mgr.createProxyApacheVhost).toHaveBeenCalledWith(project, 8008, '2.4');
+        });
+
+        it('uses the actual front-door owner ports for local access URLs', () => {
+            const originalGetServicePorts = managers.service.getServicePorts.getMockImplementation();
+            const originalOwner = managers.service.standardPortOwner;
+            const originalOwnerVersion = managers.service.standardPortOwnerVersion;
+            managers.service.standardPortOwner = 'apache';
+            managers.service.standardPortOwnerVersion = '2.4';
+            managers.service.getServicePorts.mockImplementation((serviceName, version) => {
+                if (serviceName === 'apache' && version === '2.4') {
+                    return { httpPort: 80, sslPort: 444 };
+                }
+
+                return { httpPort: 8081, sslPort: 8443 };
+            });
+
+            const ports = mgr.getProjectLocalAccessPorts({
+                domain: 'nginx.test',
+                ssl: true,
+                webServer: 'nginx',
+                webServerVersion: '1.28',
+            });
+
+            try {
+                expect(ports).toEqual({ httpPort: 80, sslPort: 444 });
+            } finally {
+                managers.service.standardPortOwner = originalOwner;
+                managers.service.standardPortOwnerVersion = originalOwnerVersion;
+                managers.service.getServicePorts.mockImplementation(originalGetServicePorts || (() => ({ httpPort: 80, sslPort: 443 })));
+            }
         });
     });
 

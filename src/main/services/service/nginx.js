@@ -23,8 +23,30 @@ function hasStandardPortListenDirective(content = '') {
   return /^\s*listen\s+(?:[^;\s]+:)?(?:80|443)\b/m.test(content);
 }
 
+function hasStaleStandardPortListenDirective(content = '', httpPort = 80, sslPort = 443) {
+  const stalePorts = [];
+
+  if (httpPort !== 80) {
+    stalePorts.push('80');
+  }
+
+  if (sslPort !== 443) {
+    stalePorts.push('443');
+  }
+
+  if (stalePorts.length === 0) {
+    return false;
+  }
+
+  return stalePorts.some((port) => {
+    const regex = new RegExp(`^\\s*listen\\s+(?:[^;\\s]+:)?${port}\\b`, 'm');
+    return regex.test(content);
+  });
+}
+
 module.exports = {
   hasStandardPortListenDirective,
+  hasStaleStandardPortListenDirective,
   // Nginx
   async startNginx(version = '1.28') {
     const nginxPath = this.getNginxPath(version);
@@ -139,7 +161,7 @@ module.exports = {
           for (const file of files) {
             if (file.endsWith('.conf')) {
               const content = await fs.readFile(path.join(sitesDir, file), 'utf8');
-              if (hasStandardPortListenDirective(content)) {
+              if (hasStaleStandardPortListenDirective(content, httpPort, sslPort)) {
                 this.managers.log?.systemInfo(`Removing stale vhost ${file} with port 80/443 (nginx using ${httpPort}/${sslPort})`);
                 await fs.remove(path.join(sitesDir, file));
               }

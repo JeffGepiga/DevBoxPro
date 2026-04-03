@@ -211,6 +211,9 @@ server {
     const effectiveVersion = targetNginxVersion || this.managers.service?.standardPortOwnerVersion || this.getDefaultWebServerVersion('nginx');
     const sitesDir = path.join(dataPath, 'nginx', effectiveVersion, 'sites');
     const serverName = this.getProjectServerNameEntries(project).join(' ');
+    const frontDoorPorts = this.managers.service?.getServicePorts('nginx', effectiveVersion);
+    const httpPort = frontDoorPorts?.httpPort || 80;
+    const httpsPort = frontDoorPorts?.sslPort || 443;
 
     await fs.ensureDir(sitesDir);
     const certsExist = await this.ensureProjectSslCertificates(project, sslDir);
@@ -224,7 +227,7 @@ server {
 # Front Door: nginx -> ${this.getEffectiveWebServer(project)}:${backendHttpPort}
 
 server {
-    listen 80;
+  listen ${httpPort};
     server_name ${serverName};
 
     client_max_body_size 128M;
@@ -253,7 +256,7 @@ server {
 
       config += `
 server {
-    listen 443 ssl${http2ListenSuffix};${http2Directive}
+    listen ${httpsPort} ssl${http2ListenSuffix};${http2Directive}
     server_name ${serverName};
 
     ssl_certificate "${sslDir.replace(/\\/g, '/')}/cert.pem";
@@ -271,7 +274,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header X-Forwarded-Port ${httpsPort};
         proxy_buffering off;
         proxy_request_buffering off;
     }
@@ -285,6 +288,6 @@ server {
     const configPath = path.join(sitesDir, `${project.id}.conf`);
     await fs.writeFile(configPath, config);
     await fs.ensureDir(path.join(dataPath, 'nginx', 'logs'));
-    return { configPath, finalHttpPort: 80, httpPort: 80, networkAccess: false, proxied: true };
+    return { configPath, finalHttpPort: httpPort, httpPort, networkAccess: false, proxied: true };
   },
 };

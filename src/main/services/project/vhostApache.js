@@ -190,6 +190,12 @@ module.exports = {
     const sslDir = path.join(dataPath, 'ssl', project.domain).replace(/\\/g, '/');
     const primaryDomain = this.getProjectPrimaryDomain(project);
     const serverAliases = this.getProjectServerAliasEntries(project).join(' ');
+    const effectiveVersion = targetApacheVersion
+      || this.managers.service?.standardPortOwnerVersion
+      || this.getDefaultWebServerVersion('apache');
+    const frontDoorPorts = this.managers.service?.getServicePorts('apache', effectiveVersion);
+    const httpPort = frontDoorPorts?.httpPort || 80;
+    const httpsPort = frontDoorPorts?.sslPort || 443;
 
     await fs.ensureDir(vhostsDir);
     const certsExist = await this.ensureProjectSslCertificates(project, sslDir);
@@ -202,7 +208,7 @@ module.exports = {
   # This file is regenerated when DevBox starts, stops, or reloads the project/service.
 # Front Door: apache -> ${this.getEffectiveWebServer(project)}:${backendHttpPort}
 
-<VirtualHost *:80>
+<VirtualHost *:${httpPort}>
     ServerName ${primaryDomain}
 ${serverAliases ? `    ServerAlias ${serverAliases}` : ''}
 
@@ -210,7 +216,7 @@ ${serverAliases ? `    ServerAlias ${serverAliases}` : ''}
     ProxyPass / http://127.0.0.1:${backendHttpPort}/ retry=0
     ProxyPassReverse / http://127.0.0.1:${backendHttpPort}/
     RequestHeader set X-Forwarded-Proto "http"
-    RequestHeader set X-Forwarded-Port "80"
+  RequestHeader set X-Forwarded-Port "${httpPort}"
 
     ErrorLog "${dataPath.replace(/\\/g, '/')}/apache/logs/${project.id}-proxy-error.log"
     CustomLog "${dataPath.replace(/\\/g, '/')}/apache/logs/${project.id}-proxy-access.log" combined
@@ -219,7 +225,7 @@ ${serverAliases ? `    ServerAlias ${serverAliases}` : ''}
 
     if (project.ssl && certsExist) {
       config += `
-<VirtualHost *:443>
+<VirtualHost *:${httpsPort}>
     ServerName ${primaryDomain}
 ${serverAliases ? `    ServerAlias ${serverAliases}` : ''}
 
@@ -231,7 +237,7 @@ ${serverAliases ? `    ServerAlias ${serverAliases}` : ''}
     ProxyPass / http://127.0.0.1:${backendHttpPort}/ retry=0
     ProxyPassReverse / http://127.0.0.1:${backendHttpPort}/
     RequestHeader set X-Forwarded-Proto "https"
-    RequestHeader set X-Forwarded-Port "443"
+    RequestHeader set X-Forwarded-Port "${httpsPort}"
 
     ErrorLog "${dataPath.replace(/\\/g, '/')}/apache/logs/${project.id}-proxy-ssl-error.log"
     CustomLog "${dataPath.replace(/\\/g, '/')}/apache/logs/${project.id}-proxy-ssl-access.log" combined
@@ -242,6 +248,6 @@ ${serverAliases ? `    ServerAlias ${serverAliases}` : ''}
     const configPath = path.join(vhostsDir, `${project.id}.conf`);
     await fs.writeFile(configPath, config);
     await fs.ensureDir(path.join(dataPath, 'apache', 'logs'));
-    return { configPath, finalHttpPort: 80, httpPort: 80, networkAccess: false, proxied: true };
+    return { configPath, finalHttpPort: httpPort, httpPort, networkAccess: false, proxied: true };
   },
 };

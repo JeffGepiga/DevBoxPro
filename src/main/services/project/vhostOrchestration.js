@@ -65,14 +65,18 @@ module.exports = {
       if (webServer !== 'apache' && !apacheOwnsFrontDoor) continue;
 
       const confFile = path.join(vhostsDir, `${proj.id}.conf`);
+      const projectRunning = this.runningProjects.has(proj.id);
       const shouldProxyThroughApache = apacheOwnsFrontDoor
         && apacheFrontDoorVersion === targetApacheVersion
-        && this.runningProjects.has(proj.id)
+        && projectRunning
         && this.projectNeedsFrontDoorProxy(proj);
-      if (!await fs.pathExists(confFile) && !shouldProxyThroughApache) continue;
+      const confExists = await fs.pathExists(confFile);
+      const shouldCreateDirectApache = webServer === 'apache' && projectRunning;
+
+      if (!confExists && !shouldProxyThroughApache && !shouldCreateDirectApache) continue;
 
       try {
-        if (webServer === 'apache') {
+        if (shouldCreateDirectApache) {
           await this.createApacheVhost(proj, targetApacheVersion);
         } else if (shouldProxyThroughApache) {
           await this.createProxyApacheVhost(proj, this.getProjectProxyBackendHttpPort(proj), targetApacheVersion);
@@ -101,14 +105,18 @@ module.exports = {
       if (webServer === 'nginx' && projVersion !== effectiveVersion) continue;
 
       const confFile = path.join(sitesDir, `${proj.id}.conf`);
+      const projectRunning = this.runningProjects.has(proj.id);
       const shouldProxyThroughNginx = nginxOwnsFrontDoor
         && nginxFrontDoorVersion === effectiveVersion
-        && this.runningProjects.has(proj.id)
+        && projectRunning
         && this.projectNeedsFrontDoorProxy(proj);
-      if (!await fs.pathExists(confFile) && !shouldProxyThroughNginx) continue;
+      const confExists = await fs.pathExists(confFile);
+      const shouldCreateDirectNginx = webServer === 'nginx' && projectRunning;
+
+      if (!confExists && !shouldProxyThroughNginx && !shouldCreateDirectNginx) continue;
 
       try {
-        if (webServer === 'nginx') {
+        if (shouldCreateDirectNginx) {
           const running = this.runningProjects.get(proj.id);
           const phpFpmPort = running?.phpFpmPort || null;
           await this.createNginxVhost(proj, phpFpmPort, targetNginxVersion);

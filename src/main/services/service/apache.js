@@ -3,7 +3,34 @@ const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { isPortAvailable, findAvailablePort } = require('../../utils/PortUtils');
 
+function hasStaleStandardPortBindings(content = '', httpPort = 80, httpsPort = 443) {
+  const stalePorts = new Set();
+
+  if (httpPort !== 80) {
+    stalePorts.add('80');
+  }
+
+  if (httpsPort !== 443) {
+    stalePorts.add('443');
+  }
+
+  if (stalePorts.size === 0) {
+    return false;
+  }
+
+  for (const port of stalePorts) {
+    const virtualHostRegex = new RegExp(`:${port}>`);
+    const listenRegex = new RegExp(`^\\s*Listen\\s+(?:[^\\s]+:)?${port}(?:\\s|$)`, 'm');
+    if (virtualHostRegex.test(content) || listenRegex.test(content)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 module.exports = {
+  hasStaleStandardPortBindings,
   // Apache
   async startApache(version = '2.4') {
     const apachePath = this.getApachePath(version);
@@ -102,11 +129,10 @@ module.exports = {
       try {
         if (await fs.pathExists(vhostsDir)) {
           const files = await fs.readdir(vhostsDir);
-          const stalePortRegex = /:(80|443)>|Listen\s+(80|443)(?:\s|$)/;
           for (const file of files) {
             if (file.endsWith('.conf')) {
               const content = await fs.readFile(path.join(vhostsDir, file), 'utf8');
-              if (stalePortRegex.test(content)) {
+              if (hasStaleStandardPortBindings(content, httpPort, httpsPort)) {
                 this.managers.log?.systemInfo(`Removing stale Apache vhost ${file} with port 80/443 (using ${httpPort}/${httpsPort})`);
                 await fs.remove(path.join(vhostsDir, file));
               }

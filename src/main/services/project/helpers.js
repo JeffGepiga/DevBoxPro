@@ -180,7 +180,8 @@ module.exports = {
   getProjectLocalAccessPorts(project) {
     const frontDoorOwner = this.managers.service?.standardPortOwner;
     if (frontDoorOwner) {
-      return { httpPort: 80, sslPort: 443 };
+      const ownerVersion = this.managers.service?.standardPortOwnerVersion || this.getDefaultWebServerVersion(frontDoorOwner);
+      return this.managers.service?.getServicePorts(frontDoorOwner, ownerVersion) || { httpPort: 80, sslPort: 443 };
     }
 
     const webServer = this.getEffectiveWebServer(project);

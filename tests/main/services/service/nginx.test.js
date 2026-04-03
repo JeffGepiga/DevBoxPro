@@ -9,4 +9,10 @@ describe('service/nginx', () => {
         expect(nginxService.hasStandardPortListenDirective('server {\n    listen 0.0.0.0:8445 ssl http2;\n}')).toBe(false);
         expect(nginxService.hasStandardPortListenDirective('server {\n    listen 8083;\n}')).toBe(false);
     });
+
+    it('treats only inactive standard bindings as stale when ssl falls back', () => {
+        expect(nginxService.hasStaleStandardPortListenDirective('server {\n    listen 0.0.0.0:80 default_server;\n}', 80, 8443)).toBe(false);
+        expect(nginxService.hasStaleStandardPortListenDirective('server {\n    listen 443 ssl;\n}', 80, 8443)).toBe(true);
+        expect(nginxService.hasStaleStandardPortListenDirective('server {\n    listen 8443 ssl;\n}', 80, 8443)).toBe(false);
+    });
 });
