@@ -841,6 +841,81 @@ describeIfBaseBinariesInstalled('Real Binary Web Server Scenarios', () => {
         }
     }, 240000);
 
+    it('keeps front-door domains portless after manually stopping and starting nginx and apache services', async () => {
+        const portPlan = await findFreePortPlan();
+        const scenarioId = await prepareScenarioPaths();
+        let testPassed = false;
+
+        const nginxProject = createCustomProject(scenarioId, {
+            id: 'nginx-manual-service-restart-project',
+            name: 'NginxManualServiceRestart',
+            webServer: 'nginx',
+            webServerVersion: '1.28',
+            domain: 'nginx-manual-restart.test',
+            port: portPlan.nginxAltHttp,
+        });
+        const apacheProject = createCustomProject(scenarioId, {
+            id: 'apache-manual-service-restart-project',
+            name: 'ApacheManualServiceRestart',
+            webServer: 'apache',
+            webServerVersion: '2.4',
+            domain: 'apache-manual-restart.test',
+            port: portPlan.apacheAltHttp,
+        });
+
+        const allProjects = [nginxProject, apacheProject];
+        for (const project of allProjects) {
+            await createStaticProject(project.path, project);
+        }
+
+        const { serviceManager, projectManager } = await createScenario(allProjects);
+        applyWebServerPorts(serviceManager, portPlan);
+
+        try {
+            await projectManager.startProject(nginxProject.id);
+            await projectManager.startProject(apacheProject.id);
+
+            let frontDoor = getFrontDoorInfo(serviceManager);
+            expect(frontDoor).toBeTruthy();
+            expect(frontDoor.httpPort).toBe(portPlan.standardHttp);
+            await waitForResponse(frontDoor.httpPort, nginxProject.domain, nginxProject.name);
+            await waitForResponse(frontDoor.httpPort, apacheProject.domain, apacheProject.name);
+
+            await serviceManager.stopService('apache', '2.4');
+            await serviceManager.stopService('nginx', '1.28');
+
+            await serviceManager.startService('nginx', '1.28');
+            expect(serviceManager.getServicePorts('nginx', '1.28').httpPort).toBe(portPlan.standardHttp);
+            await waitForResponse(portPlan.standardHttp, nginxProject.domain, nginxProject.name);
+
+            await serviceManager.startService('apache', '2.4');
+            frontDoor = getFrontDoorInfo(serviceManager);
+            expect(frontDoor).toBeTruthy();
+            expect(frontDoor.httpPort).toBe(portPlan.standardHttp);
+            await waitForResponse(serviceManager.getServicePorts('apache', '2.4').httpPort, apacheProject.domain, apacheProject.name);
+            await waitForResponse(frontDoor.httpPort, nginxProject.domain, nginxProject.name);
+            await waitForResponse(frontDoor.httpPort, apacheProject.domain, apacheProject.name);
+
+            testPassed = true;
+        } catch (error) {
+            if (process.env.DEVBOX_KEEP_REAL_BINARY_ARTIFACTS === '1') {
+                await dumpScenarioDiagnostics('manual-service-restart-front-door-failure', activeScenario, {
+                    error: error.message,
+                    nginxProjectId: nginxProject.id,
+                    apacheProjectId: apacheProject.id,
+                });
+            }
+            throw error;
+        } finally {
+            if (!testPassed && process.env.DEVBOX_KEEP_REAL_BINARY_ARTIFACTS === '1') {
+                return;
+            }
+            for (const project of [apacheProject, nginxProject]) {
+                await stopProjectIfRunning(projectManager, project.id);
+            }
+        }
+    }, 240000);
+
     itIfRedisInstalled('keeps a redis-backed project stable across rapid start and stop toggles', async () => {
         const portPlan = await findFreePortPlan();
         const scenarioId = await prepareScenarioPaths();

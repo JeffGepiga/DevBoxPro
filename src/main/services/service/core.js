@@ -4,6 +4,20 @@ const { spawn } = require('child_process');
 const { isPortAvailable, findAvailablePort } = require('../../utils/PortUtils');
 const { SERVICE_VERSIONS } = require('../../../shared/serviceConfig');
 
+async function waitForPortsReleased(httpPort, httpsPort, timeoutMs = 8000) {
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    const httpAvailable = await isPortAvailable(httpPort);
+    const httpsAvailable = await isPortAvailable(httpsPort);
+    if (httpAvailable && httpsAvailable) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  return await isPortAvailable(httpPort) && await isPortAvailable(httpsPort);
+}
+
 const STARTUP_RECOVERY_SERVICES = [
   'mysql',
   'mariadb',
@@ -366,6 +380,11 @@ module.exports = {
 
     const processKey = this.getProcessKey(serviceName, version);
     const versionSuffix = version ? ` ${version}` : '';
+    const webServerProcessPath = serviceName === 'nginx'
+      ? this.getNginxPath(version || '1.28')
+      : serviceName === 'apache'
+        ? this.getApachePath(version || '2.4')
+        : null;
 
     const proc = this.processes.get(processKey);
     if (proc) {
@@ -399,7 +418,7 @@ module.exports = {
         const confPath = path.join(dataPath, 'nginx', nginxVersion, 'nginx.conf');
 
         if (await fs.pathExists(nginxExe)) {
-          const { isProcessRunning, killProcessesByPath, spawnSyncSafe } = require('../../utils/SpawnUtils');
+          const { isProcessRunning, killProcessesByPath, spawnSyncSafe, waitForProcessesByPathExit } = require('../../utils/SpawnUtils');
 
           const nginxRunning = isProcessRunning('nginx.exe');
 
@@ -417,6 +436,7 @@ module.exports = {
             // Only kill ALL nginx.exe processes if this is the last running version
             if (isLastVersion) {
               await killProcessesByPath('nginx.exe', nginxPath);
+              await waitForProcessesByPathExit('nginx.exe', nginxPath, 8000);
             }
           }
         }
@@ -430,10 +450,11 @@ module.exports = {
     // installations (XAMPP, WAMP, etc.) that may be running on port 80.
     if (serviceName === 'apache' && require('os').platform() === 'win32') {
       try {
-        const { killProcessesByPath, isProcessRunning } = require('../../utils/SpawnUtils');
+        const { killProcessesByPath, isProcessRunning, waitForProcessesByPathExit } = require('../../utils/SpawnUtils');
         if (isLastVersion && isProcessRunning('httpd.exe')) {
           const apachePath = this.getApachePath(version || '2.4');
           await killProcessesByPath('httpd.exe', apachePath);
+          await waitForProcessesByPathExit('httpd.exe', apachePath, 8000);
         }
       } catch (error) {
         this.managers.log?.systemWarn('Error during Apache cleanup', { error: error.message });
@@ -446,15 +467,31 @@ module.exports = {
     if (releasedStandardPorts) {
       const standardHttpPort = this.webServerPorts?.standard?.http || 80;
       const standardHttpsPort = this.webServerPorts?.standard?.https || 443;
-      const startTime = Date.now();
-      const timeoutMs = 8000;
-      while (Date.now() - startTime < timeoutMs) {
-        const httpAvailable = await isPortAvailable(standardHttpPort);
-        const httpsAvailable = await isPortAvailable(standardHttpsPort);
-        if (httpAvailable && httpsAvailable) {
-          break;
+      let released = await waitForPortsReleased(standardHttpPort, standardHttpsPort, 8000);
+
+      if (!released && require('os').platform() === 'win32' && webServerProcessPath) {
+        try {
+          const { killProcessesByPath, waitForProcessesByPathExit } = require('../../utils/SpawnUtils');
+          const processName = serviceName === 'nginx' ? 'nginx.exe' : 'httpd.exe';
+
+          await killProcessesByPath(processName, webServerProcessPath);
+          await waitForProcessesByPathExit(processName, webServerProcessPath, 8000);
+          released = await waitForPortsReleased(standardHttpPort, standardHttpsPort, 5000);
+        } catch (error) {
+          this.managers.log?.systemWarn('Error during final web server port cleanup', {
+            service: serviceName,
+            error: error.message,
+          });
         }
-        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      if (!released) {
+        this.managers.log?.systemWarn('Standard web server ports were not released before stopService completed', {
+          service: serviceName,
+          version,
+          httpPort: standardHttpPort,
+          httpsPort: standardHttpsPort,
+        });
       }
     }
 
