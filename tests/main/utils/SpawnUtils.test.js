@@ -17,6 +17,7 @@ const {
     commandExists,
     isProcessRunning,
     getProcessPidsByPath,
+    waitForProcessesByPathExit,
 } = require('../../../src/main/utils/SpawnUtils');
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -216,5 +217,12 @@ describe('getProcessPidsByPath()', () => {
         if (process.platform !== 'win32') {
             expect(getProcessPidsByPath('php', '/usr/bin')).toEqual([]);
         }
+    });
+});
+
+describe('waitForProcessesByPathExit()', () => {
+    it('returns true immediately for nonexistent processes', async () => {
+        const pathFilter = process.platform === 'win32' ? 'C:\\definitely-not-running' : '/definitely-not-running';
+        await expect(waitForProcessesByPathExit('definitely-not-running.exe', pathFilter, 50)).resolves.toBe(true);
     });
 });

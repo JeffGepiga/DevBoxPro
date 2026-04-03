@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { isPortAvailable, findAvailablePort } = require('../../utils/PortUtils');
+const { spawnSyncSafe } = require('../../utils/SpawnUtils');
 
 function hasStaleStandardPortBindings(content = '', httpPort = 80, httpsPort = 443) {
   const stalePorts = new Set();
@@ -97,6 +98,23 @@ module.exports = {
     }
 
     if (canUseStandard) {
+      const standardPortsAvailable = await waitForPortsAvailable(standardHttp, standardHttps, 1500);
+      if (!standardPortsAvailable) {
+        if (this.standardPortOwner === 'apache') {
+          this.standardPortOwner = null;
+          this.standardPortOwnerVersion = null;
+        }
+
+        canUseStandard = false;
+        this.managers.log?.systemWarn('Apache could not reclaim the standard front-door ports during startup; falling back to alternate ports', {
+          version,
+          httpPort: standardHttp,
+          httpsPort: standardHttps,
+        });
+      }
+    }
+
+    if (canUseStandard) {
       httpPort = standardHttp;
       httpsPort = standardHttps;
     } else {
@@ -147,15 +165,22 @@ module.exports = {
     await this.regenerateWebServerVhosts('apache', version);
 
     const testConfig = async () => {
-      const { execSync } = require('child_process');
       try {
-        execSync(`"${httpdExe}" -t -f "${confPath}"`, {
+        const result = spawnSyncSafe(httpdExe, ['-t', '-f', confPath], {
           cwd: apachePath,
           windowsHide: true,
           timeout: 10000,
-          encoding: 'utf8',
           stdio: ['pipe', 'pipe', 'pipe']
         });
+
+        if (result.status !== 0 || result.error) {
+          throw {
+            stderr: result.stderr || '',
+            stdout: result.stdout || '',
+            message: result.error?.message || `Process exited with status ${result.status}`,
+          };
+        }
+
         return { success: true };
       } catch (configError) {
         const stderr = configError.stderr || '';
@@ -205,6 +230,7 @@ module.exports = {
 
         if (this.standardPortOwner === 'apache') {
           this.standardPortOwner = null;
+          this.standardPortOwnerVersion = null;
         }
 
         this.serviceConfigs.apache.actualHttpPort = httpPort;

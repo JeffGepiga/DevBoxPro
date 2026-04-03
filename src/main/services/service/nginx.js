@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { isPortAvailable, findAvailablePort } = require('../../utils/PortUtils');
+const { spawnSyncSafe } = require('../../utils/SpawnUtils');
 
 // Helper function to spawn a process hidden on Windows
 function spawnHidden(command, args, options = {}) {
@@ -96,6 +97,23 @@ module.exports = {
     }
 
     if (canUseStandard) {
+      const standardPortsAvailable = await waitForPortsAvailable(standardHttp, standardHttps, 1500);
+      if (!standardPortsAvailable) {
+        if (this.standardPortOwner === 'nginx' && this.standardPortOwnerVersion === version) {
+          this.standardPortOwner = null;
+          this.standardPortOwnerVersion = null;
+        }
+
+        canUseStandard = false;
+        this.managers.log?.systemWarn('Nginx could not reclaim the standard front-door ports during startup; falling back to alternate ports', {
+          version,
+          httpPort: standardHttp,
+          sslPort: standardHttps,
+        });
+      }
+    }
+
+    if (canUseStandard) {
       httpPort = standardHttp;
       sslPort = standardHttps;
     } else {
@@ -177,15 +195,22 @@ module.exports = {
 
     // Test Nginx configuration before starting
     const testConfig = async () => {
-      const { execSync } = require('child_process');
       try {
-        execSync(`"${nginxExe}" -t -c "${confPath}" -p "${nginxPath}"`, {
+        const result = spawnSyncSafe(nginxExe, ['-t', '-c', confPath, '-p', nginxPath], {
           cwd: nginxPath,
           windowsHide: true,
           timeout: 10000,
-          encoding: 'utf8',
           stdio: ['pipe', 'pipe', 'pipe']
         });
+
+        if (result.status !== 0 || result.error) {
+          throw {
+            stderr: result.stderr || '',
+            stdout: result.stdout || '',
+            message: result.error?.message || `Process exited with status ${result.status}`,
+          };
+        }
+
         return { success: true };
       } catch (configError) {
         const stderr = configError.stderr || '';

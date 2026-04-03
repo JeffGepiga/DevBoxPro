@@ -274,6 +274,21 @@ async function killProcessesByPath(processName, pathFilter) {
     }
 }
 
+async function waitForProcessesByPathExit(processName, pathFilter, timeoutMs = 8000) {
+    if (process.platform !== 'win32') return true;
+
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        if (getProcessPidsByPath(processName, pathFilter).length === 0) {
+            return true;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    return getProcessPidsByPath(processName, pathFilter).length === 0;
+}
+
 module.exports = {
     spawnSyncSafe,
     spawnAsync,
@@ -284,4 +299,5 @@ module.exports = {
     isProcessRunning,
     getProcessPidsByPath,
     killProcessesByPath,
+    waitForProcessesByPathExit,
 };
