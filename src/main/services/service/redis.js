@@ -11,6 +11,20 @@ function spawnHidden(command, args, options = {}) {
   }
 }
 
+async function waitForPortAvailable(port, timeoutMs = 5000) {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    if (await isPortAvailable(port)) {
+      return true;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  return await isPortAvailable(port);
+}
+
 module.exports = {
   // Redis
   async startRedis(version = '7.4') {
@@ -37,9 +51,14 @@ module.exports = {
     let port = defaultPort;
 
     if (!await isPortAvailable(port)) {
-      port = await findAvailablePort(defaultPort, 100);
-      if (!port) {
-        throw new Error(`Could not find available port for Redis starting from ${defaultPort}`);
+      const released = await waitForPortAvailable(defaultPort, 5000);
+      if (released) {
+        port = defaultPort;
+      } else {
+        port = await findAvailablePort(defaultPort, 100);
+        if (!port) {
+          throw new Error(`Could not find available port for Redis starting from ${defaultPort}`);
+        }
       }
     }
 

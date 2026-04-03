@@ -18,6 +18,19 @@ async function waitForPortsReleased(httpPort, httpsPort, timeoutMs = 8000) {
   return await isPortAvailable(httpPort) && await isPortAvailable(httpsPort);
 }
 
+async function waitForPortReleased(port, timeoutMs = 8000) {
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    if (await isPortAvailable(port)) {
+      return true;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  return await isPortAvailable(port);
+}
+
 const STARTUP_RECOVERY_SERVICES = [
   'mysql',
   'mariadb',
@@ -385,6 +398,11 @@ module.exports = {
       : serviceName === 'apache'
         ? this.getApachePath(version || '2.4')
         : null;
+    const status = this.serviceStatus.get(serviceName);
+    const trackedVersion = config.versioned && version
+      ? this.runningVersions.get(serviceName)?.get(version)
+      : null;
+    const servicePort = trackedVersion?.port || status?.port || config.actualPort || config.defaultPort;
 
     const proc = this.processes.get(processKey);
     if (proc) {
@@ -464,6 +482,35 @@ module.exports = {
     // Wait a moment for ports to be released
     await new Promise(resolve => setTimeout(resolve, 500));
 
+    if (serviceName === 'redis' && servicePort) {
+      let released = await waitForPortReleased(servicePort, 5000);
+
+      if (!released && require('os').platform() === 'win32') {
+        try {
+          const { killProcessesByPath, waitForProcessesByPathExit } = require('../../utils/SpawnUtils');
+          const redisPath = this.getRedisPath(version || '7.4');
+
+          await killProcessesByPath('redis-server.exe', redisPath);
+          await waitForProcessesByPathExit('redis-server.exe', redisPath, 8000);
+          released = await waitForPortReleased(servicePort, 5000);
+        } catch (error) {
+          this.managers.log?.systemWarn('Error during Redis cleanup', {
+            service: serviceName,
+            version,
+            error: error.message,
+          });
+        }
+      }
+
+      if (!released) {
+        this.managers.log?.systemWarn('Redis port was not released before stopService completed', {
+          service: serviceName,
+          version,
+          port: servicePort,
+        });
+      }
+    }
+
     if (releasedStandardPorts) {
       const standardHttpPort = this.webServerPorts?.standard?.http || 80;
       const standardHttpsPort = this.webServerPorts?.standard?.https || 443;
@@ -518,7 +565,6 @@ module.exports = {
       }
     }
 
-    const status = this.serviceStatus.get(serviceName);
     if (isLastVersion) {
       status.status = 'stopped';
       status.pid = null;

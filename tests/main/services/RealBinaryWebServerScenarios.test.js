@@ -84,7 +84,20 @@ function resolveInstalledPhpVersion() {
     return null;
 }
 
+function resolveInstalledRedisVersion() {
+    const candidates = ['7.4', '7.2', '6.2'];
+    for (const version of candidates) {
+        const redisServer = process.platform === 'win32' ? 'redis-server.exe' : 'redis-server';
+        if (fs.existsSync(path.join(resourcesRoot, 'redis', version, platform, redisServer))) {
+            return version;
+        }
+    }
+
+    return null;
+}
+
 const installedPhpVersion = resolveInstalledPhpVersion();
+const installedRedisVersion = resolveInstalledRedisVersion();
 const apacheBinaryPath = process.platform === 'win32'
     ? path.join(resourcesRoot, 'apache', '2.4', platform, 'bin', 'httpd.exe')
     : path.join(resourcesRoot, 'apache', '2.4', platform, 'bin', 'httpd');
@@ -94,10 +107,12 @@ const nginx128BinaryPath = process.platform === 'win32'
 const nginx126BinaryPath = process.platform === 'win32'
     ? path.join(resourcesRoot, 'nginx', '1.26', platform, 'nginx.exe')
     : path.join(resourcesRoot, 'nginx', '1.26', platform, 'nginx');
+const nginx124BinaryPath = process.platform === 'win32'
+    ? path.join(resourcesRoot, 'nginx', '1.24', platform, 'nginx.exe')
+    : path.join(resourcesRoot, 'nginx', '1.24', platform, 'nginx');
 const requiredBinaryPaths = [
     apacheBinaryPath,
     nginx128BinaryPath,
-    nginx126BinaryPath,
 ];
 
 if (installedPhpVersion) {
@@ -107,8 +122,14 @@ if (installedPhpVersion) {
 const hasRequiredBinaries = process.platform === 'win32'
     && installedPhpVersion !== null
     && requiredBinaryPaths.every((binaryPath) => fs.existsSync(binaryPath));
+const hasNginx126Binary = fs.existsSync(nginx126BinaryPath);
+const hasNginx124Binary = fs.existsSync(nginx124BinaryPath);
+const hasRedisBinary = installedRedisVersion !== null;
 
 const describeIfBinariesInstalled = hasRequiredBinaries ? describe : describe.skip;
+const itIfNginx126Installed = hasNginx126Binary ? it : it.skip;
+const itIfNginx124Installed = hasNginx124Binary ? it : it.skip;
+const itIfRedisInstalled = hasRedisBinary ? it : it.skip;
 
 function createConfigStore(initialProjects = []) {
     const store = {
@@ -256,6 +277,20 @@ async function waitForResponse(port, hostHeader, expectedText, timeoutMs = 30000
     throw lastError || new Error(`Timed out waiting for ${hostHeader}:${port}`);
 }
 
+async function waitForPortState(checkPortOpen, port, expectedOpen, timeoutMs = 15000) {
+    const start = Date.now();
+
+    while (Date.now() - start < timeoutMs) {
+        if (await checkPortOpen(port) === expectedOpen) {
+            return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    throw new Error(`Timed out waiting for port ${port} to become ${expectedOpen ? 'open' : 'closed'}`);
+}
+
 function listenOnPort(port) {
     const server = net.createServer((socket) => {
         socket.end('occupied\n');
@@ -270,6 +305,51 @@ function listenOnPort(port) {
 async function createStaticProject(projectRoot, project) {
     await fs.ensureDir(projectRoot);
     await fs.writeFile(path.join(projectRoot, 'index.html'), `${project.name} integration test`);
+}
+
+function createCustomProject(scenarioId, {
+    id,
+    name,
+    webServer,
+    webServerVersion,
+    domain,
+    port,
+    subdir = id,
+}) {
+    return {
+        id,
+        name,
+        path: path.join(currentProjectRootPath, scenarioId, subdir),
+        type: 'custom',
+        phpVersion: installedPhpVersion,
+        webServer,
+        webServerVersion,
+        domain,
+        domains: [domain],
+        ssl: false,
+        autoStart: false,
+        networkAccess: false,
+        services: {},
+        supervisor: { processes: [] },
+        port,
+    };
+}
+
+function getFrontDoorInfo(serviceManager) {
+    const webServer = serviceManager.standardPortOwner;
+    const version = serviceManager.standardPortOwnerVersion;
+
+    if (!webServer || !version) {
+        return null;
+    }
+
+    const ports = serviceManager.getServicePorts(webServer, version);
+    return {
+        webServer,
+        version,
+        httpPort: ports?.httpPort,
+        sslPort: ports?.sslPort,
+    };
 }
 
 async function prepareScenarioPaths(scenarioId = randomUUID()) {
@@ -921,7 +1001,7 @@ describeIfBinariesInstalled('Real Binary Web Server Scenarios', () => {
 
         try {
             let lastRedisPort = null;
-            for (let attempt = 0; attempt < 2; attempt += 1) {
+            for (let attempt = 0; attempt < 5; attempt += 1) {
                 await projectManager.startProject(redisProject.id);
 
                 const frontDoorPort = serviceManager.getServicePorts('nginx', '1.28').httpPort;
@@ -937,6 +1017,7 @@ describeIfBinariesInstalled('Real Binary Web Server Scenarios', () => {
                 lastRedisPort = redisPort;
 
                 await projectManager.stopProject(redisProject.id);
+                await waitForPortState((port) => serviceManager.checkPortOpen(port), redisPort, false);
             }
 
             testPassed = true;
