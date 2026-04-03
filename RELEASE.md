@@ -1,10 +1,10 @@
-# 🚀 DevBox Pro v1.0.5
+# 🚀 DevBox Pro v1.0.6
 
 **Stable Release | Your all-in-one local development environment for PHP & Node.js**
 
 ---
 
-## 🆕 What's New in v1.0.5
+## 🆕 What's New in v1.0.6
 
 ### ✨ New Features
 
@@ -16,71 +16,20 @@
 - Cloudflare public URLs are only surfaced once the `trycloudflare.com` hostname is resolvable, reducing broken fresh-tunnel links
 - zrok public URL detection has been updated for current CLI output formats
 
-#### ⚡ Improved Project Lifecycle Management
-- Immediate service stopping when the last active project is closed
-- Pending service shutdowns are automatically cancelled when starting new project services
-- Track projects currently being started or stopped for accurate status reporting
+### 🛡️ Web Server Hardening
 
-#### 🔄 Graceful Update Installation
-- Services are stopped before applying an app update via quit-and-install
+- Hardened mixed **Nginx** and **Apache** front-door handling when multiple projects and server versions are active
+- Improved proxy behavior so tunnel traffic keeps redirects, cookies, and absolute `.test` URLs on the public hostname
+- Reduced false-ready tunnel states by waiting for Cloudflare Quick Tunnel hostnames to become resolvable before surfacing them
+- Improved web server readiness and startup coordination to reduce port collisions and unstable starts
 
-#### 🪟 Enhanced Window & Migration Handling
-- New utility functions for window management and data migration
-
-#### 🗄️ Database Connection Improvements
-- Database connection info now displays the correct port for the selected engine version
-- Actual running port is used for active database connections instead of the default
-- Integrated service configuration for database port offsets across all components
-
-#### 💾 Database Import/Export
-- Import and export support for SQL, MongoDB, and PostgreSQL workflows
-
-#### 📦 Expanded Binary Downloads
-- One-click downloads for MySQL, MariaDB, Redis, Mailpit, phpMyAdmin, Nginx, Apache, and Node.js binaries
-- Download progress tracking and management
-- Dynamic loading of bundled binary configuration – new versions appear without an app update
-- Binary URL validation script added to the build pipeline
-
-#### 🌐 Front-Door Proxy & Service Serialization
-- Front-door proxy handling for Nginx and Apache projects with version checks
-- Serialized service starts for Apache and Nginx to prevent port collisions
-
-#### 🛑 Bulk Stop
-- Stop all running projects and services at once from the UI
-
-#### 🔗 Git Integration
-- Git download support with availability checks before clone operations
-
-#### 🔐 SSL & Import Enhancements
-- Enhanced SSL certificate management workflows
-- Improved project import functionality
-
-### 🏗️ Architecture & Refactoring
-
-- **Manager refactoring** – `CompatibilityManager` split into config and rules modules; `GitManager` split into smaller focused modules for improved maintainability
-- **Spawn hardening** – Removed `shell: true` from process spawning across the codebase to avoid `DEP0190` deprecation warnings and improve process handling
-- **Data path refactoring** – Centralized data path handling across services and utilities
-- **Binary removal** – Better error handling for locked files during binary removal
-- **MongoDB** – Enhanced binary detection and repair process
-- **MySQL** – Removed redundant logging during startup
-- **Nginx lifecycle** – Nginx is reloaded on rapid PHP-CGI port changes
-
-### 🧹 Bug Fixes & Improvements
+### 🧹 Fixes Included In This Release
 
 - Fixed public tunnel routing when multiple projects are running across Nginx and Apache
 - Fixed Cloudflare tunnel sessions showing the wrong project when multiple projects are shared
 - Fixed public tunnel flows that redirected browsers back to local `.test` URLs
 - Fixed stale or not-yet-ready Cloudflare Quick Tunnel hostnames being shown as live too early
-- Fixed multi-server version bugs when running multiple web server versions simultaneously
-- Fixed port conflict issues across services
-- Fixed WordPress installation bugs and added PHP extension toggles
-- Fixed terminal consuming excessive memory
-- Improved Nginx and Apache readiness check timeouts
-- Added MySQL error log handling and phpMyAdmin loading state management
-- Fixed bugs in PHP binary downloading
-- Compatibility management service with remote rule updates integrated into project creation
-- Added binary URL checking script to validate download URLs before build
-- Comprehensive test coverage: new unit tests for vhost configs, CLI, database, project services, and lifecycle utilities
+- Fixed multi-server version issues when running multiple web server versions simultaneously
 
 ---
 
@@ -160,8 +109,8 @@ mysqldump -u root mydb > backup.sql  # Dump with the active DB version
 
 | File | Description |
 |------|-------------|
-| **DevBox-Pro-Setup-1.0.5.exe** | Installer version (recommended) |
-| **DevBox-Pro-1.0.5.exe** | Portable version – no installation required |
+| **DevBox-Pro-Setup-1.0.6.exe** | Installer version (recommended) |
+| **DevBox-Pro-1.0.6.exe** | Portable version – no installation required |
 
 ### System Requirements (Windows)
 - **OS**: Windows 10/11 (64-bit)

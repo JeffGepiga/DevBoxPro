@@ -13,6 +13,10 @@ Maintaining an old PHP 7.4 project while building a new Laravel 11 app on PHP 8.
 
 DevBox Pro is an Electron desktop app with a React renderer and a Node.js main process. It manages PHP, Node.js, MySQL, MariaDB, Redis, Nginx, Apache, PostgreSQL, MongoDB, MinIO, Memcached, Mailpit, phpMyAdmin, Composer, Git, and more from one local interface.
 
+> **Version 1.0.6:** This release focuses on **web server hardening** and the new **Share on Internet** option powered by **Cloudflare Tunnel** and **zrok**.
+>
+> **Important:** DevBox Pro is built for local development, testing, demos, and temporary preview links. It is **not** intended for production hosting or production traffic.
+
 ---
 
 ## ✨ Features
@@ -74,6 +78,7 @@ DevBox Pro is an Electron desktop app with a React renderer and a Node.js main p
 - Tunnel proxy rewrites redirects, cookies, and absolute local `.test` URLs so public sessions stay on the tunnel hostname
 - Cloudflare Quick Tunnels use random `*.trycloudflare.com` URLs
 - zrok requires a one-time app-wide enable token in **Binary Manager → Tools**
+- Built for previews and reviews, not for production deployment
 
 ### 🎯 Framework Support
 - **Laravel** - Full support with Artisan, Queue Workers, Scheduler
@@ -122,8 +127,8 @@ DevBox Pro is an Electron desktop app with a React renderer and a Node.js main p
 ### Installation
 
 1. **Download** the latest release for your platform:
-   - Windows: `DevBox-Pro-Setup-x.x.x.exe`
-   - macOS: `DevBox-Pro-x.x.x.dmg`
+  - Windows: `DevBox-Pro-Setup-1.0.6.exe`
+  - macOS: `DevBox-Pro-1.0.6.dmg`
 
 2. **Install** the application
 
@@ -149,6 +154,8 @@ DevBox Pro is an Electron desktop app with a React renderer and a Node.js main p
 5. Use the generated public URL to access the project from outside your local machine
 
 > **Provider notes:** Cloudflare uses disposable random public URLs on `trycloudflare.com`. zrok requires a one-time app-wide enable step before any project can use it.
+
+> **Production note:** Tunnel sharing is intended for temporary previews, QA, and stakeholder review. Do not use DevBox Pro as a production hosting platform.
 
 ### Using Terminal Commands
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Features — DevBox Pro</title>
-  <meta name="description" content="Explore all DevBox Pro features: multi-PHP versions, Node.js support, database management, SSL certificates, terminal commands, and more.">
+  <meta name="description" content="Explore all DevBox Pro features: multi-PHP versions, Node.js support, public tunnel sharing, database management, SSL certificates, terminal commands, and more.">
   <link rel="icon" href="images/logo.png" type="image/png">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -45,6 +45,15 @@
       <p class="subtitle animate-in">
         Everything you need to build, test, and run web applications — bundled in one desktop app.
       </p>
+    </div>
+  </section>
+
+  <section class="section" style="padding-top:0; padding-bottom:var(--space-2xl);">
+    <div class="container" style="max-width:900px;">
+      <div class="callout callout-warning animate-in" style="margin:0 auto;">
+        <span class="callout-icon">⚠️</span>
+        <p><strong>Important:</strong> DevBox Pro includes internet tunneling for previews and testing, but the app is <strong>not meant for production use</strong>.</p>
+      </div>
     </div>
   </section>
 
@@ -172,8 +181,34 @@
     </div>
   </section>
 
-  <!-- ============ Terminal & CLI ============ -->
+  <!-- ============ Public Internet Sharing ============ -->
   <section class="section section-alt">
+    <div class="container">
+      <div class="feature-row reverse animate-in">
+        <div class="feature-content">
+          <h3>🌍 Public Internet Sharing</h3>
+          <p>
+            Need to show a local project to a client, teammate, or QA device outside your Wi-Fi network? DevBox Pro 1.0.6 adds per-project public tunnels with <strong>Cloudflare Tunnel</strong> and <strong>zrok</strong>, so you can expose a running local site without a manual deployment.
+          </p>
+          <ul>
+            <li>Per-project <strong>Share on Internet</strong> toggle in Project Details</li>
+            <li>Choose <strong>Cloudflare Tunnel</strong> or <strong>zrok</strong> as the provider</li>
+            <li>Optional <strong>Auto-start tunnel</strong> when the project starts</li>
+            <li>Works with both Nginx and Apache projects, including proxied setups</li>
+            <li>Cloudflare uses random <code>trycloudflare.com</code> URLs</li>
+            <li>zrok requires a one-time app-wide enable step in Binary Manager</li>
+          </ul>
+        </div>
+        <div class="screenshot-wrap">
+          <img src="images/pic-2.png" alt="DevBox Pro project view with project controls and sharing options">
+          <div class="screenshot-caption">Share a running project publicly without deploying it</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Terminal & CLI ============ -->
+  <section class="section">
     <div class="container">
       <div class="section-header animate-in">
         <h2>💻 Terminal Commands</h2>
@@ -244,8 +279,8 @@ mysqldump -u root mydb > backup.sql
         </div>
         <div class="card">
           <div class="card-icon">🌐</div>
-          <h3>Network Sharing</h3>
-          <p>Share projects across your local network with a simple toggle. Great for testing on mobile devices or showing work to teammates.</p>
+          <h3>Local Network Sharing</h3>
+          <p>Share projects across your local network with a simple toggle. Great for testing on mobile devices or showing work to teammates on the same Wi-Fi.</p>
         </div>
         <div class="card">
           <div class="card-icon">🔗</div>
