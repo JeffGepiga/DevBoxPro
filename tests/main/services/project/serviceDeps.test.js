@@ -89,6 +89,27 @@ describe('project/serviceDeps', () => {
     );
   });
 
+  it('stops a competing pending web server immediately when a different front-door server starts', async () => {
+    const timer = setTimeout(() => {}, 15000);
+    const ctx = makeContext({
+      isServiceNeededByRunningProjects: vi.fn(() => false),
+    });
+    ctx.pendingServiceStops.set('nginx:1.28', {
+      timer,
+      service: { name: 'nginx', version: '1.28' },
+    });
+
+    const result = await ctx.stopPendingCompetingWebServer('project-3', 'apache');
+
+    expect(result).toBe(true);
+    expect(ctx.pendingServiceStops.has('nginx:1.28')).toBe(false);
+    expect(ctx.managers.service.stopService).toHaveBeenCalledWith('nginx', '1.28');
+    expect(ctx.managers.log.project).toHaveBeenCalledWith(
+      'project-3',
+      'Stopping nginx:1.28 immediately so apache can reclaim the front-door ports'
+    );
+  });
+
   it('treats projects that are still starting as active service consumers', () => {
     const project = {
       id: 'project-starting',

@@ -557,35 +557,22 @@ describe('ServiceManager', () => {
     });
 
     describe('front-door vhost regeneration', () => {
-        it('regenerates nginx vhosts before start so running apache projects get proxy entries', async () => {
-            const childProcess = require('child_process');
-            mgr.startNginx.mockRestore();
-            mgr.getNginxPath = vi.fn(() => '/resources/nginx/1.28/win');
-            vi.spyOn(mgr, 'checkPortOpen').mockResolvedValue(true);
-            vi.spyOn(childProcess, 'execSync').mockReturnValue('Syntax OK');
-
+        it('routes nginx regeneration through the project manager hook', async () => {
             managers.project.runningProjects = new Map([
                 ['apache-project', { startedAt: new Date() }],
             ]);
-            mgr.serviceStatus.set('apache', { status: 'stopped' });
 
-            await mgr.startNginx('1.28');
+            await mgr.regenerateWebServerVhosts('nginx', '1.28');
 
             expect(managers.project.regenerateAllNginxVhosts).toHaveBeenCalledWith(null, '1.28');
         });
 
-        it('regenerates apache vhosts before start so running nginx projects get proxy entries', async () => {
-            const childProcess = require('child_process');
-            mgr.getApachePath = vi.fn(() => '/resources/apache/2.4/win');
-            vi.spyOn(mgr, 'waitForService').mockResolvedValue();
-            vi.spyOn(childProcess, 'execSync').mockReturnValue('Syntax OK');
-
+        it('routes apache regeneration through the project manager hook', async () => {
             managers.project.runningProjects = new Map([
                 ['nginx-project', { startedAt: new Date() }],
             ]);
-            mgr.serviceStatus.set('nginx', { status: 'stopped' });
 
-            await mgr.startApache('2.4');
+            await mgr.regenerateWebServerVhosts('apache', '2.4');
 
             expect(managers.project.regenerateAllApacheVhosts).toHaveBeenCalledWith(null, '2.4');
         });

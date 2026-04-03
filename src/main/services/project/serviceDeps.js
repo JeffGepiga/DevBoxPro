@@ -36,6 +36,40 @@ module.exports = {
     return true;
   },
 
+  async stopPendingCompetingWebServer(projectId, targetWebServer) {
+    if (targetWebServer !== 'nginx' && targetWebServer !== 'apache') {
+      return false;
+    }
+
+    const competingWebServer = targetWebServer === 'nginx' ? 'apache' : 'nginx';
+    const pendingStops = Array.from(this.pendingServiceStops.values())
+      .filter((pendingStop) => pendingStop?.service?.name === competingWebServer);
+
+    if (pendingStops.length === 0) {
+      return false;
+    }
+
+    let stopped = false;
+    for (const pendingStop of pendingStops) {
+      const service = pendingStop.service;
+      if (!service || this.isServiceNeededByRunningProjects(service)) {
+        continue;
+      }
+
+      clearTimeout(pendingStop.timer);
+      this.pendingServiceStops.delete(this.getServiceDependencyKey(service));
+
+      this.managers.log?.project(
+        projectId,
+        `Stopping ${service.name}${service.version ? ':' + service.version : ''} immediately so ${targetWebServer} can reclaim the front-door ports`
+      );
+      await this.managers.service?.stopService(service.name, service.version);
+      stopped = true;
+    }
+
+    return stopped;
+  },
+
   scheduleServiceStop(projectId, service) {
     const serviceKey = this.getServiceDependencyKey(service);
     this.cancelPendingServiceStop(service);

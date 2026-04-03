@@ -444,11 +444,13 @@ module.exports = {
     await new Promise(resolve => setTimeout(resolve, 500));
 
     if (releasedStandardPorts) {
+      const standardHttpPort = this.webServerPorts?.standard?.http || 80;
+      const standardHttpsPort = this.webServerPorts?.standard?.https || 443;
       const startTime = Date.now();
-      const timeoutMs = 3000;
+      const timeoutMs = 8000;
       while (Date.now() - startTime < timeoutMs) {
-        const httpAvailable = await isPortAvailable(80);
-        const httpsAvailable = await isPortAvailable(443);
+        const httpAvailable = await isPortAvailable(standardHttpPort);
+        const httpsAvailable = await isPortAvailable(standardHttpsPort);
         if (httpAvailable && httpsAvailable) {
           break;
         }

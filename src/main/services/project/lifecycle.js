@@ -36,6 +36,9 @@ module.exports = {
       this.cancelPendingServiceStop(service);
     }
 
+    const targetWebServer = project.webServer || 'nginx';
+    await this.stopPendingCompetingWebServer(id, targetWebServer);
+
     if (this.runningProjects.has(id)) {
       this.managers.log?.project(id, `Project ${project.name} is already running`);
       return { success: true, alreadyRunning: true };
@@ -70,7 +73,7 @@ module.exports = {
     let frontDoorProxyHandledByVirtualHostReload = false;
 
     try {
-      const webServer = project.webServer || 'nginx';
+      const webServer = targetWebServer;
       const webServerVersion = this.getEffectiveWebServerVersion(project, webServer);
       const webServerPorts = this.managers.service?.getServicePorts(webServer, webServerVersion);
       const httpPort = webServerPorts?.httpPort || 80;
@@ -558,8 +561,6 @@ module.exports = {
     const otherRunningProjects = Array.from(activeProjectIds)
       .map((id) => this.getProject(id))
       .filter(Boolean);
-    const stopImmediately = otherRunningProjects.length === 0;
-
     const servicesToStop = [];
     for (const service of projectServices) {
       const isNeededByOther = otherRunningProjects.some((otherProject) => {
@@ -579,15 +580,9 @@ module.exports = {
     for (const service of servicesToStop) {
       try {
         const serviceLabel = `${service.name}${service.version ? ':' + service.version : ''}`;
-        if (stopImmediately) {
-          this.managers.log?.project(project.id, `Stopping ${serviceLabel} immediately because no projects are running...`);
-          await serviceManager.stopService(service.name, service.version);
-          results.stopped.push(serviceLabel);
-        } else {
-          this.managers.log?.project(project.id, `Scheduling ${serviceLabel} to stop if it remains unused...`);
-          this.scheduleServiceStop(project.id, service);
-          results.scheduled.push(serviceLabel);
-        }
+        this.managers.log?.project(project.id, `Scheduling ${serviceLabel} to stop if it remains unused...`);
+        this.scheduleServiceStop(project.id, service);
+        results.scheduled.push(serviceLabel);
       } catch (error) {
         this.managers.log?.project(project.id, `Failed to stop ${service.name}: ${error.message}`, 'error');
         results.failed.push({ service: service.name, error: error.message });
@@ -714,14 +709,16 @@ module.exports = {
 
         if ((service.name === 'nginx' || service.name === 'apache') && status && status.status === 'running' && !needsDifferentVersion) {
           const ports = serviceManager.getServicePorts(service.name, requestedVersion);
-          const isOnAlternatePorts = ports?.httpPort !== 80 && ports?.httpPort !== 443;
+          const standardHttpPort = serviceManager.webServerPorts?.standard?.http || 80;
+          const standardHttpsPort = serviceManager.webServerPorts?.standard?.https || 443;
+          const isOnAlternatePorts = ports?.httpPort !== standardHttpPort || ports?.sslPort !== standardHttpsPort;
 
           if (isOnAlternatePorts && serviceManager.standardPortOwner === null) {
-            const port80Free = await isPortAvailable(80);
-            const port443Free = await isPortAvailable(443);
+            const standardHttpFree = await isPortAvailable(standardHttpPort);
+            const standardHttpsFree = await isPortAvailable(standardHttpsPort);
 
-            if (port80Free && port443Free) {
-              this.managers.log?.project(project.id, `${service.name} is on alternate ports (${ports?.httpPort}/${ports?.sslPort}) but port 80/443 are now free. Restarting to reclaim standard ports.`);
+            if (standardHttpFree && standardHttpsFree) {
+              this.managers.log?.project(project.id, `${service.name} is on alternate ports (${ports?.httpPort}/${ports?.sslPort}) but standard ports ${standardHttpPort}/${standardHttpsPort} are now free. Restarting to reclaim them.`);
               try {
                 await serviceManager.restartService(service.name, requestedVersion);
                 results.started.push(`${service.name}:${requestedVersion}`);
@@ -730,7 +727,7 @@ module.exports = {
                 this.managers.log?.systemWarn(`Failed to reclaim standard ports for ${service.name}`, { error: reclaimError.message });
               }
             } else {
-              this.managers.log?.project(project.id, `${service.name} is on alternate ports (${ports?.httpPort}/${ports?.sslPort}), port 80/443 still unavailable`);
+              this.managers.log?.project(project.id, `${service.name} is on alternate ports (${ports?.httpPort}/${ports?.sslPort}), standard ports ${standardHttpPort}/${standardHttpsPort} are still unavailable`);
             }
           }
         }

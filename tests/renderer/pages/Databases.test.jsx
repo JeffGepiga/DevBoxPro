@@ -181,7 +181,7 @@ describe('Databases', () => {
 
         await waitFor(() => {
             expect(screen.getByText('Running')).toBeInTheDocument();
-            expect(screen.getByText('Port: 3307')).toBeInTheDocument();
+            expect(screen.getByText(/Port:\s*3307/)).toBeInTheDocument();
         });
         expect(screen.queryByText(/is not running/i)).not.toBeInTheDocument();
     });
