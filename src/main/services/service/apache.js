@@ -114,6 +114,23 @@ module.exports = {
     }
 
     if (canUseStandard) {
+      const standardPortsAvailable = await waitForPortsAvailable(standardHttp, standardHttps, 1500);
+      if (!standardPortsAvailable) {
+        if (this.standardPortOwner === 'apache') {
+          this.standardPortOwner = null;
+          this.standardPortOwnerVersion = null;
+        }
+
+        canUseStandard = false;
+        this.managers.log?.systemWarn('Apache could not reclaim the standard front-door ports during startup; falling back to alternate ports', {
+          version,
+          httpPort: standardHttp,
+          httpsPort: standardHttps,
+        });
+      }
+    }
+
+    if (canUseStandard) {
       httpPort = standardHttp;
       httpsPort = standardHttps;
     } else {
@@ -229,6 +246,7 @@ module.exports = {
 
         if (this.standardPortOwner === 'apache') {
           this.standardPortOwner = null;
+          this.standardPortOwnerVersion = null;
         }
 
         this.serviceConfigs.apache.actualHttpPort = httpPort;

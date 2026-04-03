@@ -64,6 +64,15 @@ vi.mock('../../../src/main/utils/PortUtils', () => ({
     findAvailablePort: vi.fn().mockResolvedValue(9999)
 }));
 
+vi.mock('../../../src/main/utils/SpawnUtils', () => ({
+    spawnSyncSafe: vi.fn(() => ({ status: 0, stdout: '', stderr: '' })),
+    killProcessesByPath: vi.fn().mockResolvedValue(),
+    isProcessRunning: vi.fn().mockReturnValue(false),
+    waitForProcessesByPathExit: vi.fn().mockResolvedValue(),
+    killProcessByName: vi.fn().mockResolvedValue(),
+    killProcessByPid: vi.fn().mockResolvedValue(),
+}));
+
 require('../../helpers/mockElectronCjs');
 const { ServiceManager } = require('../../../src/main/services/ServiceManager');
 
@@ -577,4 +586,5 @@ describe('ServiceManager', () => {
             expect(managers.project.regenerateAllApacheVhosts).toHaveBeenCalledWith(null, '2.4');
         });
     });
+
 });

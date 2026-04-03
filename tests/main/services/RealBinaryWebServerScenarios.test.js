@@ -841,6 +841,78 @@ describeIfBaseBinariesInstalled('Real Binary Web Server Scenarios', () => {
         }
     }, 240000);
 
+    it('keeps the second mixed web-server project portless after restarting both projects in the same order', async () => {
+        const portPlan = await findFreePortPlan();
+        const scenarioId = await prepareScenarioPaths();
+        let testPassed = false;
+
+        const nginxProject = createCustomProject(scenarioId, {
+            id: 'nginx-same-order-restart-project',
+            name: 'NginxSameOrderRestart',
+            webServer: 'nginx',
+            webServerVersion: '1.28',
+            domain: 'nginx-same-order-restart.test',
+            port: portPlan.nginxAltHttp,
+        });
+        const apacheProject = createCustomProject(scenarioId, {
+            id: 'apache-same-order-restart-project',
+            name: 'ApacheSameOrderRestart',
+            webServer: 'apache',
+            webServerVersion: '2.4',
+            domain: 'apache-same-order-restart.test',
+            port: portPlan.apacheAltHttp,
+        });
+
+        const allProjects = [nginxProject, apacheProject];
+        for (const project of allProjects) {
+            await createStaticProject(project.path, project);
+        }
+
+        const { serviceManager, projectManager } = await createScenario(allProjects);
+        applyWebServerPorts(serviceManager, portPlan);
+
+        try {
+            await projectManager.startProject(nginxProject.id);
+            await projectManager.startProject(apacheProject.id);
+
+            let frontDoor = getFrontDoorInfo(serviceManager);
+            expect(frontDoor).toBeTruthy();
+            expect(frontDoor.httpPort).toBe(portPlan.standardHttp);
+            await waitForResponse(frontDoor.httpPort, nginxProject.domain, nginxProject.name);
+            await waitForResponse(frontDoor.httpPort, apacheProject.domain, apacheProject.name);
+
+            await Promise.all([
+                projectManager.stopProject(nginxProject.id),
+                projectManager.stopProject(apacheProject.id),
+            ]);
+
+            await projectManager.startProject(nginxProject.id);
+            await projectManager.startProject(apacheProject.id);
+
+            frontDoor = getFrontDoorInfo(serviceManager);
+            expect(frontDoor).toBeTruthy();
+            expect(frontDoor.httpPort).toBe(portPlan.standardHttp);
+            await waitForResponse(frontDoor.httpPort, nginxProject.domain, nginxProject.name);
+            await waitForResponse(frontDoor.httpPort, apacheProject.domain, apacheProject.name);
+            await waitForResponse(serviceManager.getServicePorts('apache', '2.4').httpPort, apacheProject.domain, apacheProject.name);
+            testPassed = true;
+        } catch (error) {
+            await dumpScenarioDiagnostics('same-order-mixed-project-restart-failure', activeScenario, {
+                error: error.message,
+                nginxProjectId: nginxProject.id,
+                apacheProjectId: apacheProject.id,
+            });
+            throw error;
+        } finally {
+            if (!testPassed && process.env.DEVBOX_KEEP_REAL_BINARY_ARTIFACTS === '1') {
+                return;
+            }
+            for (const project of [apacheProject, nginxProject]) {
+                await stopProjectIfRunning(projectManager, project.id);
+            }
+        }
+    }, 240000);
+
     it('keeps front-door domains portless after manually stopping and starting nginx and apache services', async () => {
         const portPlan = await findFreePortPlan();
         const scenarioId = await prepareScenarioPaths();

@@ -113,6 +113,23 @@ module.exports = {
     }
 
     if (canUseStandard) {
+      const standardPortsAvailable = await waitForPortsAvailable(standardHttp, standardHttps, 1500);
+      if (!standardPortsAvailable) {
+        if (this.standardPortOwner === 'nginx' && this.standardPortOwnerVersion === version) {
+          this.standardPortOwner = null;
+          this.standardPortOwnerVersion = null;
+        }
+
+        canUseStandard = false;
+        this.managers.log?.systemWarn('Nginx could not reclaim the standard front-door ports during startup; falling back to alternate ports', {
+          version,
+          httpPort: standardHttp,
+          sslPort: standardHttps,
+        });
+      }
+    }
+
+    if (canUseStandard) {
       httpPort = standardHttp;
       sslPort = standardHttps;
     } else {
