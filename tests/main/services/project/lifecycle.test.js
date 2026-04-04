@@ -59,6 +59,8 @@ function makeContext(overrides = {}) {
     startingProjects: new Set(),
     pendingProjectStops: new Map(),
     cancelPendingServiceStop: vi.fn(),
+    releaseUnusedFrontDoorOwner: vi.fn().mockResolvedValue(false),
+    shouldKeepServiceWarm: vi.fn((service) => ['nginx', 'apache', 'mysql', 'mariadb'].includes(service?.name)),
     getProject: vi.fn(),
     getProjectServiceDependencies: vi.fn(() => []),
     getEffectiveWebServerVersion: vi.fn((project, webServer) => project.webServerVersion || (webServer === 'apache' ? '2.4' : '1.28')),
@@ -635,7 +637,7 @@ describe('project/lifecycle', () => {
     expect(ctx.scheduleServiceStop).toHaveBeenCalledWith('proj-stop-services', { name: 'nginx', version: '1.28' });
   });
 
-  it('stops unused services immediately when the last active project stops', async () => {
+  it('keeps restart-sensitive services warm when the last active project stops', async () => {
     const stoppingProject = {
       id: 'proj-last-stop',
       name: 'Last Stop',
@@ -681,11 +683,11 @@ describe('project/lifecycle', () => {
 
     const result = await ctx.stopProjectServices(stoppingProject);
 
-    expect(result.stopped).toEqual(['apache:2.4', 'mysql:8.4']);
-    expect(result.scheduled).toEqual([]);
-    expect(stopService).toHaveBeenCalledTimes(2);
-    expect(stopService).toHaveBeenNthCalledWith(1, 'apache', '2.4');
-    expect(stopService).toHaveBeenNthCalledWith(2, 'mysql', '8.4');
-    expect(ctx.scheduleServiceStop).not.toHaveBeenCalled();
+    expect(result.stopped).toEqual([]);
+    expect(result.scheduled).toEqual(['apache:2.4', 'mysql:8.4']);
+    expect(stopService).not.toHaveBeenCalled();
+    expect(ctx.scheduleServiceStop).toHaveBeenCalledTimes(2);
+    expect(ctx.scheduleServiceStop).toHaveBeenNthCalledWith(1, 'proj-last-stop', { name: 'apache', version: '2.4' });
+    expect(ctx.scheduleServiceStop).toHaveBeenNthCalledWith(2, 'proj-last-stop', { name: 'mysql', version: '8.4' });
   });
 });

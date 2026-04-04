@@ -558,7 +558,6 @@ module.exports = {
     const otherRunningProjects = Array.from(activeProjectIds)
       .map((id) => this.getProject(id))
       .filter(Boolean);
-    const stopImmediately = otherRunningProjects.length === 0;
 
     const servicesToStop = [];
     for (const service of projectServices) {
@@ -575,11 +574,12 @@ module.exports = {
       }
     }
 
+    const stopImmediately = otherRunningProjects.length === 0;
     const results = { success: true, scheduled: [], stopped: [], failed: [] };
     for (const service of servicesToStop) {
       try {
         const serviceLabel = `${service.name}${service.version ? ':' + service.version : ''}`;
-        if (stopImmediately) {
+        if (stopImmediately && !this.shouldKeepServiceWarm(service)) {
           this.managers.log?.project(project.id, `Stopping ${serviceLabel} immediately because no projects are running...`);
           await serviceManager.stopService(service.name, service.version);
           results.stopped.push(serviceLabel);
@@ -711,6 +711,17 @@ module.exports = {
         const versionRunning = isVersioned && requestedVersion
           ? serviceManager.isVersionRunning(service.name, requestedVersion)
           : false;
+        const versionAlreadyActive = isVersioned && requestedVersion
+          ? versionRunning || (status?.status === 'running' && runningVersion === requestedVersion)
+          : status?.status === 'running';
+
+        if (service.name === 'nginx' || service.name === 'apache') {
+          await this.releaseUnusedFrontDoorOwner({
+            name: service.name,
+            version: requestedVersion,
+            projectId: project.id,
+          });
+        }
 
         if ((service.name === 'nginx' || service.name === 'apache') && status && status.status === 'running' && !needsDifferentVersion) {
           const ports = serviceManager.getServicePorts(service.name, requestedVersion);
@@ -736,13 +747,13 @@ module.exports = {
         }
 
         if (isVersioned && requestedVersion) {
-          if (versionRunning) {
+          if (versionAlreadyActive) {
             results.started.push(`${service.name}:${requestedVersion}`);
             continue;
           }
         }
 
-        if (needsStart || (isVersioned && !serviceManager.isVersionRunning(service.name, requestedVersion))) {
+        if (needsStart || (isVersioned && requestedVersion && !versionAlreadyActive) || needsDifferentVersion) {
           const result = await serviceManager.startService(service.name, requestedVersion);
 
           if (result.status === 'not_installed') {

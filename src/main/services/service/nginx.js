@@ -293,6 +293,43 @@ module.exports = {
       throw new Error(`Nginx configuration error: ${testResult.error}`);
     }
 
+    const handleTrackedProcessExit = () => {
+      void (async () => {
+        const versionInfo = this.runningVersions.get('nginx')?.get(version);
+        const expectedHttpPort = versionInfo?.port || httpPort;
+        const versionStillServing = expectedHttpPort ? await this.checkPortOpen(expectedHttpPort) : false;
+        if (versionStillServing) {
+          this.processes.delete(this.getProcessKey('nginx', version));
+          return;
+        }
+
+        this.processes.delete(this.getProcessKey('nginx', version));
+        this.runningVersions.get('nginx')?.delete(version);
+
+        if (this.standardPortOwner === 'nginx' && this.standardPortOwnerVersion === version) {
+          this.standardPortOwner = null;
+          this.standardPortOwnerVersion = null;
+        }
+
+        const status = this.serviceStatus.get('nginx');
+        const remainingVersions = this.runningVersions.get('nginx');
+        const firstRemaining = remainingVersions?.entries().next().value;
+
+        if (firstRemaining) {
+          status.status = 'running';
+          status.version = firstRemaining[0];
+          status.port = firstRemaining[1].port;
+          status.sslPort = firstRemaining[1].sslPort;
+          return;
+        }
+
+        if (status.version === version || status.status === 'running') {
+          status.status = 'stopped';
+          status.pid = null;
+        }
+      })();
+    };
+
     let proc;
     if (process.platform === 'win32') {
       proc = spawnHidden(nginxExe, ['-c', confPath, '-p', nginxPath], {
@@ -315,13 +352,7 @@ module.exports = {
         status.error = error.message;
       });
 
-      proc.on('exit', (code) => {
-        const status = this.serviceStatus.get('nginx');
-        if (status.status === 'running') {
-          status.status = 'stopped';
-          this.runningVersions.get('nginx')?.delete(version);
-        }
-      });
+      proc.on('exit', handleTrackedProcessExit);
     } else {
       proc = spawn(nginxExe, ['-c', confPath, '-p', nginxPath], {
         cwd: nginxPath,
@@ -344,13 +375,7 @@ module.exports = {
         status.error = error.message;
       });
 
-      proc.on('exit', (code) => {
-        const status = this.serviceStatus.get('nginx');
-        if (status.status === 'running') {
-          status.status = 'stopped';
-          this.runningVersions.get('nginx')?.delete(version);
-        }
-      });
+      proc.on('exit', handleTrackedProcessExit);
     }
 
     this.processes.set(this.getProcessKey('nginx', version), proc);
@@ -360,16 +385,6 @@ module.exports = {
     status.version = version;
 
     this.runningVersions.get('nginx').set(version, { port: httpPort, sslPort, startedAt: new Date() });
-
-    // Overwrite the PID file with our tracked process PID on Windows
-    if (process.platform === 'win32' && proc.pid) {
-      const pidPath = path.join(versionDataPath, 'nginx.pid');
-      try {
-        await fs.writeFile(pidPath, String(proc.pid));
-      } catch (e) {
-        this.managers.log?.systemWarn(`Could not update nginx PID file after start: ${e.message}`);
-      }
-    }
 
     // Wait for this specific nginx version to be ready on its port
     try {
@@ -451,26 +466,9 @@ module.exports = {
     }
 
     const status = this.serviceStatus.get('nginx');
-    if (status?.status !== 'running') {
+    const versionRunning = this.runningVersions.get('nginx')?.has(version);
+    if (!versionRunning && (status?.status !== 'running' || status?.version !== version)) {
       return;
-    }
-
-    // On Windows, ensure the PID file has our tracked process PID before sending reload signal
-    if (process.platform === 'win32') {
-      const processKey = this.getProcessKey('nginx', version);
-      const trackedProcess = this.processes.get(processKey);
-      if (trackedProcess && trackedProcess.pid) {
-        const pidPath = path.join(dataPath, 'nginx', version, 'nginx.pid');
-        try {
-          const currentPid = await fs.readFile(pidPath, 'utf8').catch(() => '');
-          if (currentPid.trim() !== String(trackedProcess.pid)) {
-            this.managers.log?.systemInfo(`Updating nginx ${version} PID file: ${currentPid.trim()} → ${trackedProcess.pid}`);
-            await fs.writeFile(pidPath, String(trackedProcess.pid));
-          }
-        } catch (e) {
-          this.managers.log?.systemWarn(`Could not update nginx PID file: ${e.message}`);
-        }
-      }
     }
 
     const testResult = await this.testNginxConfig(version);

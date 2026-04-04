@@ -62,6 +62,15 @@ describe('project/serviceDeps', () => {
     expect(ctx.pendingServiceStops.has('redis:7.4')).toBe(false);
   });
 
+  it('clears every pending service stop timer', () => {
+    const ctx = makeContext();
+    ctx.pendingServiceStops.set('nginx:1.28', { timer: setTimeout(() => {}, 1000), service: { name: 'nginx', version: '1.28' } });
+    ctx.pendingServiceStops.set('mysql:8.4', { timer: setTimeout(() => {}, 1000), service: { name: 'mysql', version: '8.4' } });
+
+    expect(ctx.clearPendingServiceStops()).toBe(2);
+    expect(ctx.pendingServiceStops.size).toBe(0);
+  });
+
   it('stops a service after the grace period when no project still needs it', async () => {
     const ctx = makeContext({
       isServiceNeededByRunningProjects: vi.fn(() => false),
@@ -108,7 +117,7 @@ describe('project/serviceDeps', () => {
     expect(ctx.isServiceNeededByRunningProjects({ name: 'mysql', version: '8.4' })).toBe(true);
   });
 
-  it('stops services immediately when no projects remain active', async () => {
+  it('keeps restart-sensitive services warm when no projects remain active', async () => {
     const stopService = vi.fn().mockResolvedValue(undefined);
     const ctx = makeContext({
       managers: {
@@ -132,11 +141,11 @@ describe('project/serviceDeps', () => {
       const otherRunningProjects = Array.from(activeProjectIds)
         .map((id) => ctx.getProject(id))
         .filter(Boolean);
-      const stopImmediately = otherRunningProjects.length === 0;
       const servicesToStop = projectServices;
       const results = { success: true, scheduled: [], stopped: [], failed: [] };
 
       for (const service of servicesToStop) {
+        const stopImmediately = otherRunningProjects.length === 0 && !ctx.shouldKeepServiceWarm(service);
         if (stopImmediately) {
           await ctx.managers.service.stopService(service.name, service.version);
           results.stopped.push(`${service.name}${service.version ? ':' + service.version : ''}`);
@@ -156,10 +165,8 @@ describe('project/serviceDeps', () => {
       services: { mysql: true, mysqlVersion: '8.4' },
     });
 
-    expect(result.stopped).toEqual(['apache:2.4', 'mysql:8.4']);
-    expect(result.scheduled).toEqual([]);
-    expect(stopService).toHaveBeenCalledTimes(2);
-    expect(stopService).toHaveBeenNthCalledWith(1, 'apache', '2.4');
-    expect(stopService).toHaveBeenNthCalledWith(2, 'mysql', '8.4');
+    expect(result.stopped).toEqual([]);
+    expect(result.scheduled).toEqual(['apache:2.4', 'mysql:8.4']);
+    expect(stopService).not.toHaveBeenCalled();
   });
 });

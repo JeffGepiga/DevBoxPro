@@ -643,6 +643,7 @@ module.exports = {
     if (this.managers.project) {
       try {
         await this.managers.project.stopAllProjects();
+        this.managers.project.clearPendingServiceStops?.();
       } catch (error) {
         this.managers.log?.systemError('Error stopping projects', { error: error.message });
       }
