@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
 import { EventEmitter } from 'events';
 import * as childProcess from 'child_process';
+import * as portUtils from '../../../src/main/utils/PortUtils';
 
 vi.mock('child_process', () => {
     const stdout = { on: vi.fn() };
@@ -61,7 +62,8 @@ vi.mock('fs-extra', () => ({
 
 vi.mock('../../../src/main/utils/PortUtils', () => ({
     isPortAvailable: vi.fn().mockResolvedValue(true),
-    findAvailablePort: vi.fn().mockResolvedValue(9999)
+    findAvailablePort: vi.fn().mockResolvedValue(9999),
+    getProcessOnPort: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../../../src/main/utils/SpawnUtils', () => ({
@@ -71,6 +73,7 @@ vi.mock('../../../src/main/utils/SpawnUtils', () => ({
     waitForProcessesByPathExit: vi.fn().mockResolvedValue(),
     killProcessByName: vi.fn().mockResolvedValue(),
     killProcessByPid: vi.fn().mockResolvedValue(),
+    getProcessPidsByPath: vi.fn().mockReturnValue([]),
 }));
 
 require('../../helpers/mockElectronCjs');
@@ -95,6 +98,11 @@ describe('ServiceManager', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.spyOn(fs, 'pathExists').mockResolvedValue(true);
+        portUtils.isPortAvailable.mockResolvedValue(true);
+        portUtils.findAvailablePort.mockResolvedValue(9999);
+        portUtils.getProcessOnPort.mockResolvedValue(null);
+        vi.spyOn(require('../../../src/main/utils/SpawnUtils'), 'getProcessDetailsByPid').mockResolvedValue(null);
         configStore = makeConfigStore();
 
         // Mock sub-managers that ServiceManager needs
@@ -133,6 +141,10 @@ describe('ServiceManager', () => {
         vi.spyOn(mgr, 'startNginx').mockResolvedValue(true);
         vi.spyOn(mgr, 'startMailpit').mockResolvedValue(true);
         vi.spyOn(mgr, 'startPhpMyAdmin').mockResolvedValue(true);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
     });
 
     // ═══════════════════════════════════════════════════════════════════
@@ -259,6 +271,93 @@ describe('ServiceManager', () => {
             });
 
             expect(mgr.startMariaDB).not.toHaveBeenCalled();
+        });
+
+        it('adopts an already-running MariaDB 11.4 listener when the child handle was lost', async () => {
+            mgr.startMariaDB.mockRestore();
+            vi.spyOn(fs, 'pathExists').mockResolvedValue(true);
+            portUtils.isPortAvailable.mockResolvedValueOnce(false);
+            portUtils.getProcessOnPort.mockResolvedValue({ pid: 6140, address: '127.0.0.1:3310' });
+            vi.spyOn(mgr, 'checkPortOpen').mockResolvedValue(true);
+            vi.spyOn(mgr, 'ensureWindowsRuntimeDlls').mockResolvedValue();
+
+            vi.spyOn(require('../../../src/main/utils/SpawnUtils'), 'getProcessDetailsByPid').mockResolvedValue({
+                pid: 6140,
+                name: 'mariadbd.exe',
+                executablePath: path.join(mgr.getMariaDBPath('11.4'), 'bin', 'mariadbd.exe'),
+                commandLine: `${path.join(mgr.getMariaDBPath('11.4'), 'bin', 'mariadbd.exe')} --defaults-file=${path.join(mgr.getDataPath(), 'mariadb', '11.4', 'my.cnf')}`,
+            });
+
+            await mgr.startMariaDB('11.4');
+
+            expect(mgr.serviceStatus.get('mariadb')).toEqual(expect.objectContaining({
+                status: 'running',
+                version: '11.4',
+                port: 3310,
+            }));
+            expect(mgr.runningVersions.get('mariadb').get('11.4')).toEqual(expect.objectContaining({
+                port: 3310,
+            }));
+        });
+
+        it('clears tracked MariaDB state when the process exits before it becomes healthy', async () => {
+            mgr.startMariaDB.mockRestore();
+            vi.spyOn(fs, 'pathExists').mockResolvedValue(true);
+            portUtils.isPortAvailable.mockResolvedValueOnce(true);
+            vi.spyOn(mgr, 'ensureWindowsRuntimeDlls').mockResolvedValue();
+            vi.spyOn(mgr, 'createCredentialsInitFile').mockResolvedValue(null);
+            vi.spyOn(mgr, 'createMariaDBConfig').mockResolvedValue();
+            vi.spyOn(mgr, 'waitForService').mockImplementation(() => new Promise(() => {}));
+
+            const proc = new EventEmitter();
+            proc.pid = 4321;
+            proc.stdout = new EventEmitter();
+            proc.stderr = new EventEmitter();
+
+            childProcess.spawn.mockImplementationOnce(() => proc);
+
+            const startPromise = mgr.startMariaDB('11.4');
+            await Promise.resolve();
+            proc.emit('exit', 1, null);
+            await startPromise;
+
+            expect(mgr.processes.has('mariadb-11.4')).toBe(false);
+            expect(mgr.runningVersions.get('mariadb').has('11.4')).toBe(false);
+            expect(mgr.serviceStatus.get('mariadb')).toEqual(expect.objectContaining({
+                status: 'error',
+            }));
+        });
+
+        it('waits for MariaDB port release during a rapid stop-start race before spawning again', async () => {
+            mgr.startMariaDB.mockRestore();
+            vi.spyOn(fs, 'pathExists').mockResolvedValue(true);
+            portUtils.isPortAvailable
+                .mockResolvedValueOnce(false)
+                .mockResolvedValueOnce(true);
+            vi.spyOn(mgr, 'checkPortOpen').mockResolvedValue(false);
+            vi.spyOn(mgr, 'ensureWindowsRuntimeDlls').mockResolvedValue();
+            vi.spyOn(mgr, 'createCredentialsInitFile').mockResolvedValue(null);
+            vi.spyOn(mgr, 'createMariaDBConfig').mockResolvedValue();
+            vi.spyOn(mgr, 'waitForService').mockResolvedValue(true);
+
+            const proc = new EventEmitter();
+            proc.pid = 4321;
+            proc.stdout = new EventEmitter();
+            proc.stderr = new EventEmitter();
+
+            childProcess.spawn.mockImplementationOnce(() => proc);
+
+            await mgr.startMariaDB('11.4');
+
+            expect(mgr.processes.has('mariadb-11.4')).toBe(true);
+            expect(mgr.serviceStatus.get('mariadb')).toEqual(expect.objectContaining({
+                status: 'running',
+                version: '11.4',
+                port: 3310,
+            }));
+            expect(mgr.runningVersions.get('mariadb').get('11.4')).toEqual(expect.objectContaining({
+                port: 3310,
+            }));
         });
 
         it('quotes file paths in generated nginx config', async () => {
@@ -426,6 +525,41 @@ describe('ServiceManager', () => {
             expect(mockTreeKill).toHaveBeenCalled();
             expect(mockTreeKill.mock.calls[0][0]).toBe(9999); // PID
             expect(mgr.processes.has('mysql-8.4')).toBe(false);
+        });
+
+        it('waits for the MySQL port to be released before reporting stop complete', async () => {
+            vi.useFakeTimers();
+
+            mgr.processes.set('mysql-8.4', { pid: 9999 });
+            mgr.runningVersions.get('mysql').set('8.4', { port: 3306, startedAt: new Date() });
+            mgr.serviceStatus.set('mysql', {
+                name: 'MySQL',
+                status: 'running',
+                port: 3306,
+                pid: 9999,
+                startedAt: Date.now(),
+                version: '8.4',
+                versioned: true,
+            });
+
+            vi.mocked(portUtils.isPortAvailable)
+                .mockResolvedValueOnce(false)
+                .mockResolvedValueOnce(true);
+
+            let completed = false;
+            const stopPromise = mgr.stopService('mysql', '8.4').then(() => {
+                completed = true;
+            });
+
+            await Promise.resolve();
+            expect(completed).toBe(false);
+
+            await vi.advanceTimersByTimeAsync(700);
+            await stopPromise;
+
+            expect(mockTreeKill).toHaveBeenCalledWith(9999, 'SIGTERM', expect.any(Function));
+            expect(completed).toBe(true);
+            expect(mgr.serviceStatus.get('mysql').status).toBe('stopped');
         });
 
         it('does nothing if service is not running', async () => {

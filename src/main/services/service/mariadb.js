@@ -1,7 +1,74 @@
 const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
-const { isPortAvailable, findAvailablePort } = require('../../utils/PortUtils');
+const { isPortAvailable, findAvailablePort, getProcessOnPort } = require('../../utils/PortUtils');
+
+function spawnHidden(command, args, options = {}) {
+  if (process.platform === 'win32') {
+    return spawn(command, args, { ...options, windowsHide: true });
+  }
+
+  return spawn(command, args, { ...options, detached: true });
+}
+
+async function waitForMariaDbPortState(context, port, mariadbPath, timeoutMs = 8000) {
+  const expectedExecutablePath = path.join(mariadbPath, 'bin', process.platform === 'win32' ? 'mariadbd.exe' : 'mariadbd');
+  const expectedConfigPath = path.join(context.getDataPath(), 'mariadb', context.serviceStatus.get('mariadb')?.version || '11.4', 'my.cnf');
+
+  const getManagedOwner = async () => {
+    const owner = await getProcessOnPort(port);
+    if (!owner?.pid) {
+      return null;
+    }
+
+    if (process.platform !== 'win32') {
+      return owner;
+    }
+
+    const { getProcessDetailsByPid } = require('../../utils/SpawnUtils');
+    const details = await getProcessDetailsByPid(owner.pid);
+    if (!details) {
+      return null;
+    }
+
+    const normalizedExecutablePath = path.normalize(details.executablePath || '').toLowerCase();
+    const normalizedExpectedExecutablePath = path.normalize(expectedExecutablePath).toLowerCase();
+    const normalizedCommandLine = String(details.commandLine || '').toLowerCase();
+    const normalizedExpectedConfigPath = path.normalize(expectedConfigPath).toLowerCase();
+
+    if (normalizedExecutablePath === normalizedExpectedExecutablePath
+      && normalizedCommandLine.includes(`--defaults-file=${normalizedExpectedConfigPath}`)) {
+      return { pid: owner.pid, details };
+    }
+
+    return null;
+  };
+
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    if (await isPortAvailable(port)) {
+      return { state: 'available', ownerPid: null };
+    }
+
+    const managedOwner = await getManagedOwner();
+    if (managedOwner && await context.checkPortOpen(port)) {
+      return { state: 'managed-running', ownerPid: managedOwner.pid };
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  if (await isPortAvailable(port)) {
+    return { state: 'available', ownerPid: null };
+  }
+
+  const managedOwner = await getManagedOwner();
+  if (managedOwner && await context.checkPortOpen(port)) {
+    return { state: 'managed-running', ownerPid: managedOwner.pid };
+  }
+
+  return { state: 'busy', ownerPid: managedOwner?.pid || null };
+}
 
 module.exports = {
   // MariaDB
@@ -26,14 +93,45 @@ module.exports = {
 
     const dataPath = this.getDataPath();
     const dataDir = path.join(dataPath, 'mariadb', version, 'data');
+    const status = this.serviceStatus.get('mariadb');
 
     const defaultPort = this.getVersionPort('mariadb', version, this.serviceConfigs.mariadb.defaultPort);
     let port = defaultPort;
 
     if (!await isPortAvailable(port)) {
-      port = await findAvailablePort(defaultPort, 100);
-      if (!port) {
-        throw new Error(`Could not find available port for MariaDB starting from ${defaultPort}`);
+      let portState = await waitForMariaDbPortState(this, defaultPort, mariadbPath);
+
+      if (portState.state === 'managed-running') {
+        this.serviceConfigs.mariadb.actualPort = defaultPort;
+        this.runningVersions.get('mariadb').set(version, { port: defaultPort, startedAt: new Date() });
+        status.port = defaultPort;
+        status.version = version;
+        status.status = 'running';
+        status.startedAt = Date.now();
+        return;
+      }
+
+      if (portState.state === 'busy' && process.platform === 'win32' && portState.ownerPid) {
+        const { killProcessByPid } = require('../../utils/SpawnUtils');
+
+        await killProcessByPid(portState.ownerPid, true);
+
+        portState = await waitForMariaDbPortState(this, defaultPort, mariadbPath, 5000);
+        if (portState.state === 'managed-running') {
+          this.serviceConfigs.mariadb.actualPort = defaultPort;
+          this.runningVersions.get('mariadb').set(version, { port: defaultPort, startedAt: new Date() });
+          status.port = defaultPort;
+          status.version = version;
+          status.status = 'running';
+          status.startedAt = Date.now();
+          return;
+        }
+      }
+
+      if (portState.state === 'available') {
+        port = defaultPort;
+      } else {
+        throw new Error(`MariaDB ${version} cannot start because port ${defaultPort} is already in use.`);
       }
     }
 
@@ -50,10 +148,9 @@ module.exports = {
 
     await this.createMariaDBConfig(configPath, dataDir, port, version, initFile);
 
-    const proc = spawn(mariadbd, [`--defaults-file=${configPath}`], {
+    const proc = spawnHidden(mariadbd, [`--defaults-file=${configPath}`], {
+      cwd: mariadbPath,
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
-      windowsHide: true,
     });
 
     let startupStdout = '';
@@ -70,6 +167,8 @@ module.exports = {
     });
 
     proc.on('error', (error) => {
+      this.processes.delete(processKey);
+      this.runningVersions.get('mariadb')?.delete(version);
       this.managers.log?.systemError('MariaDB process error', { error: error.message });
       this.logServiceStartupFailure('MariaDB', version, {
         error: error.message, configPath, mariadbPath, dataDir,
@@ -82,35 +181,65 @@ module.exports = {
 
     proc.on('exit', (code) => {
       const status = this.serviceStatus.get('mariadb');
+      this.processes.delete(processKey);
       if (code !== 0 || (status.status !== 'running' && (startupStdout || startupStderr))) {
         this.logServiceStartupFailure('MariaDB', version, {
           code, configPath, mariadbPath, dataDir,
           stdout: startupStdout, stderr: startupStderr,
         });
       }
+      this.runningVersions.get('mariadb')?.delete(version);
       if (status.status === 'running') {
         status.status = 'stopped';
-        this.runningVersions.get('mariadb')?.delete(version);
       }
     });
 
     this.processes.set(processKey, proc);
-    const status = this.serviceStatus.get('mariadb');
     status.pid = proc.pid;
     status.port = port;
     status.version = version;
 
     this.runningVersions.get('mariadb').set(version, { port, startedAt: new Date() });
 
+    const startupFailurePromise = new Promise((_, reject) => {
+      proc.once('error', (error) => {
+        const currentStatus = this.serviceStatus.get('mariadb');
+        if (currentStatus?.status === 'running') {
+          return;
+        }
+
+        reject(error);
+      });
+
+      proc.once('exit', (code, signal) => {
+        const currentStatus = this.serviceStatus.get('mariadb');
+        if (currentStatus?.status === 'running') {
+          return;
+        }
+
+        const detail = [
+          startupStderr || startupStdout || null,
+          code !== null && code !== undefined ? `exit code ${code}` : null,
+          signal ? `signal ${signal}` : null,
+        ].filter(Boolean).join(' | ');
+
+        reject(new Error(detail ? `MariaDB exited before becoming ready: ${detail}` : 'MariaDB exited before becoming ready'));
+      });
+    });
+
     try {
-      await this.waitForService('mariadb', 30000);
+      await Promise.race([
+        this.waitForService('mariadb', 30000),
+        startupFailurePromise,
+      ]);
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
       this.managers.log?.systemError(`MariaDB ${version} failed to start`, { error: error.message });
       status.status = 'error';
-      status.error = 'Failed to start within timeout. Check logs for details.';
+      status.error = error.message;
       this.runningVersions.get('mariadb').delete(version);
+      this.processes.delete(processKey);
     }
   },
 

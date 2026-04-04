@@ -1,6 +1,10 @@
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 
+function isPostgresStartupError(message = '') {
+  return String(message).toLowerCase().includes('database system is starting up');
+}
+
 module.exports = {
   async listDatabases() {
     const dbType = this.getActiveDatabaseType();
@@ -14,6 +18,7 @@ module.exports = {
         const rows = await this._runPostgresQuery(
           'SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname'
         );
+
         const systemDbs = new Set(['postgres']);
         return rows.map((row) => ({
           name: (row[0] || '').trim(),
@@ -42,7 +47,7 @@ module.exports = {
       const message = error.message || '';
       const isConnectionError = message.includes('2003') || message.includes("Can't connect") ||
         message.includes('ECONNREFUSED') || message.includes('Connection refused');
-      if (isConnectionError) {
+      if (isConnectionError || isPostgresStartupError(message)) {
         return [];
       }
       throw error;

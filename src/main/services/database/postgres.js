@@ -3,6 +3,16 @@ const { spawn } = require('child_process');
 const zlib = require('zlib');
 const { v4: uuidv4 } = require('uuid');
 
+const POSTGRES_QUERY_RETRY_DELAY_MS = 500;
+const POSTGRES_QUERY_MAX_ATTEMPTS = 5;
+
+function isPostgresTransientStartupError(message = '') {
+  const normalized = String(message).toLowerCase();
+  return normalized.includes('database system is starting up')
+    || normalized.includes('the database system is starting up')
+    || normalized.includes('the database system is shutting down');
+}
+
 module.exports = {
   _buildPgEnv() {
     const settings = this.configStore.get('settings', {});
@@ -11,7 +21,7 @@ module.exports = {
     return password ? { ...process.env, PGPASSWORD: String(password) } : { ...process.env };
   },
 
-  _runPostgresQuery(sql, database = 'postgres') {
+  async _runPostgresQuery(sql, database = 'postgres') {
     const isPlaywright = process.env.PLAYWRIGHT_TEST === 'true';
     if (isPlaywright) {
       if (!this._pgMockedDbs) this._pgMockedDbs = new Set(['postgres']);
@@ -64,7 +74,7 @@ module.exports = {
       database,
     ];
 
-    return new Promise((resolve, reject) => {
+    const runAttempt = () => new Promise((resolve, reject) => {
       const proc = spawn(clientPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
@@ -89,12 +99,25 @@ module.exports = {
 
         if (stderr.includes('authentication failed') || stderr.includes('password')) {
           reject(new Error(`PostgreSQL access denied for user '${user}'. Check credentials in Settings > Network.`));
-        } else {
-          reject(new Error(`PostgreSQL query failed: ${stderr || `exit code ${code}`}`));
+          return;
         }
+
+        reject(new Error(`PostgreSQL query failed: ${stderr || `exit code ${code}`}`));
       });
       proc.on('error', reject);
     });
+
+    for (let attempt = 1; attempt <= POSTGRES_QUERY_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        return await runAttempt();
+      } catch (error) {
+        if (!isPostgresTransientStartupError(error.message) || attempt === POSTGRES_QUERY_MAX_ATTEMPTS) {
+          throw error;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, POSTGRES_QUERY_RETRY_DELAY_MS));
+      }
+    }
   },
 
   async _importPostgres(databaseName, filePath, progressCallback = null, mode = 'merge') {

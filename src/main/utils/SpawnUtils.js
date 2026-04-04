@@ -261,6 +261,44 @@ function getProcessPidsByPath(processName, pathFilter) {
         .map(line => parseInt(line, 10));
 }
 
+async function getProcessDetailsByPid(pid) {
+    if (process.platform !== 'win32' || !pid) {
+        return null;
+    }
+
+    const script = [
+        `$proc = Get-CimInstance Win32_Process -Filter \"ProcessId = ${pid}\"`,
+        'if ($proc) {',
+        '  [pscustomobject]@{',
+        '    ProcessId = $proc.ProcessId',
+        '    Name = $proc.Name',
+        '    ExecutablePath = $proc.ExecutablePath',
+        '    CommandLine = $proc.CommandLine',
+        '  } | ConvertTo-Json -Compress',
+        '}',
+    ].join('; ');
+
+    const result = await spawnAsync('powershell.exe', ['-NoProfile', '-Command', script], {
+        timeout: 5000,
+    });
+
+    if (result.code !== 0 || !result.stdout?.trim()) {
+        return null;
+    }
+
+    try {
+        const parsed = JSON.parse(result.stdout.trim());
+        return {
+            pid: parsed.ProcessId,
+            name: parsed.Name,
+            executablePath: parsed.ExecutablePath,
+            commandLine: parsed.CommandLine,
+        };
+    } catch {
+        return null;
+    }
+}
+
 /**
  * Kill processes by path filter
  * @param {string} processName - Process name
@@ -298,6 +336,7 @@ module.exports = {
     killProcessByPid,
     isProcessRunning,
     getProcessPidsByPath,
+    getProcessDetailsByPid,
     killProcessesByPath,
     waitForProcessesByPathExit,
 };

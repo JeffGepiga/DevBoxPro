@@ -511,6 +511,38 @@ module.exports = {
       }
     }
 
+    if ((serviceName === 'mysql' || serviceName === 'mariadb') && servicePort) {
+      let released = await waitForPortReleased(servicePort, 8000);
+
+      if (!released && require('os').platform() === 'win32') {
+        try {
+          const { killProcessesByPath, waitForProcessesByPathExit } = require('../../utils/SpawnUtils');
+          const processName = serviceName === 'mysql' ? 'mysqld.exe' : 'mariadbd.exe';
+          const servicePath = serviceName === 'mysql'
+            ? this.getMySQLPath(version || '8.4')
+            : this.getMariaDBPath(version || '11.4');
+
+          await killProcessesByPath(processName, servicePath);
+          await waitForProcessesByPathExit(processName, servicePath, 8000);
+          released = await waitForPortReleased(servicePort, 5000);
+        } catch (error) {
+          this.managers.log?.systemWarn('Error during database service cleanup', {
+            service: serviceName,
+            version,
+            error: error.message,
+          });
+        }
+      }
+
+      if (!released) {
+        this.managers.log?.systemWarn('Database port was not released before stopService completed', {
+          service: serviceName,
+          version,
+          port: servicePort,
+        });
+      }
+    }
+
     if (releasedStandardPorts) {
       const standardHttpPort = this.webServerPorts?.standard?.http || 80;
       const standardHttpsPort = this.webServerPorts?.standard?.https || 443;

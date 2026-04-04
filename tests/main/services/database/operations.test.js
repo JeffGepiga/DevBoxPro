@@ -44,6 +44,7 @@ describe('database/operations', () => {
   const originalPlaywright = process.env.PLAYWRIGHT_TEST;
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     if (originalPlaywright === undefined) {
       delete process.env.PLAYWRIGHT_TEST;
@@ -93,6 +94,28 @@ describe('database/operations', () => {
   it('returns an empty list on connection errors while listing databases', async () => {
     const context = makeContext();
     context.runDbQuery = vi.fn().mockRejectedValue(new Error("Can't connect to MySQL server"));
+
+    await expect(operations.listDatabases.call(context)).resolves.toEqual([]);
+  });
+
+  it('returns PostgreSQL databases when the query succeeds', async () => {
+    const context = makeContext({ dbType: 'postgresql' });
+    context._runPostgresQuery.mockResolvedValue([
+      ['postgres'],
+      ['analytics'],
+    ]);
+
+    await expect(operations.listDatabases.call(context)).resolves.toEqual([
+      { name: 'postgres', isSystem: true },
+      { name: 'analytics', isSystem: false },
+    ]);
+  });
+
+  it('returns an empty list on PostgreSQL startup-transient errors', async () => {
+    const context = makeContext({ dbType: 'postgresql' });
+    context._runPostgresQuery.mockRejectedValue(
+      new Error('PostgreSQL query failed: psql: error: connection to server at "127.0.0.1", port 5432 failed: FATAL: the database system is starting up')
+    );
 
     await expect(operations.listDatabases.call(context)).resolves.toEqual([]);
   });

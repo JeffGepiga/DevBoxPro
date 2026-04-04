@@ -39,13 +39,14 @@ function Databases() {
     defaultPorts: {},
     portOffsets: {},
   });
+  const [loadingDatabases, setLoadingDatabases] = useState(false);
   const [startingVersion, setStartingVersion] = useState(null); // 'mysql-8.4' or null
   const [stoppingVersion, setStoppingVersion] = useState(null);
   const [phpMyAdminLoading, setPhpMyAdminLoading] = useState(false);
   const [serviceError, setServiceError] = useState(null);
   const [showImportModal, setShowImportModal] = useState(null); // { dbName, filePath } or null
-  const loadingDatabasesRef = useRef(false); // prevents concurrent loadDatabases calls
   const wasRunningRef = useRef(false);        // tracks previous running state to detect transitions
+  const databaseLoadRequestRef = useRef(0);   // ignores stale async responses when switching versions
   const defaultDatabaseVersions = {
     mysql: '8.4',
     mariadb: '11.4',
@@ -137,9 +138,12 @@ function Databases() {
   const loadServicesStatus = async () => {
     try {
       const status = await window.devbox?.services.getStatus();
-      setServicesStatus(status || {});
+      const resolvedStatus = status || {};
+      setServicesStatus(resolvedStatus);
+      return resolvedStatus;
     } catch (error) {
       // Error loading services status
+      return {};
     }
   };
 
@@ -201,13 +205,22 @@ function Databases() {
         }
       }
 
-      // Set active type/version in backend (but don't query databases yet)
-      // Databases will be loaded when user explicitly clicks on a version or starts one
       if (autoSelectedType && autoSelectedVersion) {
+        const isAutoSelectedRunning = Boolean(services?.[autoSelectedType]?.runningVersions?.[autoSelectedVersion])
+          || runningProjectDatabaseVersions[autoSelectedType]?.has(autoSelectedVersion);
+
+        wasRunningRef.current = isAutoSelectedRunning;
         setSelectedDatabase({ type: autoSelectedType, version: autoSelectedVersion });
         await syncSelectedDatabaseInfo(autoSelectedType, autoSelectedVersion);
-        // Don't auto-query databases on startup - wait for user interaction
-        // This avoids credential mismatch errors on startup
+
+        if (isAutoSelectedRunning) {
+          await loadDatabases(
+            { type: autoSelectedType, version: autoSelectedVersion },
+            services || {}
+          );
+        } else {
+          setDatabases([]);
+        }
       } else {
         setDbInfo(null);
       }
@@ -217,53 +230,69 @@ function Databases() {
     setLoading(false);
   };
 
-  const loadDatabases = async () => {
-    if (!selectedDatabase) {
-      setDatabases([]);
-      setLoading(false);
+  const loadDatabases = async (databaseSelection = selectedDatabase, serviceStatusSnapshot = servicesStatus) => {
+    const targetDatabase = databaseSelection || selectedDatabase;
+    const requestId = ++databaseLoadRequestRef.current;
+
+    setServiceError(null);
+    setDatabases([]);
+
+    if (!targetDatabase) {
+      setLoadingDatabases(false);
       return;
     }
 
     // Check if the selected database version is running (using runningVersions)
-    const isRunning = isDatabaseVersionRunning(selectedDatabase.type, selectedDatabase.version);
+    const isRunning = Boolean(serviceStatusSnapshot[targetDatabase.type]?.runningVersions?.[targetDatabase.version])
+      || runningProjectDatabaseVersions[targetDatabase.type]?.has(targetDatabase.version);
 
     if (!isRunning) {
-      setDatabases([]);
-      setLoading(false);
+      setLoadingDatabases(false);
       return;
     }
 
-    // Prevent concurrent calls from stacking up (e.g. polling + manual refresh)
-    if (loadingDatabasesRef.current) return;
-    loadingDatabasesRef.current = true;
-    setLoading(true);
-    setServiceError(null);
+    setLoadingDatabases(true);
     try {
       const dbs = await window.devbox?.database.getDatabases();
+
+      if (requestId !== databaseLoadRequestRef.current) {
+        return;
+      }
+
       setDatabases(dbs || []);
     } catch (error) {
-      // Error loading databases
+      if (requestId !== databaseLoadRequestRef.current) {
+        return;
+      }
+
       setServiceError(error.message);
       setDatabases([]);
     } finally {
-      setLoading(false);
-      loadingDatabasesRef.current = false;
+      if (requestId === databaseLoadRequestRef.current) {
+        setLoadingDatabases(false);
+      }
     }
   };
 
   const handleSelectDatabase = async (type, version) => {
     setSelectedDatabase({ type, version });
+    const isRunning = isDatabaseVersionRunning(type, version);
+    setServiceError(null);
+    setDatabases([]);
+    setLoadingDatabases(isRunning);
+
     // Update active database type AND version for queries
     try {
       await syncSelectedDatabaseInfo(type, version);
-      setServiceError(null);
       // Now load databases for this specific version
       // Check if running first
-      const isRunning = isDatabaseVersionRunning(type, version);
       if (isRunning) {
-        await loadDatabases();
+        await loadDatabases({ type, version }, servicesStatus);
+      } else {
+        setLoadingDatabases(false);
       }
     } catch (error) {
+      setLoadingDatabases(false);
       // Error switching database
     }
   };
@@ -275,12 +304,13 @@ function Databases() {
     try {
       await window.devbox?.services.start(type, version);
       await new Promise(resolve => setTimeout(resolve, 1500));
-      await loadServicesStatus();
+      const refreshedStatus = await loadServicesStatus();
       // Auto-select this database after starting
       setSelectedDatabase({ type, version });
+      wasRunningRef.current = true;
       await syncSelectedDatabaseInfo(type, version);
       // Load databases for the newly started version
-      await loadDatabases();
+      await loadDatabases({ type, version }, refreshedStatus);
     } catch (error) {
       // Error starting service
       setServiceError(`Failed to start ${type} ${version}: ${error.message}`);
@@ -734,15 +764,27 @@ function Databases() {
 
       {/* Search */}
       <div className="card p-4 mb-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search databases..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="input pl-10"
-          />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search databases..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input pl-10"
+              disabled={loadingDatabases}
+            />
+          </div>
+          <button
+            onClick={() => loadDatabases()}
+            disabled={!isSelectedRunning || loadingDatabases}
+            className="btn-secondary sm:shrink-0"
+            title={!isSelectedRunning ? 'Start the selected database version to refresh the list.' : 'Refresh database list'}
+          >
+            <RefreshCw className={clsx('w-4 h-4', loadingDatabases && 'animate-spin')} />
+            {loadingDatabases ? 'Refreshing...' : 'Refresh'}
+          </button>
         </div>
       </div>
 
@@ -751,7 +793,17 @@ function Databases() {
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Your Databases ({userDatabases.length})
         </h2>
-        {userDatabases.length > 0 ? (
+        {loadingDatabases && isSelectedRunning ? (
+          <div className="card p-12 text-center">
+            <RefreshCw className="w-8 h-8 text-primary-600 animate-spin mx-auto mb-4" />
+            <p className="font-medium text-gray-900 dark:text-white">
+              Loading databases for {selectedLabel}...
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+              The list will update as soon as the selected database version responds.
+            </p>
+          </div>
+        ) : userDatabases.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {userDatabases.map((db) => (
               <DatabaseCard
@@ -777,7 +829,7 @@ function Databases() {
       </div>
 
       {/* System Databases */}
-      {systemDatabases.length > 0 && (
+      {!loadingDatabases && systemDatabases.length > 0 && (
         <div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             System Databases ({systemDatabases.length})

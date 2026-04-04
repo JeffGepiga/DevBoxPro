@@ -107,6 +107,25 @@ describe('Databases', () => {
         await act(async () => { });
     });
 
+    it('auto-loads databases for the initially selected running engine', async () => {
+        mockDevbox.database.getDatabases.mockResolvedValue([
+            { name: 'app_db', isSystem: false },
+            { name: 'mysql', isSystem: true },
+        ]);
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <Databases />
+            </MemoryRouter>
+        );
+
+        await waitFor(() => {
+            expect(mockDevbox.database.getDatabases).toHaveBeenCalled();
+            expect(screen.getByText('app_db')).toBeInTheDocument();
+            expect(screen.getByText(/System Databases \(1\)/i)).toBeInTheDocument();
+        });
+    });
+
     it('shows connection info section', async () => {
         render(
             <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -181,7 +200,7 @@ describe('Databases', () => {
 
         await waitFor(() => {
             expect(screen.getByText('Running')).toBeInTheDocument();
-            expect(screen.getByText('Port: 3307')).toBeInTheDocument();
+            expect(screen.getByText(/Port: 3307/i)).toBeInTheDocument();
         });
         expect(screen.queryByText(/is not running/i)).not.toBeInTheDocument();
     });
@@ -300,5 +319,235 @@ describe('Databases', () => {
         });
         expect(screen.queryByRole('button', { name: /Stop/i })).not.toBeInTheDocument();
         expect(mockDevbox.services.stop).not.toHaveBeenCalled();
+    });
+
+    it('loads the selected running version on the first click', async () => {
+        let activeVersion = '8.4';
+
+        mockDevbox.binaries.getStatus.mockResolvedValue({
+            mysql: { '8.4': { installed: true }, '8.0': { installed: true } },
+            mariadb: {},
+            postgresql: {},
+            mongodb: {},
+        });
+        mockDevbox.services.getStatus.mockResolvedValue({
+            mysql: {
+                runningVersions: {
+                    '8.4': { pid: 1234 },
+                    '8.0': { pid: 5678 },
+                },
+            },
+            mariadb: { runningVersions: {} },
+            postgresql: { runningVersions: {} },
+            mongodb: { runningVersions: {} },
+        });
+        mockDevbox.database.setActiveDatabaseType.mockImplementation(async (_, version) => {
+            activeVersion = version;
+            return { success: true };
+        });
+        mockDevbox.database.getDatabaseInfo.mockImplementation(async () => ({
+            type: 'mysql',
+            version: activeVersion,
+            host: '127.0.0.1',
+            port: activeVersion === '8.0' ? 3307 : 3306,
+            user: 'root',
+            password: '',
+        }));
+        mockDevbox.database.getDatabases.mockImplementation(async () => (
+            activeVersion === '8.0'
+                ? [{ name: 'beta_db', isSystem: false }]
+                : [{ name: 'alpha_db', isSystem: false }]
+        ));
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <Databases />
+            </MemoryRouter>
+        );
+
+        await waitFor(() => {
+            expect(screen.getByText('alpha_db')).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByText('MySQL 8.0'));
+
+        await waitFor(() => {
+            expect(mockDevbox.database.setActiveDatabaseType).toHaveBeenCalledWith('mysql', '8.0');
+            expect(screen.getByText('beta_db')).toBeInTheDocument();
+        });
+    });
+
+    it('clears the previous version list and shows a loader while switching versions', async () => {
+        let activeVersion = '8.4';
+        let resolveSecondLoad;
+
+        mockDevbox.binaries.getStatus.mockResolvedValue({
+            mysql: { '8.4': { installed: true }, '8.0': { installed: true } },
+            mariadb: {},
+            postgresql: {},
+            mongodb: {},
+        });
+        mockDevbox.services.getStatus.mockResolvedValue({
+            mysql: {
+                runningVersions: {
+                    '8.4': { pid: 1234 },
+                    '8.0': { pid: 5678 },
+                },
+            },
+            mariadb: { runningVersions: {} },
+            postgresql: { runningVersions: {} },
+            mongodb: { runningVersions: {} },
+        });
+        mockDevbox.database.setActiveDatabaseType.mockImplementation(async (_, version) => {
+            activeVersion = version;
+            return { success: true };
+        });
+        mockDevbox.database.getDatabaseInfo.mockImplementation(async () => ({
+            type: 'mysql',
+            version: activeVersion,
+            host: '127.0.0.1',
+            port: activeVersion === '8.0' ? 3307 : 3306,
+            user: 'root',
+            password: '',
+        }));
+        mockDevbox.database.getDatabases.mockImplementation(async () => {
+            if (activeVersion === '8.0') {
+                return new Promise((resolve) => {
+                    resolveSecondLoad = resolve;
+                });
+            }
+
+            return [{ name: 'alpha_db', isSystem: false }];
+        });
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <Databases />
+            </MemoryRouter>
+        );
+
+        await waitFor(() => {
+            expect(screen.getByText('alpha_db')).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByText('MySQL 8.0'));
+
+        await waitFor(() => {
+            expect(screen.getByText(/Loading databases for MySQL 8.0/i)).toBeInTheDocument();
+        });
+        expect(screen.queryByText('alpha_db')).not.toBeInTheDocument();
+
+        resolveSecondLoad([{ name: 'beta_db', isSystem: false }]);
+
+        await waitFor(() => {
+            expect(screen.getByText('beta_db')).toBeInTheDocument();
+        });
+    });
+
+    it('ignores stale database responses after switching to another running version', async () => {
+        let activeVersion = '8.4';
+        let resolveFirstSwitch;
+        let firstSwitchStarted = false;
+
+        mockDevbox.binaries.getStatus.mockResolvedValue({
+            mysql: { '8.4': { installed: true }, '8.0': { installed: true } },
+            mariadb: {},
+            postgresql: {},
+            mongodb: {},
+        });
+        mockDevbox.services.getStatus.mockResolvedValue({
+            mysql: {
+                runningVersions: {
+                    '8.4': { pid: 1234 },
+                    '8.0': { pid: 5678 },
+                },
+            },
+            mariadb: { runningVersions: {} },
+            postgresql: { runningVersions: {} },
+            mongodb: { runningVersions: {} },
+        });
+        mockDevbox.database.setActiveDatabaseType.mockImplementation(async (_, version) => {
+            activeVersion = version;
+            return { success: true };
+        });
+        mockDevbox.database.getDatabaseInfo.mockImplementation(async () => ({
+            type: 'mysql',
+            version: activeVersion,
+            host: '127.0.0.1',
+            port: activeVersion === '8.0' ? 3307 : 3306,
+            user: 'root',
+            password: '',
+        }));
+        mockDevbox.database.getDatabases.mockImplementation(async () => {
+            if (activeVersion === '8.0' && !firstSwitchStarted) {
+                firstSwitchStarted = true;
+                return new Promise((resolve) => {
+                    resolveFirstSwitch = resolve;
+                });
+            }
+
+            return activeVersion === '8.0'
+                ? [{ name: 'beta_db', isSystem: false }]
+                : [{ name: 'alpha_db', isSystem: false }];
+        });
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <Databases />
+            </MemoryRouter>
+        );
+
+        await waitFor(() => {
+            expect(screen.getByText('alpha_db')).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByText('MySQL 8.0'));
+
+        await waitFor(() => {
+            expect(screen.getByText(/Loading databases for MySQL 8.0/i)).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByText('MySQL 8.4'));
+
+        await waitFor(() => {
+            expect(screen.getByText('alpha_db')).toBeInTheDocument();
+        });
+
+        resolveFirstSwitch([{ name: 'beta_db', isSystem: false }]);
+
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(screen.getByText('alpha_db')).toBeInTheDocument();
+        expect(screen.queryByText('beta_db')).not.toBeInTheDocument();
+    });
+
+    it('refreshes the selected database list from the manual refresh button', async () => {
+        let loadCount = 0;
+
+        mockDevbox.database.getDatabases.mockImplementation(async () => {
+            loadCount += 1;
+            return loadCount === 1
+                ? [{ name: 'alpha_db', isSystem: false }]
+                : [{ name: 'gamma_db', isSystem: false }];
+        });
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <Databases />
+            </MemoryRouter>
+        );
+
+        await waitFor(() => {
+            expect(screen.getByText('alpha_db')).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /Refresh/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText('gamma_db')).toBeInTheDocument();
+        });
+        expect(screen.queryByText('alpha_db')).not.toBeInTheDocument();
     });
 });

@@ -34,11 +34,6 @@ async function isPortAvailable(port, host = null) {
     return canBindPort(port, host);
   }
 
-  const processInfo = await getProcessOnPort(port);
-  if (processInfo) {
-    return false;
-  }
-
   const hostsToCheck = process.platform === 'win32'
     ? ['0.0.0.0', '127.0.0.1']
     : ['0.0.0.0', '127.0.0.1', '::'];
@@ -117,7 +112,8 @@ async function getProcessOnPort(port) {
         const parts = line.trim().split(/\s+/);
         if (parts.length >= 5) {
           const localAddress = parts[1];
-          if (localAddress.endsWith(`:${port}`)) {
+          const state = parts[3];
+          if (localAddress.endsWith(`:${port}`) && state === 'LISTENING') {
             const pid = parseInt(parts[4], 10);
             if (!isNaN(pid)) {
               return { pid, address: localAddress };
