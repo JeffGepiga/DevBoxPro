@@ -1,4 +1,3 @@
-const dns = require('dns').promises;
 const http = require('http');
 const httpProxy = require('http-proxy');
 const treeKill = require('tree-kill');
@@ -237,30 +236,6 @@ module.exports = {
     };
   },
 
-  async ensurePublicUrlReady(provider, publicUrl, isActive = () => true, timeoutMs = 20000) {
-    if (provider !== 'cloudflared' || !publicUrl) {
-      return true;
-    }
-
-    const hostname = new URL(publicUrl).hostname;
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < timeoutMs) {
-      if (!isActive()) {
-        return false;
-      }
-
-      try {
-        await dns.lookup(hostname);
-        return true;
-      } catch {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-    }
-
-    return false;
-  },
-
   async cleanupPreparedTunnel(state) {
     if (!state?.localProxyServer) {
       return;
@@ -370,62 +345,14 @@ module.exports = {
         return;
       }
 
-      state.pendingPublicUrl = publicUrl;
-
-      if (provider !== 'cloudflared') {
-        state.publicUrl = publicUrl;
-        state.pendingPublicUrl = null;
-        if (state.proxyContext) {
-          state.proxyContext.publicUrl = publicUrl;
-        }
-        state.status = 'running';
-        state.error = null;
-        this.emitTunnelStatus(this.serializeTunnelState(projectId, state));
-        return;
+      state.publicUrl = publicUrl;
+      state.pendingPublicUrl = null;
+      if (state.proxyContext) {
+        state.proxyContext.publicUrl = publicUrl;
       }
-
-      if (state.publicUrlProbe) {
-        return;
-      }
-
-      state.publicUrlProbe = this.ensurePublicUrlReady(
-        provider,
-        publicUrl,
-        () => this.activeTunnels.get(projectId) === state && !state.stopping
-      )
-        .then((ready) => {
-          if (this.activeTunnels.get(projectId) !== state || state.stopping) {
-            return;
-          }
-
-          if (!ready) {
-            state.error = 'Tunnel URL was created but DNS is not ready yet. Try again in a few seconds.';
-            state.pendingPublicUrl = null;
-            this.emitTunnelStatus(this.serializeTunnelState(projectId, state));
-            return;
-          }
-
-          state.publicUrl = publicUrl;
-          state.pendingPublicUrl = null;
-          if (state.proxyContext) {
-            state.proxyContext.publicUrl = publicUrl;
-          }
-          state.status = 'running';
-          state.error = null;
-          this.emitTunnelStatus(this.serializeTunnelState(projectId, state));
-        })
-        .catch((error) => {
-          if (this.activeTunnels.get(projectId) !== state || state.stopping) {
-            return;
-          }
-
-          state.error = error.message;
-          state.pendingPublicUrl = null;
-          this.emitTunnelStatus(this.serializeTunnelState(projectId, state));
-        })
-        .finally(() => {
-          state.publicUrlProbe = null;
-        });
+      state.status = 'running';
+      state.error = null;
+      this.emitTunnelStatus(this.serializeTunnelState(projectId, state));
     };
 
     processRef.stdout?.on('data', (chunk) => logOutput(chunk, 'stdout'));

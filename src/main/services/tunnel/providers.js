@@ -128,7 +128,7 @@ module.exports = {
         return {
           targetUrl: `http://127.0.0.1:${backendHttpPort}`,
           displayUrl: projectUrl,
-          hostHeader: null,
+          hostHeader: primaryDomain,
         };
       }
 
@@ -152,13 +152,7 @@ module.exports = {
       : (tunnelTarget || {});
 
     if (provider === 'cloudflared') {
-      const args = ['tunnel', '--url', target.targetUrl, '--no-autoupdate'];
-
-      if (target.hostHeader) {
-        args.push('--http-host-header', target.hostHeader);
-      }
-
-      return args;
+      return ['tunnel', '--url', target.targetUrl, '--no-autoupdate'];
     }
 
     if (provider === 'zrok') {

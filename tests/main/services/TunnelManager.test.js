@@ -114,6 +114,28 @@ describe('TunnelManager', () => {
     }));
   });
 
+  it('does not block cloudflared startup on a separate DNS readiness probe', async () => {
+    const { manager, processRef } = makeManager({
+      ensurePublicUrlReady: vi.fn().mockImplementation(() => new Promise(() => {})),
+    });
+    const statusEmitter = vi.fn();
+    manager.setStatusEmitter(statusEmitter);
+
+    await manager.startTunnel('proj-1', 'cloudflared');
+
+    processRef.stderr.emit('data', Buffer.from('INF tunnel ready at https://fast-start.trycloudflare.com'));
+    await Promise.resolve();
+
+    expect(statusEmitter).toHaveBeenLastCalledWith(expect.objectContaining({
+      projectId: 'proj-1',
+      provider: 'cloudflared',
+      status: 'running',
+      publicUrl: 'https://fast-start.trycloudflare.com',
+      error: null,
+    }));
+    expect(manager.ensurePublicUrlReady).not.toHaveBeenCalled();
+  });
+
   it('rejects zrok tunnels until zrok has been enabled app-wide', async () => {
     const { manager } = makeManager({
       getZrokStatus: vi.fn().mockResolvedValue({ enabled: false, configuredAt: null }),
@@ -132,7 +154,7 @@ describe('TunnelManager', () => {
     expect(tunnelTarget).toEqual({
       targetUrl: 'http://127.0.0.1:8081',
       displayUrl: 'http://myapp.test',
-      hostHeader: null,
+      hostHeader: 'myapp.test',
     });
     expect(args).toEqual([
       'tunnel',
@@ -186,8 +208,6 @@ describe('TunnelManager', () => {
       '--url',
       'http://127.0.0.1:80',
       '--no-autoupdate',
-      '--http-host-header',
-      'apache-app.test',
     ]);
   });
 
