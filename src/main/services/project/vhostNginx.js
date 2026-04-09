@@ -120,9 +120,24 @@ server {
 
     location ~ \\.php$ {
         try_files $uri /index.php?$query_string;
+        set $devbox_request_scheme $scheme;
+        set $devbox_https $https;
+        set $devbox_server_port $server_port;
+      if ($http_x_forwarded_port != "") {
+        set $devbox_server_port $http_x_forwarded_port;
+      }
+        if ($http_x_forwarded_proto = "https") {
+            set $devbox_request_scheme https;
+            set $devbox_https on;
+        }
         fastcgi_pass 127.0.0.1:${phpFpmPort};
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        fastcgi_param HTTPS $devbox_https;
+        fastcgi_param REQUEST_SCHEME $devbox_request_scheme;
+        fastcgi_param SERVER_PORT $devbox_server_port;
+        fastcgi_param HTTP_X_FORWARDED_PROTO $http_x_forwarded_proto;
+        fastcgi_param HTTP_X_FORWARDED_PORT $http_x_forwarded_port;
       include "${fastcgiParamsPath}";
         fastcgi_hide_header X-Powered-By;
         fastcgi_read_timeout 300;
@@ -180,9 +195,24 @@ server {
 
     location ~ \\.php$ {
         try_files $uri /index.php?$query_string;
+        set $devbox_request_scheme $scheme;
+        set $devbox_https $https;
+        set $devbox_server_port $server_port;
+      if ($http_x_forwarded_port != "") {
+        set $devbox_server_port $http_x_forwarded_port;
+      }
+        if ($http_x_forwarded_proto = "https") {
+            set $devbox_request_scheme https;
+            set $devbox_https on;
+        }
         fastcgi_pass 127.0.0.1:${phpFpmPort};
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        fastcgi_param HTTPS $devbox_https;
+        fastcgi_param REQUEST_SCHEME $devbox_request_scheme;
+        fastcgi_param SERVER_PORT $devbox_server_port;
+        fastcgi_param HTTP_X_FORWARDED_PROTO $http_x_forwarded_proto;
+        fastcgi_param HTTP_X_FORWARDED_PORT $http_x_forwarded_port;
       include "${fastcgiParamsPath}";
         fastcgi_hide_header X-Powered-By;
         fastcgi_read_timeout 300;

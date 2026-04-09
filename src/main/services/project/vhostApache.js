@@ -80,6 +80,10 @@ module.exports = {
     ServerName ${project.domain}
   ServerAlias ${httpServerAlias}
     DocumentRoot "${documentRoot}"
+
+    SetEnvIf X-Forwarded-Proto "^https$" HTTPS=on
+    SetEnvIf X-Forwarded-Proto "^https$" REQUEST_SCHEME=https
+    SetEnvIf X-Forwarded-Port "^([0-9]+)$" SERVER_PORT=$1
     
     <Directory "${documentRoot}">
         Options Indexes FollowSymLinks MultiViews ExecCGI
@@ -128,6 +132,10 @@ module.exports = {
     ServerName ${project.domain}
   ServerAlias ${httpsServerAlias}
     DocumentRoot "${documentRoot}"
+
+    SetEnvIf X-Forwarded-Proto "^https$" HTTPS=on
+    SetEnvIf X-Forwarded-Proto "^https$" REQUEST_SCHEME=https
+    SetEnvIf X-Forwarded-Port "^([0-9]+)$" SERVER_PORT=$1
     
     # SSL Configuration
     SSLEngine on

@@ -88,6 +88,7 @@ module.exports = {
         const fileStats = await fs.stat(filePath);
         const totalSize = fileStats.size;
         let processedBytes = 0;
+        let lastReportedProgress = -1;
 
         progressCallback?.({ operationId, status: 'importing', message: 'Importing to database (streaming)...', progress: 0, dbName: safeName });
 
@@ -115,12 +116,13 @@ module.exports = {
           stderr += data.toString();
         });
 
-        const readStream = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 });
+        const readStream = fs.createReadStream(filePath, { highWaterMark: 4 * 1024 * 1024 });
 
         readStream.on('data', (chunk) => {
           processedBytes += chunk.length;
           const progress = Math.round((processedBytes / totalSize) * 100);
-          if (progress % 5 === 0) {
+          if (progress !== lastReportedProgress && progress % 5 === 0) {
+            lastReportedProgress = progress;
             const sizeMB = (processedBytes / (1024 * 1024)).toFixed(1);
             const totalMB = (totalSize / (1024 * 1024)).toFixed(1);
             progressCallback?.({
@@ -136,6 +138,17 @@ module.exports = {
         const capturedVirtualColumns = [];
         const sqlProcessor = this.createSqlProcessorStream(capturedVirtualColumns);
 
+        // Write performance-critical MySQL session variables before import data
+        const perfPreamble = Buffer.from(
+          'SET autocommit=0;\n' +
+          'SET unique_checks=0;\n' +
+          'SET foreign_key_checks=0;\n' +
+          'SET sql_log_bin=0;\n' +
+          'SET NAMES utf8mb4;\n',
+          'utf8'
+        );
+        proc.stdin.write(perfPreamble);
+
         if (isGzipped) {
           progressCallback?.({ operationId, status: 'importing', message: 'Decompressing and importing (streaming)...', progress: 0, dbName: safeName });
 
@@ -147,9 +160,9 @@ module.exports = {
             reject(new Error(`Decompression error: ${err.message}`));
           });
 
-          readStream.pipe(gunzip).pipe(sqlProcessor).pipe(proc.stdin);
+          readStream.pipe(gunzip).pipe(sqlProcessor).pipe(proc.stdin, { end: false });
         } else {
-          readStream.pipe(sqlProcessor).pipe(proc.stdin);
+          readStream.pipe(sqlProcessor).pipe(proc.stdin, { end: false });
         }
 
         readStream.on('error', (err) => {
@@ -162,6 +175,18 @@ module.exports = {
           proc.stdin.end();
           this.runningOperations.delete(operationId);
           reject(new Error(`SQL processing error: ${err.message}`));
+        });
+
+        // Write performance epilogue and close stdin when the SQL processor finishes
+        sqlProcessor.on('end', () => {
+          const perfEpilogue = Buffer.from(
+            '\nSET unique_checks=1;\n' +
+            'SET foreign_key_checks=1;\n' +
+            'COMMIT;\n',
+            'utf8'
+          );
+          proc.stdin.write(perfEpilogue);
+          proc.stdin.end();
         });
 
         proc.on('close', async (code) => {
@@ -227,13 +252,25 @@ module.exports = {
     });
   },
 
+
   createSqlProcessorStream(capturedVirtualColumns = []) {
     const self = this;
     let buffer = '';
     const generatedColumns = new Map();
+    let passthrough = false; // Switches to true after all CREATE TABLEs are processed
+    let seenInsert = false;
 
     return new Transform({
+      highWaterMark: 8 * 1024 * 1024,
       transform(chunk, encoding, callback) {
+        // Fast passthrough: once all CREATE TABLEs are processed and no virtual columns,
+        // skip all parsing and push data directly
+        if (passthrough) {
+          this.push(chunk);
+          callback();
+          return;
+        }
+
         buffer += chunk.toString('utf8');
 
         let inString = false;
@@ -268,7 +305,7 @@ module.exports = {
         }
 
         if (lastValidSemicolon === -1) {
-          if (buffer.length > 10 * 1024 * 1024) {
+          if (buffer.length > 50 * 1024 * 1024) {
             this.push(Buffer.from(buffer, 'utf8'));
             buffer = '';
           }
@@ -324,6 +361,30 @@ module.exports = {
             return `CREATE TABLE \`${tableName}\` (${newDefinition}) ${enginePart}`;
           }
         );
+
+        // Fast path: if no virtual/generated columns detected, skip INSERT processing entirely
+        if (generatedColumns.size === 0) {
+          // Once we've seen INSERT statements without any virtual columns in preceding
+          // CREATE TABLEs, switch to full passthrough for remaining data
+          if (!seenInsert && /INSERT\s+INTO/i.test(toProcess)) {
+            seenInsert = true;
+          }
+          if (seenInsert && !/CREATE\s+TABLE/i.test(toProcess)) {
+            passthrough = true;
+            // Flush any remaining buffer too
+            if (buffer.length > 0) {
+              this.push(Buffer.from(toProcess + buffer, 'utf8'));
+              buffer = '';
+            } else {
+              this.push(Buffer.from(toProcess, 'utf8'));
+            }
+            callback();
+            return;
+          }
+          this.push(Buffer.from(toProcess, 'utf8'));
+          callback();
+          return;
+        }
 
         const insertRegex = /INSERT INTO `(\w+)` VALUES\s*/gi;
         let lastIndex = 0;

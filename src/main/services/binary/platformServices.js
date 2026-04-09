@@ -257,6 +257,7 @@ module.exports = {
       }
 
       await this.downloadMongosh(version);
+      await this.downloadMongoTools(version);
 
       await fs.remove(downloadPath);
       this.emitProgress(id, { status: 'completed', progress: 100 });
@@ -312,6 +313,52 @@ module.exports = {
         return { success: false, cancelled: true };
       }
       this.managers?.log?.systemWarn('Failed to download mongosh', { error: error.message });
+      return { success: false, error: error.message };
+    }
+  },
+
+  async downloadMongoTools(mongoVersion = '8.0') {
+    const id = `mongotools-${mongoVersion}`;
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads.mongotools?.latest?.[platform];
+
+    if (!downloadInfo) {
+      return { success: false, error: 'MongoDB Database Tools not available for this platform' };
+    }
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      const downloadPath = path.join(this.resourcesPath, 'downloads', downloadInfo.filename);
+      const extractPath = path.join(this.resourcesPath, 'mongodb', mongoVersion, platform);
+
+      await this.downloadFile(downloadInfo.url, downloadPath, id);
+      await this.checkCancelled(id, downloadPath);
+      await this.extractArchive(downloadPath, extractPath, id);
+
+      // Move tools binaries from nested directory into the main bin folder
+      const contents = await fs.readdir(extractPath);
+      const toolsDir = contents.find((entry) => entry.startsWith('mongodb-database-tools'));
+      if (toolsDir) {
+        const srcBin = path.join(extractPath, toolsDir, 'bin');
+        const destBin = path.join(extractPath, 'bin');
+        if (await fs.pathExists(srcBin)) {
+          const binFiles = await fs.readdir(srcBin);
+          for (const file of binFiles) {
+            await fs.move(path.join(srcBin, file), path.join(destBin, file), { overwrite: true });
+          }
+        }
+        await fs.remove(path.join(extractPath, toolsDir));
+      }
+
+      await fs.remove(downloadPath);
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+      return { success: true };
+    } catch (error) {
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
+      this.managers?.log?.systemWarn('Failed to download MongoDB Database Tools', { error: error.message });
       return { success: false, error: error.message };
     }
   },

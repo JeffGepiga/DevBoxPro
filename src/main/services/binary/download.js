@@ -108,6 +108,11 @@ module.exports = {
       const protocol = url.startsWith('https') ? https : http;
       const parsedUrl = new URL(url);
 
+      // Guard flag to prevent error handlers from deleting a successfully downloaded file.
+      // On small/fast downloads (e.g. composer.phar), the request can emit 'error' (socket
+      // cleanup) AFTER file 'finish' already fired and resolved the promise.
+      let settled = false;
+
       const downloadInfo = { request: null, file, reject, destPath };
       this.activeDownloads.set(id, downloadInfo);
 
@@ -134,6 +139,7 @@ module.exports = {
         if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307) {
           file.close();
           try { fs.unlinkSync(destPath); } catch (error) { }
+          settled = true;
           const redirectUrl = response.headers.location.startsWith('http')
             ? response.headers.location
             : new URL(response.headers.location, url).toString();
@@ -145,6 +151,7 @@ module.exports = {
         if (response.statusCode !== 200) {
           file.close();
           try { fs.unlinkSync(destPath); } catch (error) { }
+          settled = true;
           reject(new Error(`Download failed with status ${response.statusCode}`));
           return;
         }
@@ -153,6 +160,7 @@ module.exports = {
         if (contentType.includes('text/html') && !destPath.endsWith('.html')) {
           file.close();
           try { fs.unlinkSync(destPath); } catch (error) { }
+          settled = true;
           reject(new Error('Server returned HTML instead of binary. Download may be blocked or URL may be invalid.'));
           return;
         }
@@ -174,6 +182,7 @@ module.exports = {
         response.pipe(file);
 
         file.on('finish', () => {
+          settled = true;
           file.close();
           this.activeDownloads.delete(id);
           resolve(destPath);
@@ -183,6 +192,9 @@ module.exports = {
       downloadInfo.request = request;
 
       request.on('error', (err) => {
+        if (settled) return; // Download already completed or handled — don't delete the file
+        settled = true;
+
         file.close();
         this.activeDownloads.delete(id);
         fs.unlink(destPath, () => { });
@@ -202,6 +214,7 @@ module.exports = {
           || err.message.includes('SSL');
 
         if (!options.retryWithoutVerify && isSSLError) {
+          settled = false; // Allow retry to settle
           this.managers?.log?.systemWarn(`SSL certificate error for ${id}, retrying without verification`, { error: err.message });
           this.downloadFile(url, destPath, id, { ...options, retryWithoutVerify: true })
             .then(resolve)
@@ -214,6 +227,7 @@ module.exports = {
           || err.code === 'ENETUNREACH';
 
         if (!options.forceIPv4 && isNetworkError) {
+          settled = false; // Allow retry to settle
           this.managers?.log?.systemWarn(`Network error (${err.code}) for ${id}, retrying with IPv4 forced`, { error: err.message });
           this.downloadFile(url, destPath, id, { ...options, forceIPv4: true })
             .then(resolve)
@@ -249,6 +263,9 @@ module.exports = {
       });
 
       file.on('error', (err) => {
+        if (settled) return; // Download already completed or handled — don't delete the file
+        settled = true;
+
         file.close();
         this.activeDownloads.delete(id);
         fs.unlink(destPath, () => { });

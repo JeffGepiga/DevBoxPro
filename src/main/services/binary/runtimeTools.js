@@ -159,8 +159,14 @@ module.exports = {
 
       this.emitProgress(id, { status: 'installing', progress: 60 });
 
-      if (!await fs.pathExists(downloadPath)) {
-        throw new Error('Download did not complete - file not found after download.');
+      // Brief delay on Windows to ensure file descriptor is fully released after download
+      if (process.platform === 'win32') {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+
+      const stat = await fs.stat(downloadPath).catch(() => null);
+      if (!stat || stat.size === 0) {
+        throw new Error(`Download did not complete - ${stat ? 'file is empty' : 'file not found'} at ${downloadPath}.`);
       }
 
       const composerDir = path.join(this.resourcesPath, 'composer');

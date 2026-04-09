@@ -809,6 +809,28 @@
       }
     }
   },
+  "mongotools": {
+    "versions": [
+      "latest"
+    ],
+    "downloads": {
+      "latest": {
+        "win": {
+          "url": "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-windows-x86_64-100.12.2.zip",
+          "filename": "mongodb-database-tools-windows-x86_64-100.12.2.zip"
+        },
+        "mac": {
+          "url": "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-macos-arm64-100.12.2.zip",
+          "filename": "mongodb-database-tools-macos-arm64-100.12.2.zip"
+        },
+        "linux": {
+          "url": "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-linux-x86_64-100.12.2.tgz",
+          "filename": "mongodb-database-tools-linux-x86_64-100.12.2.tgz"
+        },
+        "label": "Latest"
+      }
+    }
+  },
   "sqlite": {
     "versions": [
       "3"

@@ -101,6 +101,7 @@ describe('binary/runtimeTools', () => {
     vi.spyOn(fs, 'pathExists').mockResolvedValue(true);
     vi.spyOn(fs, 'copy').mockResolvedValue(undefined);
     vi.spyOn(fs, 'remove').mockResolvedValue(undefined);
+    vi.spyOn(fs, 'stat').mockResolvedValue({ size: 1024 });
 
     const result = await ctx.downloadComposer();
 

@@ -31,6 +31,36 @@ module.exports = {
     return clientPath;
   },
 
+  async _ensureMongoToolsPath(toolName) {
+    const toolPath = this._getBinaryPath(toolName);
+    if (fs.existsSync(toolPath)) {
+      return toolPath;
+    }
+
+    const activeType = this.getActiveDatabaseType?.();
+    const activeVersion = activeType === 'mongodb' ? this.getActiveDatabaseVersion?.() : null;
+    const binaryDownload = this.managers?.binaryDownload;
+
+    if (activeVersion && typeof binaryDownload?.downloadMongoTools === 'function') {
+      this.managers?.log?.systemInfo?.(`Auto-downloading MongoDB Database Tools for ${toolName}`, { version: activeVersion });
+      const repairResult = await binaryDownload.downloadMongoTools(activeVersion);
+      const repairedPath = this._getBinaryPath(toolName);
+
+      if (repairResult?.success && fs.existsSync(repairedPath)) {
+        return repairedPath;
+      }
+
+      this.managers?.log?.systemWarn?.(`MongoDB Database Tools repair did not produce ${toolName}`, {
+        version: activeVersion,
+        path: repairedPath,
+        error: repairResult?.error,
+      });
+    }
+
+    return toolPath;
+  },
+
+
   async _runMongoQuery(evalExpr, database = 'admin') {
     const isPlaywright = process.env.PLAYWRIGHT_TEST === 'true';
     if (isPlaywright) {
@@ -144,14 +174,14 @@ module.exports = {
     this.managers.log?.systemInfo('MongoDB import started', { database: safeName, operationId, mode });
     progressCallback?.({ operationId, status: 'starting', message: 'Starting MongoDB import...', dbName: safeName });
 
-    const restorePath = this.getDbRestorePath();
+    const restorePath = await this._ensureMongoToolsPath('mongorestore');
     const port = this.getActualPort();
     const settings = this.configStore.get('settings', {});
     const user = settings.dbUser !== undefined ? settings.dbUser : this.dbConfig.user;
     const password = settings.dbPassword !== undefined ? settings.dbPassword : this.dbConfig.password;
 
     if (!await fs.pathExists(restorePath)) {
-      throw new Error(`mongorestore not found at ${restorePath}. Please ensure the MongoDB binary is installed.`);
+      throw new Error(`mongorestore not found at ${restorePath}. Please install the MongoDB binary and ensure MongoDB Database Tools are included.`);
     }
 
     return new Promise((resolve, reject) => {
@@ -223,14 +253,14 @@ module.exports = {
 
     progressCallback?.({ operationId, status: 'starting', message: 'Starting MongoDB export...', dbName: safeName });
 
-    const dumpPath = this.getDbDumpPath();
+    const dumpPath = await this._ensureMongoToolsPath('mongodump');
     const port = this.getActualPort();
     const settings = this.configStore.get('settings', {});
     const user = settings.dbUser || this.dbConfig.user;
     const password = settings.dbPassword || '';
 
     if (!await fs.pathExists(dumpPath)) {
-      throw new Error(`mongodump not found at ${dumpPath}. Please ensure the MongoDB binary is installed.`);
+      throw new Error(`mongodump not found at ${dumpPath}. Please install the MongoDB binary and ensure MongoDB Database Tools are included.`);
     }
 
     const finalPath = outputPath.toLowerCase().endsWith('.gz') ? outputPath : `${outputPath}.gz`;
