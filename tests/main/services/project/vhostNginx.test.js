@@ -109,4 +109,51 @@ describe('project/vhostNginx', () => {
     expect(config).toContain('listen 8445 ssl http2;');
     expect(config).not.toContain('http2 on;');
   });
+
+  it('keeps DevBox FastCGI HTTPS overrides after bundled fastcgi params', async () => {
+    const ctx = makeContext();
+    const project = {
+      id: 'proxied-https-project',
+      name: 'Proxied HTTPS App',
+      domain: 'proxy.test',
+      path: 'C:/laragon/www/proxy',
+      ssl: true,
+      networkAccess: false,
+    };
+
+    await ctx.createNginxVhost(project, 9957, '1.28');
+
+    const [, config] = fs.writeFile.mock.calls.at(-1);
+    const includeIndex = config.indexOf('include "C:/Users/Jeffrey/AppData/Roaming/devbox-pro/resources/nginx/1.28/win/conf/fastcgi_params";');
+    const httpsIndex = config.indexOf('fastcgi_param HTTPS $devbox_https;');
+    const schemeIndex = config.indexOf('fastcgi_param REQUEST_SCHEME $devbox_request_scheme;');
+    const portIndex = config.indexOf('fastcgi_param SERVER_PORT $devbox_server_port;');
+
+    expect(includeIndex).toBeGreaterThan(-1);
+    expect(includeIndex).toBeLessThan(httpsIndex);
+    expect(includeIndex).toBeLessThan(schemeIndex);
+    expect(includeIndex).toBeLessThan(portIndex);
+  });
+
+  it('normalizes forwarded headers for direct and proxied HTTPS requests', async () => {
+    const ctx = makeContext();
+    const project = {
+      id: 'forwarded-headers-project',
+      name: 'Forwarded Headers App',
+      domain: 'forwarded.test',
+      path: 'C:/laragon/www/forwarded',
+      ssl: true,
+      networkAccess: false,
+    };
+
+    await ctx.createNginxVhost(project, 9957, '1.28');
+
+    const [, config] = fs.writeFile.mock.calls.at(-1);
+    expect(config).toContain('set $devbox_forwarded_proto $scheme;');
+    expect(config).toContain('set $devbox_forwarded_proto https;');
+    expect(config).toContain('fastcgi_param HTTP_X_FORWARDED_PROTO $devbox_forwarded_proto;');
+    expect(config).toContain('fastcgi_param HTTP_X_FORWARDED_PORT $devbox_server_port;');
+    expect(config).not.toContain('fastcgi_param HTTP_X_FORWARDED_PROTO $http_x_forwarded_proto;');
+    expect(config).not.toContain('fastcgi_param HTTP_X_FORWARDED_PORT $http_x_forwarded_port;');
+  });
 });
