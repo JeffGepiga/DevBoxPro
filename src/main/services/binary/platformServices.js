@@ -9,9 +9,7 @@ module.exports = {
     const platform = this.getPlatform();
     const downloadInfo = this.downloads.postgresql[version]?.[platform];
 
-    if (!downloadInfo) {
-      throw new Error(`PostgreSQL ${version} not available for ${platform}`);
-    }
+    this.ensureAutomatedDownloadAvailable(downloadInfo, `PostgreSQL ${version}`, platform);
 
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
@@ -325,6 +323,8 @@ module.exports = {
     if (!downloadInfo) {
       return { success: false, error: 'MongoDB Database Tools not available for this platform' };
     }
+
+    this.ensureAutomatedDownloadAvailable(downloadInfo, 'MongoDB Database Tools', platform);
 
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });

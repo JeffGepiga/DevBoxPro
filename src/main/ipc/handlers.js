@@ -1186,7 +1186,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('binaries:openApacheDownloadPage', async () => {
     const { shell } = require('electron');
-    await shell.openExternal('https://www.apachelounge.com/download/');
+      await shell.openExternal('https://www.apachelounge.com/download/');
     return { success: true };
   });
 

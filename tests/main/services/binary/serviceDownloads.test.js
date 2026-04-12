@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const path = require('path');
 
 const fs = require('fs-extra');
+const download = require('../../../../src/main/services/binary/download');
 const serviceDownloads = require('../../../../src/main/services/binary/serviceDownloads');
 
 function makeContext(overrides = {}) {
   return {
+    ...download,
     ...serviceDownloads,
     resourcesPath: '/resources',
     downloads: {

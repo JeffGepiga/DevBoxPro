@@ -5,6 +5,19 @@ const http = require('http');
 const { createWriteStream } = require('fs');
 
 module.exports = {
+  ensureAutomatedDownloadAvailable(downloadInfo, label, platform) {
+    if (!downloadInfo) {
+      throw new Error(`${label} not available for ${platform}`);
+    }
+
+    if (/^https?:\/\//i.test(downloadInfo.url || '')) {
+      return;
+    }
+
+    const guidance = downloadInfo.note || downloadInfo.altInstall || downloadInfo.manualDownloadNote || 'Install it manually for this platform.';
+    throw new Error(`${label} automatic download is not available for ${platform}. ${guidance}`);
+  },
+
   isVersionProbeEligibleError(error) {
     const message = error?.message || '';
     return /status 403|status 404|returned HTML|invalid|not found/i.test(message);
@@ -101,6 +114,10 @@ module.exports = {
   },
 
   async downloadFile(url, destPath, id, options = {}) {
+    if (!/^https?:\/\//i.test(url || '')) {
+      throw new Error('Automatic download is not available for this source. Use the documented manual or package-manager installation path instead.');
+    }
+
     await fs.ensureDir(path.dirname(destPath));
 
     return new Promise((resolve, reject) => {

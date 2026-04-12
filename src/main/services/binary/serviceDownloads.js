@@ -76,9 +76,7 @@ module.exports = {
     const platform = this.getPlatform();
     const downloadInfo = this.downloads.mysql[version]?.[platform];
 
-    if (!downloadInfo) {
-      throw new Error(`MySQL ${version} not available for ${platform}`);
-    }
+    this.ensureAutomatedDownloadAvailable(downloadInfo, `MySQL ${version}`, platform);
 
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
@@ -111,9 +109,7 @@ module.exports = {
     const platform = this.getPlatform();
     const downloadInfo = this.downloads.mariadb[version]?.[platform];
 
-    if (!downloadInfo) {
-      throw new Error(`MariaDB ${version} not available for ${platform}`);
-    }
+    this.ensureAutomatedDownloadAvailable(downloadInfo, `MariaDB ${version}`, platform);
 
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
@@ -584,7 +580,7 @@ server {
 
       const isValid = await this.validateZipFile(filePath);
       if (!isValid) {
-        throw new Error('Invalid ZIP file. Please download the correct Apache ZIP from Apache Lounge.');
+        throw new Error('Invalid ZIP file. Please download the correct Apache ZIP from Apache Lounge and import it again.');
       }
 
       const extractPath = path.join(this.resourcesPath, 'apache', version, platform);

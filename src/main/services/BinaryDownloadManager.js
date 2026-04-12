@@ -98,13 +98,9 @@ function buildDefaultDownloads() {
   if (downloads.apache?.['2.4']?.win) {
     downloads.apache['2.4'].win = {
       ...downloads.apache['2.4'].win,
-      url: 'https://www.apachelounge.com/download/VS17/binaries/httpd-2.4.62-240904-win64-VS17.zip',
-      filename: 'httpd-2.4.62-240904-win64-VS17.zip',
-      fallbackUrls: [
-        'https://www.apachelounge.com/download/VS17/binaries/httpd-2.4.61-240703-win64-VS17.zip',
-      ],
+      url: downloads.apache['2.4'].win.url || 'manual',
       manualDownloadUrl: downloads.apache['2.4'].win.downloadPage || 'https://www.apachelounge.com/download/',
-      manualDownloadNote: 'If automated download fails, download the Apache Lounge ZIP manually and import it from the Binary Manager.',
+      manualDownloadNote: 'Download the Windows Apache 2.4 x64 ZIP manually from Apache Lounge and import it from the Binary Manager.',
     };
   }
 

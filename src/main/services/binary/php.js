@@ -102,9 +102,7 @@ module.exports = {
     const platform = this.getPlatform();
     const downloadInfo = this.downloads.php[version]?.[platform];
 
-    if (!downloadInfo) {
-      throw new Error(`PHP ${version} not available for ${platform}`);
-    }
+    this.ensureAutomatedDownloadAvailable(downloadInfo, `PHP ${version}`, platform);
 
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });

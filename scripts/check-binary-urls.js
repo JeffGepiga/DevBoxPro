@@ -60,15 +60,6 @@ function collectUrlEntries(node, pathParts = [], results = []) {
       continue;
     }
 
-    if ((key === 'manualDownloadUrl' || key === 'downloadPage') && typeof value === 'string' && /^https?:\/\//i.test(value)) {
-      results.push({
-        kind: 'manual',
-        sourcePath: pathParts.join('.'),
-        url: value,
-      });
-      continue;
-    }
-
     if (key === 'fallbackUrls' && Array.isArray(value)) {
       value.forEach((fallbackUrl, index) => {
         if (typeof fallbackUrl === 'string' && /^https?:\/\//i.test(fallbackUrl)) {

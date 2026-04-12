@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const tar = require('tar');
 const { Worker } = require('worker_threads');
+const { spawn } = require('child_process');
 
 module.exports = {
   async extractArchive(archivePath, destPath, id) {
@@ -30,6 +31,8 @@ module.exports = {
         cwd: destPath,
         strip,
       });
+    } else if (basename.endsWith('.tar.xz') || ext === '.txz') {
+      await this.extractTarXzWithSystemTar(archivePath, destPath);
     }
 
     this.emitProgress(id, { status: 'extracting', progress: 100 });
@@ -66,6 +69,104 @@ module.exports = {
         }
       },
     });
+
+    if (hasRootFiles || !hasNestedEntries || !firstSegment) {
+      return 0;
+    }
+
+    return 1;
+  },
+
+  async extractTarXzWithSystemTar(archivePath, destPath) {
+    if (process.platform === 'win32') {
+      throw new Error('Automatic .tar.xz extraction is not supported on Windows.');
+    }
+
+    const strip = await this.getTarXzStripCount(archivePath);
+    const args = [`--strip-components=${strip}`, '-xJf', archivePath, '-C', destPath];
+
+    await new Promise((resolve, reject) => {
+      const proc = spawn('tar', args, {
+        windowsHide: true,
+        shell: false,
+      });
+
+      let stderr = '';
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('error', (error) => {
+        reject(error);
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+
+        reject(new Error(stderr.trim() || `tar exited with code ${code}`));
+      });
+    });
+  },
+
+  async getTarXzStripCount(archivePath) {
+    const entries = await new Promise((resolve, reject) => {
+      const proc = spawn('tar', ['-tJf', archivePath], {
+        windowsHide: true,
+        shell: false,
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('error', (error) => {
+        reject(error);
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve(stdout.split(/\r?\n/).filter(Boolean));
+          return;
+        }
+
+        reject(new Error(stderr.trim() || `tar exited with code ${code}`));
+      });
+    });
+
+    let firstSegment = null;
+    let hasNestedEntries = false;
+    let hasRootFiles = false;
+
+    for (const entryPath of entries) {
+      const normalizedPath = String(entryPath).replace(/\\/g, '/').replace(/^\.\//, '');
+      const segments = normalizedPath.split('/').filter(Boolean);
+
+      if (segments.length <= 1) {
+        hasRootFiles = true;
+        continue;
+      }
+
+      hasNestedEntries = true;
+      if (firstSegment === null) {
+        firstSegment = segments[0];
+        continue;
+      }
+
+      if (firstSegment !== segments[0]) {
+        firstSegment = false;
+      }
+    }
 
     if (hasRootFiles || !hasNestedEntries || !firstSegment) {
       return 0;

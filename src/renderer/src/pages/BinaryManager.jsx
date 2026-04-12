@@ -96,11 +96,12 @@ const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLat
   </div>
 );
 
-const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, isPhp, isNodejs, installed, downloading, progress, expandedSections, toggleSection, downloadSources, getProgressDisplay, setPhpIniEditor, handleImportApache, getInstalledVersionsCount }) => {
+const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, isPhp, isNodejs, installed, downloading, progress, expandedSections, toggleSection, downloadSources, resolveDownloadSourceUrl, getProgressDisplay, setPhpIniEditor, handleImportApache, getInstalledVersionsCount }) => {
   const installedCount = getInstalledVersionsCount(service.id);
   const hasInstalled = installedCount > 0;
   const isExpanded = expandedSections[service.id];
-  const hasSource = !!downloadSources[service.id]?.url;
+  const sourceUrl = resolveDownloadSourceUrl(service.id, service.defaultVersion || service.versions?.[0] || null);
+  const hasSource = !!sourceUrl;
   const hasImport = !service.noImport && (service.id === 'apache' ? !!handleImportApache : !!onImport);
 
   const handleHeaderImport = () => {
@@ -153,7 +154,7 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
         </div>
         <div className="flex items-center gap-1.5 ml-2 shrink-0" onClick={e => e.stopPropagation()}>
           {hasSource && (
-            <button onClick={() => window.devbox?.system.openExternal(downloadSources[service.id]?.url)} className="btn-icon text-gray-400 hover:text-gray-600" title={downloadSources[service.id]?.note}>
+            <button onClick={() => window.devbox?.system.openExternal(sourceUrl)} className="btn-icon text-gray-400 hover:text-gray-600" title={downloadSources[service.id]?.note}>
               <ExternalLink className="w-3.5 h-3.5" />
             </button>
           )}
@@ -766,11 +767,16 @@ function BinaryManager() {
     }
   };
 
-  const handleOpenApacheDownloadPage = async () => {
+  const handleOpenManualDownload = async (serviceId, version) => {
+    const manualUrl = resolveDownloadSourceUrl(serviceId, version);
+    if (!manualUrl) {
+      return;
+    }
+
     try {
-      await window.devbox?.binaries.openApacheDownloadPage();
+      await window.devbox?.system.openExternal(manualUrl);
     } catch (error) {
-      // Error opening Apache download page
+      // Error opening manual download page
     }
   };
 
@@ -879,6 +885,24 @@ function BinaryManager() {
       name: 'GitHub (openziti/zrok)',
       note: 'Install zrok, then enable it with your app-wide token below',
     },
+  };
+
+  const isExternalHttpUrl = (value) => typeof value === 'string' && /^https?:\/\//i.test(value);
+
+  const resolveDownloadSourceUrl = (serviceId, version = null) => {
+    const serviceEntry = downloadUrls?.[serviceId];
+    const versionEntry = version ? serviceEntry?.[version] : null;
+    const directEntry = !version && serviceEntry && typeof serviceEntry === 'object' && 'url' in serviceEntry ? serviceEntry : null;
+    const sourceEntry = versionEntry || directEntry;
+    const candidates = [
+      sourceEntry?.manualDownloadUrl,
+      sourceEntry?.downloadPage,
+      ...(Array.isArray(sourceEntry?.fallbackUrls) ? sourceEntry.fallbackUrls : []),
+      sourceEntry?.url,
+      downloadSources[serviceId]?.url,
+    ];
+
+    return candidates.find(isExternalHttpUrl) || null;
   };
 
   // Version detection patterns for different services
@@ -1171,8 +1195,7 @@ function BinaryManager() {
           }
           return [parts[0], parts.slice(1).join('-') || null];
         })();
-        const manualUrl = (verKey ? downloadUrls[svcKey]?.[verKey]?.url : null)
-          || downloadSources[svcKey]?.url;
+        const manualUrl = resolveDownloadSourceUrl(svcKey, verKey);
         return (
           <div className="flex items-start gap-1.5">
             <div className="flex flex-col">
@@ -1418,6 +1441,7 @@ function BinaryManager() {
     expandedSections,
     toggleSection,
     downloadSources,
+    resolveDownloadSourceUrl,
     getProgressDisplay,
     setPhpIniEditor,
     handleImportApache,
@@ -1870,7 +1894,7 @@ function BinaryManager() {
               onDownload={(s, v) => handleDownloadService(s, v)}
               onRemove={(s, v) => handleRemove(s, v)}
               onImport={(s) => s === 'apache' ? null : handleImportBinary(s)}
-              onManualOpen={() => handleOpenApacheDownloadPage()}
+              onManualOpen={(serviceId, version) => handleOpenManualDownload(serviceId, version)}
             />
           ))}
         </div>
