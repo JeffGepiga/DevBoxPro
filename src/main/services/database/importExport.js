@@ -257,14 +257,14 @@ module.exports = {
     const self = this;
     let buffer = '';
     const generatedColumns = new Map();
-    let passthrough = false; // Switches to true after all CREATE TABLEs are processed
-    let seenInsert = false;
+    // Enabled only after all virtual-column tables have had their INSERTs processed,
+    // allowing remaining data to bypass parsing.
+    let passthrough = false;
+    const processedInsertTables = new Set();
 
     return new Transform({
       highWaterMark: 8 * 1024 * 1024,
       transform(chunk, encoding, callback) {
-        // Fast passthrough: once all CREATE TABLEs are processed and no virtual columns,
-        // skip all parsing and push data directly
         if (passthrough) {
           this.push(chunk);
           callback();
@@ -316,8 +316,11 @@ module.exports = {
         let toProcess = buffer.substring(0, lastValidSemicolon + 1);
         buffer = buffer.substring(lastValidSemicolon + 1);
 
-        toProcess = toProcess.replace(
-          /CREATE TABLE\s+`(\w+)`\s*\(([\s\S]*?)\)\s*(ENGINE[\s\S]*?;)/gi,
+        // Only run the expensive CREATE TABLE regex when the segment contains one.
+        // Also handles CREATE TABLE IF NOT EXISTS produced by some dump tools.
+        if (/CREATE\s+TABLE/i.test(toProcess)) {
+          toProcess = toProcess.replace(
+            /CREATE TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+`(\w+)`\s*\(([\s\S]*?)\)\s*(ENGINE[\s\S]*?;)/gi,
           (match, tableName, tableDefinition, enginePart) => {
             const definitions = self.splitDefinitions(tableDefinition);
             const filteredDefinitions = [];
@@ -360,27 +363,20 @@ module.exports = {
             const newDefinition = '\n  ' + filteredDefinitions.join(',\n  ') + '\n';
             return `CREATE TABLE \`${tableName}\` (${newDefinition}) ${enginePart}`;
           }
-        );
+          );
+        } // end CREATE TABLE block
 
-        // Fast path: if no virtual/generated columns detected, skip INSERT processing entirely
+        // Fast path: no virtual columns detected — no INSERT processing needed.
         if (generatedColumns.size === 0) {
-          // Once we've seen INSERT statements without any virtual columns in preceding
-          // CREATE TABLEs, switch to full passthrough for remaining data
-          if (!seenInsert && /INSERT\s+INTO/i.test(toProcess)) {
-            seenInsert = true;
-          }
-          if (seenInsert && !/CREATE\s+TABLE/i.test(toProcess)) {
-            passthrough = true;
-            // Flush any remaining buffer too
-            if (buffer.length > 0) {
-              this.push(Buffer.from(toProcess + buffer, 'utf8'));
-              buffer = '';
-            } else {
-              this.push(Buffer.from(toProcess, 'utf8'));
-            }
-            callback();
-            return;
-          }
+          this.push(Buffer.from(toProcess, 'utf8'));
+          callback();
+          return;
+        }
+
+        // Fast path: segment has no INSERT touching a tracked table — skip expensive regex.
+        const lowerToProcess = toProcess.toLowerCase();
+        const hasTrackedInsert = [...generatedColumns.keys()].some(t => lowerToProcess.includes(`\`${t}\``));
+        if (!hasTrackedInsert) {
           this.push(Buffer.from(toProcess, 'utf8'));
           callback();
           return;
@@ -452,11 +448,22 @@ module.exports = {
           const processedValues = self.removeColumnsFromValues(valuesSection, virtualIndices);
 
           result += `INSERT INTO \`${insertMatch[1]}\` VALUES ${processedValues}`;
+          processedInsertTables.add(insertMatch[1].toLowerCase());
           lastIndex = valuesEnd;
         }
 
         result += toProcess.substring(lastIndex);
         this.push(Buffer.from(result, 'utf8'));
+
+        // Enable passthrough once every virtual-column table's INSERTs have been
+        // processed and the current segment contains no new CREATE TABLE.
+        if (
+          processedInsertTables.size >= generatedColumns.size &&
+          !/CREATE\s+TABLE/i.test(toProcess)
+        ) {
+          passthrough = true;
+        }
+
         callback();
       },
 
