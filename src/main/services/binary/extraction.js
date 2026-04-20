@@ -196,7 +196,10 @@ module.exports = {
   async extractZipAsync(archivePath, destPath, id) {
     return new Promise((resolve, reject) => {
       try {
-        const workerPath = path.join(__dirname, '..', 'extractWorker.js');
+        // Worker threads cannot execute scripts from inside an ASAR archive.
+        // When packaged, resolve the worker to its unpacked location (app.asar.unpacked).
+        const rawWorkerPath = path.join(__dirname, '..', 'extractWorker.js');
+        const workerPath = rawWorkerPath.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
 
         const worker = new Worker(workerPath, {
           workerData: { archivePath, destPath },
