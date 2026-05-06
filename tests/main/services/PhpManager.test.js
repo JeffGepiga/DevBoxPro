@@ -13,22 +13,37 @@ const fs = require('fs-extra');
 require('../../helpers/mockElectronCjs');
 const { PhpManager } = require('../../../src/main/services/PhpManager');
 
+const originalPlatform = process.platform;
+
+function setPlatform(value) {
+    Object.defineProperty(process, 'platform', {
+        value,
+        configurable: true,
+    });
+}
+
 describe('PhpManager', () => {
     let pm;
     let tmpDir;
     let mockConfigStore;
 
     beforeEach(async () => {
+        setPlatform('win32');
         tmpDir = path.join(os.tmpdir(), `phpmgr-test-${Date.now()}`);
         await fs.ensureDir(tmpDir);
         mockConfigStore = {
             get: vi.fn(() => ({})),
             set: vi.fn(),
         };
-        pm = new PhpManager(tmpDir, mockConfigStore, {});
+        pm = new PhpManager(tmpDir, mockConfigStore, {
+            service: {
+                ensureWindowsRuntimeDlls: vi.fn().mockResolvedValue(undefined),
+            },
+        });
     });
 
     afterEach(async () => {
+        setPlatform(originalPlatform);
         await fs.remove(tmpDir).catch(() => { });
     });
 
@@ -89,6 +104,23 @@ describe('PhpManager', () => {
                 binary: '/path/to/php',
             };
             expect(pm.getPhpBinaryPath('8.3')).toBe('/path/to/php');
+        });
+    });
+
+    describe('ensurePhpRuntimeReady()', () => {
+        it('repairs Windows runtime DLLs for installed PHP versions', async () => {
+            pm.phpVersions['8.3'] = {
+                available: true,
+                path: '/resources/php/8.3/win',
+                binary: '/resources/php/8.3/win/php.exe',
+            };
+
+            await pm.ensurePhpRuntimeReady('8.3');
+
+            expect(pm.managers.service.ensureWindowsRuntimeDlls).toHaveBeenCalledWith(
+                '/resources/php/8.3/win',
+                'PHP 8.3'
+            );
         });
     });
 

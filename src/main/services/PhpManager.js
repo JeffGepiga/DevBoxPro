@@ -71,6 +71,26 @@ class PhpManager {
     return versionInfo.binary;
   }
 
+  async ensurePhpRuntimeReady(version) {
+    if (process.platform !== 'win32') {
+      return;
+    }
+
+    const phpDir = this.phpVersions[version]?.path;
+    if (!phpDir) {
+      return;
+    }
+
+    try {
+      await this.managers.service?.ensureWindowsRuntimeDlls?.(phpDir, `PHP ${version}`);
+    } catch (error) {
+      this.managers?.log?.systemWarn?.(`Failed to repair PHP ${version} runtime DLLs`, {
+        phpDir,
+        error: error.message,
+      });
+    }
+  }
+
   getAvailableVersions() {
     return Object.entries(this.phpVersions).map(([version, info]) => ({
       version,
@@ -332,6 +352,8 @@ opcache.revalidate_freq = 0
     const phpPath = this.getPhpBinaryPath(version);
     const phpDir = this.phpVersions[version]?.path;
 
+    await this.ensurePhpRuntimeReady(version);
+
     // Security: Validate command before execution
     if (!this.validatePhpCommand(command)) {
       throw new Error('Command contains potentially dangerous patterns and was blocked for security reasons.');
@@ -386,6 +408,8 @@ opcache.revalidate_freq = 0
     const phpPath = this.getPhpBinaryPath(version);
     const phpDir = this.phpVersions[version]?.path;
     const artisanPath = path.join(projectPath, 'artisan');
+
+    await this.ensurePhpRuntimeReady(version);
 
     if (!(await fs.pathExists(artisanPath))) {
       throw new Error('This is not a Laravel project (artisan not found)');
@@ -448,6 +472,8 @@ opcache.revalidate_freq = 0
     const phpDir = this.phpVersions[version]?.path;
     const composerPath = this.getComposerPath();
 
+    await this.ensurePhpRuntimeReady(version);
+
     // Add PHP directory to PATH so Windows can find PHP's DLLs (libssl, libcrypto, etc.)
     const envPath = phpDir
       ? (process.platform === 'win32' ? `${phpDir};${process.env.PATH || ''}` : `${phpDir}:${process.env.PATH || ''}`)
@@ -495,6 +521,8 @@ opcache.revalidate_freq = 0
   async getPhpInfo(version) {
     const phpPath = this.getPhpBinaryPath(version);
     const phpDir = this.phpVersions[version]?.path;
+
+    await this.ensurePhpRuntimeReady(version);
 
     // Add PHP directory to PATH so Windows can find PHP's DLLs (libssl, libcrypto, etc.)
     const envPath = phpDir

@@ -135,6 +135,29 @@ describe('binary/runtimeTools', () => {
     );
   });
 
+  it('repairs PHP runtime DLLs before running Composer on Windows', async () => {
+    const ctx = makeContext({
+      managers: {
+        log: {
+          systemError: vi.fn(),
+          systemWarn: vi.fn(),
+        },
+        service: {
+          ensureWindowsRuntimeDlls: vi.fn().mockResolvedValue(undefined),
+        },
+      },
+    });
+
+    vi.spyOn(fs, 'pathExists').mockResolvedValue(true);
+
+    await expect(ctx.runComposer('/project', 'install --no-dev', '8.3')).rejects.toThrow();
+
+    expect(ctx.managers.service.ensureWindowsRuntimeDlls).toHaveBeenCalledWith(
+      path.join('/resources', 'php', '8.3', 'win'),
+      'PHP 8.3'
+    );
+  });
+
   it('returns guidance instead of downloading Git on macOS', async () => {
     const ctx = makeContext({
       getPlatform: vi.fn(() => 'mac'),

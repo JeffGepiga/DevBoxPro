@@ -3,6 +3,22 @@ const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { spawnAsync, killProcessesByPath } = require('../../utils/SpawnUtils');
 
+async function ensurePhpRuntimeReady(managers, phpDir, version) {
+  if (process.platform !== 'win32' || !phpDir) {
+    return;
+  }
+
+  try {
+    await managers?.service?.ensureWindowsRuntimeDlls?.(phpDir, `PHP ${version}`);
+  } catch (error) {
+    managers?.log?.systemWarn?.('Failed to repair PHP runtime DLLs before Composer execution', {
+      phpDir,
+      version,
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   async downloadNodejs(version = '20') {
     const id = `nodejs-${version}`;
@@ -258,6 +274,8 @@ exit 1
       if (onOutput) onOutput(error, 'error');
       throw new Error(error);
     }
+
+    await ensurePhpRuntimeReady(this.managers, phpDir, phpVersion);
 
     const args = [composerPhar, ...command.split(' ')];
     const spawnEnv = {

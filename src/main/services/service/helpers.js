@@ -2,6 +2,32 @@ const path = require('path');
 const fs = require('fs-extra');
 const { app } = require('electron');
 
+async function needsWindowsRuntimeSync(sourcePath, destPath) {
+  if (!await fs.pathExists(destPath)) {
+    return true;
+  }
+
+  try {
+    const [sourceStat, destStat] = await Promise.all([
+      fs.stat(sourcePath),
+      fs.stat(destPath),
+    ]);
+
+    if (sourceStat.size !== destStat.size) {
+      return true;
+    }
+
+    const [sourceBuffer, destBuffer] = await Promise.all([
+      fs.readFile(sourcePath),
+      fs.readFile(destPath),
+    ]);
+
+    return !sourceBuffer.equals(destBuffer);
+  } catch (_error) {
+    return true;
+  }
+}
+
 module.exports = {
   getDataPath() {
     if (typeof this.configStore.getDataPath === 'function') {
@@ -86,24 +112,13 @@ module.exports = {
     }
 
     const requiredDlls = ['vcruntime140.dll', 'msvcp140.dll', 'vcruntime140_1.dll'];
-    const missingDlls = [];
-
-    for (const dll of requiredDlls) {
-      if (!await fs.pathExists(path.join(targetDir, dll))) {
-        missingDlls.push(dll);
-      }
-    }
-
-    if (missingDlls.length === 0) {
-      return;
-    }
 
     const sourceDirs = [
-      path.join(process.env.SystemRoot || 'C:\\Windows', 'System32'),
       ...this.getBundledVCRedistDirs(),
+      path.join(process.env.SystemRoot || 'C:\\Windows', 'System32'),
     ];
 
-    for (const dll of missingDlls) {
+    for (const dll of requiredDlls) {
       const destPath = path.join(targetDir, dll);
       let copied = false;
 
@@ -114,8 +129,13 @@ module.exports = {
             continue;
           }
 
+          if (!await needsWindowsRuntimeSync(sourcePath, destPath)) {
+            copied = true;
+            break;
+          }
+
           await fs.copy(sourcePath, destPath, { overwrite: true });
-          this.managers.log?.systemInfo(`Provisioned ${dll} for ${label}`, { sourcePath, destPath });
+          this.managers.log?.systemInfo(`Synchronized ${dll} for ${label}`, { sourcePath, destPath });
           copied = true;
           break;
         } catch (error) {
