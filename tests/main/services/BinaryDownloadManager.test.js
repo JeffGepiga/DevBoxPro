@@ -102,24 +102,24 @@ describe('BinaryDownloadManager', () => {
 
         it('builds forward-then-backward patch candidates for dead assets', () => {
             const candidates = mgr.buildPatchFallbackCandidates({
-                url: 'https://windows.php.net/downloads/releases/php-8.3.30-nts-Win32-vs16-x64.zip',
-                filename: 'php-8.3.30-nts-Win32-vs16-x64.zip'
+                url: 'https://downloads.php.net/~windows/releases/php-8.3.31-nts-Win32-vs16-x64.zip',
+                filename: 'php-8.3.31-nts-Win32-vs16-x64.zip'
             });
 
             expect(candidates.slice(0, 6).map(candidate => candidate.resolvedVersion)).toEqual([
-                '8.3.31',
                 '8.3.32',
                 '8.3.33',
                 '8.3.34',
                 '8.3.35',
-                '8.3.29'
+                '8.3.36',
+                '8.3.30'
             ]);
         });
 
         it('probes nearby patch versions for PHP when the configured asset is missing', async () => {
             vi.spyOn(mgr, 'getPlatform').mockReturnValue('win');
             const downloadSpy = vi.spyOn(mgr, 'downloadFile').mockImplementation(async (url, destPath) => {
-                if (url.includes('8.3.30') || url.includes('8.3.31') || url.includes('8.3.32') || url.includes('8.3.33') || url.includes('8.3.34') || url.includes('8.3.35')) {
+                if (url.includes('8.3.31') || url.includes('8.3.32') || url.includes('8.3.33') || url.includes('8.3.34') || url.includes('8.3.35') || url.includes('8.3.36')) {
                     throw new Error('Download failed with status 404');
                 }
 
@@ -127,19 +127,19 @@ describe('BinaryDownloadManager', () => {
             });
 
             const result = await mgr.downloadWithVersionProbe('php', '8.3', 'php-8.3', {
-                url: 'https://windows.php.net/downloads/releases/php-8.3.30-nts-Win32-vs16-x64.zip',
-                filename: 'php-8.3.30-nts-Win32-vs16-x64.zip'
+                url: 'https://downloads.php.net/~windows/releases/php-8.3.31-nts-Win32-vs16-x64.zip',
+                filename: 'php-8.3.31-nts-Win32-vs16-x64.zip'
             });
 
-            expect(result.downloadInfo.url).toContain('8.3.29');
+            expect(result.downloadInfo.url).toContain('8.3.30');
             expect(downloadSpy.mock.calls.map(call => call[0]).slice(0, 7)).toEqual([
-                'https://windows.php.net/downloads/releases/php-8.3.30-nts-Win32-vs16-x64.zip',
-                'https://windows.php.net/downloads/releases/php-8.3.31-nts-Win32-vs16-x64.zip',
-                'https://windows.php.net/downloads/releases/php-8.3.32-nts-Win32-vs16-x64.zip',
-                'https://windows.php.net/downloads/releases/php-8.3.33-nts-Win32-vs16-x64.zip',
-                'https://windows.php.net/downloads/releases/php-8.3.34-nts-Win32-vs16-x64.zip',
-                'https://windows.php.net/downloads/releases/php-8.3.35-nts-Win32-vs16-x64.zip',
-                'https://windows.php.net/downloads/releases/php-8.3.29-nts-Win32-vs16-x64.zip'
+                'https://downloads.php.net/~windows/releases/php-8.3.31-nts-Win32-vs16-x64.zip',
+                'https://downloads.php.net/~windows/releases/php-8.3.32-nts-Win32-vs16-x64.zip',
+                'https://downloads.php.net/~windows/releases/php-8.3.33-nts-Win32-vs16-x64.zip',
+                'https://downloads.php.net/~windows/releases/php-8.3.34-nts-Win32-vs16-x64.zip',
+                'https://downloads.php.net/~windows/releases/php-8.3.35-nts-Win32-vs16-x64.zip',
+                'https://downloads.php.net/~windows/releases/php-8.3.36-nts-Win32-vs16-x64.zip',
+                'https://downloads.php.net/~windows/releases/php-8.3.30-nts-Win32-vs16-x64.zip'
             ]);
         });
     });
