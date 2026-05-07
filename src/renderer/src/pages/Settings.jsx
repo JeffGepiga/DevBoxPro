@@ -445,7 +445,7 @@ function CliSettings() {
           text: 'Terminal commands enabled! Restart your terminal or VS Code to use php, npm, node, composer, and mysql directly.'
         });
       } else {
-        setMessage({ type: 'success', text: 'Terminal commands disabled.' });
+        setMessage({ type: 'success', text: 'Terminal commands disabled and removed from PATH. Restart your terminal or VS Code for changes to take effect.' });
       }
 
       // Refresh status

@@ -16,7 +16,14 @@ function makeContext(overrides = {}) {
               name: 'Project One',
               path: 'C:/Sites/project-one',
               phpVersion: '8.3',
-              services: { nodejs: true, nodejsVersion: '22', python: true, pythonVersion: '3.13' },
+              services: {
+                nodejs: true,
+                nodejsVersion: '22',
+                python: true,
+                pythonVersion: '3.13',
+                mariadb: true,
+                mariadbVersion: '11.4',
+              },
             },
           ];
         }
@@ -58,12 +65,29 @@ describe('cli/projects', () => {
         [path.normalize('C:/Sites/project-one')]: expect.objectContaining({
           id: 'proj-1',
           nodejsVersion: '22',
-          mysqlType: 'mysql',
-          mysqlVersion: '8.4',
+          mysqlType: 'mariadb',
+          mysqlVersion: '11.4',
+          services: {
+            pythonVersion: '3.13',
+          },
         }),
       }),
       { spaces: 2 }
     );
+  });
+
+  it('derives per-project mysql info before falling back to the active database setting', () => {
+    const ctx = makeContext();
+
+    expect(ctx.getProjectMysqlInfo({
+      services: { mysql: true, mysqlVersion: '8.0' },
+    })).toEqual({ dbType: 'mysql', version: '8.0' });
+
+    expect(ctx.getProjectMysqlInfo({
+      services: { mariadb: true, mariadbVersion: '11.4' },
+    })).toEqual({ dbType: 'mariadb', version: '11.4' });
+
+    expect(ctx.getProjectMysqlInfo({ services: {} })).toEqual({ dbType: 'mysql', version: '8.4' });
   });
 
   it('finds the project that contains a working directory', () => {
