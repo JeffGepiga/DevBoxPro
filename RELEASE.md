@@ -1,35 +1,44 @@
-# 🚀 DevBox Pro v1.0.6
+# 🚀 DevBox Pro v1.0.7
 
-**Stable Release | Your all-in-one local development environment for PHP & Node.js**
+**Stable Release | More reliable local runtimes, databases, and service startup for PHP & Node.js development**
 
 ---
 
-## 🆕 What's New in v1.0.6
+## 🆕 What's New in v1.0.7
 
-### ✨ New Features
+### ✨ Reliability & Performance Improvements
 
-#### 🌍 Public Internet Sharing
-- Share running projects publicly with **Cloudflare Tunnel** or **zrok** from the project detail screen
-- Per-project **Share on Internet** toggle with optional **auto-start tunnel** support
-- Public tunnels now support both **Nginx** and **Apache** projects, including mixed front-door proxy setups
-- Cloudflare tunnel traffic is now stabilized with local proxy handling for redirects, cookies, and absolute local `.test` URLs
-- Cloudflare public URLs are only surfaced once the `trycloudflare.com` hostname is resolvable, reducing broken fresh-tunnel links
-- zrok public URL detection has been updated for current CLI output formats
+#### 🌐 Web Server Stability
+- Hardened **Apache** and **Nginx** startup to better reclaim ports, wait for stale bindings to clear, and reduce failed starts on Windows
+- Improved restart behavior for restart-sensitive services by keeping them warm during quick project stop/start cycles
+- Refined **Nginx** forwarded-header handling so proxied HTTPS requests preserve the correct FastCGI and application-facing scheme details
+
+#### 🧰 PHP & Runtime Tooling
+- Improved project-aware **PHP** and **Composer** command handling, including support for shell operators in routed commands
+- Updated bundled **PHP** download URLs to current upstream assets
+- Strengthened Windows runtime repair by synchronizing required **VC++ DLLs** for PHP and related services
+- Installer builds can now silently install a bundled **Microsoft Visual C++ Redistributable** during setup when needed
+
+#### 💾 Database & Import Workflows
+- Improved database import progress reporting and large SQL import performance
+- Added more resilient **PostgreSQL** startup retry handling for transient failures
+- Expanded **MongoDB** operations with `mongosh` integration and better binary management support
 
 ### 🛡️ Web Server Hardening
 
-- Hardened mixed **Nginx** and **Apache** front-door handling when multiple projects and server versions are active
-- Improved proxy behavior so tunnel traffic keeps redirects, cookies, and absolute `.test` URLs on the public hostname
-- Reduced false-ready tunnel states by waiting for Cloudflare Quick Tunnel hostnames to become resolvable before surfacing them
-- Improved web server readiness and startup coordination to reduce port collisions and unstable starts
+- Improved port availability checks for **Apache**, **Nginx**, and **Redis** to reduce collisions and false-start states
+- Hardened Windows stop/start reclaim flows so web server ports clear more predictably between restarts
+- Reduced mixed-server startup races when multiple web server versions or front-door owners are active
+- Preserved correct HTTPS behavior behind proxies by tightening forwarded-header and FastCGI override handling
 
 ### 🧹 Fixes Included In This Release
 
-- Fixed public tunnel routing when multiple projects are running across Nginx and Apache
-- Fixed Cloudflare tunnel sessions showing the wrong project when multiple projects are shared
-- Fixed public tunnel flows that redirected browsers back to local `.test` URLs
-- Fixed stale or not-yet-ready Cloudflare Quick Tunnel hostnames being shown as live too early
-- Fixed multi-server version issues when running multiple web server versions simultaneously
+- Fixed Windows web server restart races that could leave **Apache** or **Nginx** ports stuck in use
+- Fixed stale port bindings causing intermittent startup failures for **Apache**, **Nginx**, and **Redis**
+- Fixed PHP runtime issues on Windows caused by missing or outdated local **VC++ runtime DLLs**
+- Fixed database import flows that were slower or less transparent on large SQL files
+- Fixed transient **PostgreSQL** startup failures with improved retry behavior
+- Fixed MongoDB database operations on installs missing a usable shell client
 
 ---
 
@@ -109,13 +118,14 @@ mysqldump -u root mydb > backup.sql  # Dump with the active DB version
 
 | File | Description |
 |------|-------------|
-| **DevBox-Pro-Setup-1.0.6.exe** | Installer version (recommended) |
-| **DevBox-Pro-1.0.6.exe** | Portable version – no installation required |
+| **DevBox-Pro-Setup-1.0.7.exe** | Installer version (recommended) |
+| **DevBox-Pro-1.0.7.exe** | Portable version – no installation required |
 
 ### System Requirements (Windows)
 - **OS**: Windows 10/11 (64-bit)
 - **RAM**: 4GB minimum, 8GB recommended
 - **Disk**: 2GB for app + space for binaries
+- **Runtime**: Installer builds can bundle and silently run `vcredist/VC_redist.x64.exe` to install or repair the Microsoft Visual C++ Redistributable
 
 ### 🍎 macOS Support
 
