@@ -4,9 +4,14 @@ const fs = require('fs-extra');
 module.exports = {
   async createVirtualHost(project, phpFpmPort = null, targetVersion = null) {
     const webServer = project.webServer || this.configStore.get('settings.webServer', 'nginx');
+    const nodeBackendPort = project.nodePort || 3000;
 
     if (webServer === 'nginx') {
-      await this.createNginxVhost(project, phpFpmPort, targetVersion);
+      if (project.type === 'nodejs') {
+        await this.createProxyNginxVhost(project, nodeBackendPort, targetVersion);
+      } else {
+        await this.createNginxVhost(project, phpFpmPort, targetVersion);
+      }
       const proxied = await this.syncProjectLocalProxy(project);
 
       try {
@@ -30,7 +35,9 @@ module.exports = {
       return;
     }
 
-    const result = await this.createApacheVhost(project, targetVersion);
+    const result = project.type === 'nodejs'
+      ? await this.createProxyApacheVhost(project, nodeBackendPort, targetVersion)
+      : await this.createApacheVhost(project, targetVersion);
     const proxied = await this.syncProjectLocalProxy(project);
     await this.ensureApacheListenConfig(project, result, targetVersion);
 
@@ -77,7 +84,11 @@ module.exports = {
 
       try {
         if (shouldCreateDirectApache) {
-          await this.createApacheVhost(proj, targetApacheVersion);
+          if (proj.type === 'nodejs') {
+            await this.createProxyApacheVhost(proj, proj.nodePort || 3000, targetApacheVersion);
+          } else {
+            await this.createApacheVhost(proj, targetApacheVersion);
+          }
         } else if (shouldProxyThroughApache) {
           await this.createProxyApacheVhost(proj, this.getProjectProxyBackendHttpPort(proj), targetApacheVersion);
         }
@@ -117,9 +128,13 @@ module.exports = {
 
       try {
         if (shouldCreateDirectNginx) {
-          const running = this.runningProjects.get(proj.id);
-          const phpFpmPort = running?.phpFpmPort || null;
-          await this.createNginxVhost(proj, phpFpmPort, targetNginxVersion);
+          if (proj.type === 'nodejs') {
+            await this.createProxyNginxVhost(proj, proj.nodePort || 3000, targetNginxVersion);
+          } else {
+            const running = this.runningProjects.get(proj.id);
+            const phpFpmPort = running?.phpFpmPort || null;
+            await this.createNginxVhost(proj, phpFpmPort, targetNginxVersion);
+          }
         } else if (shouldProxyThroughNginx) {
           await this.createProxyNginxVhost(proj, this.getProjectProxyBackendHttpPort(proj), targetNginxVersion);
         }

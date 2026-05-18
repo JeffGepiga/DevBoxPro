@@ -24,6 +24,7 @@ function makeContext(overrides = {}) {
     getFrontDoorOwner: vi.fn(() => null),
     getProjectProxyBackendHttpPort: vi.fn(() => 8081),
     projectNeedsFrontDoorProxy: vi.fn(() => false),
+    syncProjectLocalProxy: vi.fn().mockResolvedValue(false),
     runningProjects: new Map(),
     createApacheVhost: vi.fn().mockResolvedValue(undefined),
     createProxyApacheVhost: vi.fn().mockResolvedValue(undefined),
@@ -90,5 +91,59 @@ describe('project/vhostOrchestration', () => {
     await ctx.regenerateAllNginxVhosts(null, '1.28');
 
     expect(ctx.createNginxVhost).toHaveBeenCalledWith(project, 9100, '1.28');
+  });
+
+  it('creates a direct nginx proxy vhost for node projects', async () => {
+    const project = {
+      id: 'node-nginx-project',
+      name: 'Node Nginx Project',
+      type: 'nodejs',
+      nodePort: 3173,
+      webServer: 'nginx',
+      webServerVersion: '1.28',
+    };
+
+    const ctx = makeContext({
+      managers: {
+        service: {
+          standardPortOwner: null,
+          reloadNginx: vi.fn().mockResolvedValue(undefined),
+        },
+        log: {
+          systemWarn: vi.fn(),
+        },
+      },
+    });
+
+    await ctx.createVirtualHost(project, null, '1.28');
+
+    expect(ctx.createProxyNginxVhost).toHaveBeenCalledWith(project, 3173, '1.28');
+    expect(ctx.createNginxVhost).not.toHaveBeenCalled();
+  });
+
+  it('recreates running nginx node projects as proxy vhosts', async () => {
+    const project = {
+      id: 'node-nginx-project',
+      name: 'Node Nginx Project',
+      type: 'nodejs',
+      nodePort: 3173,
+      webServer: 'nginx',
+      webServerVersion: '1.28',
+    };
+
+    vi.spyOn(fs, 'pathExists').mockResolvedValue(false);
+
+    const ctx = makeContext({
+      configStore: {
+        get: vi.fn((key, defaultValue) => key === 'projects' ? [project] : defaultValue),
+      },
+      getFrontDoorOwner: vi.fn(() => ({ webServer: 'nginx', version: '1.28' })),
+      runningProjects: new Map([['node-nginx-project', { startedAt: new Date() }]]),
+    });
+
+    await ctx.regenerateAllNginxVhosts(null, '1.28');
+
+    expect(ctx.createProxyNginxVhost).toHaveBeenCalledWith(project, 3173, '1.28');
+    expect(ctx.createNginxVhost).not.toHaveBeenCalled();
   });
 });

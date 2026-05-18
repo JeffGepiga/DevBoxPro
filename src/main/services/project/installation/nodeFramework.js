@@ -78,6 +78,15 @@ module.exports = {
       proc.on('error', (err) => reject(err));
     });
 
+    const ensurePackageJsonExists = async (cwd, frameworkName) => {
+      const packageJsonPath = path.join(cwd, 'package.json');
+      if (await fs.pathExists(packageJsonPath)) {
+        return;
+      }
+
+      throw new Error(`${frameworkName} scaffolding did not create package.json`);
+    };
+
     await fs.ensureDir(projectPath);
 
     const frameworkNames = {
@@ -105,11 +114,13 @@ module.exports = {
       switch (framework) {
         case 'express':
           await runCmd(npxCmd, ['-y', 'express-generator', '.', '--force', '--no-view'], projectPath, 'npx express-generator . --force --no-view');
+          await ensurePackageJsonExists(projectPath, 'Express');
           await runCmd(npmCmd, ['install'], projectPath, 'npm install');
           break;
 
         case 'fastify':
           await runCmd(npxCmd, ['-y', 'fastify-cli', 'generate', '.', '--lang=js'], projectPath, 'npx fastify-cli generate . --lang=js');
+          await ensurePackageJsonExists(projectPath, 'Fastify');
           await runCmd(npmCmd, ['install'], projectPath, 'npm install');
           break;
 
@@ -122,7 +133,13 @@ module.exports = {
           break;
 
         case 'nuxtjs':
-          await runCmd(npxCmd, ['-y', 'nuxi@latest', 'init', '.', '--force', '--packageManager', 'npm'], projectPath, 'npx nuxi init . --force');
+          await runCmd(
+            npxCmd,
+            ['-y', 'nuxi@latest', 'init', '.', '--force', '--template', 'minimal', '--no-modules', '--no-install', '--packageManager', 'npm'],
+            projectPath,
+            'npx nuxi init . --force --template minimal --no-modules --no-install'
+          );
+          await ensurePackageJsonExists(projectPath, 'Nuxt.js');
           await runCmd(npmCmd, ['install'], projectPath, 'npm install');
           break;
 
@@ -152,11 +169,18 @@ module.exports = {
 
         case 'remix':
           await runCmd(npxCmd, ['-y', 'create-remix@latest', '.', '--no-install', '--no-git-init'], projectPath, 'npx create-remix . --no-install --no-git-init');
+          await ensurePackageJsonExists(projectPath, 'Remix');
           await runCmd(npmCmd, ['install'], projectPath, 'npm install');
           break;
 
         case 'sveltekit':
-          await runCmd(npxCmd, ['-y', 'sv', 'create', '.', '--template', 'minimal', '--no-add-ons', '--no-install'], projectPath, 'npx sv create . --template minimal');
+          await runCmd(
+            npxCmd,
+            ['-y', 'sv', 'create', '.', '--template', 'minimal', '--no-types', '--no-add-ons', '--no-install', '--no-dir-check'],
+            projectPath,
+            'npx sv create . --template minimal --no-types --no-add-ons --no-install'
+          );
+          await ensurePackageJsonExists(projectPath, 'SvelteKit');
           await runCmd(npmCmd, ['install'], projectPath, 'npm install');
           break;
 

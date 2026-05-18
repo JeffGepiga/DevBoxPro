@@ -36,8 +36,9 @@ function makeContext(overrides = {}) {
     getDefaultWebServerVersion: vi.fn(() => '1.28'),
     getDefaultEnvironment: vi.fn((type, name, port) => ({ APP_NAME: name, APP_PORT: String(port), APP_TYPE: type })),
     sanitizeDatabaseName: vi.fn((name) => name.toLowerCase().replace(/[^a-z0-9]/g, '_')),
+    assertProjectDomainsAvailable: vi.fn(),
     createVirtualHost: vi.fn().mockResolvedValue(undefined),
-    addToHostsFile: vi.fn().mockResolvedValue(undefined),
+    updateHostsFile: vi.fn().mockResolvedValue({ success: true }),
     ensureCliInstalled: vi.fn().mockResolvedValue(undefined),
     getResourcesPath: vi.fn(() => '/resources'),
     ...overrides,
@@ -124,9 +125,31 @@ describe('project/discovery', () => {
     expect(ctx.managers.database.createDatabase).toHaveBeenCalledWith('imported_app', '8.4');
     expect(ctx.managers.ssl.createCertificate).toHaveBeenCalledWith(['imported-app.test']);
     expect(ctx.createVirtualHost).toHaveBeenCalledWith(expect.objectContaining({ name: 'Imported App' }));
-    expect(ctx.addToHostsFile).toHaveBeenCalledWith('imported-app.test');
+    expect(ctx.updateHostsFile).toHaveBeenCalledWith(expect.objectContaining({ domain: 'imported-app.test' }));
     expect(ctx.configStore.set).toHaveBeenCalledWith('projects', expect.arrayContaining([
       expect.objectContaining({ name: 'Imported App', path: '/projects/imported-app' }),
     ]));
+  });
+
+  it('fails import when hosts-file registration is denied', async () => {
+    const existingProjects = [];
+    const ctx = makeContext({
+      configStore: {
+        get: vi.fn((key) => {
+          if (key === 'settings') return { defaultTld: 'test', webServer: 'nginx', portRangeStart: 8000 };
+          if (key === 'projects') return existingProjects;
+          return undefined;
+        }),
+        set: vi.fn(),
+      },
+      updateHostsFile: vi.fn().mockResolvedValue({ success: false, error: 'User canceled elevation prompt' }),
+      assertProjectDomainsAvailable: vi.fn(),
+    });
+
+    await expect(ctx.registerExistingProject({
+      name: 'Imported App',
+      path: '/projects/imported-app',
+      ssl: true,
+    })).rejects.toThrow('Could not reserve imported-app.test for local development. User canceled elevation prompt');
   });
 });

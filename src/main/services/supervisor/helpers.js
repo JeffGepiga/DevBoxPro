@@ -74,6 +74,34 @@ module.exports = {
     return base.replace(/\.(cmd|exe|bat|ps1)$/i, '');
   },
 
+  getEffectiveProcessCommand(project, config = {}) {
+    const command = String(config.command || '').trim();
+    if (!command) {
+      return command;
+    }
+
+    const isNodeAppProcess = config.name === 'nodejs-app' && project?.type === 'nodejs';
+    const isDefaultSvelteKitDevCommand = /^npm\s+run\s+dev$/i.test(command);
+
+    if (isNodeAppProcess && project?.nodeFramework === 'sveltekit' && isDefaultSvelteKitDevCommand) {
+      return `npm run dev -- --host 127.0.0.1 --port ${project.nodePort || 5173} --strictPort`;
+    }
+
+    return command;
+  },
+
+  getEffectiveProcessEnvironment(project, config = {}, envBase = {}) {
+    const env = { ...envBase };
+    const isNodeAppProcess = config.name === 'nodejs-app' && project?.type === 'nodejs';
+    const primaryDomain = project?.domain || project?.domains?.[0];
+
+    if (isNodeAppProcess && primaryDomain && !env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS) {
+      env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS = primaryDomain;
+    }
+
+    return env;
+  },
+
   spawnHidden(command, args, options = {}) {
     if (process.platform === 'win32') {
       const executable = String(command || '');
@@ -102,7 +130,8 @@ module.exports = {
   },
 
   async resolveProcessCommand(project, config) {
-    const tokens = this.tokenizeCommand(config.command || '');
+    const commandString = this.getEffectiveProcessCommand(project, config);
+    const tokens = this.tokenizeCommand(commandString);
     if (tokens.length === 0) {
       throw new Error('Process command is required');
     }
@@ -138,13 +167,13 @@ module.exports = {
     const pythonScriptsDir = process.platform === 'win32' ? path.join(pythonDir, 'Scripts') : path.join(pythonDir, 'bin');
     const composerPhar = path.join(this.resourcePath, 'composer', 'composer.phar');
 
-    const envBase = {
+    const envBase = this.getEffectiveProcessEnvironment(project, config, {
       ...process.env,
       ...project.environment,
       ...config.environment,
       PYTHONUNBUFFERED: '1',
       NODE_NO_READLINE: '1',
-    };
+    });
 
     const firstToken = this.normalizeExecutableToken(tokens[0]);
     let command = tokens[0];

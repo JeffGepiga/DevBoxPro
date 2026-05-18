@@ -168,6 +168,8 @@ module.exports = {
       lastStarted: null,
     };
 
+    this.assertProjectDomainsAvailable(project);
+
     if (project.services.mysql || project.services.mariadb) {
       const dbName = this.sanitizeDatabaseName(config.name);
       project.environment.DB_DATABASE = dbName;
@@ -194,10 +196,9 @@ module.exports = {
       this.managers.log?.systemWarn('Could not create virtual host', { error: error.message });
     }
 
-    try {
-      await this.addToHostsFile(project.domain);
-    } catch (error) {
-      this.managers.log?.systemWarn('Could not update hosts file', { error: error.message });
+    const hostsResult = await this.updateHostsFile(project);
+    if (hostsResult?.success === false) {
+      throw new Error(`Could not reserve ${project.domain} for local development. ${hostsResult.error}`);
     }
 
     if (project.services.queue && project.type === 'laravel') {

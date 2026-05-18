@@ -149,6 +149,58 @@ module.exports = {
     return [...new Set(domains.filter(Boolean))];
   },
 
+  normalizeProjectDomain(domain) {
+    return typeof domain === 'string' ? domain.trim().toLowerCase() : '';
+  },
+
+  getReservedProjectDomains(project) {
+    const primaryDomain = this.getProjectPrimaryDomain(project);
+    const domains = this.getProjectDomains(project);
+
+    return [...new Set([
+      ...domains,
+      primaryDomain ? `www.${primaryDomain}` : null,
+    ].filter(Boolean).map((domain) => this.normalizeProjectDomain(domain)))];
+  },
+
+  findProjectDomainConflicts(project, excludeProjectId = null) {
+    const candidateDomains = this.getReservedProjectDomains(project);
+    if (candidateDomains.length === 0) {
+      return [];
+    }
+
+    const projects = this.configStore.get('projects', []);
+    const conflicts = [];
+
+    for (const existingProject of projects) {
+      if (!existingProject || existingProject.id === excludeProjectId) {
+        continue;
+      }
+
+      const existingDomains = this.getReservedProjectDomains(existingProject);
+      const overlappingDomains = candidateDomains.filter((domain) => existingDomains.includes(domain));
+      if (overlappingDomains.length > 0) {
+        conflicts.push({
+          project: existingProject,
+          domains: overlappingDomains,
+        });
+      }
+    }
+
+    return conflicts;
+  },
+
+  assertProjectDomainsAvailable(project, excludeProjectId = null) {
+    const conflicts = this.findProjectDomainConflicts(project, excludeProjectId);
+    if (conflicts.length === 0) {
+      return;
+    }
+
+    const [{ project: conflictingProject, domains }] = conflicts;
+    const conflictDomain = domains[0];
+    throw new Error(`Domain "${conflictDomain}" is already used by project "${conflictingProject.name}". Please choose a different domain.`);
+  },
+
   getProjectPrimaryDomain(project) {
     return this.getProjectDomains(project)[0] || project?.domain || '';
   },

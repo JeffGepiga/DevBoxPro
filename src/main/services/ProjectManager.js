@@ -47,25 +47,28 @@ class ProjectManager {
       throw new Error('Project not found');
     }
 
+    if (updates.domains?.length) {
+      updates.domain = updates.domains[0];
+    }
+
+    const oldProject = { ...projects[index] };
+    const nextProject = {
+      ...projects[index],
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.assertProjectDomainsAvailable(nextProject, id);
+
     const isRunning = this.runningProjects.has(id);
     const shouldRestart = isRunning && !options.deferRestart && this.shouldRestartProjectForUpdates(updates);
-    const oldProject = { ...projects[index] };
     const oldDomains = this.getProjectDomains(oldProject);
 
     if (shouldRestart) {
       await this.stopProject(id);
     }
 
-    if (updates.domains?.length) {
-      updates.domain = updates.domains[0];
-    }
-
-    projects[index] = {
-      ...projects[index],
-      ...updates,
-      id,
-      updatedAt: new Date().toISOString(),
-    };
+    projects[index] = nextProject;
 
     this.configStore.set('projects', projects);
     const updatedProject = projects[index];
