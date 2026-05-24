@@ -6,6 +6,7 @@ import path from 'path';
 const pathResolver = require('../../../src/main/utils/PathResolver');
 
 describe('PathResolver', () => {
+    const originalPlatform = process.platform;
     const exeDir = path.join(os.tmpdir(), 'devboxpro-portable-test');
     const exePath = path.join(exeDir, 'DevBox Pro.exe');
     const userDataPath = path.join(os.tmpdir(), 'devboxpro-electron-userdata');
@@ -30,6 +31,7 @@ describe('PathResolver', () => {
     });
 
     afterEach(() => {
+        Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
         pathResolver.__resetForTests();
         fs.rmSync(exeDir, { recursive: true, force: true });
         fs.rmSync(userDataPath, { recursive: true, force: true });
@@ -85,6 +87,7 @@ describe('PathResolver', () => {
     });
 
     it('ignores stale portable.flag files in the standard Windows install directory', () => {
+        Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
         const originalLocalAppData = process.env.LOCALAPPDATA;
         const standardInstallRoot = path.join(os.tmpdir(), 'devboxpro-standard-install-root');
         const standardExeDir = path.join(standardInstallRoot, 'Programs', 'DevBox Pro', 'DevBoxPro');

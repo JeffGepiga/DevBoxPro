@@ -1,17 +1,24 @@
 import path from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const SpawnUtils = require('../../../src/main/utils/SpawnUtils');
 const { cleanupStaleManagedWebServerProcesses } = require('../../../src/main/utils/StartupCleanup');
 
 describe('cleanupStaleManagedWebServerProcesses()', () => {
+    const originalPlatform = process.platform;
+
     beforeEach(() => {
         vi.clearAllMocks();
         vi.spyOn(SpawnUtils, 'isProcessRunning').mockReturnValue(false);
         vi.spyOn(SpawnUtils, 'killProcessesByPath').mockResolvedValue(undefined);
     });
 
+    afterEach(() => {
+        Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    });
+
     it('kills only stale managed web servers that are currently running', async () => {
+        Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
         const resourcePath = 'C:\\Users\\Jeffrey\\.devbox-pro\\resources';
         const logger = {
             systemInfo: vi.fn(),

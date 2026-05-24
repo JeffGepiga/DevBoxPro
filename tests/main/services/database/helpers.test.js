@@ -35,7 +35,10 @@ function makeContext({ settings = {}, state = {}, managers = {}, resourcePath = 
 }
 
 describe('database/helpers', () => {
+  const originalPlatform = process.platform;
+
   afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
     vi.restoreAllMocks();
   });
 
@@ -92,6 +95,7 @@ describe('database/helpers', () => {
   });
 
   it('falls back to the active database version path when the service is not running', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
     const context = makeContext({
       settings: { activeDatabaseType: 'mongodb', activeDatabaseVersion: '8.0' },
       resourcePath: 'C:/DevBox/resources',
@@ -105,6 +109,7 @@ describe('database/helpers', () => {
   });
 
   it('uses the legacy mongo shell when mongosh is not present', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
     const context = makeContext({
       settings: { activeDatabaseType: 'mongodb', activeDatabaseVersion: '8.0' },
       resourcePath: 'C:/DevBox/resources',

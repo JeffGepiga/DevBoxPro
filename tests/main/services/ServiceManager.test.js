@@ -375,6 +375,8 @@ describe('ServiceManager', () => {
         });
 
         it('quotes file paths in generated MySQL config', async () => {
+            const originalPlatform = process.platform;
+            Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
             mgr.getMySQLPath = vi.fn(() => 'C:/DevBox Pro/resources-user/mysql/8.4/win');
             configStore.get.mockImplementation((key, def) => {
                 if (key === 'settings') return { serverTimezone: 'UTC' };
@@ -382,21 +384,25 @@ describe('ServiceManager', () => {
             });
             fs.writeFile.mockResolvedValue();
 
-            await mgr.createMySQLConfig(
-                'C:/DevBox Pro/data/mysql/8.4/my.cnf',
-                'C:/DevBox Pro/data/mysql/8.4/data',
-                3306,
-                '8.4',
-                'C:/DevBox Pro/data/mysql/8.4/credentials_init.sql'
-            );
+            try {
+                await mgr.createMySQLConfig(
+                    'C:/DevBox Pro/data/mysql/8.4/my.cnf',
+                    'C:/DevBox Pro/data/mysql/8.4/data',
+                    3306,
+                    '8.4',
+                    'C:/DevBox Pro/data/mysql/8.4/credentials_init.sql'
+                );
 
-            expect(fs.writeFile).toHaveBeenCalled();
-            const [, config] = fs.writeFile.mock.calls.at(-1);
-            expect(config).toContain('basedir="C:/DevBox Pro/resources-user/mysql/8.4/win"');
-            expect(config).toContain('datadir="C:/DevBox Pro/data/mysql/8.4/data"');
-            expect(config).toContain('init-file="C:/DevBox Pro/data/mysql/8.4/credentials_init.sql"');
-            expect(config).toContain('pid-file="C:/DevBox Pro/data/mysql/8.4/data/mysql.pid"');
-            expect(config).toContain('log-error="C:/DevBox Pro/data/mysql/8.4/data/error.log"');
+                expect(fs.writeFile).toHaveBeenCalled();
+                const [, config] = fs.writeFile.mock.calls.at(-1);
+                expect(config).toContain('basedir="C:/DevBox Pro/resources-user/mysql/8.4/win"');
+                expect(config).toContain('datadir="C:/DevBox Pro/data/mysql/8.4/data"');
+                expect(config).toContain('init-file="C:/DevBox Pro/data/mysql/8.4/credentials_init.sql"');
+                expect(config).toContain('pid-file="C:/DevBox Pro/data/mysql/8.4/data/mysql.pid"');
+                expect(config).toContain('log-error="C:/DevBox Pro/data/mysql/8.4/data/error.log"');
+            } finally {
+                Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+            }
         });
 
         it('fails early when MySQL share assets are missing during initialization', async () => {
@@ -473,6 +479,8 @@ describe('ServiceManager', () => {
         });
 
         it('fails fast when mysqld exits before becoming ready', async () => {
+            const originalPlatform = process.platform;
+            Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
             const proc = new EventEmitter();
             proc.pid = 4321;
             proc.stdout = new EventEmitter();
@@ -492,26 +500,31 @@ describe('ServiceManager', () => {
             mgr.getMySQLErrorLogTail = vi.fn().mockResolvedValue('2026-03-20T14:53:59.272391Z 0 [System] [MY-015016] [Server] MySQL Server - end.');
             mgr.hasRecoverableMySQLRedoCorruption = vi.fn().mockResolvedValue(false);
             mgr.logServiceStartupFailure = vi.fn();
+            vi.spyOn(fs, 'ensureDir').mockResolvedValue();
 
             vi.spyOn(fs, 'pathExists').mockImplementation(async (targetPath) => {
                 const normalized = String(targetPath).replace(/\\/g, '/');
                 return normalized.endsWith('/bin/mysqld.exe') || normalized.endsWith('/data/mysql/8.4/data/mysql');
             });
 
-            const startPromise = mgr.startMySQL('8.4');
-            setTimeout(() => {
-                proc.emit('exit', 0);
-            }, 10);
+            try {
+                const startPromise = mgr.startMySQL('8.4');
+                setTimeout(() => {
+                    proc.emit('exit', 0);
+                }, 10);
 
-            const result = await Promise.race([
-                startPromise.then(() => 'done'),
-                new Promise((resolve) => setTimeout(() => resolve('timeout'), 250)),
-            ]);
+                const result = await Promise.race([
+                    startPromise.then(() => 'done'),
+                    new Promise((resolve) => setTimeout(() => resolve('timeout'), 250)),
+                ]);
 
-            expect(result).toBe('done');
-            expect(mgr.getMySQLErrorLogTail).toHaveBeenCalled();
-            expect(mgr.serviceStatus.get('mysql').status).toBe('error');
-            expect(mgr.serviceStatus.get('mysql').error).toContain('MySQL Server - end.');
+                expect(result).toBe('done');
+                expect(mgr.getMySQLErrorLogTail).toHaveBeenCalled();
+                expect(mgr.serviceStatus.get('mysql').status).toBe('error');
+                expect(mgr.serviceStatus.get('mysql').error).toContain('MySQL Server - end.');
+            } finally {
+                Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+            }
         });
     });
 

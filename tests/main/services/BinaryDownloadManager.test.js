@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+const nativeFs = require('fs');
 const path = require('path');
 const fs = require('fs-extra');
 const https = require('https');
@@ -156,6 +157,10 @@ describe('BinaryDownloadManager', () => {
             });
             vi.spyOn(fs, 'pathExists').mockImplementation(async (checkPath) => {
                 if (checkPath.includes('php.exe') || checkPath.includes('php-cgi.exe')) return true;
+                return false;
+            });
+            vi.spyOn(nativeFs, 'existsSync').mockImplementation((checkPath) => {
+                if (String(checkPath).includes('php.exe') || String(checkPath).includes('php-cgi.exe')) return true;
                 return false;
             });
 

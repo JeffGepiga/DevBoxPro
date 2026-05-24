@@ -1,6 +1,7 @@
 import path from 'path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const nativeFs = require('fs');
 require('../../../helpers/mockElectronCjs');
 
 const fs = require('fs-extra');
@@ -51,9 +52,12 @@ describe('binary/installed', () => {
     const ctx = makeContext();
     vi.spyOn(fs, 'pathExists').mockImplementation(async (targetPath) => {
       if (targetPath === path.join('/resources', 'php')) return true;
-      if (targetPath.endsWith(path.join('8.5-custom', 'win', 'php.exe'))) return true;
-      if (targetPath.endsWith(path.join('8.5-custom', 'win', 'php-cgi.exe'))) return true;
       return false;
+    });
+    vi.spyOn(nativeFs, 'existsSync').mockImplementation((targetPath) => {
+      const normalized = String(targetPath).replace(/\\/g, '/');
+      return normalized.endsWith('/php/8.5-custom/win/php.exe')
+        || normalized.endsWith('/php/8.5-custom/win/php-cgi.exe');
     });
     vi.spyOn(fs, 'readdir').mockResolvedValue(['8.4', '8.5-custom']);
 
@@ -88,11 +92,14 @@ describe('binary/installed', () => {
   it('reports complete installed binaries including Node.js when all required assets exist', async () => {
     const ctx = makeContext();
     vi.spyOn(fs, 'readdir').mockResolvedValue([]);
+    vi.spyOn(nativeFs, 'existsSync').mockImplementation((targetPath) => {
+      const normalized = String(targetPath).replace(/\\/g, '/');
+      return normalized.endsWith('/php/8.4/win/php.exe')
+        || normalized.endsWith('/php/8.4/win/php-cgi.exe');
+    });
     vi.spyOn(fs, 'pathExists').mockImplementation(async (targetPath) => {
       const normalized = targetPath.replace(/\\/g, '/');
-      return normalized.endsWith('/php/8.4/win/php.exe')
-        || normalized.endsWith('/php/8.4/win/php-cgi.exe')
-        || normalized.endsWith('/nodejs/20/win/node.exe')
+      return normalized.endsWith('/nodejs/20/win/node.exe')
         || normalized.endsWith('/nodejs/20/win/npm.cmd')
         || normalized.endsWith('/nodejs/20/win/npx.cmd')
         || normalized.endsWith('/mongodb/8.0/win/bin/mongod.exe')

@@ -519,6 +519,7 @@ describe('IPC Handlers', () => {
 
     describe('Terminal handler routing', () => {
         it('terminal:runCommand uses cmd.exe for compound php commands so && is interpreted by the shell', async () => {
+            const originalPlatform = process.platform;
             const childProcess = require('child_process');
             const spawnSpy = vi.spyOn(childProcess, 'spawn').mockImplementation(() => {
                 const proc = new EventEmitter();
@@ -534,6 +535,7 @@ describe('IPC Handlers', () => {
             });
 
             try {
+                Object.defineProperty(process, 'platform', { value: 'win32' });
                 const result = await handlers['terminal:runCommand'](
                     fakeEvent,
                     'proj-1',
@@ -552,6 +554,7 @@ describe('IPC Handlers', () => {
                 );
                 expect(result).toEqual(expect.objectContaining({ code: 0, success: true }));
             } finally {
+                Object.defineProperty(process, 'platform', { value: originalPlatform });
                 spawnSpy.mockRestore();
             }
         });

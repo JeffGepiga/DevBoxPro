@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import path from 'path';
+const nativeFs = require('fs');
 
 // 1. Mock child_process
 const mockSpawnProc = {
@@ -159,6 +160,13 @@ describe('ProjectManager', () => {
         vi.spyOn(fs, 'remove').mockResolvedValue();
         vi.spyOn(fs, 'readdir').mockResolvedValue(['test-file.txt']);
         vi.spyOn(fs, 'readJson').mockResolvedValue({});
+        vi.spyOn(nativeFs, 'existsSync').mockImplementation((targetPath) => {
+            const normalized = String(targetPath).replace(/\\/g, '/');
+            return normalized.endsWith('/mock/resources/php/8.3/win/php.exe')
+                || normalized.endsWith('/mock/resources/php/8.3/win/php-cgi.exe')
+                || normalized.endsWith('/mock/resources/php/8.3/linux/php')
+                || normalized.endsWith('/mock/resources/php/8.3/linux/php-cgi');
+        });
     });
 
     // ═══════════════════════════════════════════════════════════════════
@@ -624,7 +632,8 @@ describe('ProjectManager', () => {
             await mgr.createNginxVhost(project, 9000, '1.28');
 
             const [, config] = fs.writeFile.mock.calls.at(-1);
-            expect(config).toContain('include "C:/Users/Test User/AppData/Roaming/devbox-pro/resources/nginx/1.28/win/conf/fastcgi_params";');
+            const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+            expect(config).toContain(`include "C:/Users/Test User/AppData/Roaming/devbox-pro/resources/nginx/1.28/${platform}/conf/fastcgi_params";`);
         });
 
         it('does not turn the first apache SSL vhost into a wildcard catch-all', async () => {
@@ -660,10 +669,11 @@ describe('ProjectManager', () => {
             await mgr.createApacheVhost(project, '2.4');
 
             const [, config] = fs.writeFile.mock.calls.at(-1);
-            expect(config).toContain('ServerAlias www.proj-apache.test *.proj-apache.test *');
             expect(config).toContain('<VirtualHost *:443>');
-            expect(config).toContain('ServerAlias www.proj-apache.test *.proj-apache.test');
-            expect(config).not.toContain('ServerAlias www.proj-apache.test *.proj-apache.test *\n    DocumentRoot "C:/Sites/Apache App/public"');
+            const httpsBlock = config.split('# HTTPS Virtual Host (SSL) - Port 443')[1] || '';
+            expect(config).toContain('ServerAlias www.proj-apache.test *.proj-apache.test *');
+            expect(httpsBlock).toContain('ServerAlias www.proj-apache.test *.proj-apache.test');
+            expect(httpsBlock).not.toContain('ServerAlias www.proj-apache.test *.proj-apache.test *');
         });
 
         it('keeps alternate-port apache SSL projects isolated when port 80 is unavailable', async () => {

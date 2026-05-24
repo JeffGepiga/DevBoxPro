@@ -179,7 +179,8 @@ module.exports = {
     return 1;
   },
 
->>>>>>> main
+  async validateZipFile(filePath) {
+    try {
       const buffer = Buffer.alloc(4);
       const fd = await fs.open(filePath, 'r');
       await new Promise((resolve, reject) => {

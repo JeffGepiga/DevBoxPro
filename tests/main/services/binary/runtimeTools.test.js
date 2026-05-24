@@ -158,6 +158,7 @@ describe('binary/runtimeTools', () => {
   });
 
   it('repairs PHP runtime DLLs before running Composer on Windows', async () => {
+    const originalPlatform = process.platform;
     const ctx = makeContext({
       managers: {
         log: {
@@ -173,12 +174,18 @@ describe('binary/runtimeTools', () => {
     vi.spyOn(fs, 'pathExists').mockResolvedValue(true);
     vi.spyOn(nativeFs, 'existsSync').mockReturnValue(true);
 
-    await expect(ctx.runComposer('/project', 'install --no-dev', '8.3')).rejects.toThrow();
+    Object.defineProperty(process, 'platform', { value: 'win32' });
 
-    expect(ctx.managers.service.ensureWindowsRuntimeDlls).toHaveBeenCalledWith(
-      path.join('/resources', 'php', '8.3', 'win'),
-      'PHP 8.3'
-    );
+    try {
+      await expect(ctx.runComposer('/project', 'install --no-dev', '8.3')).rejects.toThrow();
+
+      expect(ctx.managers.service.ensureWindowsRuntimeDlls).toHaveBeenCalledWith(
+        path.join('/resources', 'php', '8.3', 'win'),
+        'PHP 8.3'
+      );
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
   });
 
   it('returns guidance instead of downloading Git on macOS', async () => {

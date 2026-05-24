@@ -4,6 +4,18 @@ const unzipper = require('unzipper');
 const { spawn } = require('child_process');
 
 module.exports = {
+  async maybeEnsureLinuxBinarySystemDependencies(serviceName, version = null, binaryPaths = [], options = {}) {
+    if (this.getPlatform() !== 'linux') {
+      return { success: true, skipped: true };
+    }
+
+    if (typeof this.ensureLinuxBinarySystemDependencies !== 'function') {
+      return { success: true, skipped: true };
+    }
+
+    return this.ensureLinuxBinarySystemDependencies(serviceName, version, binaryPaths, options);
+  },
+
   async downloadPostgresql(version = '17') {
     const id = `postgresql-${version}`;
     const platform = this.getPlatform();
@@ -62,7 +74,7 @@ module.exports = {
         await fs.remove(pgsqlDir);
       }
 
-      await this.ensureLinuxBinarySystemDependencies('postgresql', version, [
+      await this.maybeEnsureLinuxBinarySystemDependencies('postgresql', version, [
         path.join(extractPath, 'bin', 'postgres'),
         path.join(extractPath, 'bin', 'initdb'),
       ], { id });
@@ -118,7 +130,7 @@ module.exports = {
       }
 
       await this.bootstrapPip(extractPath, platform, id);
-      await this.ensureLinuxBinarySystemDependencies('python', version, [path.join(extractPath, 'bin', 'python3')], { id });
+      await this.maybeEnsureLinuxBinarySystemDependencies('python', version, [path.join(extractPath, 'bin', 'python3')], { id });
 
       await fs.remove(downloadPath);
       this.emitProgress(id, { status: 'completed', progress: 100 });
@@ -261,7 +273,7 @@ module.exports = {
       }
 
       await this.downloadMongosh(version);
-      await this.ensureLinuxBinarySystemDependencies('mongodb', version, [path.join(extractPath, 'bin', 'mongod')], { id });
+      await this.maybeEnsureLinuxBinarySystemDependencies('mongodb', version, [path.join(extractPath, 'bin', 'mongod')], { id });
       await this.downloadMongoTools(version);
 
       await fs.remove(downloadPath);
@@ -443,7 +455,7 @@ module.exports = {
         await fs.chmod(destPath, '755');
       }
 
-      await this.ensureLinuxBinarySystemDependencies('minio', null, [destPath], { id });
+      await this.maybeEnsureLinuxBinarySystemDependencies('minio', null, [destPath], { id });
 
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true };
@@ -511,7 +523,7 @@ module.exports = {
         }
       }
 
-      await this.ensureLinuxBinarySystemDependencies('memcached', version, [path.join(extractPath, 'memcached')], { id });
+      await this.maybeEnsureLinuxBinarySystemDependencies('memcached', version, [path.join(extractPath, 'memcached')], { id });
 
       await fs.remove(downloadPath);
       this.emitProgress(id, { status: 'completed', progress: 100 });

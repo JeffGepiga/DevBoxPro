@@ -171,7 +171,9 @@ describe('project/vhostNginx', () => {
     await ctx.createNginxVhost(project, 9957, '1.28');
 
     const [, config] = fs.writeFile.mock.calls.at(-1);
-    const includeIndex = config.indexOf('include "C:/Users/Jeffrey/AppData/Roaming/devbox-pro/resources/nginx/1.28/win/conf/fastcgi_params";');
+  const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+  const expectedInclude = `include "${ctx.getResourcesPath()}/nginx/1.28/${platform}/conf/fastcgi_params";`;
+  const includeIndex = config.indexOf(expectedInclude);
     const httpsIndex = config.indexOf('fastcgi_param HTTPS $devbox_https;');
     const schemeIndex = config.indexOf('fastcgi_param REQUEST_SCHEME $devbox_request_scheme;');
     const portIndex = config.indexOf('fastcgi_param SERVER_PORT $devbox_server_port;');

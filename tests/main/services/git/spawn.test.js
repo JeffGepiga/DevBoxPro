@@ -20,11 +20,14 @@ function createMockProcess() {
 }
 
 describe('git spawn behavior', () => {
+  const originalPlatform = process.platform;
+
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
   afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
     vi.restoreAllMocks();
   });
 
@@ -46,6 +49,7 @@ describe('git spawn behavior', () => {
   });
 
   it('spawns ssh-keygen with an executable path and argument array', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
     const sshDir = 'C:\\tmp\\devbox-ssh';
     const keyPath = path.join(sshDir, 'devboxpro_rsa');
     const publicKeyPath = `${keyPath}.pub`;

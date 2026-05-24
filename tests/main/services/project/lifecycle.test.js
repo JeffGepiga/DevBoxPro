@@ -70,11 +70,14 @@ function makeContext(overrides = {}) {
 }
 
 describe('project/lifecycle', () => {
+  const originalPlatform = process.platform;
+
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
   afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
     delete process.env.PLAYWRIGHT_TEST;
     vi.useRealTimers();
   });
@@ -191,6 +194,7 @@ describe('project/lifecycle', () => {
   });
 
   it('auto-updates the project web server version when a fallback binary exists', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
     const project = {
       id: 'proj-3',
       name: 'Proj 3',

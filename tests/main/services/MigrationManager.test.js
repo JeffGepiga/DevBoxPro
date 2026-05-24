@@ -7,12 +7,14 @@ const { MigrationManager } = require('../../../src/main/services/MigrationManage
 
 describe('MigrationManager legacy install migration', () => {
     const tempRoots = [];
+    const originalPlatform = process.platform;
     const originalLocalAppData = process.env.LOCALAPPDATA;
     const originalProgramFiles = process.env.ProgramFiles;
     const originalProgramFilesX86 = process.env['ProgramFiles(x86)'];
     const originalPortableExecutableDir = process.env.PORTABLE_EXECUTABLE_DIR;
 
     afterEach(async () => {
+        Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
         process.env.LOCALAPPDATA = originalLocalAppData;
         process.env.ProgramFiles = originalProgramFiles;
         process.env['ProgramFiles(x86)'] = originalProgramFilesX86;
@@ -25,6 +27,7 @@ describe('MigrationManager legacy install migration', () => {
     });
 
     it('migrates legacy install-local data and binaries into the standard paths', async () => {
+        Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
         const tempRoot = path.join(os.tmpdir(), `devboxpro-legacy-${Date.now()}`);
         tempRoots.push(tempRoot);
 
@@ -181,6 +184,7 @@ describe('MigrationManager legacy install migration', () => {
     });
 
     it('skips legacy install copying when the marker already exists', async () => {
+        Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
         const tempRoot = path.join(os.tmpdir(), `devboxpro-legacy-skip-${Date.now()}`);
         tempRoots.push(tempRoot);
 

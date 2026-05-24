@@ -39,19 +39,27 @@ describe('cli/binaries', () => {
   });
 
   it('returns the newest installed Node.js version that has an executable', () => {
+    const originalPlatform = process.platform;
     const ctx = makeContext();
+    Object.defineProperty(process, 'platform', { value: 'win32' });
     vi.spyOn(fs, 'existsSync').mockImplementation((targetPath) => {
       if (targetPath === path.join('/resources', 'nodejs')) return true;
       return targetPath === path.join('/resources', 'nodejs', '22', 'win', 'node.exe');
     });
     vi.spyOn(fs, 'readdirSync').mockReturnValue(['20', '22', '18']);
 
-    expect(ctx.getFirstInstalledNodeVersion()).toBe('22');
+    try {
+      expect(ctx.getFirstInstalledNodeVersion()).toBe('22');
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
   });
 
   it('builds a project PATH with PHP, Node.js, Composer, MySQL, PostgreSQL, Python, and MongoDB bins prepended', () => {
     const originalPath = process.env.PATH;
+    const originalPlatform = process.platform;
     process.env.PATH = 'SYSTEM_PATH';
+    Object.defineProperty(process, 'platform', { value: 'win32' });
 
     const ctx = makeContext({
       getPhpPath: vi.fn(() => path.join('/resources', 'php', '8.3', 'win', 'php.exe')),
@@ -85,6 +93,7 @@ describe('cli/binaries', () => {
     expect(env.PATH).toContain(path.join('/resources', 'mongodb', '8.0', 'win', 'bin'));
 
     process.env.PATH = originalPath;
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
   it('adds only the Python bin directory on Linux', () => {
@@ -142,7 +151,9 @@ describe('cli/binaries', () => {
   });
 
   it('detects the first installed MySQL-family version across mysql and mariadb', () => {
+    const originalPlatform = process.platform;
     const ctx = makeContext();
+    Object.defineProperty(process, 'platform', { value: 'win32' });
     vi.spyOn(fs, 'existsSync').mockImplementation((targetPath) => {
       if (targetPath === path.join('/resources', 'mysql')) return true;
       if (targetPath === path.join('/resources', 'mariadb')) return true;
@@ -154,6 +165,10 @@ describe('cli/binaries', () => {
       return [];
     });
 
-    expect(ctx.getFirstInstalledMysqlVersion()).toEqual({ dbType: 'mariadb', version: '11.4' });
+    try {
+      expect(ctx.getFirstInstalledMysqlVersion()).toEqual({ dbType: 'mariadb', version: '11.4' });
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
   });
 });
