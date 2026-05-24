@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
+const { SERVICE_VERSIONS } = require('../../shared/serviceConfig');
 
 class PhpManager {
   constructor(resourcePath, configStore, managers = {}) {
@@ -8,55 +9,121 @@ class PhpManager {
     this.configStore = configStore;
     this.managers = managers;
     this.phpVersions = {};
-    this.supportedVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
+    this.supportedVersions = [...(SERVICE_VERSIONS.php || ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'])];
   }
 
   async initialize() {
     const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
     const phpBasePath = path.join(this.resourcePath, 'php');
+    this.phpVersions = {};
 
     // Discover available PHP versions
     for (const version of this.supportedVersions) {
-      const versionPath = path.join(phpBasePath, version, platform);
-      const phpBinary = this.getPhpBinaryName();
-      const binaryPath = path.join(versionPath, phpBinary);
+      await this.discoverPhpVersion(phpBasePath, platform, version);
+    }
 
-      // Also check for php-cgi which is required for web serving
-      const phpCgiBinary = process.platform === 'win32' ? 'php-cgi.exe' : 'php-cgi';
-      const phpCgiPath = path.join(versionPath, phpCgiBinary);
+    if (await fs.pathExists(phpBasePath)) {
+      const builtInVersions = new Set(this.supportedVersions);
+      const customVersions = (await fs.readdir(phpBasePath))
+        .filter((entry) => !builtInVersions.has(entry))
+        .filter((entry) => !['downloads', 'win', 'mac', 'linux'].includes(entry))
+        .sort((left, right) => this.comparePhpVersions(right, left));
 
-      const phpExists = await fs.pathExists(binaryPath);
-      const phpCgiExists = await fs.pathExists(phpCgiPath);
-
-      if (phpExists && phpCgiExists) {
-        this.phpVersions[version] = {
-          path: versionPath,
-          binary: binaryPath,
-          available: true,
-          extensions: await this.discoverExtensions(versionPath, version),
-        };
-      } else if (phpExists && !phpCgiExists) {
-        // Incomplete installation - php.exe exists but php-cgi.exe is missing
-        this.phpVersions[version] = {
-          path: versionPath,
-          binary: binaryPath,
-          available: false,
-          incomplete: true,
-          extensions: [],
-        };
-        this.managers.log?.systemWarn(`PHP ${version} installation incomplete (missing php-cgi)`, { path: versionPath });
-      } else {
-        this.phpVersions[version] = {
-          path: versionPath,
-          binary: binaryPath,
-          available: false,
-          extensions: [],
-        };
+      for (const version of customVersions) {
+        await this.discoverPhpVersion(phpBasePath, platform, version);
       }
     }
 
     // Store discovered versions
     this.configStore.set('phpVersions', this.phpVersions);
+  }
+
+  async discoverPhpVersion(phpBasePath, platform, version) {
+    const versionPath = path.join(phpBasePath, version, platform);
+    const phpBinary = this.getPhpBinaryName();
+    const binaryPath = path.join(versionPath, phpBinary);
+
+    // Also check for php-cgi which is required for web serving
+    const phpCgiBinary = process.platform === 'win32' ? 'php-cgi.exe' : 'php-cgi';
+    const phpCgiPath = path.join(versionPath, phpCgiBinary);
+
+    const phpExists = await fs.pathExists(binaryPath);
+    const phpCgiExists = await fs.pathExists(phpCgiPath);
+
+    if (phpExists && phpCgiExists) {
+      this.phpVersions[version] = {
+        path: versionPath,
+        binary: binaryPath,
+        available: true,
+        extensions: await this.discoverExtensions(versionPath, version),
+      };
+      return;
+    }
+
+    if (phpExists && !phpCgiExists) {
+      // Incomplete installation - php.exe exists but php-cgi.exe is missing
+      this.phpVersions[version] = {
+        path: versionPath,
+        binary: binaryPath,
+        available: false,
+        incomplete: true,
+        extensions: [],
+      };
+      this.managers.log?.systemWarn(`PHP ${version} installation incomplete (missing php-cgi)`, { path: versionPath });
+      return;
+    }
+
+    this.phpVersions[version] = {
+      path: versionPath,
+      binary: binaryPath,
+      available: false,
+      extensions: [],
+    };
+  }
+
+  parsePhpVersion(version) {
+    const normalizedVersion = typeof version === 'string' ? version.trim() : String(version || '').trim();
+    const match = normalizedVersion.match(/^(\d+(?:\.\d+)?)(?:-(nts|ts))?$/i);
+
+    if (!match) {
+      return {
+        baseVersion: normalizedVersion,
+        flavor: null,
+      };
+    }
+
+    return {
+      baseVersion: match[1],
+      flavor: match[2]?.toLowerCase() || null,
+    };
+  }
+
+  comparePhpVersions(leftVersion, rightVersion) {
+    const left = this.parsePhpVersion(leftVersion);
+    const right = this.parsePhpVersion(rightVersion);
+    const leftParts = left.baseVersion.split('.').map((part) => parseInt(part, 10) || 0);
+    const rightParts = right.baseVersion.split('.').map((part) => parseInt(part, 10) || 0);
+    const maxLen = Math.max(leftParts.length, rightParts.length);
+
+    for (let index = 0; index < maxLen; index += 1) {
+      const leftPart = leftParts[index] || 0;
+      const rightPart = rightParts[index] || 0;
+      if (leftPart !== rightPart) {
+        return leftPart - rightPart;
+      }
+    }
+
+    const flavorRank = {
+      null: 2,
+      nts: 2,
+      ts: 1,
+    };
+
+    return (flavorRank[left.flavor] || 0) - (flavorRank[right.flavor] || 0);
+  }
+
+  getSortedPhpVersions() {
+    return Object.keys(this.phpVersions).sort((left, right) => this.comparePhpVersions(right, left));
   }
 
   getPhpBinaryName() {
@@ -92,12 +159,12 @@ class PhpManager {
   }
 
   getAvailableVersions() {
-    return Object.entries(this.phpVersions).map(([version, info]) => ({
+    return this.getSortedPhpVersions().map((version) => ({
       version,
-      available: info.available,
-      path: info.path,
+      available: this.phpVersions[version].available,
+      path: this.phpVersions[version].path,
       isDefault: this.getDefaultVersion() === version,
-      extensions: info.extensions,
+      extensions: this.phpVersions[version].extensions,
     }));
   }
 
@@ -108,13 +175,13 @@ class PhpManager {
     }
 
     // Find first available version
-    for (const version of this.supportedVersions.reverse()) {
+    for (const version of this.getSortedPhpVersions()) {
       if (this.phpVersions[version]?.available) {
         return version;
       }
     }
 
-    return '8.2';
+    return this.supportedVersions.includes('8.2') ? '8.2' : this.supportedVersions[0] || '8.2';
   }
 
   setDefaultVersion(version) {

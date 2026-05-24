@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Download, RefreshCw } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { formatPhpRuntimeLabel } from '../utils/phpRuntime';
 
 /**
  * Shared Import Project Modal Component
@@ -410,7 +411,7 @@ function ImportProjectModal({ project, onClose, onImport }) {
                                                         </div>
                                                     ) : (
                                                         <select value={config.phpVersion} onChange={(e) => setConfig({ ...config, phpVersion: e.target.value })} className="select text-sm">
-                                                            {installedPhpVersions.map((v) => <option key={v} value={v}>PHP {v}</option>)}
+                                                            {installedPhpVersions.map((v) => <option key={v} value={v}>{formatPhpRuntimeLabel(v)}</option>)}
                                                         </select>
                                                     )}
                                                 </div>

@@ -9,6 +9,7 @@ import {
   applyTexture,
   applyDarkSurface,
 } from '../utils/themeConfig';
+import { formatPhpRuntimeLabel } from '../utils/phpRuntime';
 import {
   Save,
   RefreshCw,
@@ -597,7 +598,7 @@ function CliSettings() {
               >
                 <option value="">Auto-detect</option>
                 {phpVersions.map(v => (
-                  <option key={v} value={v}>PHP {v}</option>
+                  <option key={v} value={v}>{formatPhpRuntimeLabel(v)}</option>
                 ))}
               </select>
             </div>

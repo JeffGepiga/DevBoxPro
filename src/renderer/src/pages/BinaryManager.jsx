@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import PhpIniEditor from '../components/PhpIniEditor';
+import { formatPhpRuntimeLabel, formatPhpRuntimeVersion } from '../utils/phpRuntime';
 import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
 
@@ -41,6 +42,14 @@ const SERVICE_LABELS = {
   composer: 'Composer',
 };
 
+const formatServiceVersionLabel = (service, version) => {
+  if (service === 'php') {
+    return formatPhpRuntimeVersion(version);
+  }
+
+  return version;
+};
+
 // ── Module-level sub-components (must NOT be defined inside BinaryManager) ──
 
 const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLatest, isCustom, requiresManual, onDownload, onRemove, onManualOpen, onImport, isPhp, getProgressDisplay, setPhpIniEditor }) => (
@@ -52,9 +61,9 @@ const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLat
           ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
           : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
       )}>
-        {version}
+        {isPhp ? formatPhpRuntimeVersion(version) : version}
       </span>
-      <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{name} {version}</span>
+      <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{isPhp ? formatPhpRuntimeLabel(version) : `${name} ${version}`}</span>
       {isCustom && <span className="shrink-0 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-1.5 py-0.5 rounded">Custom</span>}
       {!isCustom && isLatest && <span className="shrink-0 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded">Latest</span>}
       {size && <span className="shrink-0 text-xs text-gray-400">{size}</span>}
@@ -143,7 +152,7 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
                   {service.versions.slice(0, 6).map(v => {
                     const inst = installed[service.id]?.[v];
                     return inst ? (
-                      <span key={v} className="text-xs bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded border border-green-200 dark:border-green-800">{v}</span>
+                      <span key={v} className="text-xs bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded border border-green-200 dark:border-green-800">{formatServiceVersionLabel(service.id, v)}</span>
                     ) : null;
                   })}
                 </div>
@@ -907,7 +916,7 @@ function BinaryManager() {
 
   // Version detection patterns for different services
   const versionPatterns = {
-    php: /php-?(\d+\.\d+)(?:\.\d+)?/i,
+    php: /php-?(\d+\.\d+)(?:\.\d+)?(?:-(nts|ts))?/i,
     mysql: /mysql-?(\d+\.\d+)(?:\.\d+)?/i,
     mariadb: /mariadb-?(\d+\.\d+)(?:\.\d+)?/i,
     redis: /redis-?(\d+\.\d+)(?:\.\d+)?/i,
@@ -925,6 +934,26 @@ function BinaryManager() {
     if (match) {
       // For Node.js, we only want major version (22, 20, 18, etc.)
       if (service === 'nodejs') {
+        return match[1];
+      }
+      if (service === 'php') {
+        const normalizedFilename = filename.toLowerCase();
+        const flavor = match[2]?.toLowerCase();
+
+        if (flavor === 'ts') {
+          return `${match[1]}-ts`;
+        }
+
+        if (flavor === 'nts') {
+          return match[1];
+        }
+
+        // Official Windows thread-safe archives omit an explicit -ts suffix,
+        // while NTS builds include -nts- in the filename.
+        if (/win32|windows/.test(normalizedFilename) && !/\bnts\b/.test(normalizedFilename)) {
+          return `${match[1]}-ts`;
+        }
+
         return match[1];
       }
       // For others, return major.minor (8.4, 1.28, etc.)
@@ -1649,7 +1678,7 @@ function BinaryManager() {
                 <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
                   <p className="text-sm text-green-700 dark:text-green-400 flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4" />
-                    Detected version: <strong>{importModal.detectedVersion}</strong>
+                    Detected version: <strong>{formatServiceVersionLabel(importModal.service, importModal.detectedVersion)}</strong>
                   </p>
                 </div>
               ) : (
@@ -1679,7 +1708,7 @@ function BinaryManager() {
                           : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                       )}
                     >
-                      {v}
+                      {formatServiceVersionLabel(importModal.service, v)}
                     </button>
                   ))}
                 </div>
@@ -1691,13 +1720,13 @@ function BinaryManager() {
                   type="text"
                   value={importModal.customVersion}
                   onChange={(e) => setImportModal({ ...importModal, customVersion: e.target.value })}
-                  placeholder="e.g., 8.4, 22, 1.28"
+                  placeholder="e.g., 8.4, 8.4-ts, 22, 1.28"
                   className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
               <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                Enter the major.minor version (e.g., 8.4 for PHP 8.4.x, 22 for Node.js 22.x)
+                Enter the version label to install as (for example, 8.4 or 8.4-ts for PHP, 22 for Node.js 22.x)
               </p>
             </div>
 

@@ -5,6 +5,7 @@ import { useModal } from '../context/ModalContext';
 import InstallationProgress from '../components/InstallationProgress';
 import ImportProjectModal from '../components/ImportProjectModal';
 import { normalizeInstallationOutput } from '../utils/terminalOutput';
+import { formatPhpRuntimeLabel } from '../utils/phpRuntime';
 import {
   ArrowLeft,
   ArrowRight,
@@ -1482,7 +1483,7 @@ function StepDetails({
                         : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                     )}
                   >
-                    PHP {version}
+                    {formatPhpRuntimeLabel(version)}
                   </button>
                 ))}
               </div>
@@ -2270,7 +2271,7 @@ function StepReview({ formData }) {
                 PHP Version
               </h3>
               <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                PHP {formData.phpVersion}
+                {formatPhpRuntimeLabel(formData.phpVersion)}
               </p>
             </div>
           )}

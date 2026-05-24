@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
 import XTerminal from '../components/XTerminal';
+import { formatPhpRuntimeVersion } from '../utils/phpRuntime';
 import {
   ArrowLeft,
   Play,
@@ -1245,7 +1246,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
                       >
                         {displayVersions.map((v) => (
                           <option key={v.version} value={v.version} className={v.notInstalled ? 'text-red-500' : ''}>
-                            {v.version}{v.notInstalled ? ' (not installed)' : ''}
+                            {formatPhpRuntimeVersion(v.version)}{v.notInstalled ? ' (not installed)' : ''}
                           </option>
                         ))}
                       </select>
