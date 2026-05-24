@@ -1,6 +1,34 @@
 const path = require('path');
 const fs = require('fs-extra');
 
+function parseHostsEntries(hostsContent = '') {
+  const entries = [];
+
+  for (const rawLine of hostsContent.split(/\r?\n/)) {
+    const line = rawLine.replace(/#.*/, '').trim();
+    if (!line) {
+      continue;
+    }
+
+    const parts = line.split(/\s+/).filter(Boolean);
+    if (parts.length < 2) {
+      continue;
+    }
+
+    const [address, ...domains] = parts;
+    entries.push({
+      address: address.toLowerCase(),
+      domains: domains.map((domain) => domain.toLowerCase()),
+    });
+  }
+
+  return entries;
+}
+
+function isLoopbackAddress(address = '') {
+  return address === '127.0.0.1' || address === '::1';
+}
+
 module.exports = {
   async updateHostsFile(project) {
     if (process.env.PLAYWRIGHT_TEST === 'true') return;
@@ -18,13 +46,32 @@ module.exports = {
       }
     }
 
+    const failures = [];
+
     for (const domain of domainsToAdd) {
       try {
-        await this.addToHostsFile(domain);
+        const result = await this.addToHostsFile(domain);
+        if (result?.success === false) {
+          failures.push({ domain, error: result.error || 'Unknown hosts file update failure' });
+        }
       } catch (error) {
+        failures.push({ domain, error: error.message });
         this.managers.log?.systemWarn(`Could not add ${domain} to hosts file`, { error: error.message });
       }
     }
+
+    if (failures.length > 0) {
+      return {
+        success: false,
+        failures,
+        error: failures.map((failure) => `${failure.domain}: ${failure.error}`).join('; '),
+      };
+    }
+
+    return {
+      success: true,
+      domains: domainsToAdd,
+    };
   },
 
   validateDomainName(domain) {
@@ -62,16 +109,35 @@ module.exports = {
 
     try {
       const hostsContent = await fs.readFile(hostsPath, 'utf-8');
-      const escapedDomain = domain.replace(/\./g, '\\.');
-      const domainRegex = new RegExp(`^\\s*127\\.0\\.0\\.1\\s+${escapedDomain}\\s*$`, 'm');
-      if (domainRegex.test(hostsContent)) {
+      const requestedHosts = [domain, `www.${domain}`].map((entry) => entry.toLowerCase());
+      const matchingEntries = parseHostsEntries(hostsContent).filter((entry) => (
+        entry.domains.some((existingDomain) => requestedHosts.includes(existingDomain))
+      ));
+
+      const conflictingEntry = matchingEntries.find((entry) => !isLoopbackAddress(entry.address));
+      if (conflictingEntry) {
+        const conflictingDomains = conflictingEntry.domains.filter((entry) => requestedHosts.includes(entry));
+        return {
+          success: false,
+          error: `Domain ${conflictingDomains.join(', ')} already exists in the hosts file and points to ${conflictingEntry.address}. Please remove the existing entry or choose a different domain.`,
+        };
+      }
+
+      const existingHosts = new Set();
+      for (const entry of matchingEntries) {
+        for (const existingDomain of entry.domains) {
+          if (requestedHosts.includes(existingDomain) && isLoopbackAddress(entry.address)) {
+            existingHosts.add(existingDomain);
+          }
+        }
+      }
+
+      const missingHosts = requestedHosts.filter((entry) => !existingHosts.has(entry));
+      if (missingHosts.length === 0) {
         return { success: true, alreadyExists: true };
       }
 
-      const entries = [
-        `127.0.0.1\t${domain}`,
-        `127.0.0.1\twww.${domain}`,
-      ];
+      const entries = missingHosts.map((entry) => `127.0.0.1\t${entry}`);
 
       const sudo = require('sudo-prompt');
       const options = {

@@ -284,6 +284,70 @@ describe('project/lifecycle', () => {
     expect(reloadNginx).toHaveBeenCalledTimes(2);
   });
 
+  it('creates a proxy nginx vhost for node projects when nginx is already running', async () => {
+    const project = {
+      id: 'proj-node-running-nginx',
+      name: 'Node Running Nginx',
+      type: 'nodejs',
+      webServer: 'nginx',
+      webServerVersion: '1.28',
+      domain: 'node-running.test',
+      path: '/projects/node-running',
+      nodePort: 3173,
+      services: { nodejs: true, nodejsVersion: '20' },
+      supervisor: { processes: [] },
+      environment: {},
+    };
+
+    const reloadNginx = vi.fn().mockResolvedValue(undefined);
+    const ctx = makeContext({
+      configStore: makeConfigStore([project]),
+      getProject: vi.fn(() => project),
+      validateProjectBinaries: vi.fn().mockResolvedValue([]),
+      createProxyNginxVhost: vi.fn().mockResolvedValue(undefined),
+      createNginxVhost: vi.fn().mockResolvedValue(undefined),
+      regenerateAllNginxVhosts: vi.fn().mockResolvedValue(undefined),
+      syncProjectLocalProxy: vi.fn().mockResolvedValue(false),
+      startProjectServices: vi.fn().mockResolvedValue({ success: true, errors: [], criticalFailures: [] }),
+      updateHostsFile: vi.fn().mockResolvedValue(undefined),
+      managers: {
+        service: {
+          serviceStatus: new Map([['nginx', { status: 'running', version: '1.28' }]]),
+          serviceConfigs: {
+            nginx: { versioned: true },
+            apache: { versioned: true },
+            mysql: { versioned: true },
+            redis: { versioned: true },
+          },
+          getServicePorts: vi.fn(() => ({ httpPort: 80, sslPort: 443 })),
+          isVersionRunning: vi.fn((serviceName, version) => serviceName === 'nginx' && version === '1.28'),
+          startService: vi.fn().mockResolvedValue({ success: true }),
+          restartService: vi.fn().mockResolvedValue({ success: true }),
+          stopService: vi.fn().mockResolvedValue(undefined),
+          reloadNginx,
+          standardPortOwner: 'nginx',
+          standardPortOwnerVersion: '1.28',
+        },
+        supervisor: {
+          startProcess: vi.fn().mockResolvedValue(undefined),
+        },
+        log: {
+          project: vi.fn(),
+          systemWarn: vi.fn(),
+          systemError: vi.fn(),
+          systemInfo: vi.fn(),
+        },
+      },
+    });
+
+    const result = await ctx.startProject(project.id);
+
+    expect(result.success).toBe(true);
+    expect(ctx.createProxyNginxVhost).toHaveBeenCalledWith(project, 3173, '1.28');
+    expect(ctx.createNginxVhost).not.toHaveBeenCalled();
+    expect(reloadNginx).toHaveBeenCalled();
+  });
+
   it('cancels pending nginx shutdown before mixed-server restart work begins', async () => {
     const project = {
       id: 'proj-mixed',

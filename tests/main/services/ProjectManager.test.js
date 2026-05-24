@@ -145,6 +145,7 @@ describe('ProjectManager', () => {
 
         mgr = new ProjectManager(configStore, managers);
         mgr.validateProjectBinaries = vi.fn().mockResolvedValue({ isCompatible: true, missing: [] });
+        mgr.updateHostsFile = vi.fn().mockResolvedValue({ success: true });
 
         // Reset fs mock states
         vi.spyOn(fs, 'ensureDir').mockResolvedValue();
@@ -197,6 +198,14 @@ describe('ProjectManager', () => {
             await expect(mgr.createProject({ name: 'ExistingProj', path: '/foo/bar' })).rejects.toThrow('A project with the name "ExistingProj" already exists');
         });
 
+        it('rejects creating a project with a domain already used by another project', async () => {
+            configStore.set('projects', [{ id: 'xyz', name: 'ExistingProj', path: '/foo/existing', domain: 'dupe.test', domains: ['dupe.test'] }]);
+
+            await expect(mgr.createProject({ name: 'AnotherProj', path: '/foo/bar', type: 'laravel', domain: 'dupe.test' })).rejects.toThrow(
+                'Domain "dupe.test" is already used by project "ExistingProj".'
+            );
+        });
+
         it('rejects importing an already-registered project path', async () => {
             configStore.set('projects', [{ id: 'xyz', name: 'ExistingProj', path: '/foo/existing' }]);
 
@@ -213,6 +222,14 @@ describe('ProjectManager', () => {
             );
         });
 
+        it('rejects importing a project with a domain already used by another project', async () => {
+            configStore.set('projects', [{ id: 'xyz', name: 'ExistingProj', path: '/foo/existing', domain: 'dupe.test', domains: ['dupe.test'] }]);
+
+            await expect(mgr.registerExistingProject({ name: 'ImportedProj', path: '/foo/other', domain: 'dupe.test' })).rejects.toThrow(
+                'Domain "dupe.test" is already used by project "ExistingProj".'
+            );
+        });
+
         it('updates an existing project', async () => {
             const project = { id: 'abc1234', name: 'OldName', type: 'static', phpVersion: '8.2', path: '/foo/old', services: {} };
             configStore.set('projects', [project]);
@@ -223,6 +240,29 @@ describe('ProjectManager', () => {
 
             expect(updated.name).toBe('NewName');
             expect(updated.phpVersion).toBe('8.3');
+        });
+
+        it('rejects updating a project to a domain already reserved by another project', async () => {
+            const project = { id: 'abc1234', name: 'OldName', type: 'static', phpVersion: '8.2', path: '/foo/old', domain: 'old.test', domains: ['old.test'], services: {} };
+            const otherProject = { id: 'other', name: 'OtherProj', type: 'static', phpVersion: '8.2', path: '/foo/other', domain: 'dupe.test', domains: ['dupe.test'], services: {} };
+            configStore.set('projects', [project, otherProject]);
+
+            await expect(mgr.updateProject('abc1234', { domain: 'dupe.test', domains: ['dupe.test'] })).rejects.toThrow(
+                'Domain "dupe.test" is already used by project "OtherProj".'
+            );
+        });
+
+        it('fails project creation when hosts-file registration is denied', async () => {
+            vi.spyOn(mgr, 'detectProjectType').mockResolvedValue('laravel');
+            mgr.createVirtualHost = vi.fn().mockResolvedValue();
+            mgr.updateHostsFile = vi.fn().mockResolvedValue({ success: false, error: 'User canceled elevation prompt' });
+
+            await expect(mgr.createProject({
+                name: 'DeniedHostsProj',
+                path: '/path/to/denied-hosts',
+                phpVersion: '8.3',
+                type: 'laravel'
+            })).rejects.toThrow('Could not reserve deniedhostsproj.test for local development. User canceled elevation prompt');
         });
 
         it('does not restart a running project for tunnel-only setting changes', async () => {

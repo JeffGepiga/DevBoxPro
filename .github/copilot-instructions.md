@@ -154,3 +154,4 @@ const exe = process.platform === 'win32' ? 'php.exe' : 'php';
 - Test on both Windows and macOS for path separator issues (`path.join` always)
 - Prefer targeted Vitest slices for the service or mixin you changed before running broader suites
 - When changing generated configs or runtime spawning, cover Windows path and quoting behavior explicitly
+

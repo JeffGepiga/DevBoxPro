@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import PhpIniEditor from '../components/PhpIniEditor';
+import { formatPhpRuntimeLabel, formatPhpRuntimeVersion } from '../utils/phpRuntime';
 import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
 
@@ -41,6 +42,14 @@ const SERVICE_LABELS = {
   composer: 'Composer',
 };
 
+const formatServiceVersionLabel = (service, version) => {
+  if (service === 'php') {
+    return formatPhpRuntimeVersion(version);
+  }
+
+  return version;
+};
+
 // ── Module-level sub-components (must NOT be defined inside BinaryManager) ──
 
 const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLatest, isCustom, actionMode, actionLabel, onDownload, onRemove, onManualOpen, onImport, isPhp, getProgressDisplay, setPhpIniEditor }) => (
@@ -52,9 +61,9 @@ const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLat
           ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
           : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
       )}>
-        {version}
+        {isPhp ? formatPhpRuntimeVersion(version) : version}
       </span>
-      <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{name} {version}</span>
+      <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{isPhp ? formatPhpRuntimeLabel(version) : `${name} ${version}`}</span>
       {isCustom && <span className="shrink-0 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-1.5 py-0.5 rounded">Custom</span>}
       {!isCustom && isLatest && <span className="shrink-0 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded">Latest</span>}
       {size && <span className="shrink-0 text-xs text-gray-400">{size}</span>}
@@ -104,14 +113,15 @@ const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLat
   </div>
 );
 
-const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, isPhp, isNodejs, installed, downloading, progress, expandedSections, toggleSection, downloadSources, getProgressDisplay, setPhpIniEditor, handleImportApache, getInstalledVersionsCount, getVersionActionMeta, canImportVersion }) => {
+const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, isPhp, isNodejs, installed, downloading, progress, expandedSections, toggleSection, downloadSources, resolveDownloadSourceUrl, getProgressDisplay, setPhpIniEditor, handleImportApache, getInstalledVersionsCount, getVersionActionMeta, canImportVersion }) => {
   const installedCount = getInstalledVersionsCount(service.id);
   const hasInstalled = installedCount > 0;
   const isExpanded = expandedSections[service.id];
-  const hasSource = !!downloadSources[service.id]?.url;
+  const sourceUrl = resolveDownloadSourceUrl(service.id, service.defaultVersion || service.versions?.[0] || null);
+  const hasSource = !!sourceUrl;
   const hasImport = !service.noImport && (service.id === 'apache'
     ? (service.versions || []).some((version) => canImportVersion(service.id, version))
-    : !!onImport);
+    : !!onImport && (service.versions || []).some((version) => canImportVersion(service.id, version)));
 
   const handleHeaderImport = () => {
     if (service.id === 'apache') {
@@ -152,7 +162,7 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
                   {service.versions.slice(0, 6).map(v => {
                     const inst = installed[service.id]?.[v];
                     return inst ? (
-                      <span key={v} className="text-xs bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded border border-green-200 dark:border-green-800">{v}</span>
+                      <span key={v} className="text-xs bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded border border-green-200 dark:border-green-800">{formatServiceVersionLabel(service.id, v)}</span>
                     ) : null;
                   })}
                 </div>
@@ -163,7 +173,7 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
         </div>
         <div className="flex items-center gap-1.5 ml-2 shrink-0" onClick={e => e.stopPropagation()}>
           {hasSource && (
-            <button onClick={() => window.devbox?.system.openExternal(downloadSources[service.id]?.url)} className="btn-icon text-gray-400 hover:text-gray-600" title={downloadSources[service.id]?.note}>
+            <button onClick={() => window.devbox?.system.openExternal(sourceUrl)} className="btn-icon text-gray-400 hover:text-gray-600" title={downloadSources[service.id]?.note}>
               <ExternalLink className="w-3.5 h-3.5" />
             </button>
           )}
@@ -782,6 +792,18 @@ function BinaryManager() {
     }
   };
 
+  const handleOpenManualDownload = async (serviceId, version) => {
+    const manualUrl = resolveDownloadSourceUrl(serviceId, version);
+    if (!manualUrl) {
+      return;
+    }
+
+    try {
+      await window.devbox?.system.openExternal(manualUrl);
+    } catch (error) {
+      // Error opening manual download page
+    }
+  };
   const handleEnableZrok = async () => {
     const token = zrokToken.trim();
     if (!token) {
@@ -888,8 +910,39 @@ function BinaryManager() {
     },
   };
 
+  const isExternalHttpUrl = (value) => typeof value === 'string' && /^https?:\/\//i.test(value);
+
+  const resolveDownloadSourceUrl = (serviceId, version = null) => {
+    const serviceEntry = downloadUrls?.[serviceId];
+    const versionEntry = version ? serviceEntry?.[version] : null;
+    const directEntry = !version && serviceEntry && typeof serviceEntry === 'object' && 'url' in serviceEntry ? serviceEntry : null;
+    const sourceEntry = versionEntry || directEntry;
+    const candidates = [
+      sourceEntry?.manualDownloadUrl,
+      sourceEntry?.downloadPage,
+      ...(Array.isArray(sourceEntry?.fallbackUrls) ? sourceEntry.fallbackUrls : []),
+      sourceEntry?.url,
+      downloadSources[serviceId]?.url,
+    ];
+
+    return candidates.find(isExternalHttpUrl) || null;
+  };
+
   const getVersionDownloadInfo = useCallback((service, version) => {
-    return downloadUrls?.[service]?.[version] || null;
+    const serviceEntry = downloadUrls?.[service];
+    if (!serviceEntry || typeof serviceEntry !== 'object') {
+      return null;
+    }
+
+    if (version && serviceEntry[version]) {
+      return serviceEntry[version];
+    }
+
+    if (!version && 'url' in serviceEntry) {
+      return serviceEntry;
+    }
+
+    return null;
   }, [downloadUrls]);
 
   const getVersionActionMeta = useCallback((service, version) => {
@@ -931,33 +984,9 @@ function BinaryManager() {
     return true;
   }, [getVersionDownloadInfo]);
 
-  const handleOpenVersionSource = useCallback(async (service, version) => {
-    const info = getVersionDownloadInfo(service, version);
-
-    if (info?.url && /^https?:/i.test(info.url)) {
-      await window.devbox?.system.openExternal(info.url);
-      return;
-    }
-
-    const fallbackSource = downloadSources[service];
-    if (fallbackSource?.url) {
-      await window.devbox?.system.openExternal(fallbackSource.url);
-      return;
-    }
-
-    if (info?.note) {
-      await showAlert({
-        title: 'Installation Required',
-        message: `${service.charAt(0).toUpperCase() + service.slice(1)} ${version}`,
-        detail: info.note,
-        type: 'info',
-      });
-    }
-  }, [downloadSources, getVersionDownloadInfo, showAlert]);
-
   // Version detection patterns for different services
   const versionPatterns = {
-    php: /php-?(\d+\.\d+)(?:\.\d+)?/i,
+    php: /php-?(\d+\.\d+)(?:\.\d+)?(?:-(nts|ts))?/i,
     mysql: /mysql-?(\d+\.\d+)(?:\.\d+)?/i,
     mariadb: /mariadb-?(\d+\.\d+)(?:\.\d+)?/i,
     redis: /redis-?(\d+\.\d+)(?:\.\d+)?/i,
@@ -975,6 +1004,26 @@ function BinaryManager() {
     if (match) {
       // For Node.js, we only want major version (22, 20, 18, etc.)
       if (service === 'nodejs') {
+        return match[1];
+      }
+      if (service === 'php') {
+        const normalizedFilename = filename.toLowerCase();
+        const flavor = match[2]?.toLowerCase();
+
+        if (flavor === 'ts') {
+          return `${match[1]}-ts`;
+        }
+
+        if (flavor === 'nts') {
+          return match[1];
+        }
+
+        // Official Windows thread-safe archives omit an explicit -ts suffix,
+        // while NTS builds include -nts- in the filename.
+        if (/win32|windows/.test(normalizedFilename) && !/\bnts\b/.test(normalizedFilename)) {
+          return `${match[1]}-ts`;
+        }
+
         return match[1];
       }
       // For others, return major.minor (8.4, 1.28, etc.)
@@ -1245,8 +1294,7 @@ function BinaryManager() {
           }
           return [parts[0], parts.slice(1).join('-') || null];
         })();
-        const manualUrl = (verKey ? downloadUrls[svcKey]?.[verKey]?.url : null)
-          || downloadSources[svcKey]?.url;
+        const manualUrl = resolveDownloadSourceUrl(svcKey, verKey);
         return (
           <div className="flex items-start gap-1.5">
             <div className="flex flex-col">
@@ -1491,6 +1539,7 @@ function BinaryManager() {
     expandedSections,
     toggleSection,
     downloadSources,
+    resolveDownloadSourceUrl,
     getProgressDisplay,
     setPhpIniEditor,
     handleImportApache,
@@ -1700,7 +1749,7 @@ function BinaryManager() {
                 <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
                   <p className="text-sm text-green-700 dark:text-green-400 flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4" />
-                    Detected version: <strong>{importModal.detectedVersion}</strong>
+                    Detected version: <strong>{formatServiceVersionLabel(importModal.service, importModal.detectedVersion)}</strong>
                   </p>
                 </div>
               ) : (
@@ -1730,7 +1779,7 @@ function BinaryManager() {
                           : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                       )}
                     >
-                      {v}
+                      {formatServiceVersionLabel(importModal.service, v)}
                     </button>
                   ))}
                 </div>
@@ -1742,13 +1791,13 @@ function BinaryManager() {
                   type="text"
                   value={importModal.customVersion}
                   onChange={(e) => setImportModal({ ...importModal, customVersion: e.target.value })}
-                  placeholder="e.g., 8.4, 22, 1.28"
+                  placeholder="e.g., 8.4, 8.4-ts, 22, 1.28"
                   className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
               <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                Enter the major.minor version (e.g., 8.4 for PHP 8.4.x, 22 for Node.js 22.x)
+                Enter the version label to install as (for example, 8.4 or 8.4-ts for PHP, 22 for Node.js 22.x)
               </p>
             </div>
 
@@ -1945,7 +1994,7 @@ function BinaryManager() {
               onDownload={(s, v) => handleDownloadService(s, v)}
               onRemove={(s, v) => handleRemove(s, v)}
               onImport={(s) => s === 'apache' ? null : handleImportBinary(s)}
-              onManualOpen={(service, version) => handleOpenVersionSource(service, version)}
+              onManualOpen={(serviceId, version) => handleOpenManualDownload(serviceId, version)}
             />
           ))}
         </div>

@@ -151,6 +151,8 @@ module.exports = {
       compatibilityWarningsAcknowledged: config.compatibilityWarningsAcknowledged || false,
     };
 
+    this.assertProjectDomainsAvailable(project);
+
     const compatibilityConfig = {
       phpVersion: project.phpVersion,
       mysqlVersion: project.services.mysql ? project.services.mysqlVersion : null,
@@ -200,10 +202,9 @@ module.exports = {
       }
     }
 
-    try {
-      await this.addToHostsFile(project.domain);
-    } catch (error) {
-      this.managers.log?.systemWarn('Could not update hosts file', { project: config.name, error: error.message });
+    const hostsResult = await this.updateHostsFile(project);
+    if (hostsResult?.success === false) {
+      throw new Error(`Could not reserve ${project.domain} for local development. ${hostsResult.error}`);
     }
 
     if (project.services.queue && project.type === 'laravel') {

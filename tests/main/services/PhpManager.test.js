@@ -13,22 +13,37 @@ const fs = require('fs-extra');
 require('../../helpers/mockElectronCjs');
 const { PhpManager } = require('../../../src/main/services/PhpManager');
 
+const originalPlatform = process.platform;
+
+function setPlatform(value) {
+    Object.defineProperty(process, 'platform', {
+        value,
+        configurable: true,
+    });
+}
+
 describe('PhpManager', () => {
     let pm;
     let tmpDir;
     let mockConfigStore;
 
     beforeEach(async () => {
+        setPlatform('win32');
         tmpDir = path.join(os.tmpdir(), `phpmgr-test-${Date.now()}`);
         await fs.ensureDir(tmpDir);
         mockConfigStore = {
             get: vi.fn(() => ({})),
             set: vi.fn(),
         };
-        pm = new PhpManager(tmpDir, mockConfigStore, {});
+        pm = new PhpManager(tmpDir, mockConfigStore, {
+            service: {
+                ensureWindowsRuntimeDlls: vi.fn().mockResolvedValue(undefined),
+            },
+        });
     });
 
     afterEach(async () => {
+        setPlatform(originalPlatform);
         await fs.remove(tmpDir).catch(() => { });
     });
 
@@ -45,6 +60,30 @@ describe('PhpManager', () => {
         it('initializes supportedVersions', () => {
             expect(pm.supportedVersions).toContain('8.3');
             expect(pm.supportedVersions).toContain('7.4');
+            expect(pm.supportedVersions).toContain('8.5');
+        });
+    });
+
+    describe('initialize()', () => {
+        it('discovers custom PHP versions such as thread-safe imports', async () => {
+            const phpDir = path.join(tmpDir, 'php', '8.4-ts', 'win');
+            await fs.ensureDir(phpDir);
+            await fs.writeFile(path.join(phpDir, 'php.exe'), '');
+            await fs.writeFile(path.join(phpDir, 'php-cgi.exe'), '');
+
+            await pm.initialize();
+
+            expect(pm.phpVersions['8.4-ts']).toMatchObject({
+                available: true,
+                path: phpDir,
+                binary: path.join(phpDir, 'php.exe'),
+            });
+            expect(mockConfigStore.set).toHaveBeenCalledWith(
+                'phpVersions',
+                expect.objectContaining({
+                    '8.4-ts': expect.objectContaining({ available: true }),
+                })
+            );
         });
     });
 
@@ -92,6 +131,23 @@ describe('PhpManager', () => {
         });
     });
 
+    describe('ensurePhpRuntimeReady()', () => {
+        it('repairs Windows runtime DLLs for installed PHP versions', async () => {
+            pm.phpVersions['8.3'] = {
+                available: true,
+                path: '/resources/php/8.3/win',
+                binary: '/resources/php/8.3/win/php.exe',
+            };
+
+            await pm.ensurePhpRuntimeReady('8.3');
+
+            expect(pm.managers.service.ensureWindowsRuntimeDlls).toHaveBeenCalledWith(
+                '/resources/php/8.3/win',
+                'PHP 8.3'
+            );
+        });
+    });
+
     // ═══════════════════════════════════════════════════════════════════
     // getDefaultVersion() / setDefaultVersion()
     // ═══════════════════════════════════════════════════════════════════
@@ -107,6 +163,12 @@ describe('PhpManager', () => {
             mockConfigStore.get.mockReturnValue({});
             pm.phpVersions['8.3'] = { available: true };
             expect(pm.getDefaultVersion()).toBe('8.3');
+        });
+
+        it('returns a custom PHP version when it is the only available runtime', () => {
+            mockConfigStore.get.mockReturnValue({});
+            pm.phpVersions['8.4-ts'] = { available: true };
+            expect(pm.getDefaultVersion()).toBe('8.4-ts');
         });
 
         it('falls back to 8.2 when nothing available', () => {

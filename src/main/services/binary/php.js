@@ -4,6 +4,39 @@ const https = require('https');
 const { createWriteStream } = require('fs');
 const { resolvePhpExtensionDir } = require('../../utils/PhpPathResolver');
 
+async function needsWindowsRuntimeSync(sourcePath, destPath) {
+  if (!await fs.pathExists(destPath)) {
+    return true;
+  }
+
+  try {
+    const [sourceStat, destStat] = await Promise.all([
+      fs.stat(sourcePath),
+      fs.stat(destPath),
+    ]);
+
+    if (sourceStat.size !== destStat.size) {
+      return true;
+    }
+
+    const [sourceBuffer, destBuffer] = await Promise.all([
+      fs.readFile(sourcePath),
+      fs.readFile(destPath),
+    ]);
+
+    return !sourceBuffer.equals(destBuffer);
+  } catch (_error) {
+    return true;
+  }
+}
+
+function getBundledVCRedistDirs() {
+  return [
+    process.resourcesPath ? path.join(process.resourcesPath, 'vcredist') : null,
+    path.resolve(__dirname, '../../../../vcredist'),
+  ].filter(Boolean);
+}
+
 module.exports = {
   async ensureLinuxPhpSystemDependencies(version, id = null) {
     if (this.getPlatform() !== 'linux') {
@@ -193,9 +226,7 @@ module.exports = {
     const platform = this.getPlatform();
     const downloadInfo = this.downloads.php[version]?.[platform];
 
-    if (!downloadInfo) {
-      throw new Error(`PHP ${version} not available for ${platform}`);
-    }
+    this.ensureAutomatedDownloadAvailable(downloadInfo, `PHP ${version}`, platform);
 
     try {
       this.emitProgress(id, { status: 'starting', progress: 0 });
@@ -452,34 +483,40 @@ exec "${'${ROOT_DIR}'}/${path.relative(phpPath, targetBinary).replace(/\\/g, '/'
     ];
 
     const vcRedistBaseUrl = 'https://raw.githubusercontent.com/JeffGepiga/DevBoxPro/main/vcredist';
-    const missingDlls = [];
-    for (const dll of requiredDlls) {
-      const dllPath = path.join(phpPath, dll);
-      if (!await fs.pathExists(dllPath)) {
-        missingDlls.push(dll);
-      }
-    }
-
-    if (missingDlls.length === 0) {
-      return;
-    }
-
     const system32Path = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
     const stillMissing = [];
+    const sourceDirs = [
+      ...getBundledVCRedistDirs(),
+      system32Path,
+    ];
 
-    for (const dll of missingDlls) {
-      const systemDll = path.join(system32Path, dll);
+    for (const dll of requiredDlls) {
       const destDll = path.join(phpPath, dll);
+      let copied = false;
 
-      try {
-        if (await fs.pathExists(systemDll)) {
-          await fs.copy(systemDll, destDll);
-          this.managers?.log?.info(`[ensureVCRedist] Copied ${dll} from System32`);
-        } else {
-          stillMissing.push(dll);
+      for (const sourceDir of sourceDirs) {
+        const sourceDll = path.join(sourceDir, dll);
+
+        try {
+          if (!await fs.pathExists(sourceDll)) {
+            continue;
+          }
+
+          if (!await needsWindowsRuntimeSync(sourceDll, destDll)) {
+            copied = true;
+            break;
+          }
+
+          await fs.copy(sourceDll, destDll, { overwrite: true });
+          this.managers?.log?.info(`[ensureVCRedist] Synchronized ${dll} from ${sourceDir}`);
+          copied = true;
+          break;
+        } catch (err) {
+          this.managers?.log?.systemWarn(`[ensureVCRedist] Could not copy ${dll} from ${sourceDir}`, { error: err.message });
         }
-      } catch (err) {
-        this.managers?.log?.systemWarn(`[ensureVCRedist] Could not copy ${dll} from System32`, { error: err.message });
+      }
+
+      if (!copied) {
         stillMissing.push(dll);
       }
     }

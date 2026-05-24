@@ -7,13 +7,14 @@ module.exports = {
   },
 
   async setDirectShimsEnabled(enabled) {
-    this.configStore.set('settings.directShimsEnabled', enabled);
-
     if (enabled) {
       await this.installDirectShims();
     } else {
       await this.removeDirectShims();
+            await this.removeFromPath();
     }
+
+        this.configStore.set('settings.directShimsEnabled', enabled);
 
     return enabled;
   },
@@ -99,7 +100,15 @@ if exist "%PHP_PATH%\\php.exe" (
     "%PHP_PATH%\\php.exe" %*
     exit /b %ERRORLEVEL%
 ) else (
-    echo [DevBox Pro] PHP %PHP_VERSION% not found.
+    REM DevBox Pro PHP not installed - fall back to system php
+    set "SHIM_DIR=%~dp0"
+    for /f "tokens=*" %%i in ('where php 2^>nul') do (
+        if /i not "%%~dpi"=="%SHIM_DIR%" (
+            "%%i" %*
+            exit /b %ERRORLEVEL%
+        )
+    )
+    echo [DevBox Pro] PHP %PHP_VERSION% not found. Install it from the DevBox Pro Binaries page.
     exit /b 1
 )
 `;
@@ -545,6 +554,7 @@ DEVBOX_RESOURCES="${resourcesPath}"
 DEVBOX_PROJECTS="${projectsFilePath}"
 DEFAULT_PHP="${defaultPhpVersion}"
 CURRENT_DIR="$(pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Find project for current directory
 PHP_VERSION=""
@@ -572,11 +582,27 @@ fi
 [ -z "$PHP_VERSION" ] && PHP_VERSION="$DEFAULT_PHP"
 
 PHP_PATH="$DEVBOX_RESOURCES/php/$PHP_VERSION/${platform}"
+SYSTEM_PHP=""
+
+OLD_IFS="$IFS"
+IFS=':'
+for path_entry in $PATH; do
+    [ -z "$path_entry" ] && path_entry='.'
+    candidate="$path_entry/php"
+    if [ -x "$candidate" ]; then
+        candidate_dir="$(cd "$(dirname "$candidate")" && pwd 2>/dev/null || dirname "$candidate")"
+        if [ "$candidate_dir" != "$SCRIPT_DIR" ]; then
+            SYSTEM_PHP="$candidate"
+            break
+        fi
+    fi
+done
+IFS="$OLD_IFS"
 
 if [ -x "$PHP_PATH/php" ]; then
     exec "$PHP_PATH/php" "$@"
-elif command -v php &> /dev/null; then
-    exec php "$@"
+elif [ -n "$SYSTEM_PHP" ]; then
+    exec "$SYSTEM_PHP" "$@"
 else
     echo "[DevBox Pro] PHP $PHP_VERSION not found. Install from Binaries page or set a default version."
     exit 1

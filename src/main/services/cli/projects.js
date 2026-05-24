@@ -7,6 +7,24 @@ module.exports = {
     return path.join(this.getCliPath(), 'projects.json');
   },
 
+  getProjectMysqlInfo(project) {
+    if (project?.services?.mariadb) {
+      return {
+        dbType: 'mariadb',
+        version: project.services.mariadbVersion || '11.4',
+      };
+    }
+
+    if (project?.services?.mysql) {
+      return {
+        dbType: 'mysql',
+        version: project.services.mysqlVersion || '8.4',
+      };
+    }
+
+    return this.getActiveMysqlInfo();
+  },
+
   async syncProjectsFile() {
     const cliPath = this.getCliPath();
     await fs.ensureDir(cliPath);
@@ -14,10 +32,10 @@ module.exports = {
     const projects = this.configStore.get('projects', []);
     const projectMappings = {};
     const defaultNodeVersion = this.getFirstInstalledNodeVersion();
-    const dbInfo = this.getActiveMysqlInfo();
 
     for (const project of projects) {
       const normalizedPath = path.normalize(project.path);
+      const dbInfo = this.getProjectMysqlInfo(project);
       projectMappings[normalizedPath] = {
         id: project.id,
         name: project.name,
@@ -25,6 +43,11 @@ module.exports = {
         nodejsVersion: project.services?.nodejs ? (project.services.nodejsVersion || defaultNodeVersion) : null,
         mysqlType: dbInfo.dbType,
         mysqlVersion: dbInfo.version,
+        services: project.services?.python
+          ? {
+            pythonVersion: project.services.pythonVersion || '3.13',
+          }
+          : null,
       };
     }
 
@@ -129,7 +152,7 @@ module.exports = {
 
       case 'mysql':
       case 'mysqldump': {
-        const dbInfo = this.getActiveMysqlInfo();
+        const dbInfo = this.getProjectMysqlInfo(project);
         const binPath = command.toLowerCase() === 'mysql'
           ? this.getMysqlClientPath(dbInfo.dbType, dbInfo.version)
           : this.getMysqldumpPath(dbInfo.dbType, dbInfo.version);

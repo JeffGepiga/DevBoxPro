@@ -30,6 +30,7 @@ module.exports = {
     let phpPath;
     try {
       phpPath = phpManager.getPhpBinaryPath(defaultPhp);
+      await phpManager.ensurePhpRuntimeReady?.(defaultPhp);
     } catch (error) {
       this.managers.log?.systemError('PHP binary not found. Please download PHP from the Binary Manager.');
       const status = this.serviceStatus.get('phpmyadmin');

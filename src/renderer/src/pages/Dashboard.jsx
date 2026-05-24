@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
+import { formatPhpRuntimeLabel } from '../utils/phpRuntime';
 
 // Service icons mapping (ports and versions come from backend)
 const SERVICE_ICONS = {
@@ -369,7 +370,7 @@ function ProjectRow({ project, onStart, onStop }) {
                 remix: 'Remix', sveltekit: 'SvelteKit', strapi: 'Strapi', elysia: 'Elysia',
               }[project.nodeFramework] || project.nodeFramework}` : ''}`
               : [
-                project.phpVersion ? `PHP ${project.phpVersion}` : null,
+                project.phpVersion ? formatPhpRuntimeLabel(project.phpVersion) : null,
                 project.type || null,
               ].filter(Boolean).join(' • ') || 'No runtime info'}
           </p>

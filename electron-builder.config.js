@@ -20,10 +20,21 @@ module.exports = {
     'config/binaries.json',
     'config/compatibility.json',
     '!src/main/**/*.map',
+    'node_modules/**/*',
+    '!node_modules/.cache/**/*',
+    '!node_modules/.vite/**/*',
     {
       from: 'src/renderer/dist',
       to: 'renderer',
     },
+  ],
+  asarUnpack: [
+    'src/main/services/extractWorker.js',
+    'node_modules/adm-zip/**/*',
+    'node_modules/fs-extra/**/*',
+    'node_modules/graceful-fs/**/*',
+    'node_modules/jsonfile/**/*',
+    'node_modules/universalify/**/*',
   ],
   extraFiles: [
     {

@@ -93,12 +93,17 @@ module.exports = {
       }
 
       const phpFpmPort = project.type !== 'nodejs' ? this.getPhpFpmPort(project) : 0;
+      const nodeBackendPort = project.nodePort || 3000;
       const targetVersion = webServerVersion;
       const webServerAlreadyRunning = this.managers.service?.isVersionRunning(webServer, webServerVersion);
 
       if (webServerAlreadyRunning) {
         if (webServer === 'nginx') {
-          await this.createNginxVhost(project, phpFpmPort || undefined, targetVersion);
+          if (project.type === 'nodejs') {
+            await this.createProxyNginxVhost(project, nodeBackendPort, targetVersion);
+          } else {
+            await this.createNginxVhost(project, phpFpmPort || undefined, targetVersion);
+          }
           await this.regenerateAllNginxVhosts(id, webServerVersion);
           try {
             await this.managers.service?.reloadNginx(targetVersion);
@@ -106,7 +111,9 @@ module.exports = {
             this.managers.log?.systemWarn('Could not reload/restart nginx', { error: error.message });
           }
         } else if (webServer === 'apache') {
-          const vhostResult = await this.createApacheVhost(project, targetVersion);
+          const vhostResult = project.type === 'nodejs'
+            ? await this.createProxyApacheVhost(project, nodeBackendPort, targetVersion)
+            : await this.createApacheVhost(project, targetVersion);
           await this.regenerateAllApacheVhosts(id, webServerVersion);
           await this.ensureApacheListenConfig(project, vhostResult, targetVersion);
           this.runningProjects.set(id, {
@@ -140,10 +147,18 @@ module.exports = {
         this.managers.log?.project(id, `Web server started on ports HTTP=${actualPorts?.httpPort}, HTTPS=${actualPorts?.sslPort}. Creating vhost config.`);
 
         if (webServer === 'nginx') {
-          await this.createNginxVhost(project, phpFpmPort || undefined, targetVersion);
+          if (project.type === 'nodejs') {
+            await this.createProxyNginxVhost(project, nodeBackendPort, targetVersion);
+          } else {
+            await this.createNginxVhost(project, phpFpmPort || undefined, targetVersion);
+          }
           await this.regenerateAllNginxVhosts(id, webServerVersion);
         } else if (webServer === 'apache') {
-          await this.createApacheVhost(project, targetVersion);
+          if (project.type === 'nodejs') {
+            await this.createProxyApacheVhost(project, nodeBackendPort, targetVersion);
+          } else {
+            await this.createApacheVhost(project, targetVersion);
+          }
           await this.regenerateAllApacheVhosts(id, webServerVersion);
         }
 

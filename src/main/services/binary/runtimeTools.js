@@ -4,6 +4,22 @@ const { spawn } = require('child_process');
 const { spawnAsync, killProcessesByPath } = require('../../utils/SpawnUtils');
 const { resolvePhpBinaryPath } = require('../../utils/PhpPathResolver');
 
+async function ensurePhpRuntimeReady(managers, phpDir, version) {
+  if (process.platform !== 'win32' || !phpDir) {
+    return;
+  }
+
+  try {
+    await managers?.service?.ensureWindowsRuntimeDlls?.(phpDir, `PHP ${version}`);
+  } catch (error) {
+    managers?.log?.systemWarn?.('Failed to repair PHP runtime DLLs before Composer execution', {
+      phpDir,
+      version,
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   resolveComposerPhpVersion(requestedVersion = null) {
     if (requestedVersion) {
@@ -124,7 +140,6 @@ module.exports = {
       } catch (error) {
         this.managers?.log?.systemWarn('Failed to stop existing Node.js processes before reinstall', { error: error.message, nodejsPath });
       }
-        const { resolvePhpBinaryPath } = require('../../utils/PhpPathResolver');
 
       await new Promise((resolve) => setTimeout(resolve, 750));
     }
@@ -177,8 +192,14 @@ module.exports = {
 
       this.emitProgress(id, { status: 'installing', progress: 60 });
 
-      if (!await fs.pathExists(downloadPath)) {
-        throw new Error('Download did not complete - file not found after download.');
+      // Brief delay on Windows to ensure file descriptor is fully released after download
+      if (process.platform === 'win32') {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+
+      const stat = await fs.stat(downloadPath).catch(() => null);
+      if (!stat || stat.size === 0) {
+        throw new Error(`Download did not complete - ${stat ? 'file is empty' : 'file not found'} at ${downloadPath}.`);
       }
 
       const composerDir = path.join(this.resourcesPath, 'composer');
@@ -259,6 +280,7 @@ exit 1
     const platform = this.getPlatform();
     const effectivePhpVersion = this.resolveComposerPhpVersion(phpVersion);
     const phpPath = resolvePhpBinaryPath(this.resourcesPath, effectivePhpVersion, platform);
+    const phpDir = phpPath ? path.dirname(phpPath) : null;
     const composerPhar = this.getComposerPath();
 
     if (platform === 'linux') {
@@ -281,6 +303,8 @@ exit 1
       if (onOutput) onOutput(error, 'error');
       throw new Error(error);
     }
+
+    await ensurePhpRuntimeReady(this.managers, phpDir, effectivePhpVersion);
 
     const args = [composerPhar, ...command.split(' ')];
     const phpBinDir = path.dirname(phpPath);

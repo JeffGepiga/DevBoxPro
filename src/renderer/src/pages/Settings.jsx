@@ -9,6 +9,7 @@ import {
   applyTexture,
   applyDarkSurface,
 } from '../utils/themeConfig';
+import { formatPhpRuntimeLabel } from '../utils/phpRuntime';
 import {
   Save,
   RefreshCw,
@@ -445,7 +446,7 @@ function CliSettings() {
           text: 'Terminal commands enabled! Restart your terminal or VS Code to use php, npm, node, composer, and mysql directly.'
         });
       } else {
-        setMessage({ type: 'success', text: 'Terminal commands disabled.' });
+        setMessage({ type: 'success', text: 'Terminal commands disabled and removed from PATH. Restart your terminal or VS Code for changes to take effect.' });
       }
 
       // Refresh status
@@ -597,7 +598,7 @@ function CliSettings() {
               >
                 <option value="">Auto-detect</option>
                 {phpVersions.map(v => (
-                  <option key={v} value={v}>PHP {v}</option>
+                  <option key={v} value={v}>{formatPhpRuntimeLabel(v)}</option>
                 ))}
               </select>
             </div>

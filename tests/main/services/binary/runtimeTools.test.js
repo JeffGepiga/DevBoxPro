@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const nativeFs = require('fs');
 const path = require('path');
 
 vi.mock('../../../../src/main/utils/SpawnUtils', () => ({
@@ -107,6 +108,7 @@ describe('binary/runtimeTools', () => {
     vi.spyOn(fs, 'pathExists').mockResolvedValue(true);
     vi.spyOn(fs, 'copy').mockResolvedValue(undefined);
     vi.spyOn(fs, 'remove').mockResolvedValue(undefined);
+    vi.spyOn(fs, 'stat').mockResolvedValue({ size: 1024 });
 
     const result = await ctx.downloadComposer();
 
@@ -152,6 +154,30 @@ describe('binary/runtimeTools', () => {
     expect(onOutput).toHaveBeenCalledWith(
       'PHP 8.4 is not installed. Please download it from the Binary Manager.',
       'error'
+    );
+  });
+
+  it('repairs PHP runtime DLLs before running Composer on Windows', async () => {
+    const ctx = makeContext({
+      managers: {
+        log: {
+          systemError: vi.fn(),
+          systemWarn: vi.fn(),
+        },
+        service: {
+          ensureWindowsRuntimeDlls: vi.fn().mockResolvedValue(undefined),
+        },
+      },
+    });
+
+    vi.spyOn(fs, 'pathExists').mockResolvedValue(true);
+    vi.spyOn(nativeFs, 'existsSync').mockReturnValue(true);
+
+    await expect(ctx.runComposer('/project', 'install --no-dev', '8.3')).rejects.toThrow();
+
+    expect(ctx.managers.service.ensureWindowsRuntimeDlls).toHaveBeenCalledWith(
+      path.join('/resources', 'php', '8.3', 'win'),
+      'PHP 8.3'
     );
   });
 

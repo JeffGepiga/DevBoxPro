@@ -88,8 +88,24 @@ module.exports = {
         const fileStats = await fs.stat(filePath);
         const totalSize = fileStats.size;
         let processedBytes = 0;
+        const importStartTime = Date.now();
 
         progressCallback?.({ operationId, status: 'importing', message: 'Importing to database (streaming)...', progress: 0, dbName: safeName });
+
+        // Heartbeat: fire every 2 s so the UI never looks frozen during backpressure.
+        const progressInterval = setInterval(() => {
+          const elapsed = Math.round((Date.now() - importStartTime) / 1000);
+          const readMB = (processedBytes / (1024 * 1024)).toFixed(1);
+          const totalMB = (totalSize / (1024 * 1024)).toFixed(1);
+          const pct = Math.min(Math.round((processedBytes / totalSize) * 100), 99);
+          progressCallback?.({
+            operationId,
+            status: 'importing',
+            message: `Importing... ${readMB}MB / ${totalMB}MB read (${elapsed}s elapsed)`,
+            progress: pct,
+            dbName: safeName,
+          });
+        }, 2000);
 
         const args = [
           `-h${this.dbConfig.host}`,
@@ -115,31 +131,35 @@ module.exports = {
           stderr += data.toString();
         });
 
-        const readStream = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 });
+        const readStream = fs.createReadStream(filePath, { highWaterMark: 16 * 1024 * 1024 });
 
+        // Track compressed bytes read so the heartbeat interval can show progress.
         readStream.on('data', (chunk) => {
           processedBytes += chunk.length;
-          const progress = Math.round((processedBytes / totalSize) * 100);
-          if (progress % 5 === 0) {
-            const sizeMB = (processedBytes / (1024 * 1024)).toFixed(1);
-            const totalMB = (totalSize / (1024 * 1024)).toFixed(1);
-            progressCallback?.({
-              operationId,
-              status: 'importing',
-              message: `Importing... ${sizeMB}MB / ${totalMB}MB (${progress}%)`,
-              progress,
-              dbName: safeName,
-            });
-          }
         });
 
         const capturedVirtualColumns = [];
         const sqlProcessor = this.createSqlProcessorStream(capturedVirtualColumns);
 
-        if (isGzipped) {
-          progressCallback?.({ operationId, status: 'importing', message: 'Decompressing and importing (streaming)...', progress: 0, dbName: safeName });
+        // Performance session variables.
+        // autocommit=0 batches commits per-table (via UNLOCK TABLES + injected COMMIT) instead
+        // of fsyncing after every INSERT statement — this is the single biggest import speed win.
+        // innodb_flush_log_at_trx_commit=0 avoids per-commit fsync; available as a SESSION var
+        // in MySQL 8.0.25+. The mysql client ignores errors on SET statements and continues,
+        // so this is safe to send to older versions — it will just print a warning to stderr.
+        // sql_log_bin=0 is omitted: requires BINLOG_ADMIN in MySQL 8 and causes a hard error.
+        const perfPreamble = Buffer.from(
+          'SET autocommit=0;\n' +
+          'SET unique_checks=0;\n' +
+          'SET foreign_key_checks=0;\n' +
+          'SET NAMES utf8mb4;\n',
+          'utf8'
+        );
+        proc.stdin.write(perfPreamble);
 
-          const gunzip = zlib.createGunzip();
+        if (isGzipped) {
+
+          const gunzip = zlib.createGunzip({ chunkSize: 4 * 1024 * 1024 });
 
           gunzip.on('error', (err) => {
             proc.stdin.end();
@@ -147,9 +167,9 @@ module.exports = {
             reject(new Error(`Decompression error: ${err.message}`));
           });
 
-          readStream.pipe(gunzip).pipe(sqlProcessor).pipe(proc.stdin);
+          readStream.pipe(gunzip).pipe(sqlProcessor).pipe(proc.stdin, { end: false });
         } else {
-          readStream.pipe(sqlProcessor).pipe(proc.stdin);
+          readStream.pipe(sqlProcessor).pipe(proc.stdin, { end: false });
         }
 
         readStream.on('error', (err) => {
@@ -164,7 +184,21 @@ module.exports = {
           reject(new Error(`SQL processing error: ${err.message}`));
         });
 
+        // Restore session variables and close stdin when the SQL processor finishes.
+        sqlProcessor.on('end', () => {
+          const perfEpilogue = Buffer.from(
+            '\nCOMMIT;\n' +
+            'SET autocommit=1;\n' +
+            'SET unique_checks=1;\n' +
+            'SET foreign_key_checks=1;\n',
+            'utf8'
+          );
+          proc.stdin.write(perfEpilogue);
+          proc.stdin.end();
+        });
+
         proc.on('close', async (code) => {
+          clearInterval(progressInterval);
           if (code === 0) {
             try {
               if (capturedVirtualColumns.length > 0) {
@@ -211,6 +245,7 @@ module.exports = {
         });
 
         proc.on('error', (error) => {
+          clearInterval(progressInterval);
           const operation = this.runningOperations.get(operationId);
           if (operation) {
             operation.status = 'failed';
@@ -220,6 +255,7 @@ module.exports = {
           reject(error);
         });
       } catch (error) {
+        clearInterval(progressInterval);
         this.runningOperations.delete(operationId);
         progressCallback?.({ operationId, status: 'error', message: `Import error: ${error.message}`, dbName: safeName });
         reject(error);
@@ -227,20 +263,49 @@ module.exports = {
     });
   },
 
+
   createSqlProcessorStream(capturedVirtualColumns = []) {
     const self = this;
     let buffer = '';
     const generatedColumns = new Map();
+    // Enabled only after all virtual-column tables have had their INSERTs processed,
+    // allowing remaining data to bypass parsing.
+    let passthrough = false;
+    const processedInsertTables = new Set();
+
+    // Incremental scanner state — persisted across chunks so we only scan new data.
+    let scanOffset = 0;       // Next position to scan from in the buffer
+    let scanInString = false; // Whether we're inside a quoted string at scanOffset
+    let scanStringChar = '';  // The quote character of the current string
+    let lastValidSemicolon = -1; // Position of the last safe ';' found in the buffer
 
     return new Transform({
+      highWaterMark: 8 * 1024 * 1024,
       transform(chunk, encoding, callback) {
+        if (passthrough) {
+          // Inject per-table COMMITs. Use Buffer.indexOf to avoid toString on every chunk —
+          // UNLOCK TABLES is rare (once per table, only at end of each table's data block).
+          const unlockIdx = chunk.indexOf('UNLOCK');
+          if (unlockIdx !== -1) {
+            const str = chunk.toString('utf8');
+            if (/UNLOCK\s+TABLES\s*;/i.test(str)) {
+              this.push(Buffer.from(str.replace(/UNLOCK\s+TABLES\s*;/gi, 'UNLOCK TABLES;\nCOMMIT;'), 'utf8'));
+              callback();
+              return;
+            }
+          }
+          this.push(chunk);
+          callback();
+          return;
+        }
+
         buffer += chunk.toString('utf8');
 
-        let inString = false;
-        let stringChar = '';
-        let lastValidSemicolon = -1;
+        // Only scan the newly appended portion of the buffer.
+        let inString = scanInString;
+        let stringChar = scanStringChar;
 
-        for (let index = 0; index < buffer.length; index++) {
+        for (let index = scanOffset; index < buffer.length; index++) {
           const char = buffer[index];
           const nextChar = buffer[index + 1] || '';
 
@@ -267,10 +332,17 @@ module.exports = {
           }
         }
 
+        // Save scanner state so the next chunk continues from here.
+        scanInString = inString;
+        scanStringChar = stringChar;
+        scanOffset = buffer.length;
+
         if (lastValidSemicolon === -1) {
-          if (buffer.length > 10 * 1024 * 1024) {
+          if (buffer.length > 50 * 1024 * 1024) {
             this.push(Buffer.from(buffer, 'utf8'));
             buffer = '';
+            scanOffset = 0;
+            // Keep inString/scanStringChar as-is — mid-stream flush.
           }
           callback();
           return;
@@ -279,8 +351,18 @@ module.exports = {
         let toProcess = buffer.substring(0, lastValidSemicolon + 1);
         buffer = buffer.substring(lastValidSemicolon + 1);
 
-        toProcess = toProcess.replace(
-          /CREATE TABLE\s+`(\w+)`\s*\(([\s\S]*?)\)\s*(ENGINE[\s\S]*?;)/gi,
+        // Reset incremental scanner to start of the new buffer tail.
+        // We're at a statement boundary so we're never inside a string here.
+        scanOffset = 0;
+        scanInString = false;
+        scanStringChar = '';
+        lastValidSemicolon = -1;
+
+        // Only run the expensive CREATE TABLE regex when the segment contains one.
+        // Also handles CREATE TABLE IF NOT EXISTS produced by some dump tools.
+        if (/CREATE\s+TABLE/i.test(toProcess)) {
+          toProcess = toProcess.replace(
+            /CREATE TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+`(\w+)`\s*\(([\s\S]*?)\)\s*(ENGINE[\s\S]*?;)/gi,
           (match, tableName, tableDefinition, enginePart) => {
             const definitions = self.splitDefinitions(tableDefinition);
             const filteredDefinitions = [];
@@ -304,7 +386,7 @@ module.exports = {
                 continue;
               }
 
-              if (/GENERATED\s+ALWAYS\s+AS/i.test(trimmed) || /AS\s*\(.*\)\s*(VIRTUAL|STORED)/i.test(trimmed)) {
+              if (/GENERATED\s+ALWAYS\s+AS/i.test(trimmed) || /AS\s*\(.*\)\s*(VIRTUAL|STORED|PERSISTENT)/i.test(trimmed)) {
                 virtualIndices.push(columnIndex);
                 capturedVirtualColumns.push({ table: tableName, def: trimmed });
                 columnIndex++;
@@ -323,7 +405,32 @@ module.exports = {
             const newDefinition = '\n  ' + filteredDefinitions.join(',\n  ') + '\n';
             return `CREATE TABLE \`${tableName}\` (${newDefinition}) ${enginePart}`;
           }
-        );
+          );
+        } // end CREATE TABLE block
+
+        // Fast path: no virtual columns detected — no INSERT processing needed.
+        // Still inject per-table COMMITs so large imports don't become one giant transaction.
+        if (generatedColumns.size === 0) {
+          const out = /UNLOCK\s+TABLES/i.test(toProcess)
+            ? toProcess.replace(/UNLOCK\s+TABLES\s*;/gi, 'UNLOCK TABLES;\nCOMMIT;')
+            : toProcess;
+          this.push(Buffer.from(out, 'utf8'));
+          callback();
+          return;
+        }
+
+        // Fast path: segment has no INSERT touching a tracked table — skip expensive regex.
+        // Still inject per-table COMMITs.
+        const lowerToProcess = toProcess.toLowerCase();
+        const hasTrackedInsert = [...generatedColumns.keys()].some(t => lowerToProcess.includes(`\`${t}\``));
+        if (!hasTrackedInsert) {
+          const out = /UNLOCK\s+TABLES/i.test(toProcess)
+            ? toProcess.replace(/UNLOCK\s+TABLES\s*;/gi, 'UNLOCK TABLES;\nCOMMIT;')
+            : toProcess;
+          this.push(Buffer.from(out, 'utf8'));
+          callback();
+          return;
+        }
 
         const insertRegex = /INSERT INTO `(\w+)` VALUES\s*/gi;
         let lastIndex = 0;
@@ -391,11 +498,27 @@ module.exports = {
           const processedValues = self.removeColumnsFromValues(valuesSection, virtualIndices);
 
           result += `INSERT INTO \`${insertMatch[1]}\` VALUES ${processedValues}`;
+          processedInsertTables.add(insertMatch[1].toLowerCase());
           lastIndex = valuesEnd;
         }
 
         result += toProcess.substring(lastIndex);
-        this.push(Buffer.from(result, 'utf8'));
+
+        // Inject per-table COMMITs so the import doesn't become one giant transaction.
+        const finalResult = /UNLOCK\s+TABLES/i.test(result)
+          ? result.replace(/UNLOCK\s+TABLES\s*;/gi, 'UNLOCK TABLES;\nCOMMIT;')
+          : result;
+        this.push(Buffer.from(finalResult, 'utf8'));
+
+        // Enable passthrough once every virtual-column table's INSERTs have been
+        // processed and the current segment contains no new CREATE TABLE.
+        if (
+          processedInsertTables.size >= generatedColumns.size &&
+          !/CREATE\s+TABLE/i.test(toProcess)
+        ) {
+          passthrough = true;
+        }
+
         callback();
       },
 

@@ -9,6 +9,7 @@
  * then call each handler and verify it delegates to the correct manager.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+const { EventEmitter } = require('events');
 
 require('../../helpers/mockElectronCjs');
 const { setupIpcHandlers } = require('../../../src/main/ipc/handlers');
@@ -515,6 +516,46 @@ describe('IPC Handlers', () => {
             expect(mockManagers.config.get).toHaveBeenCalledWith('theme');
         });
 
+
+    describe('Terminal handler routing', () => {
+        it('terminal:runCommand uses cmd.exe for compound php commands so && is interpreted by the shell', async () => {
+            const childProcess = require('child_process');
+            const spawnSpy = vi.spyOn(childProcess, 'spawn').mockImplementation(() => {
+                const proc = new EventEmitter();
+                proc.stdout = new EventEmitter();
+                proc.stderr = new EventEmitter();
+                proc.stdin = { destroyed: false, write: vi.fn() };
+
+                process.nextTick(() => {
+                    proc.emit('close', 0);
+                });
+
+                return proc;
+            });
+
+            try {
+                const result = await handlers['terminal:runCommand'](
+                    fakeEvent,
+                    'proj-1',
+                    'php artisan optimize && php artisan migrate:fresh',
+                    { cwd: '/test', interactive: true }
+                );
+
+                expect(spawnSpy).toHaveBeenCalledWith(
+                    'cmd.exe',
+                    ['/d', '/s', '/c', 'php artisan optimize && php artisan migrate:fresh'],
+                    expect.objectContaining({
+                        cwd: '/test',
+                        shell: false,
+                        windowsHide: true,
+                    })
+                );
+                expect(result).toEqual(expect.objectContaining({ code: 0, success: true }));
+            } finally {
+                spawnSpy.mockRestore();
+            }
+        });
+    });
         it('settings:set routes to config.set', async () => {
             await handlers['settings:set'](fakeEvent, 'theme', 'dark');
             expect(mockManagers.config.set).toHaveBeenCalledWith('theme', 'dark');

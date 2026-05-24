@@ -29,6 +29,7 @@ const mockDevbox = {
         getInstalled: vi.fn().mockResolvedValue({}),
         getDownloadUrls: vi.fn().mockResolvedValue({}),
         getServiceConfig: vi.fn().mockResolvedValue({}),
+        importBinary: vi.fn().mockResolvedValue({ success: true }),
         checkForServiceUpdates: vi.fn().mockResolvedValue({
             composer: { updateAvailable: false },
             phpmyadmin: { updateAvailable: false },
@@ -42,6 +43,7 @@ const mockDevbox = {
     },
     system: {
         openExternal: vi.fn(),
+        selectFile: vi.fn().mockResolvedValue(null),
     },
     git: {
         isAvailable: vi.fn().mockResolvedValue({ available: false, source: null, version: null }),
@@ -76,6 +78,7 @@ beforeEach(() => {
     mockDevbox.binaries.getStatus.mockResolvedValue({ php: {}, nginx: {}, apache: {}, mysql: {}, mariadb: {}, redis: {}, nodejs: {}, phpmyadmin: {}, mailpit: {} });
     mockDevbox.git.isAvailable.mockResolvedValue({ available: false, source: null, version: null });
     mockDevbox.binaries.getInstalled.mockResolvedValue({});
+    mockDevbox.system.selectFile.mockResolvedValue(null);
 });
 
 vi.mock('@/context/AppContext', () => ({
@@ -128,6 +131,58 @@ describe('BinaryManager', () => {
 
         await waitFor(() => {
             expect(mockDevbox.binaries.downloadGit).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    it('preserves the ts suffix when importing a PHP archive', async () => {
+        mockDevbox.system.selectFile.mockResolvedValueOnce('C:\\Downloads\\php-8.4.21-ts-Win32-vs17-x64.zip');
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <BinaryManager />
+            </MemoryRouter>
+        );
+
+        const importButtons = await screen.findAllByRole('button', { name: /Import ZIP/i });
+        fireEvent.click(importButtons[0]);
+
+        expect(await screen.findByText(/Detected version:/i)).toBeInTheDocument();
+        expect(screen.getByText(/8\.4 TS/i)).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /^Import$/ }));
+
+        await waitFor(() => {
+            expect(mockDevbox.binaries.importBinary).toHaveBeenCalledWith(
+                'php',
+                '8.4-ts',
+                'C:\\Downloads\\php-8.4.21-ts-Win32-vs17-x64.zip'
+            );
+        });
+    });
+
+    it('treats official Windows TS PHP zip names without an explicit ts suffix as thread-safe', async () => {
+        mockDevbox.system.selectFile.mockResolvedValueOnce('C:\\Downloads\\php-8.3.31-Win32-vs16-x64.zip');
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <BinaryManager />
+            </MemoryRouter>
+        );
+
+        const importButtons = await screen.findAllByRole('button', { name: /Import ZIP/i });
+        fireEvent.click(importButtons[0]);
+
+        expect(await screen.findByText(/Detected version:/i)).toBeInTheDocument();
+        expect(screen.getByText(/8\.3 TS/i)).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /^Import$/ }));
+
+        await waitFor(() => {
+            expect(mockDevbox.binaries.importBinary).toHaveBeenCalledWith(
+                'php',
+                '8.3-ts',
+                'C:\\Downloads\\php-8.3.31-Win32-vs16-x64.zip'
+            );
         });
     });
 

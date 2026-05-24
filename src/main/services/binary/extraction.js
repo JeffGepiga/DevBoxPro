@@ -24,8 +24,6 @@ module.exports = {
         throw new Error('Invalid ZIP file. The download may have been corrupted or blocked.');
       }
       await this.extractZipAsync(archivePath, destPath, id);
-    } else if (basename.endsWith('.tar.xz')) {
-      await this.extractTarXz(archivePath, destPath);
     } else if (basename.endsWith('.tar.gz') || ext === '.tgz') {
       const strip = await this.getTarStripCount(archivePath);
       await tar.x({
@@ -33,6 +31,8 @@ module.exports = {
         cwd: destPath,
         strip,
       });
+    } else if (basename.endsWith('.tar.xz') || ext === '.txz') {
+      await this.extractTarXzWithSystemTar(archivePath, destPath);
     }
 
     this.emitProgress(id, { status: 'extracting', progress: 100 });
@@ -78,16 +78,27 @@ module.exports = {
   },
 
   async extractTarXz(archivePath, destPath) {
+    return this.extractTarXzWithSystemTar(archivePath, destPath);
+  },
+
+  async extractTarXzWithSystemTar(archivePath, destPath) {
+    if (process.platform === 'win32') {
+      throw new Error('Automatic .tar.xz extraction is not supported on Windows.');
+    }
+
+    const strip = await this.getTarXzStripCount(archivePath);
+    const args = [`--strip-components=${strip}`, '-xJf', archivePath, '-C', destPath];
+
     await new Promise((resolve, reject) => {
-      const proc = spawn('tar', ['-xJf', archivePath, '-C', destPath, '--strip-components=1'], {
-        shell: false,
+      const proc = spawn('tar', args, {
         windowsHide: true,
+        shell: false,
       });
 
       let stderr = '';
 
-      proc.stderr.on('data', (chunk) => {
-        stderr += chunk.toString();
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
       });
 
       proc.on('error', (error) => {
@@ -105,8 +116,70 @@ module.exports = {
     });
   },
 
-  async validateZipFile(filePath) {
-    try {
+  async getTarXzStripCount(archivePath) {
+    const entries = await new Promise((resolve, reject) => {
+      const proc = spawn('tar', ['-tJf', archivePath], {
+        windowsHide: true,
+        shell: false,
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('error', (error) => {
+        reject(error);
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve(stdout.split(/\r?\n/).filter(Boolean));
+          return;
+        }
+
+        reject(new Error(stderr.trim() || `tar exited with code ${code}`));
+      });
+    });
+
+    let firstSegment = null;
+    let hasNestedEntries = false;
+    let hasRootFiles = false;
+
+    for (const entryPath of entries) {
+      const normalizedPath = String(entryPath).replace(/\\/g, '/').replace(/^\.\//, '');
+      const segments = normalizedPath.split('/').filter(Boolean);
+
+      if (segments.length <= 1) {
+        hasRootFiles = true;
+        continue;
+      }
+
+      hasNestedEntries = true;
+      if (firstSegment === null) {
+        firstSegment = segments[0];
+        continue;
+      }
+
+      if (firstSegment !== segments[0]) {
+        firstSegment = false;
+      }
+    }
+
+    if (hasRootFiles || !hasNestedEntries || !firstSegment) {
+      return 0;
+    }
+
+    return 1;
+  },
+
+>>>>>>> main
       const buffer = Buffer.alloc(4);
       const fd = await fs.open(filePath, 'r');
       await new Promise((resolve, reject) => {
@@ -126,7 +199,10 @@ module.exports = {
   async extractZipAsync(archivePath, destPath, id) {
     return new Promise((resolve, reject) => {
       try {
-        const workerPath = path.join(__dirname, '..', 'extractWorker.js');
+        // Worker threads cannot execute scripts from inside an ASAR archive.
+        // When packaged, resolve the worker to its unpacked location (app.asar.unpacked).
+        const rawWorkerPath = path.join(__dirname, '..', 'extractWorker.js');
+        const workerPath = rawWorkerPath.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
 
         const worker = new Worker(workerPath, {
           workerData: { archivePath, destPath },

@@ -10,8 +10,8 @@ function makeContext(overrides = {}) {
       php: {
         '8.3': {
           win: {
-            url: 'https://windows.php.net/downloads/releases/php-8.3.30-nts-Win32-vs16-x64.zip',
-            filename: 'php-8.3.30-nts-Win32-vs16-x64.zip',
+            url: 'https://downloads.php.net/~windows/releases/php-8.3.31-nts-Win32-vs16-x64.zip',
+            filename: 'php-8.3.31-nts-Win32-vs16-x64.zip',
           },
         },
       },
@@ -43,17 +43,17 @@ describe('binary/download', () => {
     const ctx = makeContext();
 
     const candidates = ctx.buildPatchFallbackCandidates({
-      url: 'https://windows.php.net/downloads/releases/php-8.3.30-nts-Win32-vs16-x64.zip',
-      filename: 'php-8.3.30-nts-Win32-vs16-x64.zip',
+      url: 'https://downloads.php.net/~windows/releases/php-8.3.31-nts-Win32-vs16-x64.zip',
+      filename: 'php-8.3.31-nts-Win32-vs16-x64.zip',
     });
 
     expect(candidates.slice(0, 6).map((candidate) => candidate.resolvedVersion)).toEqual([
-      '8.3.31',
       '8.3.32',
       '8.3.33',
       '8.3.34',
       '8.3.35',
-      '8.3.29',
+      '8.3.36',
+      '8.3.30',
     ]);
   });
 
@@ -61,7 +61,7 @@ describe('binary/download', () => {
     const ctx = makeContext();
     const removeSpy = vi.spyOn(fs, 'remove').mockResolvedValue(undefined);
     const downloadSpy = vi.spyOn(ctx, 'downloadFile').mockImplementation(async (url, destPath) => {
-      if (url.includes('8.3.30') || url.includes('8.3.31') || url.includes('8.3.32') || url.includes('8.3.33') || url.includes('8.3.34') || url.includes('8.3.35')) {
+      if (url.includes('8.3.31') || url.includes('8.3.32') || url.includes('8.3.33') || url.includes('8.3.34') || url.includes('8.3.35') || url.includes('8.3.36')) {
         throw new Error('Download failed with status 404');
       }
 
@@ -69,26 +69,26 @@ describe('binary/download', () => {
     });
 
     const result = await ctx.downloadWithVersionProbe('php', '8.3', 'php-8.3', {
-      url: 'https://windows.php.net/downloads/releases/php-8.3.30-nts-Win32-vs16-x64.zip',
-      filename: 'php-8.3.30-nts-Win32-vs16-x64.zip',
+      url: 'https://downloads.php.net/~windows/releases/php-8.3.31-nts-Win32-vs16-x64.zip',
+      filename: 'php-8.3.31-nts-Win32-vs16-x64.zip',
     });
 
-    expect(result.downloadInfo.url).toContain('8.3.29');
+    expect(result.downloadInfo.url).toContain('8.3.30');
     expect(downloadSpy.mock.calls.map((call) => call[0]).slice(0, 7)).toEqual([
-      'https://windows.php.net/downloads/releases/php-8.3.30-nts-Win32-vs16-x64.zip',
-      'https://windows.php.net/downloads/releases/php-8.3.31-nts-Win32-vs16-x64.zip',
-      'https://windows.php.net/downloads/releases/php-8.3.32-nts-Win32-vs16-x64.zip',
-      'https://windows.php.net/downloads/releases/php-8.3.33-nts-Win32-vs16-x64.zip',
-      'https://windows.php.net/downloads/releases/php-8.3.34-nts-Win32-vs16-x64.zip',
-      'https://windows.php.net/downloads/releases/php-8.3.35-nts-Win32-vs16-x64.zip',
-      'https://windows.php.net/downloads/releases/php-8.3.29-nts-Win32-vs16-x64.zip',
+      'https://downloads.php.net/~windows/releases/php-8.3.31-nts-Win32-vs16-x64.zip',
+      'https://downloads.php.net/~windows/releases/php-8.3.32-nts-Win32-vs16-x64.zip',
+      'https://downloads.php.net/~windows/releases/php-8.3.33-nts-Win32-vs16-x64.zip',
+      'https://downloads.php.net/~windows/releases/php-8.3.34-nts-Win32-vs16-x64.zip',
+      'https://downloads.php.net/~windows/releases/php-8.3.35-nts-Win32-vs16-x64.zip',
+      'https://downloads.php.net/~windows/releases/php-8.3.36-nts-Win32-vs16-x64.zip',
+      'https://downloads.php.net/~windows/releases/php-8.3.30-nts-Win32-vs16-x64.zip',
     ]);
-    expect(ctx.downloads.php['8.3'].win.url).toContain('8.3.29');
+    expect(ctx.downloads.php['8.3'].win.url).toContain('8.3.30');
     expect(removeSpy).toHaveBeenCalledTimes(6);
     expect(ctx.managers.log.systemWarn).toHaveBeenCalledWith(
       'Recovered php 8.3 download using alternate patch asset',
       expect.objectContaining({
-        resolvedUrl: expect.stringContaining('8.3.29'),
+        resolvedUrl: expect.stringContaining('8.3.30'),
       })
     );
   });

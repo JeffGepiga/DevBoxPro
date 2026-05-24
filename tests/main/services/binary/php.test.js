@@ -1,8 +1,22 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const path = require('path');
 const fs = require('fs-extra');
 const binaryPhp = require('../../../../src/main/services/binary/php');
+
+const originalPlatform = process.platform;
+const originalResourcesPath = process.resourcesPath;
+
+function setPlatform(value) {
+  Object.defineProperty(process, 'platform', {
+    value,
+    configurable: true,
+  });
+}
+
+function normalizeTestPath(value) {
+  return String(value).replace(/\\/g, '/');
+}
 
 function makeContext(overrides = {}) {
   return {
@@ -35,6 +49,7 @@ function makeContext(overrides = {}) {
     createPhpIni: vi.fn(),
     ensureVCRedist: vi.fn(),
     ensureCaCertBundle: vi.fn(),
+    ensureAutomatedDownloadAvailable: vi.fn(),
     ...binaryPhp,
     ...overrides,
   };
@@ -43,6 +58,13 @@ function makeContext(overrides = {}) {
 describe('binary/php', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    setPlatform('win32');
+    process.resourcesPath = '/bundle/resources';
+  });
+
+  afterEach(() => {
+    setPlatform(originalPlatform);
+    process.resourcesPath = originalResourcesPath;
   });
 
   it('orchestrates PHP download, extraction, ini creation, and VC runtime setup', async () => {
@@ -202,6 +224,48 @@ describe('binary/php', () => {
     expect(writeFileSpy).toHaveBeenCalledWith(
       expect.stringContaining('php.ini'),
       expect.stringContaining('extension=php_curl.dll')
+    );
+  });
+
+  it('refreshes stale VC runtime DLLs from bundled redistributables before downloading', async () => {
+    const ctx = makeContext();
+
+    vi.spyOn(fs, 'pathExists').mockImplementation(async (targetPath) => {
+      const normalizedPath = normalizeTestPath(targetPath);
+
+      if (normalizedPath.startsWith('/bundle/resources/vcredist')) return true;
+      if (normalizedPath.includes('/vcredist/')) return true;
+      if (normalizedPath.startsWith('/resources/php/8.3/win')) return true;
+      if (normalizedPath.endsWith('/System32/vcruntime140.dll')) return true;
+      if (normalizedPath.endsWith('/System32/msvcp140.dll')) return true;
+      if (normalizedPath.endsWith('/System32/vcruntime140_1.dll')) return true;
+      return false;
+    });
+    vi.spyOn(fs, 'stat').mockImplementation(async (targetPath) => {
+      if (normalizeTestPath(targetPath).startsWith('/bundle/resources/vcredist')) {
+        return { size: 42 };
+      }
+
+      return { size: 29 };
+    });
+    const copySpy = vi.spyOn(fs, 'copy').mockResolvedValue(undefined);
+
+    await binaryPhp.ensureVCRedist.call(ctx, '/resources/php/8.3/win');
+
+    expect(copySpy).toHaveBeenCalledWith(
+      path.join('/bundle/resources/vcredist', 'vcruntime140.dll'),
+      path.join('/resources/php/8.3/win', 'vcruntime140.dll'),
+      { overwrite: true }
+    );
+    expect(copySpy).toHaveBeenCalledWith(
+      path.join('/bundle/resources/vcredist', 'msvcp140.dll'),
+      path.join('/resources/php/8.3/win', 'msvcp140.dll'),
+      { overwrite: true }
+    );
+    expect(copySpy).toHaveBeenCalledWith(
+      path.join('/bundle/resources/vcredist', 'vcruntime140_1.dll'),
+      path.join('/resources/php/8.3/win', 'vcruntime140_1.dll'),
+      { overwrite: true }
     );
   });
 });

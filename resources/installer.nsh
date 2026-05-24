@@ -10,7 +10,39 @@
   ${EndIf}
 !macroend
 
+!macro installBundledVCRedist
+  StrCpy $4 "$INSTDIR\resources\vcredist\VC_redist.x64.exe"
+  SetRegView 64
+  ClearErrors
+  ReadRegDWORD $5 HKLM "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" "Installed"
+  ${If} ${Errors}
+    StrCpy $5 0
+  ${EndIf}
+  SetRegView 32
+
+  ${If} $5 == 1
+    DetailPrint "Microsoft Visual C++ Redistributable is already installed. Skipping runtime installation."
+  ${ElseIf} ${FileExists} "$4"
+    DetailPrint "Installing Microsoft Visual C++ Redistributable..."
+    ExecWait '"$4" /install /quiet /norestart' $6
+
+    ${If} $6 == 0
+      DetailPrint "Microsoft Visual C++ Redistributable installed successfully."
+    ${ElseIf} $6 == 1638
+      DetailPrint "Microsoft Visual C++ Redistributable is already installed."
+    ${ElseIf} $6 == 3010
+      DetailPrint "Microsoft Visual C++ Redistributable installed. A restart is recommended."
+    ${Else}
+      DetailPrint "Visual C++ Redistributable installer exited with code $6. Continuing DevBox Pro setup."
+    ${EndIf}
+  ${Else}
+    DetailPrint "Bundled Visual C++ Redistributable installer not found. Skipping system runtime installation."
+  ${EndIf}
+!macroend
+
 !macro customInstall
+  !insertmacro installBundledVCRedist
+
   ; Register devbox:// protocol handler
   WriteRegStr HKCR "devbox" "" "URL:DevBox Pro Protocol"
   WriteRegStr HKCR "devbox" "URL Protocol" ""

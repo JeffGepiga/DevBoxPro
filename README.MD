@@ -13,7 +13,7 @@ Maintaining an old PHP 7.4 project while building a new Laravel 11 app on PHP 8.
 
 DevBox Pro is an Electron desktop app with a React renderer and a Node.js main process. It manages PHP, Node.js, MySQL, MariaDB, Redis, Nginx, Apache, PostgreSQL, MongoDB, MinIO, Memcached, Mailpit, phpMyAdmin, Composer, Git, and more from one local interface.
 
-> **Version 1.0.6:** This release focuses on **web server hardening** and the new **Share on Internet** option powered by **Cloudflare Tunnel** and **zrok**.
+> **Version 1.0.7:** This release focuses on **service reliability**, **runtime repair on Windows**, and faster, clearer **database import workflows**.
 >
 > **Important:** DevBox Pro is built for local development, testing, demos, and temporary preview links. It is **not** intended for production hosting or production traffic.
 
@@ -127,11 +127,12 @@ DevBox Pro is an Electron desktop app with a React renderer and a Node.js main p
 ### Installation
 
 1. **Download** the latest release for your platform:
-  - Windows: `DevBox-Pro-Setup-1.0.6.exe`
-  - macOS: `DevBox-Pro-1.0.6.dmg`
-  - Linux: `DevBox Pro-1.0.6-linux-x64.AppImage` or `DevBox Pro-1.0.6-linux-x64.deb`
+  - Windows: `DevBox-Pro-Setup-1.0.7.exe`
+  - macOS: `DevBox-Pro-1.0.7.dmg`
+  - Linux: `DevBox Pro-1.0.7-linux-x64.AppImage` or `DevBox Pro-1.0.7-linux-x64.deb`
 
 2. **Install** the application
+  - Windows installer builds silently install or repair the Microsoft Visual C++ Redistributable when `vcredist/VC_redist.x64.exe` is bundled with the release
 
 3. **Download binaries** from the Binary Manager:
    - Click "Download All" for the full stack, or

@@ -4,6 +4,8 @@ import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
 import InstallationProgress from '../components/InstallationProgress';
 import ImportProjectModal from '../components/ImportProjectModal';
+import { normalizeInstallationOutput } from '../utils/terminalOutput';
+import { formatPhpRuntimeLabel } from '../utils/phpRuntime';
 import {
   ArrowLeft,
   ArrowRight,
@@ -266,12 +268,28 @@ function CreateProject() {
         // Don't add empty text
         if (!data.text) return;
 
+        const normalizedLines = normalizeInstallationOutput(data.text);
+        if (normalizedLines.length === 0) return;
+
         // Check for error in type
         if (data.type === 'error') {
           setInstallError(true);
         }
 
-        setInstallOutput((prev) => [...prev, { text: data.text, type: data.type }]);
+        setInstallOutput((prev) => {
+          const next = [...prev];
+
+          for (const text of normalizedLines) {
+            const lastLine = next[next.length - 1];
+            if (lastLine?.text === text && lastLine?.type === data.type) {
+              continue;
+            }
+
+            next.push({ text, type: data.type });
+          }
+
+          return next;
+        });
       }
     };
 
@@ -1465,7 +1483,7 @@ function StepDetails({
                         : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                     )}
                   >
-                    PHP {version}
+                    {formatPhpRuntimeLabel(version)}
                   </button>
                 ))}
               </div>
@@ -2253,7 +2271,7 @@ function StepReview({ formData }) {
                 PHP Version
               </h3>
               <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                PHP {formData.phpVersion}
+                {formatPhpRuntimeLabel(formData.phpVersion)}
               </p>
             </div>
           )}

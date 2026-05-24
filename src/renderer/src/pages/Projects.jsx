@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import ImportProjectModal from '../components/ImportProjectModal';
+import { formatPhpRuntimeLabel } from '../utils/phpRuntime';
 
 const VIEW_MODE_KEY = 'devbox_projects_view_mode';
 
@@ -1064,7 +1065,7 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
                   nuxtjs: 'Nuxt.js', koa: 'Koa', hapi: 'Hapi', adonisjs: 'AdonisJS',
                   remix: 'Remix', sveltekit: 'SvelteKit', strapi: 'Strapi', elysia: 'Elysia',
                 }[project.nodeFramework] || project.nodeFramework})` : ''}`
-                : project.phpVersion ? `PHP ${project.phpVersion}` : 'No runtime'}
+                : project.phpVersion ? formatPhpRuntimeLabel(project.phpVersion) : 'No runtime'}
             </span>
           </div>
           <p className="text-sm text-gray-500 dark:text-gray-400 truncate" title={project.path}>
@@ -1241,7 +1242,7 @@ function ProjectTableRow({ project, onStart, onStop, onDelete, onMove, defaultEd
               nuxtjs: 'Nuxt.js', koa: 'Koa', hapi: 'Hapi', adonisjs: 'AdonisJS',
               remix: 'Remix', sveltekit: 'SvelteKit', strapi: 'Strapi', elysia: 'Elysia',
             }[project.nodeFramework] || project.nodeFramework})` : ''}`
-            : project.phpVersion ? `PHP ${project.phpVersion}` : '—'}
+            : project.phpVersion ? formatPhpRuntimeLabel(project.phpVersion) : '—'}
         </span>
       </td>
 

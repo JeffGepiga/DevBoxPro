@@ -31,6 +31,7 @@ function makeContext(overrides = {}) {
     getDefaultPythonVersion: vi.fn(() => '3.13'),
     getFirstInstalledPythonVersion: vi.fn(() => '3.12'),
     getActiveMysqlInfo: vi.fn(() => ({ dbType: 'mysql', version: '8.4' })),
+    removeFromPath: vi.fn(async () => ({ success: true })),
     installWindowsDirectShims: cliShims.installWindowsDirectShims,
     installUnixDirectShims: cliShims.installUnixDirectShims,
     installDirectShims: cliShims.installDirectShims,
@@ -53,6 +54,7 @@ describe('cli/shims', () => {
     const ctx = makeContext({
       installDirectShims: vi.fn(async () => ({ success: true })),
       removeDirectShims: vi.fn(async () => ({ success: true })),
+      removeFromPath: vi.fn(async () => ({ success: true })),
     });
 
     await expect(ctx.setDirectShimsEnabled(true)).resolves.toBe(true);
@@ -62,6 +64,7 @@ describe('cli/shims', () => {
     expect(ctx.configStore.set).toHaveBeenCalledWith('settings.directShimsEnabled', false);
     expect(ctx.installDirectShims).toHaveBeenCalledTimes(1);
     expect(ctx.removeDirectShims).toHaveBeenCalledTimes(1);
+    expect(ctx.removeFromPath).toHaveBeenCalledTimes(1);
   });
 
   it('installs direct shims by preparing the cli directory, syncing projects, and dispatching per platform', async () => {
@@ -105,6 +108,11 @@ describe('cli/shims', () => {
       'utf8'
     );
     expect(writeFileSpy).toHaveBeenCalledWith(
+      path.join('C:/DevBox/cli', 'php.cmd'),
+      expect.stringContaining("for /f \"tokens=*\" %%i in ('where php 2^>nul') do ("),
+      'utf8'
+    );
+    expect(writeFileSpy).toHaveBeenCalledWith(
       path.join('C:/DevBox/cli', 'composer.cmd'),
       expect.stringContaining('set "COMPOSER_PATH=%DEVBOX_RESOURCES%\\composer\\composer.phar"'),
       'utf8'
@@ -114,5 +122,32 @@ describe('cli/shims', () => {
       expect.stringContaining('set "DEFAULT_PYTHON=3.13"'),
       'utf8'
     );
+  });
+
+  it('writes a Unix php shim that skips its own shim path before falling back to system php', async () => {
+    setPlatform('linux');
+    const ctx = makeContext({
+      resourcesPath: '/opt/devbox/resources',
+      getCliPath: vi.fn(() => '/opt/devbox/cli'),
+      syncProjectsFile: vi.fn(async () => '/opt/devbox/cli/projects.json'),
+      getProjectsFilePath: vi.fn(() => '/opt/devbox/cli/projects.json'),
+    });
+    const writeFileSpy = vi.spyOn(fs, 'writeFile').mockResolvedValue(undefined);
+    const chmodSpy = vi.spyOn(fs, 'chmod').mockResolvedValue(undefined);
+
+    const result = await ctx.installUnixDirectShims('/opt/devbox/cli');
+
+    expect(result).toBe(true);
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      path.join('/opt/devbox/cli', 'php'),
+      expect.stringContaining('SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"'),
+      'utf8'
+    );
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      path.join('/opt/devbox/cli', 'php'),
+      expect.stringContaining('if [ "$candidate_dir" != "$SCRIPT_DIR" ]; then'),
+      'utf8'
+    );
+    expect(chmodSpy).toHaveBeenCalledWith(path.join('/opt/devbox/cli', 'php'), 0o755);
   });
 });

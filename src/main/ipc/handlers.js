@@ -1208,7 +1208,7 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('binaries:openApacheDownloadPage', async () => {
     const { shell } = require('electron');
-    await shell.openExternal('https://www.apachelounge.com/download/');
+      await shell.openExternal('https://www.apachelounge.com/download/');
     return { success: true };
   });
 
@@ -1448,8 +1448,9 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
       const resourcePath = config.getResourcesPath();
       const phpExe = platform === 'win' ? 'php.exe' : 'php';
       const phpBinary = path.join(resourcePath, 'php', phpVersion, platform, phpExe);
+      const usesShellOperators = /&&|\|\||[|<>]/.test(command);
 
-      if (command.startsWith('php ') || command === 'php') {
+      if ((command.startsWith('php ') || command === 'php') && !usesShellOperators) {
         // Use project's PHP version
         cmd = phpBinary;
         args = command === 'php' ? [] : command.substring(4).split(' ').filter(Boolean);
@@ -1457,11 +1458,32 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
         // Shortcut for php artisan - use project's PHP version
         cmd = phpBinary;
         args = command === 'artisan' ? ['artisan'] : ['artisan', ...command.substring(8).split(' ').filter(Boolean)];
-      } else if (command.startsWith('composer ')) {
+      } else if ((command.startsWith('composer ') || command === 'composer') && !usesShellOperators) {
         // Use Composer with project's PHP version
         cmd = phpBinary;
         const composerPhar = path.join(resourcePath, 'composer', 'composer.phar');
         args = [composerPhar, ...command.substring(9).split(' ').filter(Boolean)];
+      } else if (usesShellOperators && (command.startsWith('php ') || command === 'php')) {
+        // Compound shell commands like `php artisan a && php artisan b` must be
+        // executed through the shell so operators are interpreted correctly.
+        if (platform === 'win') {
+          cmd = 'cmd.exe';
+          args = ['/d', '/s', '/c', command];
+        } else {
+          cmd = '/bin/bash';
+          args = ['-lc', command];
+        }
+      } else if (usesShellOperators && (command.startsWith('composer ') || command === 'composer')) {
+        const composerPhar = path.join(resourcePath, 'composer', 'composer.phar');
+        const composerShellCommand = command.replace(/^composer\b/, `"${phpBinary}" "${composerPhar}"`);
+
+        if (platform === 'win') {
+          cmd = 'cmd.exe';
+          args = ['/d', '/s', '/c', composerShellCommand];
+        } else {
+          cmd = '/bin/bash';
+          args = ['-lc', composerShellCommand];
+        }
       } else if (command.startsWith('npm ') || command.startsWith('npx ')) {
         // Use system npm/npx or installed Node
         if (platform === 'win') {
