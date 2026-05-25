@@ -2,6 +2,17 @@
 ; Use a general-purpose register to persist portable install detection between
 ; customInit and customInstall without introducing an extra NSIS user variable.
 
+!macro showVCRedistBanner
+  SetDetailsView show
+  DetailPrint "Installing Microsoft Visual C++ Redistributable. This may take a minute..."
+  Banner::show /NOUNLOAD "Installing Microsoft Visual C++ Redistributable" "DevBox Pro is installing a required Windows runtime. Please wait..."
+  BringToFront
+!macroend
+
+!macro hideVCRedistBanner
+  Banner::destroy
+!macroend
+
 !macro customInit
   StrCpy $R9 0
 
@@ -23,8 +34,9 @@
   ${If} $5 == 1
     DetailPrint "Microsoft Visual C++ Redistributable is already installed. Skipping runtime installation."
   ${ElseIf} ${FileExists} "$4"
-    DetailPrint "Installing Microsoft Visual C++ Redistributable..."
+    !insertmacro showVCRedistBanner
     ExecWait '"$4" /install /quiet /norestart' $6
+    !insertmacro hideVCRedistBanner
 
     ${If} $6 == 0
       DetailPrint "Microsoft Visual C++ Redistributable installed successfully."
