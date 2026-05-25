@@ -16,6 +16,7 @@ const {
 } = require('../../shared/serviceConfig');
 
 const playwrightTunnelStatuses = new Map();
+const playwrightTunnelTimers = new Map();
 
 function getPlaywrightTunnelStatus(projectId) {
   return playwrightTunnelStatuses.get(projectId) || null;
@@ -1319,20 +1320,47 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   // ============ TUNNEL HANDLERS ============
   ipcMain.handle('tunnel:start', async (event, projectId, provider) => {
     if (process.env.PLAYWRIGHT_TEST === 'true') {
-      const status = {
+      const existingTimer = playwrightTunnelTimers.get(projectId);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        playwrightTunnelTimers.delete(projectId);
+      }
+
+      const startedAt = new Date().toISOString();
+      const startingStatus = {
         projectId,
         provider: provider || 'cloudflared',
-        publicUrl: provider === 'zrok'
-          ? 'https://share.zrok.io/playwright-share'
-          : 'https://playwright-share.trycloudflare.com',
-        status: 'running',
+        publicUrl: null,
+        status: 'starting',
         error: null,
-        startedAt: new Date().toISOString(),
+        startedAt,
         targetUrl: 'http://localhost',
       };
-      playwrightTunnelStatuses.set(projectId, status);
-      sendToMainWindow('tunnel:statusChanged', status);
-      return status;
+
+      playwrightTunnelStatuses.set(projectId, startingStatus);
+      sendToMainWindow('tunnel:statusChanged', startingStatus);
+
+      const timerId = setTimeout(() => {
+        const currentStatus = getPlaywrightTunnelStatus(projectId);
+        if (!currentStatus || currentStatus.status === 'stopped') {
+          playwrightTunnelTimers.delete(projectId);
+          return;
+        }
+
+        const runningStatus = {
+          ...currentStatus,
+          publicUrl: provider === 'zrok'
+            ? 'https://share.zrok.io/playwright-share'
+            : 'https://playwright-share.trycloudflare.com',
+          status: 'running',
+        };
+        playwrightTunnelStatuses.set(projectId, runningStatus);
+        playwrightTunnelTimers.delete(projectId);
+        sendToMainWindow('tunnel:statusChanged', runningStatus);
+      }, 700);
+
+      playwrightTunnelTimers.set(projectId, timerId);
+      return startingStatus;
     }
 
     if (!managers.tunnel) throw new Error('Tunnel manager not initialized');
@@ -1341,6 +1369,12 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('tunnel:stop', async (event, projectId) => {
     if (process.env.PLAYWRIGHT_TEST === 'true') {
+      const existingTimer = playwrightTunnelTimers.get(projectId);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        playwrightTunnelTimers.delete(projectId);
+      }
+
       const existing = getPlaywrightTunnelStatus(projectId);
       const status = {
         projectId,

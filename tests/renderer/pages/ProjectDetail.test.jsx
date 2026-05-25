@@ -29,6 +29,28 @@ const MOCK_PROJECT = {
     },
 };
 
+const SECOND_PROJECT = {
+    id: 'proj-2',
+    name: 'My Node App',
+    domain: 'nodeapp.test',
+    domains: ['nodeapp.test'],
+    path: '/projects/nodeapp',
+    type: 'nodejs',
+    nodeFramework: 'express',
+    nodePort: 3000,
+    isRunning: true,
+    port: 8081,
+    ssl: false,
+    networkAccess: false,
+    services: {
+        nodejs: true,
+        nodejsVersion: '20',
+    },
+};
+
+let mockProjects = [MOCK_PROJECT];
+let tunnelStatusChangedListener = null;
+
 const mockDevbox = {
     projects: {
         start: vi.fn().mockResolvedValue({}),
@@ -89,6 +111,49 @@ const mockDevbox = {
 beforeEach(() => {
     Object.defineProperty(window, 'devbox', { value: mockDevbox, writable: true, configurable: true });
     vi.clearAllMocks();
+    Object.assign(MOCK_PROJECT, {
+        id: 'proj-1',
+        name: 'My Laravel App',
+        domain: 'myapp.test',
+        domains: ['myapp.test'],
+        path: '/projects/myapp',
+        type: 'laravel',
+        phpVersion: '8.3',
+        isRunning: true,
+        port: 8080,
+        ssl: false,
+        networkAccess: false,
+        shareOnInternet: undefined,
+        tunnelProvider: undefined,
+        tunnelAutoStart: undefined,
+        services: {
+            mysql: true,
+            mysqlVersion: '8.4',
+        },
+    });
+    Object.assign(SECOND_PROJECT, {
+        id: 'proj-2',
+        name: 'My Node App',
+        domain: 'nodeapp.test',
+        domains: ['nodeapp.test'],
+        path: '/projects/nodeapp',
+        type: 'nodejs',
+        nodeFramework: 'express',
+        nodePort: 3000,
+        isRunning: true,
+        port: 8081,
+        ssl: false,
+        networkAccess: false,
+        shareOnInternet: undefined,
+        tunnelProvider: undefined,
+        tunnelAutoStart: undefined,
+        services: {
+            nodejs: true,
+            nodejsVersion: '20',
+        },
+    });
+    mockProjects = [MOCK_PROJECT];
+    tunnelStatusChangedListener = null;
     mockDevbox.binaries.getStatus.mockResolvedValue({
         php: { '8.3': { installed: true } },
         mysql: { '8.4': { installed: true }, '8.0': { installed: true } },
@@ -99,11 +164,15 @@ beforeEach(() => {
         defaultPorts: { mysql: 3306 },
         portOffsets: { mysql: { '8.4': 0, '8.0': 1 } },
     });
+    mockDevbox.tunnel.onStatusChanged.mockImplementation((callback) => {
+        tunnelStatusChangedListener = callback;
+        return vi.fn();
+    });
 });
 
 vi.mock('@/context/AppContext', () => ({
     useApp: () => ({
-        projects: [MOCK_PROJECT],
+        projects: mockProjects,
         loading: false,
         services: {},
         projectLoadingStates: {},
@@ -111,6 +180,7 @@ vi.mock('@/context/AppContext', () => ({
         refreshProjects: vi.fn(),
         startProject: vi.fn(),
         stopProject: vi.fn(),
+        setProjectLoading: vi.fn(),
     }),
 }));
 
@@ -241,6 +311,50 @@ describe('ProjectDetail', () => {
             MOCK_PROJECT.tunnelProvider = undefined;
         });
 
+        it('ignores a foreign tunnel start payload and waits for this project status', async () => {
+            mockProjects = [
+                {
+                    ...MOCK_PROJECT,
+                    shareOnInternet: true,
+                    tunnelProvider: 'cloudflared',
+                },
+                {
+                    ...SECOND_PROJECT,
+                    shareOnInternet: true,
+                    tunnelProvider: 'cloudflared',
+                },
+            ];
+
+            mockDevbox.tunnel.start.mockResolvedValueOnce({
+                projectId: 'proj-1',
+                provider: 'cloudflared',
+                status: 'running',
+                publicUrl: 'https://first-project.trycloudflare.com',
+            });
+
+            renderProjectDetail('proj-2');
+
+            const startButton = await screen.findByRole('button', { name: /Start Sharing/i });
+            fireEvent.click(startButton);
+
+            await waitFor(() => {
+                expect(mockDevbox.tunnel.start).toHaveBeenCalledWith('proj-2', 'cloudflared');
+            });
+
+            expect(screen.queryByText('https://first-project.trycloudflare.com')).not.toBeInTheDocument();
+
+            await act(async () => {
+                tunnelStatusChangedListener?.({
+                    projectId: 'proj-2',
+                    provider: 'cloudflared',
+                    status: 'running',
+                    publicUrl: 'https://second-project.trycloudflare.com',
+                });
+            });
+
+            expect(await screen.findByText('https://second-project.trycloudflare.com')).toBeInTheDocument();
+        });
+
         it('shows a loading state while starting internet sharing', async () => {
             MOCK_PROJECT.shareOnInternet = true;
             MOCK_PROJECT.tunnelProvider = 'cloudflared';
@@ -270,6 +384,61 @@ describe('ProjectDetail', () => {
 
             MOCK_PROJECT.shareOnInternet = undefined;
             MOCK_PROJECT.tunnelProvider = undefined;
+        });
+
+        it('ignores a foreign auto-start payload when enabling tunnel auto-start', async () => {
+            mockProjects = [
+                {
+                    ...MOCK_PROJECT,
+                    shareOnInternet: true,
+                    tunnelProvider: 'cloudflared',
+                },
+                {
+                    ...SECOND_PROJECT,
+                    shareOnInternet: true,
+                    tunnelProvider: 'cloudflared',
+                    tunnelAutoStart: false,
+                },
+            ];
+
+            mockDevbox.tunnel.start.mockResolvedValueOnce({
+                projectId: 'proj-1',
+                provider: 'cloudflared',
+                status: 'running',
+                publicUrl: 'https://first-project.trycloudflare.com',
+            });
+
+            renderProjectDetail('proj-2');
+
+            const autoStartLabel = await screen.findByText('Auto-start tunnel');
+            const autoStartToggle = autoStartLabel.closest('div')?.parentElement?.querySelector('input[type="checkbox"]');
+            expect(autoStartToggle).toBeTruthy();
+
+            fireEvent.click(autoStartToggle);
+
+            await waitFor(() => {
+                expect(mockDevbox.projects.update).toHaveBeenCalledWith(
+                    'proj-2',
+                    { tunnelAutoStart: true },
+                    { deferRestart: true }
+                );
+            });
+            await waitFor(() => {
+                expect(mockDevbox.tunnel.start).toHaveBeenCalledWith('proj-2', 'cloudflared');
+            });
+
+            expect(screen.queryByText('https://first-project.trycloudflare.com')).not.toBeInTheDocument();
+
+            await act(async () => {
+                tunnelStatusChangedListener?.({
+                    projectId: 'proj-2',
+                    provider: 'cloudflared',
+                    status: 'running',
+                    publicUrl: 'https://second-project.trycloudflare.com',
+                });
+            });
+
+            expect(await screen.findByText('https://second-project.trycloudflare.com')).toBeInTheDocument();
         });
     });
 });

@@ -69,6 +69,7 @@ function makeManager(overrides = {}) {
     buildTunnelTarget: vi.fn(() => 'https://myapp.test'),
     prepareTunnelTarget: vi.fn(async (_provider, target) => target),
     ensurePublicUrlReady: vi.fn().mockResolvedValue(true),
+    warmTunnelPublicUrl: vi.fn().mockResolvedValue(true),
     cleanupPreparedTunnel: vi.fn().mockResolvedValue(undefined),
     getTunnelStartArgs: vi.fn(() => ['tunnel', '--url', 'https://myapp.test']),
     spawnTunnelProcess: vi.fn(() => processRef),
@@ -134,6 +135,29 @@ describe('TunnelManager', () => {
       error: null,
     }));
     expect(manager.ensurePublicUrlReady).not.toHaveBeenCalled();
+  });
+
+  it('warms the public tunnel URL in the background after it is announced', async () => {
+    const warmTunnelPublicUrl = vi.fn().mockResolvedValue(true);
+    const { manager, processRef } = makeManager({ warmTunnelPublicUrl });
+    const statusEmitter = vi.fn();
+    manager.setStatusEmitter(statusEmitter);
+
+    await manager.startTunnel('proj-1', 'cloudflared');
+
+    processRef.stdout.emit('data', Buffer.from('INF tunnel ready at https://warm-me.trycloudflare.com'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(statusEmitter).toHaveBeenLastCalledWith(expect.objectContaining({
+      projectId: 'proj-1',
+      status: 'running',
+      publicUrl: 'https://warm-me.trycloudflare.com',
+    }));
+    expect(warmTunnelPublicUrl).toHaveBeenCalledWith('https://warm-me.trycloudflare.com', expect.objectContaining({
+      projectId: 'proj-1',
+      provider: 'cloudflared',
+    }));
   });
 
   it('rejects zrok tunnels until zrok has been enabled app-wide', async () => {

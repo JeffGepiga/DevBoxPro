@@ -86,6 +86,8 @@ test.describe('DevBoxPro Tunnel Smoke Tests', () => {
     await expect(startSharingButton).toBeEnabled({ timeout: 15000 });
     await startSharingButton.click();
 
+    await expect(page.getByText('Starting', { exact: true })).toBeVisible();
+    await expect(page.getByText(/can take a few seconds to become reachable after startup/i)).toBeVisible();
     await expect(page.locator('text=https://playwright-share.trycloudflare.com')).toBeVisible();
 
     await page.click('a:has-text("Services")');

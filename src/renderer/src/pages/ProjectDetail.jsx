@@ -649,7 +649,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
           window.devbox?.tunnel?.zrokStatus?.(),
         ]);
 
-        setTunnelStatus(currentTunnelStatus || null);
+        applyTunnelStatus(project.id, currentTunnelStatus || null);
         setZrokAppStatus({
           enabled: currentZrokStatus?.enabled === true,
           configuredAt: currentZrokStatus?.configuredAt || null,
@@ -768,6 +768,20 @@ function OverviewTab({ project, processes, refreshProjects }) {
     pendingChangesRef.current = pendingChanges;
   }, [pendingChanges]);
 
+  const applyTunnelStatus = (expectedProjectId, nextStatus) => {
+    if (!nextStatus) {
+      setTunnelStatus(null);
+      return true;
+    }
+
+    if (nextStatus.projectId && nextStatus.projectId !== expectedProjectId) {
+      return false;
+    }
+
+    setTunnelStatus(nextStatus);
+    return true;
+  };
+
   const getLatestSettingValue = (key) => {
     if (Object.prototype.hasOwnProperty.call(pendingChangesRef.current, key)) {
       return pendingChangesRef.current[key];
@@ -797,7 +811,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
 
     if (nextShareOnInternet && nextTunnelAutoStart && nextTunnelProvider) {
       const nextStatus = await window.devbox?.tunnel?.start?.(currentProject.id, nextTunnelProvider);
-      setTunnelStatus(nextStatus || null);
+      applyTunnelStatus(currentProject.id, nextStatus || null);
       return;
     }
 
@@ -915,7 +929,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
     setTunnelAction('starting');
     try {
       const nextStatus = await window.devbox?.tunnel?.start?.(project.id, effectiveTunnelProvider);
-      setTunnelStatus(nextStatus || null);
+      applyTunnelStatus(project.id, nextStatus || null);
     } catch (error) {
       await showAlert({
         title: 'Unable to Start Tunnel',
@@ -1104,7 +1118,7 @@ function OverviewTab({ project, processes, refreshProjects }) {
       if (project.isRunning && hasTunnelConfigChanges) {
         if (nextShareOnInternet && nextTunnelAutoStart && nextTunnelProvider) {
           const nextStatus = await window.devbox?.tunnel?.start?.(project.id, nextTunnelProvider);
-          setTunnelStatus(nextStatus || null);
+          applyTunnelStatus(project.id, nextStatus || null);
         } else {
           await window.devbox?.tunnel?.stop?.(project.id);
           setTunnelStatus((current) => current ? { ...current, status: 'stopped' } : null);
@@ -1512,6 +1526,9 @@ function OverviewTab({ project, processes, refreshProjects }) {
 
                 <div className="grid grid-cols-1 gap-2 text-xs">
                   {!project.isRunning && <p className="text-yellow-600 dark:text-yellow-400">Start the project before opening a public tunnel.</p>}
+                  <p className="text-gray-500 dark:text-gray-400">
+                    Public tunnel URLs can take a few seconds to become reachable after startup while the provider finishes routing traffic.
+                  </p>
                   {effectiveTunnelProvider === 'zrok' && zrokInstalled && !zrokAppStatus.enabled && <p className="text-yellow-600 dark:text-yellow-400">zrok is installed, but the one-time app-wide enable step is not complete yet. Finish it in Binary Manager → Tools.</p>}
                   {effectiveTunnelProvider === 'zrok' && !zrokInstalled && <p className="text-yellow-600 dark:text-yellow-400">Install zrok first in Binary Manager → Tools.</p>}
                   {effectiveTunnelProvider && !providerReady && effectiveTunnelProvider !== 'zrok' && <p className="text-yellow-600 dark:text-yellow-400">Install the selected tunnel provider in Binary Manager first.</p>}

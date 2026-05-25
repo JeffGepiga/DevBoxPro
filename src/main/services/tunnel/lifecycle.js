@@ -1,4 +1,5 @@
 const http = require('http');
+const https = require('https');
 const httpProxy = require('http-proxy');
 const treeKill = require('tree-kill');
 const { findAvailablePort } = require('../../utils/PortUtils');
@@ -57,6 +58,67 @@ module.exports = {
     }
 
     return isRunning();
+  },
+
+  async warmTunnelPublicUrl(publicUrl, context = {}, options = {}) {
+    if (!publicUrl) {
+      return false;
+    }
+
+    const attempts = Math.max(1, options.attempts || 4);
+    const delayMs = Math.max(0, options.delayMs || 350);
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const warmed = await this.tryWarmTunnelPublicUrl(publicUrl, context, options.timeoutMs || 2500);
+      if (warmed) {
+        return true;
+      }
+
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+
+    return false;
+  },
+
+  tryWarmTunnelPublicUrl(publicUrl, context = {}, timeoutMs = 2500) {
+    return new Promise((resolve) => {
+      let parsedUrl;
+
+      try {
+        parsedUrl = new URL(publicUrl);
+      } catch (_error) {
+        resolve(false);
+        return;
+      }
+
+      const transport = parsedUrl.protocol === 'https:' ? https : http;
+      const request = transport.get(parsedUrl, {
+        headers: {
+          'User-Agent': 'DevBoxPro-TunnelWarmup',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      }, (response) => {
+        response.resume();
+        const statusCode = response.statusCode || 0;
+        resolve(statusCode >= 200 && statusCode < 500);
+      });
+
+      request.setTimeout(timeoutMs, () => {
+        request.destroy(new Error('Tunnel warm-up request timed out'));
+      });
+
+      request.on('error', (error) => {
+        if (context.projectId) {
+          this.managers?.log?.project?.(
+            context.projectId,
+            `[${context.provider || 'tunnel'}:warmup] ${error.message}`
+          );
+        }
+        resolve(false);
+      });
+    });
   },
 
   rewriteTunnelProxyLocationHeader(location, tunnelTarget, publicUrl) {
@@ -353,6 +415,7 @@ module.exports = {
       state.status = 'running';
       state.error = null;
       this.emitTunnelStatus(this.serializeTunnelState(projectId, state));
+      this.warmTunnelPublicUrl(publicUrl, { projectId, provider }).catch(() => {});
     };
 
     processRef.stdout?.on('data', (chunk) => logOutput(chunk, 'stdout'));
