@@ -265,6 +265,7 @@ module.exports = {
 
     if (project.ssl && !certsExist) {
       try {
+        await this.managers.ssl?.waitForReady?.();
         await this.managers.ssl?.createCertificate(project.domains || [project.domain]);
         certsExist = await fs.pathExists(certPath) && await fs.pathExists(keyPath);
       } catch (error) {

@@ -178,6 +178,34 @@ describe('ServiceManager', () => {
             expect(mgr.startMySQL).toHaveBeenCalledWith('8.4');
         });
 
+        it('retries once when MySQL startup times out', async () => {
+            mgr.startMySQL
+                .mockRejectedValueOnce(new Error('MySQL failed to start within 60000ms'))
+                .mockResolvedValueOnce(true);
+            const cleanupSpy = vi.spyOn(mgr, 'cleanupFailedStart').mockResolvedValue();
+
+            const result = await mgr.startService('mysql', '8.4');
+
+            expect(mgr.startMySQL).toHaveBeenCalledTimes(2);
+            expect(cleanupSpy).toHaveBeenCalledWith('mysql', '8.4');
+            expect(result).toEqual({
+                success: true,
+                service: 'mysql',
+                version: '8.4',
+                status: 'running',
+            });
+        });
+
+        it('does not retry non-timeout startup failures', async () => {
+            mgr.startRedis.mockRejectedValueOnce(new Error('redis config invalid'));
+            const cleanupSpy = vi.spyOn(mgr, 'cleanupFailedStart').mockResolvedValue();
+
+            await expect(mgr.startService('redis', '7.4')).rejects.toThrow('redis config invalid');
+
+            expect(mgr.startRedis).toHaveBeenCalledTimes(1);
+            expect(cleanupSpy).not.toHaveBeenCalled();
+        });
+
         it('dispatches to Nginx', async () => {
             await mgr.startService('nginx', '1.26');
             expect(mgr.startNginx).toHaveBeenCalledWith('1.26');
@@ -314,13 +342,18 @@ describe('ServiceManager', () => {
             proc.stdout = new EventEmitter();
             proc.stderr = new EventEmitter();
 
-            childProcess.spawn.mockImplementationOnce(() => proc);
+            vi.spyOn(require('child_process'), 'spawn').mockImplementationOnce(() => proc);
 
             const startPromise = mgr.startMariaDB('11.4');
             await Promise.resolve();
             proc.emit('exit', 1, null);
-            await startPromise;
 
+            const result = await Promise.race([
+                startPromise.then(() => ({ state: 'resolved' })).catch((error) => ({ state: 'rejected', error })),
+                new Promise((resolve) => setTimeout(() => resolve({ state: 'timeout' }), 250)),
+            ]);
+
+            expect(result.state).toBe('rejected');
             expect(mgr.processes.has('mariadb-11.4')).toBe(false);
             expect(mgr.runningVersions.get('mariadb').has('11.4')).toBe(false);
             expect(mgr.serviceStatus.get('mariadb')).toEqual(expect.objectContaining({
@@ -399,6 +432,27 @@ describe('ServiceManager', () => {
             expect(config).toContain('log-error="C:/DevBox Pro/data/mysql/8.4/data/error.log"');
         });
 
+        it('uses MySQL 5.7-compatible tuning options in generated config', async () => {
+            mgr.getMySQLPath = vi.fn(() => 'C:/DevBox Pro/resources-user/mysql/5.7/win');
+            configStore.get.mockImplementation((key, def) => {
+                if (key === 'settings') return { serverTimezone: 'UTC' };
+                return def;
+            });
+            fs.writeFile.mockResolvedValue();
+
+            await mgr.createMySQLConfig(
+                'C:/DevBox Pro/data/mysql/5.7/my.cnf',
+                'C:/DevBox Pro/data/mysql/5.7/data',
+                3308,
+                '5.7'
+            );
+
+            const [, config] = fs.writeFile.mock.calls.at(-1);
+            expect(config).toContain('innodb_log_file_size=64M');
+            expect(config).toContain('innodb_log_files_in_group=2');
+            expect(config).not.toContain('innodb_redo_log_capacity');
+        });
+
         it('fails early when MySQL share assets are missing during initialization', async () => {
             vi.spyOn(require('fs-extra'), 'pathExists').mockResolvedValue(false);
 
@@ -409,6 +463,26 @@ describe('ServiceManager', () => {
                     '8.4'
                 )
             ).rejects.toThrow('missing share/messages_to_error_log.txt');
+        });
+
+        it('accepts MySQL 5.7 share assets during initialization', async () => {
+            const pathExistsSpy = vi.spyOn(require('fs-extra'), 'pathExists').mockImplementation(async (targetPath) => {
+                const normalized = String(targetPath).replace(/\\/g, '/');
+                return normalized.endsWith('/share/errmsg-utf8.txt');
+            });
+            const emptyDirSpy = vi.spyOn(require('fs-extra'), 'emptyDir').mockResolvedValue();
+            mgr.ensureWindowsRuntimeDlls = vi.fn().mockResolvedValue(undefined);
+
+            await expect(
+                mgr.initializeMySQLData(
+                    'C:/DevBox Pro/resources-user/mysql/5.7/win',
+                    'C:/DevBox Pro/data/mysql/5.7/data',
+                    '5.7'
+                )
+            ).rejects.toThrow('MySQL initialization failed to launch');
+
+            pathExistsSpy.mockRestore();
+            emptyDirSpy.mockRestore();
         });
 
         it('adopts legacy MySQL data from the old userData path when current data is empty', async () => {
@@ -478,7 +552,7 @@ describe('ServiceManager', () => {
             proc.stdout = new EventEmitter();
             proc.stderr = new EventEmitter();
 
-            vi.mocked(childProcess.spawn).mockImplementationOnce(() => proc);
+            vi.spyOn(require('child_process'), 'spawn').mockImplementationOnce(() => proc);
 
             mgr.startMySQL.mockRestore();
             mgr.getMySQLPath = vi.fn(() => 'C:/DevBox Pro/resources-user/mysql/8.4/win');
@@ -504,11 +578,11 @@ describe('ServiceManager', () => {
             }, 10);
 
             const result = await Promise.race([
-                startPromise.then(() => 'done'),
-                new Promise((resolve) => setTimeout(() => resolve('timeout'), 250)),
+                startPromise.then(() => ({ state: 'resolved' })).catch((error) => ({ state: 'rejected', error })),
+                new Promise((resolve) => setTimeout(() => resolve({ state: 'timeout' }), 250)),
             ]);
 
-            expect(result).toBe('done');
+            expect(result.state).toBe('rejected');
             expect(mgr.getMySQLErrorLogTail).toHaveBeenCalled();
             expect(mgr.serviceStatus.get('mysql').status).toBe('error');
             expect(mgr.serviceStatus.get('mysql').error).toContain('MySQL Server - end.');

@@ -12,6 +12,29 @@ class SslManager {
     this.caKey = null;
     this.caCert = null;
     this.certificateAuthorityMatchCache = new Map();
+
+    // Readiness gate: resolves when initialize() completes (CA key/cert are loaded).
+    // Callers that need the CA to be ready (e.g. createCertificate) can await waitForReady().
+    this._readyPromise = new Promise((resolve) => {
+      this._resolveReady = resolve;
+    });
+  }
+
+  /**
+   * Wait for the SSL manager to be fully initialized (CA key & cert loaded).
+   * Returns immediately if already initialized. Times out after the given ms.
+   */
+  async waitForReady(timeoutMs = 30000) {
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`SSL manager not ready after ${timeoutMs}ms`)), timeoutMs);
+    });
+
+    try {
+      await Promise.race([this._readyPromise, timeoutPromise]);
+    } catch (error) {
+      this.managers.log?.systemWarn('SSL waitForReady timed out', { error: error.message });
+      // Don't throw — let callers proceed and handle missing CA gracefully
+    }
   }
 
   async initialize() {
@@ -31,8 +54,14 @@ class SslManager {
       try {
         await this.createRootCA();
 
-        // Automatically prompt to trust the new Root CA
-        await this.promptTrustRootCA();
+        // Fire-and-forget: trust the Root CA in the system store.
+        // Don't block initialization on this — the UAC prompt on Windows
+        // can take a long time or be ignored. Certificate creation only
+        // requires the CA key/cert to exist, not to be trusted.
+        this.promptTrustRootCA().catch((error) => {
+          this.managers.log?.systemWarn('Could not automatically trust Root CA', { error: error.message });
+        });
+
         await this.repairCertificates();
       } catch (error) {
         this.managers.log?.systemError('Failed to create Root CA certificate', { error: error.message });
@@ -49,6 +78,9 @@ class SslManager {
         this.managers.log?.systemError('Failed to load existing Root CA', { error: error.message });
       }
     }
+
+    // Signal readiness — callers of waitForReady() can now proceed
+    this._resolveReady();
   }
 
   // Prompt user to trust the Root CA certificate
@@ -67,7 +99,14 @@ class SslManager {
           // Use certutil to add to local machine root store (requires admin)
           const command = `certutil -f -addstore "Root" "${caCertPath}"`;
 
+          // Add a timeout so a slow/ignored UAC prompt doesn't block forever
+          const timeout = setTimeout(() => {
+            this.managers.log?.systemWarn('Root CA trust prompt timed out after 15s — user can trust manually from Settings');
+            resolve();
+          }, 15000);
+
           sudo.exec(command, options, (error, stdout, stderr) => {
+            clearTimeout(timeout);
             // Resolve regardless of error - don't fail initialization
             resolve();
           });

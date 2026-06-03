@@ -81,8 +81,17 @@ module.exports = {
     status.port = port;
     status.smtpPort = smtpPort;
 
+    // Exit handler — ensures state cleanup if Mailpit crashes or is killed externally
+    proc.on('exit', (code) => {
+      const currentStatus = this.serviceStatus.get('mailpit');
+      this.processes.delete('mailpit');
+      if (currentStatus?.status === 'running') {
+        currentStatus.status = 'stopped';
+      }
+    });
+
     try {
-      await this.waitForService('mailpit', 10000);
+      await this.waitForService('mailpit', 20000);
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {

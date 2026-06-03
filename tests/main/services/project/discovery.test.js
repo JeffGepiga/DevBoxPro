@@ -22,6 +22,7 @@ function makeContext(overrides = {}) {
         systemWarn: vi.fn(),
       },
       ssl: {
+        waitForReady: vi.fn().mockResolvedValue(undefined),
         createCertificate: vi.fn().mockResolvedValue(undefined),
       },
       database: {
@@ -123,12 +124,52 @@ describe('project/discovery', () => {
       }),
     ]);
     expect(ctx.managers.database.createDatabase).toHaveBeenCalledWith('imported_app', '8.4');
+    expect(ctx.managers.ssl.waitForReady).toHaveBeenCalled();
+    expect(ctx.managers.ssl.waitForReady.mock.invocationCallOrder[0]).toBeLessThan(
+      ctx.managers.ssl.createCertificate.mock.invocationCallOrder[0]
+    );
     expect(ctx.managers.ssl.createCertificate).toHaveBeenCalledWith(['imported-app.test']);
     expect(ctx.createVirtualHost).toHaveBeenCalledWith(expect.objectContaining({ name: 'Imported App' }));
     expect(ctx.updateHostsFile).toHaveBeenCalledWith(expect.objectContaining({ domain: 'imported-app.test' }));
     expect(ctx.configStore.set).toHaveBeenCalledWith('projects', expect.arrayContaining([
       expect.objectContaining({ name: 'Imported App', path: '/projects/imported-app' }),
     ]));
+  });
+
+  it('disables SSL for imported projects after certificate retry failure', async () => {
+    vi.useFakeTimers();
+
+    const existingProjects = [];
+    const ctx = makeContext({
+      configStore: {
+        get: vi.fn((key) => {
+          if (key === 'settings') return { defaultTld: 'test', webServer: 'nginx', portRangeStart: 8000 };
+          if (key === 'projects') return existingProjects;
+          return undefined;
+        }),
+        set: vi.fn(),
+      },
+    });
+
+    ctx.managers.ssl.waitForReady = vi.fn().mockResolvedValue(undefined);
+    ctx.managers.ssl.createCertificate = vi.fn()
+      .mockRejectedValueOnce(new Error('Root CA not initialized'))
+      .mockRejectedValueOnce(new Error('Root CA still unavailable'));
+
+    const importPromise = ctx.registerExistingProject({
+      name: 'Imported App',
+      path: '/projects/imported-app',
+      ssl: true,
+    });
+
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await importPromise;
+
+    expect(ctx.managers.ssl.waitForReady).toHaveBeenCalled();
+    expect(ctx.managers.ssl.createCertificate).toHaveBeenCalledTimes(2);
+    expect(result.ssl).toBe(false);
+
+    vi.useRealTimers();
   });
 
   it('fails import when hosts-file registration is denied', async () => {

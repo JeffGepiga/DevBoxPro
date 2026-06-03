@@ -253,7 +253,7 @@ module.exports = {
       return existingStart;
     }
 
-    const runStart = async () => {
+    const runStart = async (retryCount = 0) => {
       const status = this.serviceStatus.get(serviceName);
       if (status) {
         status.status = 'starting';
@@ -309,6 +309,14 @@ module.exports = {
 
         return { success: status.status === 'running', service: serviceName, version, status: status.status };
       } catch (error) {
+        // Auto-retry once for timeout failures
+        if (retryCount === 0 && error.message?.includes('failed to start within')) {
+          this.managers.log?.systemWarn(`${config.name} startup timed out, retrying...`);
+          // Clean up before retry
+          await this.cleanupFailedStart(serviceName, version);
+          return runStart(1); // Recursive retry
+        }
+
         this.managers.log?.systemError(`Failed to start ${config.name}${versionSuffix}`, { error: error.message });
         if (status) {
           status.status = 'error';
@@ -617,10 +625,81 @@ module.exports = {
   },
 
   async restartService(serviceName, version = null) {
+    const config = this.serviceConfigs[serviceName];
+    const status = this.serviceStatus.get(serviceName);
+    const servicePort = status?.port || config?.actualPort || config?.defaultPort;
+
     await this.stopService(serviceName, version);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Wait for port release instead of a fixed delay — critical on slow devices
+    // where the OS may take several seconds to release the port.
+    if (servicePort) {
+      const released = await waitForPortReleased(servicePort, 5000);
+      if (!released) {
+        this.managers.log?.systemWarn(`Port ${servicePort} not released after stopping ${serviceName}, proceeding anyway`);
+        // Extra grace period as a last resort
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    } else {
+      // No known port — fall back to a reasonable fixed delay
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
     const result = this.startService(serviceName, version);
     return result;
+  },
+
+  /**
+   * Generic cleanup after a failed service start.
+   * Kills any orphan process, removes stale PID files, and waits for port release.
+   */
+  async cleanupFailedStart(serviceName, version = null) {
+    const config = this.serviceConfigs[serviceName];
+    const processKey = this.getProcessKey(serviceName, version);
+
+    // Kill any tracked orphan process
+    const proc = this.processes.get(processKey);
+    if (proc) {
+      await this.killProcess(proc);
+      this.processes.delete(processKey);
+    }
+
+    // Remove from running versions tracker
+    if (config?.versioned && version) {
+      this.runningVersions.get(serviceName)?.delete(version);
+    }
+
+    // Clean stale PID files for database services
+    try {
+      const dataPath = this.getDataPath();
+      const pidFiles = {
+        mysql: version ? path.join(dataPath, 'mysql', version, 'data', 'mysql.pid') : null,
+        mariadb: version ? path.join(dataPath, 'mariadb', version, 'data', 'mariadb.pid') : null,
+      };
+
+      const pidFile = pidFiles[serviceName];
+      if (pidFile && await fs.pathExists(pidFile)) {
+        this.managers.log?.systemInfo(`Removing stale PID file for ${serviceName}`, { pidFile });
+        await fs.remove(pidFile);
+      }
+    } catch (error) {
+      // PID cleanup is best-effort
+    }
+
+    // Wait for port release
+    const status = this.serviceStatus.get(serviceName);
+    const servicePort = status?.port || config?.actualPort || config?.defaultPort;
+    if (servicePort) {
+      await waitForPortReleased(servicePort, 5000);
+    }
+
+    // Reset status
+    if (status) {
+      status.status = 'stopped';
+      status.error = null;
+      status.startedAt = null;
+      status.pid = null;
+    }
   },
 
   async startAllServices() {

@@ -148,6 +148,20 @@ module.exports = {
 
     await this.createMariaDBConfig(configPath, dataDir, port, version, initFile);
 
+    // Clean stale PID file from a previous crash to prevent startup failures
+    const pidFile = path.join(dataDir, 'mariadb.pid');
+    try {
+      if (await fs.pathExists(pidFile)) {
+        const stalePid = (await fs.readFile(pidFile, 'utf8')).trim();
+        if (stalePid && !this.isProcessAlive(parseInt(stalePid, 10))) {
+          this.managers.log?.systemInfo(`Removing stale MariaDB PID file (PID ${stalePid} is not running)`, { pidFile });
+          await fs.remove(pidFile);
+        }
+      }
+    } catch (error) {
+      // PID cleanup is best-effort
+    }
+
     const proc = spawnHidden(mariadbd, [`--defaults-file=${configPath}`], {
       cwd: mariadbPath,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -184,13 +198,23 @@ module.exports = {
       this.processes.delete(processKey);
       if (code !== 0 || (status.status !== 'running' && (startupStdout || startupStderr))) {
         this.logServiceStartupFailure('MariaDB', version, {
-          code, configPath, mariadbPath, dataDir,
+          code, configPath, mariadbPath: this.getMariaDBPath(version), dataDir,
           stdout: startupStdout, stderr: startupStderr,
         });
       }
       this.runningVersions.get('mariadb')?.delete(version);
       if (status.status === 'running') {
         status.status = 'stopped';
+      }
+
+      // Force-kill orphan processes on Windows to prevent stale locks
+      if (process.platform === 'win32' && code !== 0) {
+        try {
+          const { killProcessesByPath } = require('../../utils/SpawnUtils');
+          killProcessesByPath('mariadbd.exe', this.getMariaDBPath(version)).catch(() => {});
+        } catch (e) {
+          // Best-effort
+        }
       }
     });
 
@@ -229,7 +253,7 @@ module.exports = {
 
     try {
       await Promise.race([
-        this.waitForService('mariadb', 30000),
+        this.waitForService('mariadb', 60000),
         startupFailurePromise,
       ]);
       status.status = 'running';
@@ -239,7 +263,7 @@ module.exports = {
       status.status = 'error';
       status.error = error.message;
       this.runningVersions.get('mariadb').delete(version);
-      this.processes.delete(processKey);
+        throw error;
     }
   },
 
@@ -301,7 +325,7 @@ module.exports = {
 
     this.runningVersions.get('mariadb').set(version, { port, startedAt: new Date() });
 
-    await this.waitForService('mariadb', 30000);
+    await this.waitForService('mariadb', 60000);
     status.status = 'running';
     status.startedAt = Date.now();
   },
@@ -354,7 +378,7 @@ module.exports = {
 
     this.runningVersions.get('mariadb').set(version, { port, startedAt: new Date() });
 
-    await this.waitForNamedPipeReady(`MARIADB_${version.replace(/\./g, '')}_SKIP`, 30000);
+    await this.waitForNamedPipeReady(`MARIADB_${version.replace(/\./g, '')}_SKIP`, 60000);
     status.status = 'running';
   },
 

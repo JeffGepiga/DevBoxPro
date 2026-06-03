@@ -47,6 +47,19 @@ module.exports = {
 
     await fs.ensureDir(dataDir);
 
+    // Clean up stale temp rdb files that can cause startup issues after a crash
+    try {
+      const files = await fs.readdir(dataDir);
+      for (const file of files) {
+        if (file.startsWith('dump_') && file.endsWith('.rdb.tmp')) {
+          await fs.remove(path.join(dataDir, file));
+          this.managers.log?.systemInfo(`Removed stale Redis temp dump file`, { file });
+        }
+      }
+    } catch (error) {
+      // Best-effort cleanup
+    }
+
     const defaultPort = this.getVersionPort('redis', version, this.serviceConfigs.redis.defaultPort);
     let port = defaultPort;
 
@@ -106,8 +119,18 @@ module.exports = {
 
     this.runningVersions.get('redis').set(version, { port, startedAt: new Date() });
 
+    // Exit handler — ensures state cleanup if Redis crashes or is killed externally
+    proc.on('exit', (code) => {
+      const currentStatus = this.serviceStatus.get('redis');
+      this.processes.delete(this.getProcessKey('redis', version));
+      this.runningVersions.get('redis')?.delete(version);
+      if (currentStatus?.status === 'running') {
+        currentStatus.status = 'stopped';
+      }
+    });
+
     try {
-      await this.waitForService('redis', 10000);
+      await this.waitForService('redis', 20000);
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {

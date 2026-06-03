@@ -87,6 +87,21 @@ module.exports = {
 
     this.serviceConfigs.postgresql.actualPort = port;
 
+    // Clean stale postmaster.pid from a previous crash
+    const postmasterPid = path.join(dataDir, 'postmaster.pid');
+    try {
+      if (await fs.pathExists(postmasterPid)) {
+        const pidContent = (await fs.readFile(postmasterPid, 'utf8')).trim();
+        const stalePid = parseInt(pidContent.split('\n')[0], 10);
+        if (stalePid && !this.isProcessAlive(stalePid)) {
+          this.managers.log?.systemInfo(`Removing stale PostgreSQL postmaster.pid (PID ${stalePid} is not running)`);
+          await fs.remove(postmasterPid);
+        }
+      }
+    } catch (error) {
+      // PID cleanup is best-effort
+    }
+
     const logFile = path.join(dataPath, 'logs', `postgresql-${version}.log`);
     await fs.ensureDir(path.dirname(logFile));
 
@@ -101,6 +116,16 @@ module.exports = {
     proc.stdout?.on('data', (d) => this.managers.log?.service('postgresql', d.toString()));
     proc.stderr?.on('data', (d) => this.managers.log?.service('postgresql', d.toString(), 'error'));
 
+    // Exit handler for crash detection and state cleanup
+    proc.on('exit', (code) => {
+      const currentStatus = this.serviceStatus.get('postgresql');
+      this.processes.delete(this.getProcessKey('postgresql', version));
+      this.runningVersions.get('postgresql')?.delete(version);
+      if (currentStatus?.status === 'running') {
+        currentStatus.status = 'stopped';
+      }
+    });
+
     this.processes.set(this.getProcessKey('postgresql', version), proc);
     const status = this.serviceStatus.get('postgresql');
     status.port = port;
@@ -108,7 +133,7 @@ module.exports = {
     this.runningVersions.get('postgresql').set(version, { port, startedAt: new Date() });
 
     try {
-      await this.waitForService('postgresql', 30000);
+      await this.waitForService('postgresql', 60000);
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
@@ -116,6 +141,17 @@ module.exports = {
       status.status = 'error';
       status.error = error.message;
       this.runningVersions.get('postgresql').delete(version);
+
+      // Force-kill orphan postgres processes on Windows
+      if (process.platform === 'win32') {
+        try {
+          const { killProcessesByPath } = require('../../utils/SpawnUtils');
+          await killProcessesByPath('postgres.exe', pgBasePath).catch(() => {});
+        } catch (e) {
+          // Best-effort
+        }
+      }
+
       throw error;
     }
   },
@@ -148,6 +184,20 @@ module.exports = {
 
     this.serviceConfigs.mongodb.actualPort = port;
 
+    // Clean stale mongod.lock from a previous crash
+    const mongodLock = path.join(dataDir, 'mongod.lock');
+    try {
+      if (await fs.pathExists(mongodLock)) {
+        const lockContent = (await fs.readFile(mongodLock, 'utf8')).trim();
+        if (lockContent && !this.isProcessAlive(parseInt(lockContent, 10))) {
+          this.managers.log?.systemInfo(`Removing stale MongoDB lock file (PID ${lockContent} is not running)`);
+          await fs.remove(mongodLock);
+        }
+      }
+    } catch (error) {
+      // Lock cleanup is best-effort
+    }
+
     const proc = spawnHidden(mongodExe, [
       '--dbpath', dataDir,
       '--port', String(port),
@@ -160,6 +210,16 @@ module.exports = {
     proc.stdout?.on('data', (d) => this.managers.log?.service('mongodb', d.toString()));
     proc.stderr?.on('data', (d) => this.managers.log?.service('mongodb', d.toString(), 'error'));
 
+    // Exit handler for crash detection and state cleanup
+    proc.on('exit', (code) => {
+      const currentStatus = this.serviceStatus.get('mongodb');
+      this.processes.delete(this.getProcessKey('mongodb', version));
+      this.runningVersions.get('mongodb')?.delete(version);
+      if (currentStatus?.status === 'running') {
+        currentStatus.status = 'stopped';
+      }
+    });
+
     this.processes.set(this.getProcessKey('mongodb', version), proc);
     const status = this.serviceStatus.get('mongodb');
     status.port = port;
@@ -167,7 +227,7 @@ module.exports = {
     this.runningVersions.get('mongodb').set(version, { port, startedAt: new Date() });
 
     try {
-      await this.waitForService('mongodb', 30000);
+      await this.waitForService('mongodb', 60000);
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
@@ -175,6 +235,17 @@ module.exports = {
       status.status = 'error';
       status.error = error.message;
       this.runningVersions.get('mongodb').delete(version);
+
+      // Force-kill orphan mongod processes on Windows
+      if (process.platform === 'win32') {
+        try {
+          const { killProcessesByPath } = require('../../utils/SpawnUtils');
+          await killProcessesByPath('mongod.exe', mongoBasePath).catch(() => {});
+        } catch (e) {
+          // Best-effort
+        }
+      }
+
       throw error;
     }
   },
@@ -217,8 +288,18 @@ module.exports = {
     status.version = version;
     this.runningVersions.get('memcached').set(version, { port, startedAt: new Date() });
 
+    // Exit handler for crash detection and state cleanup
+    proc.on('exit', (code) => {
+      const currentStatus = this.serviceStatus.get('memcached');
+      this.processes.delete(this.getProcessKey('memcached', version));
+      this.runningVersions.get('memcached')?.delete(version);
+      if (currentStatus?.status === 'running') {
+        currentStatus.status = 'stopped';
+      }
+    });
+
     try {
-      await this.waitForService('memcached', 10000);
+      await this.waitForService('memcached', 20000);
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
@@ -285,8 +366,17 @@ module.exports = {
     status.port = port;
     status.consolePort = consolePort;
 
+    // Exit handler for crash detection and state cleanup
+    proc.on('exit', (code) => {
+      const currentStatus = this.serviceStatus.get('minio');
+      this.processes.delete('minio');
+      if (currentStatus?.status === 'running') {
+        currentStatus.status = 'stopped';
+      }
+    });
+
     try {
-      await this.waitForService('minio', 15000);
+      await this.waitForService('minio', 30000);
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {

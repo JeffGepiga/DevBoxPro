@@ -225,6 +225,25 @@ module.exports = {
     return serviceName;
   },
 
+  /**
+   * Check if a process with the given PID is still alive.
+   * Used to detect stale PID files left behind by crashed services.
+   */
+  isProcessAlive(pid) {
+    if (!pid || isNaN(pid)) {
+      return false;
+    }
+
+    try {
+      // Sending signal 0 tests if the process exists without killing it
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      // ESRCH = no such process, EPERM = process exists but no permission
+      return error.code === 'EPERM';
+    }
+  },
+
   // Path helpers for versioned services
   getNginxPath(version) {
     const v = version || '1.28';

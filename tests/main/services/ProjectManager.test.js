@@ -127,6 +127,7 @@ describe('ProjectManager', () => {
                 systemInfo: vi.fn()
             },
             ssl: {
+                waitForReady: vi.fn().mockResolvedValue(),
                 createCertificate: vi.fn().mockResolvedValue()
             },
             database: {
@@ -190,6 +191,26 @@ describe('ProjectManager', () => {
 
             const fromMgr = mgr.getProject(created.id);
             expect(fromMgr.name).toBe('TestProj');
+        });
+
+        it('waits for SSL readiness before creating project certificates', async () => {
+            vi.spyOn(mgr, 'detectProjectType').mockResolvedValue('laravel');
+            mgr.createVirtualHost = vi.fn().mockResolvedValue();
+
+            const created = await mgr.createProject({
+                name: 'SslReadyProj',
+                path: '/path/to/sslreadyproj',
+                phpVersion: '8.3',
+                type: 'laravel',
+                ssl: true,
+            });
+
+            expect(managers.ssl.waitForReady).toHaveBeenCalled();
+            expect(managers.ssl.waitForReady.mock.invocationCallOrder[0]).toBeLessThan(
+                managers.ssl.createCertificate.mock.invocationCallOrder[0]
+            );
+            expect(managers.ssl.createCertificate).toHaveBeenCalledWith(['sslreadyproj.test']);
+            expect(created.ssl).toBe(true);
         });
 
         it('throws on duplicate project name', async () => {
@@ -555,6 +576,7 @@ describe('ProjectManager', () => {
             await mgr.ensureProjectSslCertificates(project, 'C:/Users/Test User/.devbox-pro/ssl/stale-ssl.test');
 
             expect(managers.ssl.certificateMatchesCurrentCA).toHaveBeenCalledWith('stale-ssl.test');
+            expect(managers.ssl.waitForReady).toHaveBeenCalled();
             expect(managers.ssl.createCertificate).toHaveBeenCalledWith(['stale-ssl.test']);
         });
     });

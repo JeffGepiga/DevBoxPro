@@ -18,6 +18,48 @@ module.exports = {
     throw new Error(`${config.name} failed to start within ${timeout}ms`);
   },
 
+  /**
+   * Retry-aware wrapper around waitForService.
+   * If the service process is still alive after a timeout, extends the wait
+   * rather than failing immediately. This handles slow devices where binaries
+   * need more time for disk-heavy initialization.
+   *
+   * @param {string} serviceName
+   * @param {number} timeoutMs   – per-attempt timeout
+   * @param {Object} [options]
+   * @param {number} [options.maxRetries=1]          – extra attempts after the first
+   * @param {string|null} [options.version=null]     – version string for process key lookup
+   */
+  async waitForServiceWithRetry(serviceName, timeoutMs, options = {}) {
+    const { maxRetries = 1, version = null } = options;
+    const config = this.serviceConfigs[serviceName];
+    const label = version ? `${config.name} ${version}` : config.name;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        await this.waitForService(serviceName, timeoutMs);
+        return true;
+      } catch (error) {
+        if (attempt < maxRetries) {
+          // Check if the spawned process is still alive — if so, the binary is
+          // just slow (e.g. InnoDB init on a spinning disk) and deserves more time.
+          const processKey = this.getProcessKey(serviceName, version);
+          const proc = this.processes.get(processKey);
+          const processStillAlive = proc && !proc.killed && proc.exitCode === null;
+
+          if (processStillAlive) {
+            this.managers.log?.systemWarn(
+              `${label} not ready after ${timeoutMs}ms (attempt ${attempt + 1}/${maxRetries + 1}), process still alive — extending wait...`
+            );
+            continue;
+          }
+        }
+
+        throw error;
+      }
+    }
+  },
+
   async checkNginxHealth() {
     const port = this.serviceConfigs.nginx.actualHttpPort || this.serviceConfigs.nginx.defaultPort;
     return this.checkPortOpen(port);
@@ -78,7 +120,7 @@ module.exports = {
       const net = require('net');
       const socket = new net.Socket();
 
-      socket.setTimeout(1000);
+      socket.setTimeout(2000);
       socket.on('connect', () => {
         socket.destroy();
         resolve(true);

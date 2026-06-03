@@ -438,56 +438,61 @@ async function startup() {
     managers.update.setMainWindow(mainWindow);
 
     // Initialize remaining managers in background (don't block UI)
-    initializeManagersDeferred().then(() => {
+    // IMPORTANT: Auto-start projects must run AFTER deferred init completes,
+    // otherwise ServiceManager may not be initialized when startProject() tries
+    // to start services — causing failures on slower devices.
+    initializeManagersDeferred().then(async () => {
       // Auto-start services if enabled (after deferred init)
       const settings = managers.config.get('settings', {});
       if (settings.autoStartServices) {
-        managers.service.startCoreServices().catch(err => {
+        try {
+          await managers.service.startCoreServices();
+        } catch (err) {
           managers.log?.systemError('Error auto-starting services', { error: err.message });
-        });
+        }
       }
-    });
 
-    // Auto-start projects that have autoStart enabled
-    try {
-      const projects = managers.project.getAllProjects();
-      const autoStartProjects = projects.filter(p => p.autoStart);
-      if (autoStartProjects.length > 0) {
-        for (const project of autoStartProjects) {
-          try {
-            // Notify frontend that this project is starting (for loading state)
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('project:autoStarting', {
-                projectId: project.id,
-                projectName: project.name
-              });
-            }
+      // Auto-start projects that have autoStart enabled
+      try {
+        const projects = managers.project.getAllProjects();
+        const autoStartProjects = projects.filter(p => p.autoStart);
+        if (autoStartProjects.length > 0) {
+          for (const project of autoStartProjects) {
+            try {
+              // Notify frontend that this project is starting (for loading state)
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('project:autoStarting', {
+                  projectId: project.id,
+                  projectName: project.name
+                });
+              }
 
-            await managers.project.startProject(project.id);
+              await managers.project.startProject(project.id);
 
-            // Notify frontend that project started successfully
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('project:autoStarted', {
-                projectId: project.id,
-                success: true
-              });
-            }
-          } catch (err) {
-            managers.log?.systemError(`Failed to auto-start project ${project.name}`, { error: err.message });
-            // Notify frontend about failure
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('project:autoStarted', {
-                projectId: project.id,
-                success: false,
-                error: err.message
-              });
+              // Notify frontend that project started successfully
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('project:autoStarted', {
+                  projectId: project.id,
+                  success: true
+                });
+              }
+            } catch (err) {
+              managers.log?.systemError(`Failed to auto-start project ${project.name}`, { error: err.message });
+              // Notify frontend about failure
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('project:autoStarted', {
+                  projectId: project.id,
+                  success: false,
+                  error: err.message
+                });
+              }
             }
           }
         }
+      } catch (err) {
+        managers.log?.systemError('Error auto-starting projects', { error: err.message });
       }
-    } catch (err) {
-      managers.log?.systemError('Error auto-starting projects', { error: err.message });
-    }
+    });
   } catch (error) {
     managers.log?.systemError('Startup failed', { error: error.message, stack: error.stack });
     dialog.showErrorBox('DevBox Pro could not start', error.message);

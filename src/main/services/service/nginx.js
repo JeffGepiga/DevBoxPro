@@ -390,7 +390,7 @@ module.exports = {
     try {
       const startWait = Date.now();
       let nginxReady = false;
-      while (Date.now() - startWait < 15000) {
+      while (Date.now() - startWait < 30000) {
         if (await this.checkPortOpen(httpPort)) {
           nginxReady = true;
           break;
@@ -398,7 +398,7 @@ module.exports = {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
       if (!nginxReady) {
-        throw new Error(`Nginx ${version} did not open port ${httpPort} within 15s`);
+        throw new Error(`Nginx ${version} did not open port ${httpPort} within 30s`);
       }
       status.status = 'running';
       status.startedAt = Date.now();

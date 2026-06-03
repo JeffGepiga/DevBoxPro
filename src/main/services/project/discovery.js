@@ -182,11 +182,26 @@ module.exports = {
       }
     }
 
+    // Ensure SSL certificate if needed
     if (project.ssl) {
       try {
+        // Wait for SSL manager to be fully initialized (CA key/cert loaded).
+        // On slow devices, RSA key generation may still be in progress.
+        await this.managers.ssl?.waitForReady?.();
+
         await this.managers.ssl?.createCertificate(project.domains);
       } catch (error) {
-        this.managers.log?.systemWarn('Could not create SSL certificate', { error: error.message });
+        // Retry once after a short delay — covers the case where CA init
+        // is completing concurrently on a slow device.
+        this.managers.log?.systemWarn('SSL certificate creation failed during import, retrying...', { project: project.name, error: error.message });
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          await this.managers.ssl?.createCertificate(project.domains);
+        } catch (retryError) {
+          // Fall back to ssl:false so the vhost doesn't reference missing cert files
+          this.managers.log?.systemWarn('SSL certificate creation failed after retry — disabling SSL for this imported project', { project: project.name, error: retryError.message });
+          project.ssl = false;
+        }
       }
     }
 

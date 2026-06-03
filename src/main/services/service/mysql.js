@@ -3,6 +3,35 @@ const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { isPortAvailable, findAvailablePort } = require('../../utils/PortUtils');
 
+function isMySql57(version) {
+  return String(version || '').startsWith('5.7');
+}
+
+function getRequiredMySqlShareAssets(shareDir, version) {
+  if (isMySql57(version)) {
+    return [path.join(shareDir, 'errmsg-utf8.txt')];
+  }
+
+  return [path.join(shareDir, 'messages_to_error_log.txt')];
+}
+
+function getMySqlWindowsTuningConfig(version) {
+  const lines = ['innodb_buffer_pool_size=128M'];
+
+  if (isMySql57(version)) {
+    lines.push('innodb_log_file_size=64M');
+    lines.push('innodb_log_files_in_group=2');
+  } else {
+    lines.push('innodb_redo_log_capacity=100M');
+  }
+
+  lines.push('max_connections=100');
+  lines.push('loose-mysqlx=0');
+  lines.push('skip-log-bin');
+
+  return lines.join('\n');
+}
+
 // Helper function to spawn a process hidden on Windows
 function spawnHidden(command, args, options = {}) {
   if (process.platform === 'win32') {
@@ -80,6 +109,20 @@ module.exports = {
         status.error = `Initialization failed: ${error.message}`;
         return;
       }
+    }
+
+    // Clean stale PID file from a previous crash to prevent startup failures
+    const pidFile = path.join(dataDir, 'mysql.pid');
+    try {
+      if (await fs.pathExists(pidFile)) {
+        const stalePid = (await fs.readFile(pidFile, 'utf8')).trim();
+        if (stalePid && !this.isProcessAlive(parseInt(stalePid, 10))) {
+          this.managers.log?.systemInfo(`Removing stale MySQL PID file (PID ${stalePid} is not running)`, { pidFile });
+          await fs.remove(pidFile);
+        }
+      }
+    } catch (error) {
+      // PID cleanup is best-effort
     }
 
     const initFile = await this.createCredentialsInitFile('mysql', version);
@@ -216,7 +259,7 @@ module.exports = {
 
     try {
       await Promise.race([
-        this.waitForService('mysql', 30000),
+        this.waitForService('mysql', 60000),
         startupFailurePromise,
       ]);
       status.status = 'running';
@@ -249,6 +292,7 @@ module.exports = {
         ? `Failed to start. ${errorLogTail.split('\n').at(-1)}`
         : 'Failed to start within timeout. Check logs for details.';
       this.runningVersions.get('mysql').delete(version);
+        throw error;
     }
   },
 
@@ -335,7 +379,7 @@ module.exports = {
 
     this.runningVersions.get('mysql').set(version, { port, startedAt: new Date() });
 
-    await this.waitForService('mysql', 30000);
+    await this.waitForService('mysql', 60000);
     status.status = 'running';
     status.startedAt = Date.now();
   },
@@ -403,12 +447,16 @@ module.exports = {
   async initializeMySQLData(mysqlPath, dataDir, version = '8.4') {
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
     const shareDir = path.join(mysqlPath, 'share');
-    const shareMessagesFile = path.join(shareDir, 'messages_to_error_log.txt');
+    const requiredShareAssets = getRequiredMySqlShareAssets(shareDir, version);
 
     await this.ensureWindowsRuntimeDlls(mysqlPath, `MySQL ${version}`);
 
-    if (!await fs.pathExists(shareMessagesFile)) {
-      throw new Error(`MySQL ${version} installation is incomplete (missing share/messages_to_error_log.txt). Please re-download from Binary Manager.`);
+    const shareAssetChecks = await Promise.all(requiredShareAssets.map((assetPath) => fs.pathExists(assetPath)));
+    if (!shareAssetChecks.some(Boolean)) {
+      const expectedAssets = requiredShareAssets
+        .map((assetPath) => path.relative(mysqlPath, assetPath).replace(/\\/g, '/'))
+        .join(' or ');
+      throw new Error(`MySQL ${version} installation is incomplete (missing ${expectedAssets}). Please re-download from Binary Manager.`);
     }
 
     await fs.emptyDir(dataDir);
@@ -466,6 +514,7 @@ module.exports = {
 
     let config;
     if (isWindows) {
+      const tuningConfig = getMySqlWindowsTuningConfig(version);
       config = `[mysqld]
     basedir=${this.quoteConfigPath(mysqlPath)}
     datadir=${this.quoteConfigPath(dataDir)}
@@ -476,11 +525,7 @@ socket=MYSQL_${version.replace(/\./g, '')}
     pid-file=${this.quoteConfigPath(path.join(dataDir, 'mysql.pid'))}
     log-error=${this.quoteConfigPath(path.join(dataDir, 'error.log'))}
 default-time-zone='${timezoneOffset}'
-${initFileLine}innodb_buffer_pool_size=128M
-innodb_redo_log_capacity=100M
-max_connections=100
-loose-mysqlx=0
-skip-log-bin
+${initFileLine}${tuningConfig}
 
 [client]
 port=${port}
@@ -512,6 +557,7 @@ port=${port}
 
     let config;
     if (isWindows) {
+      const tuningConfig = getMySqlWindowsTuningConfig(version);
       config = `[mysqld]
     basedir=${this.quoteConfigPath(mysqlPath)}
     datadir=${this.quoteConfigPath(dataDir)}
@@ -523,11 +569,7 @@ socket=MYSQL_${version.replace(/\./g, '')}_SKIP
     log-error=${this.quoteConfigPath(path.join(dataDir, 'error_skip.log'))}
 skip-grant-tables
 skip-networking=0
-${initFileLine}innodb_buffer_pool_size=128M
-innodb_redo_log_capacity=100M
-max_connections=100
-loose-mysqlx=0
-skip-log-bin
+${initFileLine}${tuningConfig}
 
 [client]
 port=${port}
