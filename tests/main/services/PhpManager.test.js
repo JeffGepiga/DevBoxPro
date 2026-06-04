@@ -87,6 +87,27 @@ describe('PhpManager', () => {
         });
     });
 
+    describe('version parsing and ordering', () => {
+        it('parses patch-level PHP versions with flavor suffixes', () => {
+            expect(pm.parsePhpVersion('8.2.31-ts')).toEqual({
+                baseVersion: '8.2.31',
+                flavor: 'ts',
+            });
+            expect(pm.parsePhpVersion('8.2.31')).toEqual({
+                baseVersion: '8.2.31',
+                flavor: null,
+            });
+        });
+
+        it('sorts patch-level versions correctly with NTS before TS for the same patch', () => {
+            pm.phpVersions['8.2.30'] = { available: true, path: '/p1', extensions: [] };
+            pm.phpVersions['8.2.31-ts'] = { available: true, path: '/p2', extensions: [] };
+            pm.phpVersions['8.2.31'] = { available: true, path: '/p3', extensions: [] };
+
+            expect(pm.getSortedPhpVersions()).toEqual(['8.2.31', '8.2.31-ts', '8.2.30']);
+        });
+    });
+
     // ═══════════════════════════════════════════════════════════════════
     // getPhpBinaryName()
     // ═══════════════════════════════════════════════════════════════════

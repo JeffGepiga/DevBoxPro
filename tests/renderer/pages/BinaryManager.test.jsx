@@ -147,14 +147,14 @@ describe('BinaryManager', () => {
         fireEvent.click(importButtons[0]);
 
         expect(await screen.findByText(/Detected version:/i)).toBeInTheDocument();
-        expect(screen.getByText(/8\.4 TS/i)).toBeInTheDocument();
+        expect(screen.getByText(/8\.4\.21 TS/i)).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: /^Import$/ }));
 
         await waitFor(() => {
             expect(mockDevbox.binaries.importBinary).toHaveBeenCalledWith(
                 'php',
-                '8.4-ts',
+                '8.4.21-ts',
                 'C:\\Downloads\\php-8.4.21-ts-Win32-vs17-x64.zip'
             );
         });
@@ -173,15 +173,42 @@ describe('BinaryManager', () => {
         fireEvent.click(importButtons[0]);
 
         expect(await screen.findByText(/Detected version:/i)).toBeInTheDocument();
-        expect(screen.getByText(/8\.3 TS/i)).toBeInTheDocument();
+        expect(screen.getByText(/8\.3\.31 TS/i)).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: /^Import$/ }));
 
         await waitFor(() => {
             expect(mockDevbox.binaries.importBinary).toHaveBeenCalledWith(
                 'php',
-                '8.3-ts',
+                '8.3.31-ts',
                 'C:\\Downloads\\php-8.3.31-Win32-vs16-x64.zip'
+            );
+        });
+    });
+
+    it('keeps patch-level NTS imports as distinct PHP versions', async () => {
+        mockDevbox.system.selectFile.mockResolvedValueOnce('C:\\Downloads\\php-8.2.28-nts-Win32-vs17-x64.zip');
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <BinaryManager />
+            </MemoryRouter>
+        );
+
+        const importButtons = await screen.findAllByRole('button', { name: /Import ZIP/i });
+        fireEvent.click(importButtons[0]);
+
+        const detectedVersionLine = await screen.findByText(/Detected version:/i);
+        expect(detectedVersionLine).toBeInTheDocument();
+        expect(within(detectedVersionLine).getByText(/8\.2\.28/i)).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /^Import$/ }));
+
+        await waitFor(() => {
+            expect(mockDevbox.binaries.importBinary).toHaveBeenCalledWith(
+                'php',
+                '8.2.28',
+                'C:\\Downloads\\php-8.2.28-nts-Win32-vs17-x64.zip'
             );
         });
     });

@@ -1,6 +1,6 @@
 export function parsePhpRuntimeVersion(version) {
   const normalizedVersion = typeof version === 'string' ? version.trim() : String(version || '').trim();
-  const match = normalizedVersion.match(/^(\d+(?:\.\d+)?)(?:-(nts|ts))?$/i);
+  const match = normalizedVersion.match(/^(\d+(?:\.\d+)*)(?:-(nts|ts))?$/i);
 
   if (!match) {
     return {

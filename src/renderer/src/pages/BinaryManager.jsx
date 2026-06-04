@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import PhpIniEditor from '../components/PhpIniEditor';
-import { formatPhpRuntimeLabel, formatPhpRuntimeVersion } from '../utils/phpRuntime';
+import { formatPhpRuntimeLabel, formatPhpRuntimeVersion, parsePhpRuntimeVersion } from '../utils/phpRuntime';
 import { useApp } from '../context/AppContext';
 import { useModal } from '../context/ModalContext';
 
@@ -48,6 +48,30 @@ const formatServiceVersionLabel = (service, version) => {
   }
 
   return version;
+};
+
+const comparePhpVersionKeys = (leftVersion, rightVersion) => {
+  const left = parsePhpRuntimeVersion(leftVersion);
+  const right = parsePhpRuntimeVersion(rightVersion);
+  const leftParts = left.baseVersion.split('.').map((part) => parseInt(part, 10) || 0);
+  const rightParts = right.baseVersion.split('.').map((part) => parseInt(part, 10) || 0);
+  const maxLen = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLen; index += 1) {
+    const leftPart = leftParts[index] || 0;
+    const rightPart = rightParts[index] || 0;
+    if (leftPart !== rightPart) {
+      return leftPart - rightPart;
+    }
+  }
+
+  const flavorRank = {
+    null: 2,
+    nts: 2,
+    ts: 1,
+  };
+
+  return (flavorRank[left.flavor] || 0) - (flavorRank[right.flavor] || 0);
 };
 
 // ── Module-level sub-components (must NOT be defined inside BinaryManager) ──
@@ -360,9 +384,11 @@ function BinaryManager() {
 
     // Sort custom versions in descending order
     customVersions.sort((a, b) => {
-      const aNum = parseFloat(a) || 0;
-      const bNum = parseFloat(b) || 0;
-      return bNum - aNum;
+      if (service === 'php') {
+        return comparePhpVersionKeys(b, a);
+      }
+
+      return b.localeCompare(a, undefined, { numeric: true });
     });
 
     // Insert custom versions at the beginning (they're likely newer)
@@ -389,6 +415,7 @@ function BinaryManager() {
     detectedVersion: null,
     customVersion: '',
     availableVersions: [],
+    alreadyInstalled: false,
   });
 
   const loadInstalled = useCallback(async () => {
@@ -916,7 +943,7 @@ function BinaryManager() {
 
   // Version detection patterns for different services
   const versionPatterns = {
-    php: /php-?(\d+\.\d+)(?:\.\d+)?(?:-(nts|ts))?/i,
+    php: /php-?(\d+(?:\.\d+)+)(?:-(nts|ts))?/i,
     mysql: /mysql-?(\d+\.\d+)(?:\.\d+)?/i,
     mariadb: /mariadb-?(\d+\.\d+)(?:\.\d+)?/i,
     redis: /redis-?(\d+\.\d+)(?:\.\d+)?/i,
