@@ -163,6 +163,112 @@ module.exports = {
     return combined.length > maxLength ? combined.slice(-maxLength) : combined;
   },
 
+  escapeMySqlStringLiteral(value) {
+    return String(value ?? '')
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "''");
+  },
+
+  extractMySqlStartupFailureLine(errorLogTail) {
+    const lines = String(errorLogTail || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (!lines.length) {
+      return '';
+    }
+
+    const genericNoisePatterns = [
+      /\bMySQL Server - end\.\s*$/i,
+      /\bShutdown complete\b/i,
+      /\[Server\]\s+Aborting\b/i,
+    ];
+
+    const nonNoiseLines = lines.filter((line) => {
+      return !genericNoisePatterns.some((pattern) => pattern.test(line));
+    });
+
+    const preferredSource = nonNoiseLines.length ? nonNoiseLines : lines;
+
+    for (let i = preferredSource.length - 1; i >= 0; i -= 1) {
+      const line = preferredSource[i];
+      if (/\[ERROR\]|\berror\b/i.test(line)) {
+        return line;
+      }
+    }
+
+    for (let i = preferredSource.length - 1; i >= 0; i -= 1) {
+      const line = preferredSource[i];
+      if (/\[Warning\]|\bwarning\b/i.test(line)) {
+        return line;
+      }
+    }
+
+    for (let i = preferredSource.length - 1; i >= 0; i -= 1) {
+      const line = preferredSource[i];
+      if (/(failed|cannot|can't|unable|missing|denied|invalid|unknown|corrupt|aborted|incompatible)/i.test(line)) {
+        return line;
+      }
+    }
+
+    return preferredSource.at(-1) || lines.at(-1) || '';
+  },
+
+  extractMariaDbStartupFailureLine(errorLogTail, fallbackOutput = '') {
+    const tailLines = String(errorLogTail || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const fallbackLines = String(fallbackOutput || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const lines = tailLines.length ? tailLines : fallbackLines;
+    if (!lines.length) {
+      return '';
+    }
+
+    const genericNoisePatterns = [
+      /\bMySQL Server - end\.\s*$/i,
+      /\bShutdown complete\b/i,
+      /\bmariadbd:\s+ready for connections\b/i,
+      /\[Server\]\s+Aborting\b/i,
+      /\bAborting\b/i,
+    ];
+
+    const nonNoiseLines = lines.filter((line) => {
+      return !genericNoisePatterns.some((pattern) => pattern.test(line));
+    });
+
+    const preferredSource = nonNoiseLines.length ? nonNoiseLines : lines;
+
+    for (let i = preferredSource.length - 1; i >= 0; i -= 1) {
+      const line = preferredSource[i];
+      if (/\[ERROR\]|\berror\b/i.test(line)) {
+        return line;
+      }
+    }
+
+    for (let i = preferredSource.length - 1; i >= 0; i -= 1) {
+      const line = preferredSource[i];
+      if (/\[Warning\]|\bwarning\b/i.test(line)) {
+        return line;
+      }
+    }
+
+    for (let i = preferredSource.length - 1; i >= 0; i -= 1) {
+      const line = preferredSource[i];
+      if (/(failed|cannot|can't|unable|missing|denied|invalid|unknown|corrupt|aborted|incompatible)/i.test(line)) {
+        return line;
+      }
+    }
+
+    return preferredSource.at(-1) || lines.at(-1) || '';
+  },
+
   logServiceStartupFailure(serviceLabel, version, details = {}) {
     this.managers.log?.systemError(`${serviceLabel} ${version} startup failure`, details);
   },
@@ -195,9 +301,40 @@ module.exports = {
     return lines.slice(-maxLines).join('\n');
   },
 
+  async getMariaDbErrorLogTail(dataDir, maxLines = 25) {
+    return this.getMySQLErrorLogTail(dataDir, maxLines);
+  },
+
   async hasRecoverableMySQLRedoCorruption(dataDir) {
     const errorLogTail = await this.getMySQLErrorLogTail(dataDir, 40);
     return /Missing redo log file .*#ib_redo\d+/i.test(errorLogTail);
+  },
+
+  async hasRecoverableMySQLDataDictionaryFailure(dataDir) {
+    const errorLogTail = await this.getMySQLErrorLogTail(dataDir, 80);
+    return /\bData Dictionary initialization failed\b/i.test(errorLogTail);
+  },
+
+  async hasUserMySQLSchemas(dataDir) {
+    try {
+      const entries = await fs.readdir(dataDir, { withFileTypes: true });
+      const systemSchemas = new Set(['mysql', 'performance_schema', 'information_schema', 'sys']);
+
+      return entries.some((entry) => {
+        if (!entry?.isDirectory?.()) {
+          return false;
+        }
+
+        const schemaName = String(entry.name || '').toLowerCase();
+        if (!schemaName || schemaName.startsWith('#')) {
+          return false;
+        }
+
+        return !systemSchemas.has(schemaName);
+      });
+    } catch (_error) {
+      return false;
+    }
   },
 
   async recoverCorruptMySQLRedoLogs(version, dataDir) {
@@ -211,6 +348,43 @@ module.exports = {
 
     this.managers.log?.systemWarn(`Recovered corrupt MySQL ${version} redo logs`, {
       redoDir,
+      backupDir,
+    });
+
+    return true;
+  },
+
+  async recoverCorruptMySQLDataDictionary(version, dataDir, mysqlPath) {
+    if (await this.hasUserMySQLSchemas(dataDir)) {
+      this.managers.log?.systemWarn(`Skipped automatic MySQL ${version} data dictionary recovery because user schemas were detected`, {
+        dataDir,
+      });
+      return false;
+    }
+
+    const backupDir = `${dataDir}.dd-corrupt-${Date.now()}`;
+    await fs.move(dataDir, backupDir, { overwrite: false });
+    await fs.ensureDir(dataDir);
+
+    try {
+      await this.initializeMySQLData(mysqlPath, dataDir, version);
+    } catch (error) {
+      try {
+        await fs.remove(dataDir);
+        await fs.move(backupDir, dataDir, { overwrite: false });
+      } catch (restoreError) {
+        this.managers.log?.systemError?.(`Failed to restore MySQL ${version} data directory after recovery attempt`, {
+          dataDir,
+          backupDir,
+          error: restoreError.message,
+        });
+      }
+
+      throw error;
+    }
+
+    this.managers.log?.systemWarn(`Recovered MySQL ${version} data dictionary by reinitializing system schema`, {
+      dataDir,
       backupDir,
     });
 

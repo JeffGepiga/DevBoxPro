@@ -309,11 +309,32 @@ module.exports = {
 
         return { success: status.status === 'running', service: serviceName, version, status: status.status };
       } catch (error) {
-        // Auto-retry once for timeout failures
-        if (retryCount === 0 && error.message?.includes('failed to start within')) {
-          this.managers.log?.systemWarn(`${config.name} startup timed out, retrying...`);
+        const errorMessage = String(error?.message || '');
+        const shouldRetryTimeout = errorMessage.includes('failed to start within');
+        const exitedBeforeReady = /exited before becoming ready/i.test(errorMessage);
+        const shouldRetryMysqlAbort = serviceName === 'mysql'
+          && exitedBeforeReady
+          && /\bAborting\b/i.test(errorMessage);
+        const shouldRetryMariaDbEarlyExit = serviceName === 'mariadb'
+          && exitedBeforeReady;
+        const shouldRetryEarlyExit = shouldRetryMysqlAbort || shouldRetryMariaDbEarlyExit;
+
+        // Auto-retry once for timeout failures or MySQL early-abort race conditions.
+        if (retryCount === 0 && (shouldRetryTimeout || shouldRetryEarlyExit)) {
+          if (shouldRetryEarlyExit) {
+            this.managers.log?.systemWarn(`${config.name} startup exited early, retrying once after cleanup...`);
+          } else {
+            this.managers.log?.systemWarn(`${config.name} startup timed out, retrying...`);
+          }
+
           // Clean up before retry
           await this.cleanupFailedStart(serviceName, version);
+
+          if (shouldRetryEarlyExit) {
+            // Short grace delay helps on fast stop/start cycles where file locks are still draining.
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+
           return runStart(1); // Recursive retry
         }
 

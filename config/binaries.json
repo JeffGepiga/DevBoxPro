@@ -14,8 +14,8 @@
     "downloads": {
       "8.5": {
         "win": {
-          "url": "https://downloads.php.net/~windows/releases/php-8.5.6-nts-Win32-vs17-x64.zip",
-          "filename": "php-8.5.6-nts-Win32-vs17-x64.zip"
+          "url": "https://downloads.php.net/~windows/releases/php-8.5.7-nts-Win32-vs17-x64.zip",
+          "filename": "php-8.5.7-nts-Win32-vs17-x64.zip"
         },
         "mac": {
           "url": "builtin",
@@ -29,8 +29,8 @@
       },
       "8.4": {
         "win": {
-          "url": "https://downloads.php.net/~windows/releases/php-8.4.21-nts-Win32-vs17-x64.zip",
-          "filename": "php-8.4.21-nts-Win32-vs17-x64.zip"
+          "url": "https://downloads.php.net/~windows/releases/php-8.4.22-nts-Win32-vs17-x64.zip",
+          "filename": "php-8.4.22-nts-Win32-vs17-x64.zip"
         },
         "mac": {
           "url": "builtin",

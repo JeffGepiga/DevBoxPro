@@ -281,13 +281,26 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('services:start', async (event, serviceName, version = null) => {
-    const result = await service.startService(serviceName, version);
-    sendToMainWindow('service:statusChanged', {
-      service: serviceName,
-      version,
-      status: 'running',
-    });
-    return result;
+    try {
+      const result = await service.startService(serviceName, version);
+      sendToMainWindow('service:statusChanged', {
+        service: serviceName,
+        version,
+        status: 'running',
+      });
+      return result;
+    } catch (error) {
+      const statusSnapshot = service?.serviceStatus?.get?.(serviceName);
+      log?.systemError?.(`IPC services:start failed for ${serviceName}${version ? ` ${version}` : ''}`, {
+        service: serviceName,
+        version,
+        status: statusSnapshot?.status,
+        serviceError: statusSnapshot?.error,
+        error: error?.message,
+        stack: error?.stack,
+      });
+      throw error;
+    }
   });
 
   ipcMain.handle('services:stop', async (event, serviceName, version = null) => {

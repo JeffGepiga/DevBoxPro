@@ -235,14 +235,23 @@ module.exports = {
         reject(error);
       });
 
-      proc.once('exit', (code, signal) => {
+      proc.once('exit', async (code, signal) => {
         const currentStatus = this.serviceStatus.get('mariadb');
         if (currentStatus?.status === 'running') {
           return;
         }
 
+        let errorLogTail = '';
+        try {
+          // Best effort: when available, prefer the persisted error log over transient stderr snippets.
+          errorLogTail = await this.getMariaDbErrorLogTail(dataDir, 80);
+        } catch {
+          errorLogTail = '';
+        }
+
+        const startupFailureLine = this.extractMariaDbStartupFailureLine(errorLogTail, `${startupStderr}\n${startupStdout}`);
         const detail = [
-          startupStderr || startupStdout || null,
+          startupFailureLine,
           code !== null && code !== undefined ? `exit code ${code}` : null,
           signal ? `signal ${signal}` : null,
         ].filter(Boolean).join(' | ');
@@ -259,9 +268,17 @@ module.exports = {
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
-      this.managers.log?.systemError(`MariaDB ${version} failed to start`, { error: error.message });
+      const errorLogTail = await this.getMariaDbErrorLogTail(dataDir, 80);
+      const startupFailureLine = this.extractMariaDbStartupFailureLine(errorLogTail, `${startupStderr}\n${startupStdout}`);
+
+      this.managers.log?.systemError(`MariaDB ${version} failed to start`, {
+        error: error.message,
+        errorLogTail: errorLogTail || undefined,
+      });
       status.status = 'error';
-      status.error = error.message;
+      status.error = startupFailureLine
+        ? `Failed to start. ${startupFailureLine}`
+        : error.message;
       this.runningVersions.get('mariadb').delete(version);
         throw error;
     }

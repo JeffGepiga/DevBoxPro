@@ -44,7 +44,10 @@ function spawnHidden(command, args, options = {}) {
 module.exports = {
   // MySQL
   async startMySQL(version = '8.4', startupOptions = {}) {
-    const { attemptedRedoRecovery = false } = startupOptions;
+    const {
+      attemptedRedoRecovery = false,
+      attemptedDataDictionaryRecovery = false,
+    } = startupOptions;
     const mysqlPath = this.getMySQLPath(version);
     const mysqldPath = path.join(mysqlPath, 'bin', process.platform === 'win32' ? 'mysqld.exe' : 'mysqld');
 
@@ -241,14 +244,14 @@ module.exports = {
 
         let errorLogTail = '';
         try {
-          errorLogTail = await this.getMySQLErrorLogTail(dataDir);
+          errorLogTail = await this.getMySQLErrorLogTail(dataDir, 80);
         } catch {
           // Ignore log-tail lookup failures while building the startup error.
         }
 
-        const lastErrorLine = errorLogTail ? errorLogTail.split('\n').at(-1) : null;
+        const startupFailureLine = this.extractMySqlStartupFailureLine(errorLogTail);
         const detail = [
-          lastErrorLine,
+          startupFailureLine,
           code !== null && code !== undefined ? `exit code ${code}` : null,
           signal ? `signal ${signal}` : null,
         ].filter(Boolean).join(' | ');
@@ -265,7 +268,7 @@ module.exports = {
       status.status = 'running';
       status.startedAt = Date.now();
     } catch (error) {
-      const errorLogTail = await this.getMySQLErrorLogTail(dataDir);
+      const errorLogTail = await this.getMySQLErrorLogTail(dataDir, 80);
 
       if (!attemptedRedoRecovery && await this.hasRecoverableMySQLRedoCorruption(dataDir)) {
         try {
@@ -275,9 +278,33 @@ module.exports = {
           status.error = null;
           status.startedAt = null;
           status.pid = null;
-          return this.startMySQL(version, { attemptedRedoRecovery: true });
+          return this.startMySQL(version, {
+            attemptedRedoRecovery: true,
+            attemptedDataDictionaryRecovery,
+          });
         } catch (recoveryError) {
           this.managers.log?.systemError(`MySQL ${version} redo recovery failed`, {
+            error: recoveryError.message, dataDir,
+          });
+        }
+      }
+
+      if (!attemptedDataDictionaryRecovery && await this.hasRecoverableMySQLDataDictionaryFailure(dataDir)) {
+        try {
+          const recovered = await this.recoverCorruptMySQLDataDictionary(version, dataDir, mysqlPath);
+          if (recovered) {
+            this.runningVersions.get('mysql').delete(version);
+            status.status = 'stopped';
+            status.error = null;
+            status.startedAt = null;
+            status.pid = null;
+            return this.startMySQL(version, {
+              attemptedRedoRecovery,
+              attemptedDataDictionaryRecovery: true,
+            });
+          }
+        } catch (recoveryError) {
+          this.managers.log?.systemError(`MySQL ${version} data dictionary recovery failed`, {
             error: recoveryError.message, dataDir,
           });
         }
@@ -287,9 +314,10 @@ module.exports = {
         error: error.message,
         errorLogTail: errorLogTail || undefined,
       });
+      const startupFailureLine = this.extractMySqlStartupFailureLine(errorLogTail);
       status.status = 'error';
-      status.error = errorLogTail
-        ? `Failed to start. ${errorLogTail.split('\n').at(-1)}`
+      status.error = startupFailureLine
+        ? `Failed to start. ${startupFailureLine}`
         : 'Failed to start within timeout. Check logs for details.';
       this.runningVersions.get('mysql').delete(version);
         throw error;
@@ -637,10 +665,11 @@ port=${port}
   },
 
   async updateMySQLCredentials(clientPath, port, newUser, newPassword, currentPassword) {
-    const escapedPassword = newPassword.replace(/'/g, "''");
+    const escapedUser = this.escapeMySqlStringLiteral(newUser);
+    const escapedPassword = this.escapeMySqlStringLiteral(newPassword);
     const queries = [
-      `ALTER USER '${newUser}'@'localhost' IDENTIFIED BY '${escapedPassword}'`,
-      `ALTER USER '${newUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}'`,
+      `ALTER USER '${escapedUser}'@'localhost' IDENTIFIED BY '${escapedPassword}'`,
+      `ALTER USER '${escapedUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}'`,
       `FLUSH PRIVILEGES`,
     ];
 
@@ -653,11 +682,12 @@ port=${port}
     const dataPath = this.getDataPath();
     const initFile = path.join(dataPath, 'mysql_credential_reset.sql');
 
-    const escapedPassword = password.replace(/'/g, "''");
+    const escapedUser = this.escapeMySqlStringLiteral(user);
+    const escapedPassword = this.escapeMySqlStringLiteral(password);
     const sql = `
 -- Reset credentials
-ALTER USER '${user}'@'localhost' IDENTIFIED BY '${escapedPassword}';
-ALTER USER '${user}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';
+ALTER USER '${escapedUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';
+ALTER USER '${escapedUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';
 FLUSH PRIVILEGES;
 `;
 
@@ -675,26 +705,27 @@ FLUSH PRIVILEGES;
 
     await fs.ensureDir(path.dirname(initFile));
 
-    const escapedPassword = dbPassword.replace(/'/g, "''");
+    const escapedUser = this.escapeMySqlStringLiteral(dbUser);
+    const escapedPassword = this.escapeMySqlStringLiteral(dbPassword);
 
     const sqlLines = [
       '-- Auto-generated credentials from DevBox Pro ConfigStore',
       '-- This file runs on every startup to ensure credentials match settings',
       '',
       "-- Create users if they don't exist (fresh install case)",
-      `CREATE USER IF NOT EXISTS '${dbUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';`,
-      `CREATE USER IF NOT EXISTS '${dbUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';`,
-      `CREATE USER IF NOT EXISTS '${dbUser}'@'%' IDENTIFIED BY '${escapedPassword}';`,
+      `CREATE USER IF NOT EXISTS '${escapedUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';`,
+      `CREATE USER IF NOT EXISTS '${escapedUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';`,
+      `CREATE USER IF NOT EXISTS '${escapedUser}'@'%' IDENTIFIED BY '${escapedPassword}';`,
       '',
       '-- Update password for existing users (handles password change case)',
-      `ALTER USER '${dbUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';`,
-      `ALTER USER '${dbUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';`,
-      `ALTER USER '${dbUser}'@'%' IDENTIFIED BY '${escapedPassword}';`,
+      `ALTER USER '${escapedUser}'@'localhost' IDENTIFIED BY '${escapedPassword}';`,
+      `ALTER USER '${escapedUser}'@'127.0.0.1' IDENTIFIED BY '${escapedPassword}';`,
+      `ALTER USER '${escapedUser}'@'%' IDENTIFIED BY '${escapedPassword}';`,
       '',
       '-- Grant all privileges',
-      `GRANT ALL PRIVILEGES ON *.* TO '${dbUser}'@'localhost' WITH GRANT OPTION;`,
-      `GRANT ALL PRIVILEGES ON *.* TO '${dbUser}'@'127.0.0.1' WITH GRANT OPTION;`,
-      `GRANT ALL PRIVILEGES ON *.* TO '${dbUser}'@'%' WITH GRANT OPTION;`,
+      `GRANT ALL PRIVILEGES ON *.* TO '${escapedUser}'@'localhost' WITH GRANT OPTION;`,
+      `GRANT ALL PRIVILEGES ON *.* TO '${escapedUser}'@'127.0.0.1' WITH GRANT OPTION;`,
+      `GRANT ALL PRIVILEGES ON *.* TO '${escapedUser}'@'%' WITH GRANT OPTION;`,
       '',
       'FLUSH PRIVILEGES;',
       ''

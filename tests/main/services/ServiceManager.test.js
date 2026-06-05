@@ -196,6 +196,42 @@ describe('ServiceManager', () => {
             });
         });
 
+        it('retries once when MySQL exits early with an abort startup error', async () => {
+            mgr.startMySQL
+                .mockRejectedValueOnce(new Error('MySQL exited before becoming ready: 2026-06-05T06:14:11.841061Z 0 [ERROR] [MY-010119] [Server] Aborting | exit code 1'))
+                .mockResolvedValueOnce(true);
+            const cleanupSpy = vi.spyOn(mgr, 'cleanupFailedStart').mockResolvedValue();
+
+            const result = await mgr.startService('mysql', '8.4');
+
+            expect(mgr.startMySQL).toHaveBeenCalledTimes(2);
+            expect(cleanupSpy).toHaveBeenCalledWith('mysql', '8.4');
+            expect(result).toEqual({
+                success: true,
+                service: 'mysql',
+                version: '8.4',
+                status: 'running',
+            });
+        });
+
+        it('retries once when MariaDB exits early before becoming ready', async () => {
+            mgr.startMariaDB
+                .mockRejectedValueOnce(new Error('MariaDB exited before becoming ready: 2026-06-05 06:45:11 0 [ERROR] Aborting | exit code 1'))
+                .mockResolvedValueOnce(true);
+            const cleanupSpy = vi.spyOn(mgr, 'cleanupFailedStart').mockResolvedValue();
+
+            const result = await mgr.startService('mariadb', '11.4');
+
+            expect(mgr.startMariaDB).toHaveBeenCalledTimes(2);
+            expect(cleanupSpy).toHaveBeenCalledWith('mariadb', '11.4');
+            expect(result).toEqual({
+                success: true,
+                service: 'mariadb',
+                version: '11.4',
+                status: 'running',
+            });
+        });
+
         it('does not retry non-timeout startup failures', async () => {
             mgr.startRedis.mockRejectedValueOnce(new Error('redis config invalid'));
             const cleanupSpy = vi.spyOn(mgr, 'cleanupFailedStart').mockResolvedValue();
@@ -432,6 +468,22 @@ describe('ServiceManager', () => {
             expect(config).toContain('log-error="C:/DevBox Pro/data/mysql/8.4/data/error.log"');
         });
 
+        it('escapes user and password literals in generated MySQL credentials init file', async () => {
+            mgr.getDataPath = vi.fn(() => 'C:/DevBox Pro/data');
+            configStore.get.mockImplementation((key, def) => {
+                if (key === 'settings') return { dbUser: "adm'in", dbPassword: "pa'ss\\word" };
+                return def;
+            });
+            const writeFileSpy = vi.spyOn(fs, 'writeFile').mockResolvedValue();
+
+            await mgr.createCredentialsInitFile('mysql', '8.4');
+
+            expect(writeFileSpy).toHaveBeenCalled();
+            const [, sql] = writeFileSpy.mock.calls.at(-1);
+            expect(sql).toContain("CREATE USER IF NOT EXISTS 'adm''in'@'localhost' IDENTIFIED BY 'pa''ss\\\\word';");
+            expect(sql).toContain("ALTER USER 'adm''in'@'127.0.0.1' IDENTIFIED BY 'pa''ss\\\\word';");
+        });
+
         it('uses MySQL 5.7-compatible tuning options in generated config', async () => {
             mgr.getMySQLPath = vi.fn(() => 'C:/DevBox Pro/resources-user/mysql/5.7/win');
             configStore.get.mockImplementation((key, def) => {
@@ -525,6 +577,18 @@ describe('ServiceManager', () => {
             await expect(mgr.hasRecoverableMySQLRedoCorruption('C:/DevBox Pro/data/mysql/8.4/data')).resolves.toBe(true);
         });
 
+        it('detects recoverable MySQL data dictionary failures from the error log', async () => {
+            const fsExtra = require('fs-extra');
+
+            vi.spyOn(fsExtra, 'pathExists').mockResolvedValue(true);
+            vi.spyOn(fsExtra, 'readFile').mockResolvedValue([
+                '2026-06-05T06:25:40.590140Z 1 [ERROR] [MY-010022] [Server] Failed to populate DD tables.',
+                '2026-06-05T06:25:40.606486Z 0 [ERROR] [MY-010020] [Server] Data Dictionary initialization failed.',
+            ].join('\n'));
+
+            await expect(mgr.hasRecoverableMySQLDataDictionaryFailure('C:/DevBox Pro/data/mysql/8.4/data')).resolves.toBe(true);
+        });
+
         it('archives corrupt MySQL redo logs before retrying startup', async () => {
             const fsExtra = require('fs-extra');
 
@@ -544,6 +608,58 @@ describe('ServiceManager', () => {
                 expect.any(Object)
             );
             expect(warningDetails.redoDir.replace(/\\/g, '/')).toBe('C:/DevBox Pro/data/mysql/8.4/data/#innodb_redo');
+        });
+
+        it('reinitializes MySQL data dictionary when only system schemas are present', async () => {
+            const fsExtra = require('fs-extra');
+
+            vi.spyOn(fsExtra, 'readdir').mockResolvedValue([
+                { name: 'mysql', isDirectory: () => true },
+                { name: 'performance_schema', isDirectory: () => true },
+                { name: 'sys', isDirectory: () => true },
+                { name: '#innodb_redo', isDirectory: () => true },
+            ]);
+            vi.spyOn(fsExtra, 'move').mockResolvedValue();
+            vi.spyOn(fsExtra, 'ensureDir').mockResolvedValue();
+            vi.spyOn(mgr, 'initializeMySQLData').mockResolvedValue();
+
+            const recovered = await mgr.recoverCorruptMySQLDataDictionary(
+                '8.4',
+                'C:/DevBox Pro/data/mysql/8.4/data',
+                'C:/DevBox Pro/resources-user/mysql/8.4/win'
+            );
+
+            expect(recovered).toBe(true);
+            const [sourcePath, backupPath, moveOptions] = fsExtra.move.mock.calls.at(-1);
+            expect(sourcePath.replace(/\\/g, '/')).toBe('C:/DevBox Pro/data/mysql/8.4/data');
+            expect(backupPath.replace(/\\/g, '/')).toContain('C:/DevBox Pro/data/mysql/8.4/data.dd-corrupt-');
+            expect(moveOptions).toEqual({ overwrite: false });
+            expect(mgr.initializeMySQLData).toHaveBeenCalledWith(
+                'C:/DevBox Pro/resources-user/mysql/8.4/win',
+                'C:/DevBox Pro/data/mysql/8.4/data',
+                '8.4'
+            );
+        });
+
+        it('skips automatic data dictionary recovery when user schemas are present', async () => {
+            const fsExtra = require('fs-extra');
+
+            vi.spyOn(fsExtra, 'readdir').mockResolvedValue([
+                { name: 'mysql', isDirectory: () => true },
+                { name: 'app_db', isDirectory: () => true },
+            ]);
+            const moveSpy = vi.spyOn(fsExtra, 'move').mockResolvedValue();
+            const initializeSpy = vi.spyOn(mgr, 'initializeMySQLData').mockResolvedValue();
+
+            const recovered = await mgr.recoverCorruptMySQLDataDictionary(
+                '8.4',
+                'C:/DevBox Pro/data/mysql/8.4/data',
+                'C:/DevBox Pro/resources-user/mysql/8.4/win'
+            );
+
+            expect(recovered).toBe(false);
+            expect(moveSpy).not.toHaveBeenCalled();
+            expect(initializeSpy).not.toHaveBeenCalled();
         });
 
         it('fails fast when mysqld exits before becoming ready', async () => {

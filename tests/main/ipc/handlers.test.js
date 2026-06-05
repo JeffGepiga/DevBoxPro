@@ -423,6 +423,72 @@ describe('IPC Handlers', () => {
             );
         });
 
+        it('services:start logs to system logger when startup fails', async () => {
+            mockManagers.service.startService.mockRejectedValueOnce(new Error('MySQL startup failed'));
+            mockManagers.service.serviceStatus = new Map();
+            mockManagers.service.serviceStatus.set('mysql', {
+                status: 'error',
+                error: 'Failed to start. Data Dictionary initialization failed.',
+            });
+
+            await expect(handlers['services:start'](fakeEvent, 'mysql', '8.4')).rejects.toThrow('MySQL startup failed');
+
+            expect(mockManagers.log.systemError).toHaveBeenCalledWith(
+                'IPC services:start failed for mysql 8.4',
+                expect.objectContaining({
+                    service: 'mysql',
+                    version: '8.4',
+                    status: 'error',
+                    serviceError: 'Failed to start. Data Dictionary initialization failed.',
+                    error: 'MySQL startup failed',
+                })
+            );
+        });
+
+        it('services:start logs to system logger when MariaDB startup fails', async () => {
+            mockManagers.service.startService.mockRejectedValueOnce(new Error('MariaDB startup failed'));
+            mockManagers.service.serviceStatus = new Map();
+            mockManagers.service.serviceStatus.set('mariadb', {
+                status: 'error',
+                error: 'Failed to start. InnoDB initialization failed.',
+            });
+
+            await expect(handlers['services:start'](fakeEvent, 'mariadb', '11.4')).rejects.toThrow('MariaDB startup failed');
+
+            expect(mockManagers.log.systemError).toHaveBeenCalledWith(
+                'IPC services:start failed for mariadb 11.4',
+                expect.objectContaining({
+                    service: 'mariadb',
+                    version: '11.4',
+                    status: 'error',
+                    serviceError: 'Failed to start. InnoDB initialization failed.',
+                    error: 'MariaDB startup failed',
+                })
+            );
+        });
+
+        it('services:start logs to system logger when non-versioned service startup fails', async () => {
+            mockManagers.service.startService.mockRejectedValueOnce(new Error('Mailpit startup failed'));
+            mockManagers.service.serviceStatus = new Map();
+            mockManagers.service.serviceStatus.set('mailpit', {
+                status: 'error',
+                error: 'Failed to bind API port.',
+            });
+
+            await expect(handlers['services:start'](fakeEvent, 'mailpit')).rejects.toThrow('Mailpit startup failed');
+
+            expect(mockManagers.log.systemError).toHaveBeenCalledWith(
+                'IPC services:start failed for mailpit',
+                expect.objectContaining({
+                    service: 'mailpit',
+                    version: null,
+                    status: 'error',
+                    serviceError: 'Failed to bind API port.',
+                    error: 'Mailpit startup failed',
+                })
+            );
+        });
+
         it('services:stop sends statusChanged event', async () => {
             await handlers['services:stop'](fakeEvent, 'nginx');
             expect(mockManagers.service.stopService).toHaveBeenCalledWith('nginx', null);

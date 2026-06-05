@@ -691,19 +691,19 @@ module.exports = {
     }
 
     if (project.services?.mysql) {
-      servicesToStart.push({ name: 'mysql', version: project.services.mysqlVersion || '8.4', critical: false });
+      servicesToStart.push({ name: 'mysql', version: project.services.mysqlVersion || '8.4', critical: true });
     }
     if (project.services?.mariadb) {
-      servicesToStart.push({ name: 'mariadb', version: project.services.mariadbVersion || '11.4', critical: false });
+      servicesToStart.push({ name: 'mariadb', version: project.services.mariadbVersion || '11.4', critical: true });
     }
     if (project.services?.redis) {
-      servicesToStart.push({ name: 'redis', version: project.services.redisVersion || '7.4', critical: false });
+      servicesToStart.push({ name: 'redis', version: project.services.redisVersion || '7.4', critical: true });
     }
     if (project.services?.mailpit) {
-      servicesToStart.push({ name: 'mailpit', critical: false });
+      servicesToStart.push({ name: 'mailpit', critical: true });
     }
     if (project.services?.phpmyadmin && (project.services?.mysql || project.services?.mariadb)) {
-      servicesToStart.push({ name: 'phpmyadmin', critical: false });
+      servicesToStart.push({ name: 'phpmyadmin', critical: true });
     }
 
     const results = {

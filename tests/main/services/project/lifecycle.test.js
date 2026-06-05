@@ -136,7 +136,7 @@ describe('project/lifecycle', () => {
     expect(result.errors).toContain('nginx 1.28 is not installed. Please download it from Binary Manager.');
   });
 
-  it('records non-critical service start failures instead of reporting everything ready', async () => {
+  it('fails startup when a selected project service fails to start', async () => {
     const startService = vi.fn().mockResolvedValue({ success: false, status: 'error' });
 
     const ctx = makeContext({
@@ -179,15 +179,53 @@ describe('project/lifecycle', () => {
       services: { mysql: true, mysqlVersion: '8.4' },
     });
 
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
     expect(result.started).toContain('nginx:1.28');
     expect(result.failed).toContain('mysql');
+    expect(result.criticalFailures).toContain('mysql');
     expect(result.errors).toContain('Failed to start mysql:8.4: MySQL 8.4 failed to start within 30000ms');
+    expect(ctx.managers.log.systemError).toHaveBeenCalledWith(
+      'Critical services failed for project Proj 2b',
+      { failures: ['mysql'] }
+    );
     expect(ctx.managers.log.project).toHaveBeenCalledWith(
       'proj-2b',
-      expect.stringContaining('Services ready with warnings:'),
+      expect.stringContaining('Service failures: Failed to start mysql:8.4: MySQL 8.4 failed to start within 30000ms'),
       'error'
     );
+  });
+
+  it('does not mark the project as running when required project services fail during startProject', async () => {
+    const project = {
+      id: 'proj-required-service-failure',
+      name: 'Required Service Failure',
+      type: 'php',
+      phpVersion: '8.3',
+      webServer: 'nginx',
+      webServerVersion: '1.28',
+      domain: 'required-failure.test',
+      path: '/projects/required-failure',
+      services: { mysql: true, mysqlVersion: '8.4' },
+      supervisor: { processes: [] },
+      environment: {},
+    };
+
+    const ctx = makeContext({
+      configStore: makeConfigStore([project]),
+      getProject: vi.fn(() => project),
+      validateProjectBinaries: vi.fn().mockResolvedValue([]),
+      getPhpFpmPort: vi.fn(() => 9100),
+      startProjectServices: vi.fn().mockResolvedValue({
+        success: false,
+        started: ['nginx:1.28'],
+        failed: ['mysql'],
+        criticalFailures: ['mysql'],
+        errors: ['Failed to start mysql 8.4: MySQL exited before becoming ready'],
+      }),
+    });
+
+    await expect(ctx.startProject(project.id)).rejects.toThrow('Failed to start mysql 8.4: MySQL exited before becoming ready');
+    expect(ctx.runningProjects.has(project.id)).toBe(false);
   });
 
   it('auto-updates the project web server version when a fallback binary exists', async () => {

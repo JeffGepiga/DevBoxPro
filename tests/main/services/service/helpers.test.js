@@ -92,6 +92,65 @@ describe('service/helpers', () => {
     expect(result).toContain('longer');
   });
 
+  it('extracts the most relevant MySQL startup failure line instead of generic shutdown footer', () => {
+    const ctx = makeContext();
+    const tail = [
+      '2026-06-05T05:55:12.220000Z 0 [ERROR] [MY-010119] [Server] Aborting',
+      '2026-06-05T05:55:12.332134Z 0 [System] [MY-015016] [Server] MySQL Server - end.',
+    ].join('\n');
+
+    const line = ctx.extractMySqlStartupFailureLine(tail);
+
+    expect(line).toContain('[ERROR]');
+    expect(line).toContain('Aborting');
+  });
+
+  it('prefers the specific error before generic server abort during startup failures', () => {
+    const ctx = makeContext();
+    const tail = [
+      '2026-06-05T06:14:11.830001Z 0 [ERROR] [MY-010946] [Server] Failed to open optimizer cost constant tables',
+      '2026-06-05T06:14:11.841061Z 0 [ERROR] [MY-010119] [Server] Aborting',
+      '2026-06-05T06:14:11.842000Z 0 [System] [MY-015016] [Server] MySQL Server - end.',
+    ].join('\n');
+
+    const line = ctx.extractMySqlStartupFailureLine(tail);
+
+    expect(line).toContain('Failed to open optimizer cost constant tables');
+    expect(line).not.toContain('Aborting');
+  });
+
+  it('escapes MySQL string literals for quotes and backslashes', () => {
+    const ctx = makeContext();
+
+    expect(ctx.escapeMySqlStringLiteral("pa'ss\\word")).toBe("pa''ss\\\\word");
+  });
+
+  it('extracts MariaDB startup failure line from error log tail and ignores generic abort footer', () => {
+    const ctx = makeContext();
+    const tail = [
+      '2026-06-05 06:40:01 0 [ERROR] mariadbd.exe: Aria engine: log initialization failed',
+      '2026-06-05 06:40:01 0 [ERROR] Aborting',
+      '2026-06-05 06:40:01 0 [Note] mariadbd: Shutdown complete',
+    ].join('\n');
+
+    const line = ctx.extractMariaDbStartupFailureLine(tail);
+
+    expect(line).toContain('Aria engine: log initialization failed');
+    expect(line).not.toContain('Aborting');
+  });
+
+  it('falls back to stderr output for MariaDB failure extraction when error log tail is missing', () => {
+    const ctx = makeContext();
+    const fallbackOutput = [
+      '2026-06-05 06:40:02 0 [ERROR] mariadbd.exe: InnoDB: Unable to lock ./ibdata1 error: 32',
+      '2026-06-05 06:40:02 0 [ERROR] Aborting',
+    ].join('\n');
+
+    const line = ctx.extractMariaDbStartupFailureLine('', fallbackOutput);
+
+    expect(line).toContain('Unable to lock ./ibdata1');
+  });
+
   it('refreshes stale Windows runtime DLLs from bundled vcredist files', async () => {
     const ctx = makeContext({
       getBundledVCRedistDirs: vi.fn(() => ['/bundle/vcredist']),
