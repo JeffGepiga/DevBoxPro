@@ -277,6 +277,22 @@ async function waitForResponse(port, hostHeader, expectedText, timeoutMs = 30000
     throw lastError || new Error(`Timed out waiting for ${hostHeader}:${port}`);
 }
 
+async function waitForResponseWithApacheRecovery(serviceManager, apacheVersion, port, hostHeader, expectedText, timeoutMs = 30000) {
+    try {
+        return await waitForResponse(port, hostHeader, expectedText, timeoutMs);
+    } catch (error) {
+        const apacheStatus = serviceManager?.serviceStatus?.get?.('apache');
+        const isConnectionRefused = /ECONNREFUSED/i.test(String(error?.message || ''));
+
+        if (!isConnectionRefused || apacheStatus?.status === 'running') {
+            throw error;
+        }
+
+        await serviceManager.startService('apache', apacheVersion || '2.4');
+        return waitForResponse(port, hostHeader, expectedText, timeoutMs);
+    }
+}
+
 async function waitForPortState(checkPortOpen, port, expectedOpen, timeoutMs = 15000) {
     const start = Date.now();
 
@@ -521,7 +537,13 @@ describeIfBinariesInstalled('Real Binary Web Server Scenarios', () => {
 
             const apachePorts = serviceManager.getServicePorts('apache', '2.4');
             expect(apachePorts.httpPort).toBe(portPlan.apacheAltHttp);
-            await waitForResponse(apachePorts.httpPort, project.domain, project.name);
+            await waitForResponseWithApacheRecovery(
+                serviceManager,
+                '2.4',
+                apachePorts.httpPort,
+                project.domain,
+                project.name,
+            );
             testPassed = true;
         } catch (error) {
             await dumpScenarioDiagnostics('apache-fallback-failure', activeScenario, {

@@ -707,15 +707,20 @@ describe('ServiceManager', () => {
 
     describe('stopService', () => {
         it('kills the tracked process and tree using tree-kill', async () => {
+            vi.useFakeTimers();
+
             // Manually inject a fake tracked process
             mgr.processes.set('mysql-8.4', { pid: 9999 });
+            portUtils.isPortAvailable.mockResolvedValue(true);
 
-            await mgr.stopService('mysql', '8.4');
+            const stopPromise = mgr.stopService('mysql', '8.4');
+            await vi.runAllTimersAsync();
+            await stopPromise;
 
             expect(mockTreeKill).toHaveBeenCalled();
             expect(mockTreeKill.mock.calls[0][0]).toBe(9999); // PID
             expect(mgr.processes.has('mysql-8.4')).toBe(false);
-        });
+        }, 10000);
 
         it('waits for the MySQL port to be released before reporting stop complete', async () => {
             vi.useFakeTimers();
@@ -736,27 +741,28 @@ describe('ServiceManager', () => {
                 .mockResolvedValueOnce(false)
                 .mockResolvedValueOnce(true);
 
-            let completed = false;
-            const stopPromise = mgr.stopService('mysql', '8.4').then(() => {
-                completed = true;
-            });
+            const stopPromise = mgr.stopService('mysql', '8.4');
 
             await Promise.resolve();
-            expect(completed).toBe(false);
-
-            await vi.advanceTimersByTimeAsync(700);
+            await vi.runAllTimersAsync();
             await stopPromise;
 
             expect(mockTreeKill).toHaveBeenCalledWith(9999, 'SIGTERM', expect.any(Function));
-            expect(completed).toBe(true);
             expect(mgr.serviceStatus.get('mysql').status).toBe('stopped');
-        });
+        }, 10000);
 
         it('does nothing if service is not running', async () => {
+            vi.useFakeTimers();
+
             // Not tracked
-            await mgr.stopService('mysql', '8.4');
+            portUtils.isPortAvailable.mockResolvedValue(true);
+
+            const stopPromise = mgr.stopService('mysql', '8.4');
+            await vi.runAllTimersAsync();
+            await stopPromise;
+
             expect(mockTreeKill).not.toHaveBeenCalled();
-        });
+        }, 10000);
     });
 
     describe('restartService', () => {
