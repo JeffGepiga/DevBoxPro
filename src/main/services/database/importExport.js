@@ -111,6 +111,7 @@ module.exports = {
           `-h${this.dbConfig.host}`,
           `-P${port}`,
           `-u${user}`,
+          '--max-allowed-packet=512M',
         ];
 
         if (password) {
@@ -149,6 +150,7 @@ module.exports = {
         // so this is safe to send to older versions — it will just print a warning to stderr.
         // sql_log_bin=0 is omitted: requires BINLOG_ADMIN in MySQL 8 and causes a hard error.
         const perfPreamble = Buffer.from(
+          'SET GLOBAL max_allowed_packet=536870912;\n' +
           'SET autocommit=0;\n' +
           'SET unique_checks=0;\n' +
           'SET foreign_key_checks=0;\n' +
@@ -804,6 +806,7 @@ module.exports = {
         `-h${this.dbConfig.host}`,
         `-P${port}`,
         `-u${user}`,
+        '--max-allowed-packet=512M',
         '--single-transaction',
         '--routines',
         '--triggers',
