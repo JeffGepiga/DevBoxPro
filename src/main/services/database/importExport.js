@@ -111,7 +111,7 @@ module.exports = {
           `-h${this.dbConfig.host}`,
           `-P${port}`,
           `-u${user}`,
-          '--max-allowed-packet=512M',
+          '--max-allowed-packet=1G',
         ];
 
         if (password) {
@@ -150,7 +150,7 @@ module.exports = {
         // so this is safe to send to older versions — it will just print a warning to stderr.
         // sql_log_bin=0 is omitted: requires BINLOG_ADMIN in MySQL 8 and causes a hard error.
         const perfPreamble = Buffer.from(
-          'SET GLOBAL max_allowed_packet=536870912;\n' +
+          'SET GLOBAL max_allowed_packet=1073741824;\n' +
           'SET autocommit=0;\n' +
           'SET unique_checks=0;\n' +
           'SET foreign_key_checks=0;\n' +
@@ -801,18 +801,24 @@ module.exports = {
 
     const finalPath = outputPath.toLowerCase().endsWith('.gz') ? outputPath : `${outputPath}.gz`;
 
+    try {
+      // 1073741824 (1GB) is the absolute hard maximum allowed by MySQL's network protocol
+      await this.runDbQuery('SET GLOBAL max_allowed_packet = 1073741824;', safeName);
+    } catch {
+      // Best-effort in case user lacks SUPER / SYSTEM_VARIABLES_ADMIN privileges
+    }
+
     return new Promise((resolve, reject) => {
       const args = [
         `-h${this.dbConfig.host}`,
         `-P${port}`,
         `-u${user}`,
-        '--max-allowed-packet=512M',
+        '--max-allowed-packet=1G',
         '--single-transaction',
         '--routines',
         '--triggers',
         '--quick',
         '--lock-tables=false',
-        '--force',
         '--no-tablespaces',
       ];
 
