@@ -189,6 +189,7 @@ function CreateProject() {
     nodeFramework: '',
     nodePort: 3000,
     nodeStartCommand: 'npm start',
+    deploymentMode: 'global',
   });
   const [compatibilityWarnings, setCompatibilityWarnings] = useState([]);
   const [sshKeyInfo, setSshKeyInfo] = useState({ exists: false, publicKey: '' });
@@ -2190,6 +2191,52 @@ function StepDomain({ formData, updateFormData, binariesStatus, serviceConfig, d
             }
           </p>
         </div>
+
+        {/* Deployment Mode */}
+        <div>
+          <label className="label">Deployment Mode</label>
+          <div className="grid grid-cols-3 gap-3">
+            <button
+              type="button"
+              onClick={() => updateFormData({ deploymentMode: 'global' })}
+              className={clsx(
+                'p-3 rounded-lg border-2 text-left transition-all',
+                (formData.deploymentMode || 'global') === 'global'
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+              )}
+            >
+              <span className="font-semibold text-sm text-gray-900 dark:text-white block">Inherit Global</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">Uses app settings</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => updateFormData({ deploymentMode: 'local' })}
+              className={clsx(
+                'p-3 rounded-lg border-2 text-left transition-all',
+                formData.deploymentMode === 'local'
+                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+              )}
+            >
+              <span className="font-semibold text-sm text-gray-900 dark:text-white block">Local</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">Debug & loose security</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => updateFormData({ deploymentMode: 'production' })}
+              className={clsx(
+                'p-3 rounded-lg border-2 text-left transition-all',
+                formData.deploymentMode === 'production'
+                  ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+              )}
+            >
+              <span className="font-semibold text-sm text-gray-900 dark:text-white block">Production</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">Hardened & optimized</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -2290,6 +2337,17 @@ function StepReview({ formData }) {
             </h3>
             <p className="text-lg font-semibold text-gray-900 dark:text-white capitalize">
               {formData.webServer === 'nginx' ? 'Nginx' : 'Apache'}
+            </p>
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+              Deployment Mode
+            </h3>
+            <p className={clsx(
+              'text-lg font-semibold capitalize',
+              formData.deploymentMode === 'production' ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'
+            )}>
+              {formData.deploymentMode === 'production' ? 'Production Mode' : formData.deploymentMode === 'local' ? 'Local' : 'Inherit Global'}
             </p>
           </div>
         </div>

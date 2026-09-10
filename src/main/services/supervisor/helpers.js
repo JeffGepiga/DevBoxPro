@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
+const { isProductionMode } = require('../../../shared/deploymentMode');
 
 module.exports = {
   async initialize() {
@@ -92,6 +93,18 @@ module.exports = {
 
   getEffectiveProcessEnvironment(project, config = {}, envBase = {}) {
     const env = { ...envBase };
+    const globalSettings = this.configStore?.get('settings', {});
+    const isProd = isProductionMode(project, globalSettings);
+
+    if (isProd) {
+      if (!env.NODE_ENV) {
+        env.NODE_ENV = 'production';
+      }
+      if (!env.APP_ENV) {
+        env.APP_ENV = 'production';
+      }
+    }
+
     const isNodeAppProcess = config.name === 'nodejs-app' && project?.type === 'nodejs';
     const primaryDomain = project?.domain || project?.domains?.[0];
 

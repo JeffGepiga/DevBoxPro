@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { isPortAvailable, findAvailablePort } = require('../../utils/PortUtils');
+const { isProductionMode } = require('../../../shared/deploymentMode');
 
 const SERVICE_STOP_GRACE_PERIOD_MS = 15000;
 
@@ -278,6 +279,19 @@ module.exports = {
       } else if (actualPhpFpmPort) {
         this.managers.log?.project(id, `PHP-CGI running on port ${actualPhpFpmPort}`);
       }
+
+      // In production mode for Laravel projects, register native Windows Task Scheduler cron
+      const currentGlobalSettings = (this.configStore && typeof this.configStore.get === 'function')
+        ? this.configStore.get('settings', {})
+        : {};
+      if (project.type === 'laravel' && isProductionMode(project, currentGlobalSettings)) {
+        try {
+          await this.managers.scheduler?.registerScheduleTask(project);
+        } catch (schedErr) {
+          this.managers.log?.systemWarn(`Could not register Windows Task Scheduler cron for ${project.name}`, { error: schedErr.message });
+        }
+      }
+
       return { success: true, port: project.port, phpFpmPort: actualPhpFpmPort };
     } catch (error) {
       if (registeredRunningProjectEarly) {
@@ -400,13 +414,21 @@ module.exports = {
       }
     }
 
-    const phpCgiProcess = spawnHidden(phpCgiPath, ['-b', `127.0.0.1:${actualPort}`], {
+    const globalSettings = (this.configStore && typeof this.configStore.get === 'function')
+      ? this.configStore.get('settings', {})
+      : {};
+    const isProd = isProductionMode(project, globalSettings);
+    const prodPhpArgs = isProd && this.managers.php?.getProductionPhpCgiArgs
+      ? this.managers.php.getProductionPhpCgiArgs(phpVersion)
+      : [];
+
+    const phpCgiProcess = spawnHidden(phpCgiPath, [...prodPhpArgs, '-b', `127.0.0.1:${actualPort}`], {
       cwd: project.path,
       env: {
         ...process.env,
         ...project.environment,
         PHP_FCGI_MAX_REQUESTS: '0',
-        PHP_FCGI_CHILDREN: '4',
+        PHP_FCGI_CHILDREN: isProd ? '8' : '4',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -522,6 +544,12 @@ module.exports = {
         await this.managers.tunnel?.stopTunnel(id);
       } catch (error) {
         this.managers.log?.systemWarn(`Error stopping tunnel for ${project?.name || id}`, { error: error.message });
+      }
+
+      try {
+        await this.managers.scheduler?.unregisterScheduleTask(id);
+      } catch (error) {
+        // best effort
       }
 
       this.runningProjects.delete(id);

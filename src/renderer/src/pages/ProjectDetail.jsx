@@ -30,6 +30,7 @@ import {
   Check,
   Share2,
   Download,
+  Shield,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -40,7 +41,7 @@ const NodeJsIcon = ({ className }) => (
   </svg>
 );
 
-const AUTO_SAVE_SETTING_KEYS = new Set(['autoStart', 'networkAccess', 'shareOnInternet', 'tunnelProvider', 'tunnelAutoStart']);
+const AUTO_SAVE_SETTING_KEYS = new Set(['autoStart', 'networkAccess', 'shareOnInternet', 'tunnelProvider', 'tunnelAutoStart', 'deploymentMode']);
 
 function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
   const params = useParams();
@@ -427,6 +428,7 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
           onRefresh={loadProcesses}
           isRunning={project.isRunning}
           projectType={project.type}
+          project={project}
         />
       )}
       {activeTab === 'environment' && <EnvironmentTab project={project} onRefresh={refreshProjects} />}
@@ -550,6 +552,7 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
 
 function OverviewTab({ project, processes, refreshProjects }) {
   const { showConfirm, showAlert } = useModal();
+  const { settings } = useApp();
   const navigate = useNavigate();
   const runningProcesses = processes.filter((p) => p.isRunning);
   const [phpVersions, setPhpVersions] = useState([]);
@@ -902,7 +905,8 @@ function OverviewTab({ project, processes, refreshProjects }) {
           return;
         }
 
-        if (next[key] === (project[key] ?? false)) {
+        const defaultValue = key === 'deploymentMode' ? 'global' : false;
+        if (next[key] === (project[key] ?? defaultValue)) {
           delete next[key];
           changed = true;
         }
@@ -1238,6 +1242,43 @@ function OverviewTab({ project, processes, refreshProjects }) {
                 {project.ssl ? '🔒 Enabled' : 'Disabled'}
               </p>
             </div>
+          </div>
+
+          {/* Deployment Mode */}
+          <div className="flex items-center justify-between py-2 border-t border-gray-100 dark:border-gray-700/60">
+            <div>
+              <span className="text-sm text-gray-600 dark:text-gray-400">Deployment Mode</span>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                Effective: <span className={clsx(
+                  'font-medium capitalize',
+                  (getEffectiveValue('deploymentMode') === 'production' || (getEffectiveValue('deploymentMode') !== 'local' && settings?.deploymentMode === 'production'))
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-primary-600 dark:text-primary-400'
+                )}>
+                  {(getEffectiveValue('deploymentMode') === 'production' || (getEffectiveValue('deploymentMode') !== 'local' && settings?.deploymentMode === 'production')) ? 'Production' : 'Local'}
+                </span>
+              </p>
+            </div>
+            <select
+              value={getEffectiveValue('deploymentMode') || 'global'}
+              onChange={(e) => {
+                const newValue = e.target.value;
+                if (newValue === (project.deploymentMode || 'global')) {
+                  const { deploymentMode, ...rest } = pendingChanges;
+                  setPendingChanges(rest);
+                  return;
+                }
+                saveProjectChanges(
+                  { deploymentMode: newValue },
+                  { restartRequired: true, restartMessage: 'Changing Deployment Mode requires restarting the project to regenerate server configs. Restart now?' }
+                );
+              }}
+              className="input py-1 px-2 text-sm w-44"
+            >
+              <option value="global">Inherit Global ({settings?.deploymentMode === 'production' ? 'Production' : 'Local'})</option>
+              <option value="local">Local Development</option>
+              <option value="production">Production Mode</option>
+            </select>
           </div>
 
           {/* PHP version - PHP projects only */}
@@ -1919,8 +1960,33 @@ function LogsTab({ logs, onRefresh, projectId }) {
   );
 }
 
-function WorkersTab({ processes, projectId, onRefresh, isRunning, projectType }) {
+function WorkersTab({ processes, projectId, onRefresh, isRunning, projectType, project }) {
   const { showConfirm } = useModal();
+  const { settings } = useApp();
+  const isProd = project?.deploymentMode === 'production' || (project?.deploymentMode !== 'local' && settings?.deploymentMode === 'production');
+  const [schedulerStatus, setSchedulerStatus] = useState(null);
+  const [schedulerLoading, setSchedulerLoading] = useState(false);
+  const [schedulerRunningNow, setSchedulerRunningNow] = useState(false);
+  const [showSchedulerLogs, setShowSchedulerLogs] = useState(false);
+
+  const loadSchedulerStatus = useCallback(async () => {
+    if (project?.type !== 'laravel') return;
+    setSchedulerLoading(true);
+    try {
+      const res = await window.devbox?.scheduler?.getStatus(projectId);
+      setSchedulerStatus(res);
+    } catch {
+      // ignore
+    } finally {
+      setSchedulerLoading(false);
+    }
+  }, [projectId, project?.type]);
+
+  useEffect(() => {
+    if (isProd && project?.type === 'laravel') {
+      loadSchedulerStatus();
+    }
+  }, [isProd, project?.type, loadSchedulerStatus]);
   const getDefaultProcess = useCallback(() => {
     if (projectType === 'nodejs') {
       return {
@@ -2107,6 +2173,153 @@ function WorkersTab({ processes, projectId, onRefresh, isRunning, projectType })
 
   return (
     <div className="space-y-6">
+      {/* Windows Task Scheduler (Production Cron) */}
+      {isProd && project?.type === 'laravel' && (
+        <div className="card p-5 border-2 border-amber-200 dark:border-amber-500/30 bg-gradient-to-r from-amber-50/50 to-orange-50/30 dark:from-amber-950/20 dark:to-orange-950/10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-amber-500/10 dark:bg-amber-500/20 rounded-lg text-amber-600 dark:text-amber-400">
+                <Clock className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-semibold text-gray-900 dark:text-white">Windows Task Scheduler (Cron)</h4>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                    Production Mode
+                  </span>
+                  {schedulerStatus?.exists && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
+                      ● Active (Every 1m)
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Native Windows OS cron executes <code className="text-xs bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded font-mono">php artisan schedule:run</code> every 1 minute.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-center">
+              <button
+                onClick={async () => {
+                  setSchedulerRunningNow(true);
+                  try {
+                    await window.devbox?.scheduler?.runNow(projectId);
+                    setTimeout(loadSchedulerStatus, 1500);
+                  } finally {
+                    setSchedulerRunningNow(false);
+                  }
+                }}
+                disabled={!schedulerStatus?.exists || schedulerRunningNow}
+                className="btn-secondary btn-sm"
+                title="Trigger immediate execution"
+              >
+                <Play className={clsx('w-3.5 h-3.5', schedulerRunningNow && 'animate-spin')} />
+                {schedulerRunningNow ? 'Running...' : 'Run Now'}
+              </button>
+
+              <button
+                onClick={loadSchedulerStatus}
+                disabled={schedulerLoading}
+                className="btn-secondary btn-sm"
+                title="Refresh Status"
+              >
+                <RefreshCw className={clsx('w-3.5 h-3.5', schedulerLoading && 'animate-spin')} />
+              </button>
+
+              {schedulerStatus?.exists ? (
+                <button
+                  onClick={async () => {
+                    await window.devbox?.scheduler?.unregister(projectId);
+                    loadSchedulerStatus();
+                  }}
+                  className="btn-ghost btn-sm text-red-600 dark:text-red-400"
+                  title="Remove from Windows Task Scheduler"
+                >
+                  Disable
+                </button>
+              ) : (
+                <button
+                  onClick={async () => {
+                    await window.devbox?.scheduler?.register(projectId);
+                    loadSchedulerStatus();
+                  }}
+                  className="btn-primary btn-sm"
+                >
+                  Enable Task
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 border-t border-amber-200/60 dark:border-amber-800/40 text-xs">
+            <div className="bg-white/60 dark:bg-gray-800/40 p-2.5 rounded-lg">
+              <span className="text-gray-500 dark:text-gray-400 block mb-0.5">Task Status</span>
+              <span className="font-semibold text-gray-900 dark:text-white capitalize">
+                {schedulerStatus?.status || (schedulerStatus?.exists ? 'Ready' : 'Not Registered')}
+              </span>
+            </div>
+            <div className="bg-white/60 dark:bg-gray-800/40 p-2.5 rounded-lg">
+              <span className="text-gray-500 dark:text-gray-400 block mb-0.5">Next Run</span>
+              <span className="font-mono text-gray-900 dark:text-white">
+                {schedulerStatus?.nextRunTime || 'Every minute'}
+              </span>
+            </div>
+            <div className="bg-white/60 dark:bg-gray-800/40 p-2.5 rounded-lg">
+              <span className="text-gray-500 dark:text-gray-400 block mb-0.5">Last Run</span>
+              <span className="font-mono text-gray-900 dark:text-white">
+                {schedulerStatus?.lastRunTime || 'Pending'}
+              </span>
+            </div>
+            <div className="bg-white/60 dark:bg-gray-800/40 p-2.5 rounded-lg">
+              <span className="text-gray-500 dark:text-gray-400 block mb-0.5">Last Exit Code</span>
+              <span className={clsx(
+                'font-mono font-semibold',
+                schedulerStatus?.lastResult === '0' ? 'text-green-600 dark:text-green-400' : 'text-gray-700 dark:text-gray-300'
+              )}>
+                {schedulerStatus?.lastResult === '0' ? '0 (Success)' : (schedulerStatus?.lastResult || '—')}
+              </span>
+            </div>
+          </div>
+
+          {/* Cron Output Logs Toggle */}
+          <div className="mt-3 pt-2">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setShowSchedulerLogs(!showSchedulerLogs)}
+                className="text-xs text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1"
+              >
+                <Terminal className="w-3.5 h-3.5" />
+                {showSchedulerLogs ? 'Hide Cron Logs' : 'View Cron Logs'} ({schedulerStatus?.logLines?.length || 0} lines)
+              </button>
+
+              {showSchedulerLogs && (
+                <button
+                  onClick={async () => {
+                    await window.devbox?.scheduler?.clearLogs(projectId);
+                    loadSchedulerStatus();
+                  }}
+                  className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  Clear Logs
+                </button>
+              )}
+            </div>
+
+            {showSchedulerLogs && (
+              <div className="mt-2 p-3 bg-gray-900 text-gray-200 rounded-lg font-mono text-xs max-h-48 overflow-auto">
+                {schedulerStatus?.logLines?.length > 0 ? (
+                  schedulerStatus.logLines.map((line, idx) => (
+                    <div key={idx} className="py-0.5 whitespace-pre-wrap">{line}</div>
+                  ))
+                ) : (
+                  <p className="text-gray-500">No cron output recorded yet. Output will appear when the task runs.</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           Supervisor Processes

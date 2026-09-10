@@ -14,6 +14,7 @@ const {
   getServicePort,
   getDefaultVersion
 } = require('../../shared/serviceConfig');
+const { resolveDeploymentMode, isProductionMode } = require('../../shared/deploymentMode');
 
 const playwrightTunnelStatuses = new Map();
 const playwrightTunnelTimers = new Map();
@@ -130,6 +131,17 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('projects:getStatus', async (event, id) => {
     return project.getProjectStatus(id);
+  });
+
+  ipcMain.handle('projects:getDeploymentMode', async (event, id) => {
+    const projectData = id ? project.getProject(id) : null;
+    const globalSettings = config.get('settings', {});
+    return {
+      effectiveMode: resolveDeploymentMode(projectData, globalSettings),
+      isProduction: isProductionMode(projectData, globalSettings),
+      projectMode: projectData?.deploymentMode || 'global',
+      globalMode: globalSettings?.deploymentMode || 'local',
+    };
   });
 
   ipcMain.handle('projects:openInEditor', async (event, id, editor = 'vscode') => {
@@ -533,6 +545,29 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
 
   ipcMain.handle('supervisor:getAllWorkerLogs', async (event, projectId, lines) => {
     return supervisor.getAllWorkerLogsForProject(projectId, lines);
+  });
+
+  // ============ WINDOWS TASK SCHEDULER / CRON HANDLERS ============
+  ipcMain.handle('scheduler:getStatus', async (event, projectId) => {
+    return managers.scheduler?.getScheduleTaskStatus(projectId) || { exists: false, isWindows: false };
+  });
+
+  ipcMain.handle('scheduler:register', async (event, projectId) => {
+    const projectData = project.getProject(projectId);
+    if (!projectData) throw new Error('Project not found');
+    return managers.scheduler?.registerScheduleTask(projectData);
+  });
+
+  ipcMain.handle('scheduler:unregister', async (event, projectId) => {
+    return managers.scheduler?.unregisterScheduleTask(projectId);
+  });
+
+  ipcMain.handle('scheduler:runNow', async (event, projectId) => {
+    return managers.scheduler?.runScheduleTaskNow(projectId);
+  });
+
+  ipcMain.handle('scheduler:clearLogs', async (event, projectId) => {
+    return managers.scheduler?.clearScheduleLogs(projectId);
   });
 
   // ============ LOG HANDLERS ============

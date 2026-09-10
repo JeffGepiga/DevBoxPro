@@ -313,6 +313,75 @@ function GeneralSettings({ settings, updateSetting }) {
         </div>
       </div>
 
+      {/* Deployment Mode */}
+      <div className={clsx(
+        'card p-6 border-2 transition-colors',
+        settings.deploymentMode === 'production'
+          ? 'border-amber-400 dark:border-amber-500/50'
+          : 'border-transparent'
+      )}>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          Deployment Mode
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Controls default configurations for PHP, Nginx/Apache, MySQL, and Redis across all projects.
+        </p>
+
+        <div className="flex gap-3 mb-4">
+          <button
+            onClick={() => updateSetting('deploymentMode', 'local')}
+            className={clsx(
+              'flex-1 px-4 py-3 rounded-lg border-2 text-left transition-all',
+              (settings.deploymentMode || 'local') === 'local'
+                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 ring-1 ring-primary-500/30'
+                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+            )}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Code className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+              <span className="font-semibold text-gray-900 dark:text-white">Local</span>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Debug enabled, verbose errors, relaxed security. Ideal for development.
+            </p>
+          </button>
+
+          <button
+            onClick={() => updateSetting('deploymentMode', 'production')}
+            className={clsx(
+              'flex-1 px-4 py-3 rounded-lg border-2 text-left transition-all',
+              settings.deploymentMode === 'production'
+                ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20 ring-1 ring-amber-500/30'
+                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+            )}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Shield className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span className="font-semibold text-gray-900 dark:text-white">Production</span>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Debug off, OPcache + JIT enabled, hardened security headers, strict DB access.
+            </p>
+          </button>
+        </div>
+
+        {settings.deploymentMode === 'production' && (
+          <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-amber-700 dark:text-amber-300">
+              <p className="font-medium">Production mode active</p>
+              <p className="text-xs mt-1 text-amber-600 dark:text-amber-400">
+                PHP will run with OPcache enabled (file changes require service restart). Nginx/Apache will include hardened security headers. MySQL bind-address restricted to 127.0.0.1. Redis will require a password. Restart all services for changes to take effect.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
+          Individual projects can override this setting from their project detail page.
+        </p>
+      </div>
+
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Default Editor

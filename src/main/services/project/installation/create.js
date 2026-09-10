@@ -136,10 +136,15 @@ module.exports = {
       domains: [domainName],
       ssl: config.ssl !== false,
       autoStart: config.autoStart || false,
+      deploymentMode: config.deploymentMode || 'global',
       services: projectServices,
-      environment: this.getDefaultEnvironment(projectType, config.name, port, { services: projectServices, database: config.database }),
+      environment: this.getDefaultEnvironment(projectType, config.name, port, {
+        services: projectServices,
+        database: config.database,
+        deploymentMode: config.deploymentMode,
+      }),
       supervisor: {
-        workers: config.supervisor?.workers || 1,
+        workers: config.supervisor?.workers || (config.deploymentMode === 'production' ? 2 : 1),
         processes: [],
       },
       nodePort: projectType === 'nodejs' ? nodePort : undefined,

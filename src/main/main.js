@@ -19,6 +19,7 @@ const { DatabaseManager } = require('./services/DatabaseManager');
 const { LogManager } = require('./services/LogManager');
 const BinaryDownloadManager = require('./services/BinaryDownloadManager');
 const { TunnelManager } = require('./services/TunnelManager');
+const { WindowsSchedulerManager } = require('./services/WindowsSchedulerManager');
 
 const CliManager = require('./services/CliManager');
 const { GitManager } = require('./services/GitManager');
@@ -369,6 +370,7 @@ async function initializeManagers() {
   managers.binaryDownload = new BinaryDownloadManager();
   managers.binaryDownload.managers = managers;
   managers.tunnel = new TunnelManager(resourcePath, configStore, managers);
+  managers.scheduler = new WindowsSchedulerManager(resourcePath, configStore, managers);
 
   managers.cli = new CliManager(configStore, managers);
   managers.git = new GitManager(configStore, managers);

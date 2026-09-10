@@ -13,9 +13,9 @@ Maintaining an old PHP 7.4 project while building a new Laravel 11 app on PHP 8.
 
 DevBox Pro is an Electron desktop app with a React renderer and a Node.js main process. It manages PHP, Node.js, MySQL, MariaDB, Redis, Nginx, Apache, PostgreSQL, MongoDB, MinIO, Memcached, Mailpit, phpMyAdmin, Composer, Git, and more from one local interface.
 
-> **Version 1.0.7:** This release focuses on **service reliability**, **runtime repair on Windows**, and faster, clearer **database import workflows**.
+> **Version 1.0.8:** Introduces first-class **Production Mode** support with OPcache optimization, hardened web server security headers, resilient queue workers, and native **Windows Task Scheduler** integration for reliable production server deployment on Windows clients.
 >
-> **Important:** DevBox Pro is built for local development, testing, demos, and temporary preview links. It is **not** intended for production hosting or production traffic.
+> DevBox Pro provides two operation profiles: **Local Mode** for active debugging, hot reload, and development agility; and **Production Mode** for high performance, hardened security, and unattended background service and scheduler reliability.
 
 ---
 
@@ -114,6 +114,13 @@ DevBox Pro is an Electron desktop app with a React renderer and a Node.js main p
 - **Log file rotation** and cleanup
 - **Service resource monitoring**
 
+### 🚀 Production Mode & Windows Client Server
+- **Dual Operating Profiles** - Switch between **Local Mode** (interactive debugging, single worker) and **Production Mode** (optimized performance, hardened security) per project or globally
+- **PHP OPcache & JIT Optimization** - Automatically enables OPcache (`opcache.enable=1`, `opcache.jit=1255`) and suppresses public error displays (`display_errors = Off`)
+- **Hardened Web Server Security** - Injects HSTS, `X-Frame-Options`, `X-Content-Type-Options`, `server_tokens off`, and disables directory indexing for Nginx and Apache
+- **Resilient Queue Workers** - Multi-process worker management with `--tries=3`, `--timeout=90`, `--memory=128`, `--max-jobs=1000`, clean-exit restarts, and exponential backoff crash protection
+- **Native Windows Task Scheduler** - Integrates with Windows `schtasks.exe` to trigger `php artisan schedule:run` every minute using a silent runner without flashing CMD windows
+
 ### ⚙️ Project Configuration
 - **Service version selection** per project
 - **Compatibility validation** - Warns about incompatible combinations
@@ -127,8 +134,8 @@ DevBox Pro is an Electron desktop app with a React renderer and a Node.js main p
 ### Installation
 
 1. **Download** the latest release for your platform:
-  - Windows: `DevBox-Pro-Setup-1.0.7.exe`
-  - macOS: `DevBox-Pro-1.0.7.dmg`
+  - Windows: `DevBox-Pro-Setup-1.0.8.exe`
+  - macOS: `DevBox-Pro-1.0.8.dmg`
 
 2. **Install** the application
   - Windows installer builds silently install or repair the Microsoft Visual C++ Redistributable when `vcredist/VC_redist.x64.exe` is bundled with the release

@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { isPortAvailable, findAvailablePort } = require('../../utils/PortUtils');
+const { PRODUCTION_REDIS } = require('../../../shared/deploymentMode');
 
 function spawnHidden(command, args, options = {}) {
   if (process.platform === 'win32') {
@@ -146,6 +147,24 @@ module.exports = {
     await fs.ensureDir(path.dirname(configPath));
     await fs.ensureDir(dataDir);
 
+    const settings = this.configStore?.get('settings', {}) || {};
+    const isProd = settings.deploymentMode === 'production';
+
+    let productionBlock = '';
+    if (isProd) {
+      const renameLines = Object.entries(PRODUCTION_REDIS.renameCommands)
+        .map(([cmd, alias]) => `rename-command ${cmd} ${alias}`)
+        .join('\n');
+
+      productionBlock = `
+# Production mode hardening
+requirepass ${PRODUCTION_REDIS.requirepass}
+maxmemory ${PRODUCTION_REDIS.maxmemory}
+maxmemory-policy ${PRODUCTION_REDIS['maxmemory-policy']}
+${renameLines}
+`;
+    }
+
     const config = `
 port ${port}
 bind 127.0.0.1
@@ -154,7 +173,7 @@ dir ./data
 appendonly yes
 appendfilename "appendonly.aof"
 dbfilename dump_${version.replace(/\./g, '')}.rdb
-`;
+${productionBlock}`;
     await fs.writeFile(configPath, config);
   },
 };

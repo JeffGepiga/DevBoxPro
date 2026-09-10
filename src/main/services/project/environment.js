@@ -209,10 +209,17 @@ module.exports = {
   },
 
   getDefaultEnvironment(projectType, projectName, port, projectConfig = {}) {
+    const mode = projectConfig.deploymentMode || 'local';
+    const isProd = mode === 'production';
+
     const baseEnv = {
-      APP_ENV: 'local',
-      APP_DEBUG: 'true',
+      APP_ENV: isProd ? 'production' : 'local',
+      APP_DEBUG: isProd ? 'false' : 'true',
     };
+
+    if (isProd) {
+      baseEnv.LOG_LEVEL = 'error';
+    }
 
     switch (projectType) {
       case 'laravel': {
@@ -221,7 +228,7 @@ module.exports = {
           ...projectConfig,
         });
 
-        return {
+        const laravelEnv = {
           ...baseEnv,
           APP_NAME: projectName,
           APP_KEY: '',
@@ -241,6 +248,14 @@ module.exports = {
           MAIL_HOST: '127.0.0.1',
           MAIL_PORT: '1025',
         };
+
+        if (isProd) {
+          laravelEnv.LOG_CHANNEL = 'daily';
+          laravelEnv.LOG_LEVEL = 'error';
+          laravelEnv.SESSION_SECURE_COOKIE = 'true';
+        }
+
+        return laravelEnv;
       }
 
       case 'symfony': {
@@ -249,17 +264,26 @@ module.exports = {
           ...projectConfig,
         });
 
-        return {
+        const symfonyEnv = {
           ...baseEnv,
           DATABASE_URL: dbConfig.symfonyDatabaseUrl,
           MAILER_DSN: 'smtp://127.0.0.1:1025',
         };
+
+        if (isProd) {
+          symfonyEnv.APP_ENV = 'prod';
+          symfonyEnv.APP_DEBUG = '0';
+        }
+
+        return symfonyEnv;
       }
 
       case 'wordpress':
         return {
           ...baseEnv,
-          WP_DEBUG: 'true',
+          WP_DEBUG: isProd ? 'false' : 'true',
+          WP_DEBUG_DISPLAY: isProd ? 'false' : 'true',
+          WP_DEBUG_LOG: isProd ? 'true' : 'false',
         };
 
       default:
@@ -267,3 +291,4 @@ module.exports = {
     }
   },
 };
+

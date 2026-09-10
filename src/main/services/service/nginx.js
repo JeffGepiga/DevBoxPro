@@ -3,6 +3,7 @@ const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { isPortAvailable, findAvailablePort } = require('../../utils/PortUtils');
 const { spawnSyncSafe } = require('../../utils/SpawnUtils');
+const { PRODUCTION_NGINX } = require('../../../shared/deploymentMode');
 
 // Helper function to spawn a process hidden on Windows
 function spawnHidden(command, args, options = {}) {
@@ -531,22 +532,51 @@ module.exports = {
     await fs.ensureDir(path.join(webServerDataPath, 'nginx', version, 'sites'));
     await fs.ensureDir(path.join(webServerDataPath, 'nginx', version, 'logs'));
 
-    const config = `worker_processes 1;
+    // Check global deployment mode
+    const globalSettings = this.configStore.get('settings', {});
+    const isProd = globalSettings.deploymentMode === 'production';
+
+    const workerProcesses = isProd ? 'auto' : '1';
+    const workerConnections = isProd ? PRODUCTION_NGINX.workerConnections : 1024;
+    const keepaliveTimeout = isProd ? PRODUCTION_NGINX.keepaliveTimeout : 65;
+
+    const productionHttpBlock = isProd ? `
+    # Production optimizations
+    server_tokens ${PRODUCTION_NGINX.serverTokens};
+    tcp_nopush on;
+    tcp_nodelay on;
+    types_hash_max_size 2048;
+
+    # Production gzip compression
+    gzip on;
+    gzip_comp_level ${PRODUCTION_NGINX.gzipCompLevel};
+    gzip_min_length ${PRODUCTION_NGINX.gzipMinLength};
+    gzip_proxied any;
+    gzip_vary on;
+    gzip_types ${PRODUCTION_NGINX.gzipTypes.join(' ')};
+
+    # Timeouts
+    client_body_timeout ${PRODUCTION_NGINX.clientBodyTimeout};
+    client_header_timeout ${PRODUCTION_NGINX.clientHeaderTimeout};
+    send_timeout ${PRODUCTION_NGINX.sendTimeout};
+` : '';
+
+    const config = `worker_processes ${workerProcesses};
   pid "${pidPath}";
   error_log "${normalizedLogsPath}/error.log";
 
 events {
-    worker_connections 1024;
+    worker_connections ${workerConnections};
 }
 
 http {
     include       "${mimeTypesPath}";
     default_type  application/octet-stream;
     sendfile      on;
-    keepalive_timeout 65;
+    keepalive_timeout ${keepaliveTimeout};
     client_max_body_size 128M;
     server_names_hash_bucket_size 128;
-    
+${productionHttpBlock}
     access_log "${normalizedLogsPath}/access.log";
     error_log "${normalizedLogsPath}/http_error.log";
 

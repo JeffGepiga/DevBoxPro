@@ -388,6 +388,7 @@ module.exports = {
       type: project?.type || '',
       port: project?.port || null,
       nodePort: project?.nodePort || null,
+      deploymentMode: project?.deploymentMode || 'global',
       webServer,
       webServerVersion: this.getEffectiveWebServerVersion(project, webServer),
     });

@@ -50,9 +50,9 @@
 
   <section class="section" style="padding-top:0; padding-bottom:var(--space-2xl);">
     <div class="container" style="max-width:900px;">
-      <div class="callout callout-warning animate-in" style="margin:0 auto;">
-        <span class="callout-icon">⚠️</span>
-        <p><strong>Important:</strong> DevBox Pro includes internet tunneling for previews and testing, but the app is <strong>not meant for production use</strong>.</p>
+      <div class="callout callout-info animate-in" style="margin:0 auto;">
+        <span class="callout-icon">🚀</span>
+        <p><strong>Dual Operating Modes:</strong> Seamlessly switch between <strong>Local Mode</strong> for debugging and active development, and <strong>Production Mode</strong> with OPcache, hardened HTTP headers, resilient multi-workers, and Windows Task Scheduler integration for hosting on Windows client machines.</p>
       </div>
     </div>
   </section>
@@ -257,6 +257,21 @@ mysqldump -u root mydb > backup.sql
       </div>
 
       <div class="grid-3 animate-in">
+        <div class="card">
+          <div class="card-icon">🚀</div>
+          <h3>Production Mode</h3>
+          <p>Activate OPcache, suppress public error output, inject hardened security headers, and optimize MySQL/Redis for running production apps on Windows client servers.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">⏰</div>
+          <h3>Windows Task Scheduler</h3>
+          <p>Native integration with Windows Task Scheduler executes Laravel cron tasks every minute silently in the background without command prompt interruptions.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">👷</div>
+          <h3>Supervisor Queue Workers</h3>
+          <p>Multi-process worker management with automatic restarts, timeout/retry limits, clean exit recycling, and exponential crash protection.</p>
+        </div>
         <div class="card">
           <div class="card-icon">🔧</div>
           <h3>Binary Manager</h3>

@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { isPortAvailable, findAvailablePort } = require('../../utils/PortUtils');
+const { PRODUCTION_MYSQL } = require('../../../shared/deploymentMode');
 
 function isMySql57(version) {
   return String(version || '').startsWith('5.7');
@@ -539,6 +540,18 @@ module.exports = {
     const settings = this.configStore?.get('settings', {}) || {};
     const timezone = settings.serverTimezone || 'UTC';
     const timezoneOffset = this.getTimezoneOffset(timezone);
+    const isProd = settings.deploymentMode === 'production';
+
+    // Production MySQL tuning overrides
+    const prodConfig = isProd ? [
+      `# Production mode optimizations`,
+      `skip-name-resolve=${PRODUCTION_MYSQL['skip-name-resolve']}`,
+      `max_connections=${PRODUCTION_MYSQL['max_connections']}`,
+      `innodb_buffer_pool_size=${PRODUCTION_MYSQL['innodb_buffer_pool_size']}`,
+      `innodb_flush_log_at_trx_commit=${PRODUCTION_MYSQL['innodb_flush_log_at_trx_commit']}`,
+      `slow_query_log=${PRODUCTION_MYSQL['slow_query_log']}`,
+      `long_query_time=${PRODUCTION_MYSQL['long_query_time']}`,
+    ].join('\n') + '\n' : '';
 
     let config;
     if (isWindows) {
@@ -547,14 +560,14 @@ module.exports = {
     basedir=${this.quoteConfigPath(mysqlPath)}
     datadir=${this.quoteConfigPath(dataDir)}
 port=${port}
-bind-address=0.0.0.0
+bind-address=${isProd ? '127.0.0.1' : '0.0.0.0'}
 enable-named-pipe=ON
 socket=MYSQL_${version.replace(/\./g, '')}
     pid-file=${this.quoteConfigPath(path.join(dataDir, 'mysql.pid'))}
     log-error=${this.quoteConfigPath(path.join(dataDir, 'error.log'))}
 default-time-zone='${timezoneOffset}'
 ${initFileLine}${tuningConfig}
-
+${prodConfig}
 [client]
 port=${port}
 `;
@@ -567,7 +580,7 @@ bind-address=127.0.0.1
     pid-file=${this.quoteConfigPath(path.join(dataDir, 'mysql.pid'))}
     log-error=${this.quoteConfigPath(path.join(dataDir, 'error.log'))}
 default-time-zone='${timezoneOffset}'
-${initFileLine}
+${initFileLine}${prodConfig}
 [client]
 port=${port}
     socket=${this.quoteConfigPath(path.join(dataDir, 'mysql.sock'))}

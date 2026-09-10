@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { spawn } = require('child_process');
 const { SERVICE_VERSIONS } = require('../../shared/serviceConfig');
+const { PRODUCTION_PHP } = require('../../shared/deploymentMode');
 
 class PhpManager {
   constructor(resourcePath, configStore, managers = {}) {
@@ -618,6 +619,114 @@ opcache.revalidate_freq = 0
       });
     });
   }
+  /**
+   * Get production-mode php.ini overrides.
+   * Filters out JIT settings for PHP versions below 8.0.
+   *
+   * @param {string} version - PHP version string (e.g. '8.2', '7.4')
+   * @returns {object} Key-value map of php.ini directives
+   */
+  getProductionPhpIniOverrides(version) {
+    const overrides = { ...PRODUCTION_PHP };
+    const majorMinor = parseFloat(version);
+
+    // JIT is only available in PHP 8.0+
+    if (majorMinor < 8.0) {
+      delete overrides['opcache.jit'];
+      delete overrides['opcache.jit_buffer_size'];
+    }
+
+    return overrides;
+  }
+
+  /**
+   * Build CLI -d arguments for php-cgi to apply production overrides at
+   * runtime without modifying the php.ini file on disk.
+   *
+   * @param {string} version - PHP version string
+   * @returns {string[]} Array of '-d key=value' arguments
+   */
+  getProductionPhpCgiArgs(version) {
+    const overrides = this.getProductionPhpIniOverrides(version);
+    const args = [];
+
+    for (const [key, value] of Object.entries(overrides)) {
+      args.push('-d', `${key}=${value}`);
+    }
+
+    return args;
+  }
+
+  /**
+   * Apply production overrides to an existing php.ini file on disk.
+   * Creates a backup (.ini.local-backup) before modifying.
+   *
+   * @param {string} version - PHP version string
+   * @returns {Promise<{success: boolean, backupPath?: string}>}
+   */
+  async applyProductionPhpIni(version) {
+    const versionInfo = this.phpVersions[version];
+    if (!versionInfo || !versionInfo.available) {
+      throw new Error(`PHP ${version} is not available`);
+    }
+
+    const iniPath = path.join(versionInfo.path, 'php.ini');
+    if (!(await fs.pathExists(iniPath))) {
+      await this.createDefaultIni(versionInfo.path, version);
+    }
+
+    // Create backup
+    const backupPath = `${iniPath}.local-backup`;
+    if (!(await fs.pathExists(backupPath))) {
+      await fs.copy(iniPath, backupPath);
+    }
+
+    let iniContent = await fs.readFile(iniPath, 'utf-8');
+    const overrides = this.getProductionPhpIniOverrides(version);
+
+    for (const [key, value] of Object.entries(overrides)) {
+      // Match existing directive (commented or not)
+      const regex = new RegExp(`^[;\\s]*(${key.replace(/\./g, '\\\\.')})\\s*=.*$`, 'gm');
+      const newLine = `${key} = ${value}`;
+
+      if (regex.test(iniContent)) {
+        iniContent = iniContent.replace(regex, newLine);
+      } else {
+        // Append if not found
+        iniContent = iniContent.trimEnd() + `\n${newLine}\n`;
+      }
+    }
+
+    await fs.writeFile(iniPath, iniContent);
+    this.managers?.log?.systemInfo(`Applied production php.ini overrides for PHP ${version}`);
+
+    return { success: true, backupPath };
+  }
+
+  /**
+   * Restore the local-development php.ini from backup.
+   *
+   * @param {string} version - PHP version string
+   * @returns {Promise<{success: boolean}>}
+   */
+  async restoreLocalPhpIni(version) {
+    const versionInfo = this.phpVersions[version];
+    if (!versionInfo) {
+      throw new Error(`PHP ${version} not found`);
+    }
+
+    const iniPath = path.join(versionInfo.path, 'php.ini');
+    const backupPath = `${iniPath}.local-backup`;
+
+    if (await fs.pathExists(backupPath)) {
+      await fs.copy(backupPath, iniPath, { overwrite: true });
+      this.managers?.log?.systemInfo(`Restored local php.ini for PHP ${version}`);
+      return { success: true };
+    }
+
+    return { success: false };
+  }
 }
 
 module.exports = { PhpManager };
+

@@ -1,10 +1,41 @@
-# 🚀 DevBox Pro v1.0.7
+# 🚀 DevBox Pro v1.0.8
 
-**Stable Release | More reliable local runtimes, databases, and service startup for PHP & Node.js development**
+**Stable Release | Production Mode, Windows Task Scheduler integration, hardened web security, and resilient background workers**
 
 ---
 
-## 🆕 What's New in v1.0.7
+## 🆕 What's New in v1.0.8
+
+### 🚀 Production Mode Support
+- **Dual Environment Profiles**: Switch between **Local Mode** (interactive debugging, detailed errors, single queue worker) and **Production Mode** (optimized performance, hardened security, multi-worker) globally or per project.
+- **Hierarchical Precedence**: Easily set a global deployment mode in Settings while allowing per-project overrides or inheriting global defaults.
+- **Production Environment Variables**: Injects `APP_ENV=production` and `NODE_ENV=production` across projects, web servers, and background supervisor workers.
+
+### ⚡ Performance & Caching Optimizations
+- **PHP OPcache & JIT**: Automatically enables OPcache (`opcache.enable=1`, `opcache.jit=1255`) and suppresses sensitive error output (`display_errors=Off`) in production.
+- **High-Performance FastCGI**: Automatically provisions up to 8 `PHP_FCGI_CHILDREN` in production for concurrent request handling.
+- **Optimized Database Settings**: MySQL production configuration applies `skip-name-resolve` and expands `innodb_buffer_pool_size` to 512MB.
+- **Secured Redis**: Configures mandatory password protection, a 256MB LRU memory cap (`allkeys-lru`), and disables high-risk admin commands like `FLUSHALL`.
+
+### 🛡️ Hardened Web Server Security
+- **Strict Transport Security (HSTS)**: Automatically attaches `Strict-Transport-Security` headers in HTTPS production mode.
+- **Defensive Headers**: Injects `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection`.
+- **Information Leak Prevention**: Sets `server_tokens off` on Nginx and `ServerTokens Prod` / `ServerSignature Off` on Apache, and disables directory indexing (`Options -Indexes`).
+
+### 👷 Resilient Supervisor Queue Workers
+- **Production Queue Flags**: Pre-configures production workers with `--tries=3`, `--timeout=90`, `--memory=128`, and `--max-jobs=1000`.
+- **Code 0 Clean Exit Restarts**: Handles Laravel's clean job/time retirement (exit code 0) smoothly without treating it as a process death.
+- **Crash-Loop & Exponential Backoff**: Prevents CPU spikes and thrashing when misconfigured jobs fail repeatedly.
+- **Independent Multi-Instance Supervision**: Full lifecycle isolation for workers configured with `numprocs > 1`.
+
+### ⏰ Native Windows Task Scheduler Integration
+- **Windows Task Scheduler Service**: Integrates directly with Windows `schtasks.exe` to trigger `php artisan schedule:run` every minute on Windows client servers.
+- **Silent Background Execution**: Runs via an optimized VBScript launcher through `wscript.exe`, eliminating disruptive black CMD popups every 60 seconds.
+- **Management & Status Controls**: Dedicated scheduler dashboard card in Project Details to view status, inspect execution logs, clear logs, and manually trigger "Run Now".
+
+---
+
+## 🆕 Previous Release Highlights (v1.0.7)
 
 ### ✨ Reliability & Performance Improvements
 
@@ -118,8 +149,8 @@ mysqldump -u root mydb > backup.sql  # Dump with the active DB version
 
 | File | Description |
 |------|-------------|
-| **DevBox-Pro-Setup-1.0.7.exe** | Installer version (recommended) |
-| **DevBox-Pro-1.0.7.exe** | Portable version – no installation required |
+| **DevBox-Pro-Setup-1.0.8.exe** | Installer version (recommended) |
+| **DevBox-Pro-1.0.8.exe** | Portable version – no installation required |
 
 ### System Requirements (Windows)
 - **OS**: Windows 10/11 (64-bit)

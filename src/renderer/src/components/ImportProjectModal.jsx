@@ -20,6 +20,7 @@ function ImportProjectModal({ project, onClose, onImport }) {
         documentRoot: project.documentRoot || '',
         ssl: project.ssl !== false,
         domain: project.domain || '',
+        deploymentMode: project.deploymentMode || 'global',
         nodePort: project.nodePort || 3000,
         nodeStartCommand: project.nodeStartCommand || 'npm start',
         nodeFramework: project.nodeFramework || '',

@@ -155,7 +155,9 @@ module.exports = {
           mariadbVersion: projectServices.mariadbVersion || '11.4',
         },
         database: config.database,
+        deploymentMode: config.deploymentMode,
       }),
+      deploymentMode: config.deploymentMode || 'global',
       supervisor: {
         workers: 1,
         processes: [],

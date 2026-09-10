@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs-extra');
 const { isPortAvailable } = require('../../utils/PortUtils');
+const { isProductionMode, PRODUCTION_APACHE } = require('../../../shared/deploymentMode');
 
 module.exports = {
   async createApacheVhost(project, targetApacheVersion = null) {
@@ -66,6 +67,14 @@ module.exports = {
     const resourcesPath = this.getResourcesPath();
     const phpCgiPath = path.join(resourcesPath, 'php', phpVersion, platform, 'php-cgi.exe').replace(/\\/g, '/');
 
+    // Resolve deployment mode for this project
+    const globalSettings = (this.configStore && typeof this.configStore.get === 'function')
+      ? this.configStore.get('settings', {})
+      : {};
+    const isProd = isProductionMode(project, globalSettings);
+    const directoryOptions = isProd ? 'FollowSymLinks MultiViews ExecCGI' : 'Indexes FollowSymLinks MultiViews ExecCGI';
+    const productionHeaderBlock = isProd ? PRODUCTION_APACHE.headers.map(h => `    ${h}`).join('\n') : '';
+
     let config = `
 # DevBox Pro - ${project.name}
 # Domain: ${project.domain}
@@ -76,17 +85,23 @@ module.exports = {
 # PHP Version: ${phpVersion}${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}${canUsePort80 ? '\n# Port 80 (first-come-first-served)' : ''}
 
 # HTTP Virtual Host
+${isProd ? '# Mode: PRODUCTION \u2014 hardened configuration' : '# Mode: LOCAL \u2014 development configuration'}
 <VirtualHost ${listenAddress}:${finalHttpPort}>
     ServerName ${project.domain}
   ServerAlias ${httpServerAlias}
     DocumentRoot "${documentRoot}"
-
+${isProd ? `
+    # Production hardening
+    ServerTokens ${PRODUCTION_APACHE.serverTokens}
+    ServerSignature ${PRODUCTION_APACHE.serverSignature}
+    TraceEnable ${PRODUCTION_APACHE.traceEnable}
+` : ''}
     SetEnvIf X-Forwarded-Proto "^https$" HTTPS=on
     SetEnvIf X-Forwarded-Proto "^https$" REQUEST_SCHEME=https
     SetEnvIf X-Forwarded-Port "^([0-9]+)$" SERVER_PORT=$1
     
     <Directory "${documentRoot}">
-        Options Indexes FollowSymLinks MultiViews ExecCGI
+        Options ${directoryOptions}
         AllowOverride All
         Require all granted
         
@@ -99,7 +114,18 @@ module.exports = {
             RewriteRule ^(.*)$ index.php?$1 [L,QSA]
         </IfModule>
     </Directory>
+${isProd ? `
+    # Production security headers
+${productionHeaderBlock}
 
+    # Deny access to sensitive files
+    <FilesMatch "\\.(env|log|bak|old|sql)$">
+        Require all denied
+    </FilesMatch>
+    <DirectoryMatch "/\\.(git|svn)">
+        Require all denied
+    </DirectoryMatch>
+` : ''}
     # PHP Configuration using Action/AddHandler
     ScriptAlias /php-cgi/ "${path.dirname(phpCgiPath).replace(/\\/g, '/')}/"
     <Directory "${path.dirname(phpCgiPath).replace(/\\/g, '/')}">
@@ -153,7 +179,7 @@ module.exports = {
     Header always set X-Content-Type-Options "nosniff"
     
     <Directory "${documentRoot}">
-        Options Indexes FollowSymLinks MultiViews ExecCGI
+        Options ${directoryOptions}
         AllowOverride All
         Require all granted
         

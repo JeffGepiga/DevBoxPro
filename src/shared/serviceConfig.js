@@ -183,6 +183,17 @@ function getDefaultVersion(serviceName) {
   return versions?.[0] || null;
 }
 
+const {
+  PRODUCTION_PHP,
+  PRODUCTION_NGINX,
+  PRODUCTION_NGINX_HEADERS,
+  PRODUCTION_APACHE,
+  PRODUCTION_MYSQL,
+  PRODUCTION_REDIS,
+  PRODUCTION_WORKER,
+  PRODUCTION_CONFIGS,
+} = require('./deploymentMode');
+
 // CommonJS export for Electron main process
 module.exports = {
   SERVICE_VERSIONS,
@@ -191,4 +202,13 @@ module.exports = {
   SERVICE_INFO,
   getServicePort,
   getDefaultVersion,
+  PRODUCTION_PHP,
+  PRODUCTION_NGINX,
+  PRODUCTION_NGINX_HEADERS,
+  PRODUCTION_APACHE,
+  PRODUCTION_MYSQL,
+  PRODUCTION_REDIS,
+  PRODUCTION_WORKER,
+  PRODUCTION_CONFIGS,
 };
+

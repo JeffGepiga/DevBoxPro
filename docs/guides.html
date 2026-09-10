@@ -50,9 +50,9 @@
 
   <section class="section" style="padding-top:0; padding-bottom:var(--space-2xl);">
     <div class="container" style="max-width:900px;">
-      <div class="callout callout-warning animate-in" style="margin:0 auto;">
-        <span class="callout-icon">⚠️</span>
-        <p><strong>Important:</strong> DevBox Pro is built for local development workflows. Internet sharing is available for temporary previews and testing, but the app is <strong>not meant for production use</strong>.</p>
+      <div class="callout callout-info animate-in" style="margin:0 auto;">
+        <span class="callout-icon">💡</span>
+        <p><strong>Deployment Profiles:</strong> DevBox Pro supports both <strong>Local Mode</strong> (optimized for rapid development and active debugging) and <strong>Production Mode</strong> (hardened security, OPcache, and Windows Task Scheduler integration for hosting client applications).</p>
       </div>
     </div>
   </section>
@@ -341,9 +341,9 @@ mysql -u root
         </li>
       </ol>
 
-      <div class="callout callout-warning animate-in">
-        <span class="callout-icon">⚠️</span>
-        <p><strong>Production note:</strong> Public tunnels are intended for demos, QA, stakeholder review, and short-lived previews. DevBox Pro is not a production hosting platform.</p>
+      <div class="callout callout-info animate-in">
+        <span class="callout-icon">💡</span>
+        <p><strong>Tunnel note:</strong> Public tunnels (Cloudflare / zrok) provide rapid previews and remote QA review. For hosting client apps directly on your Windows server, configure your domain to point to your machine with DevBox Pro set to <strong>Production Mode</strong>.</p>
       </div>
     </div>
   </section>
@@ -470,9 +470,9 @@ mysql -u root
         </p>
 
         <!-- Workers Tab -->
-        <h3 style="margin-bottom:var(--space-sm);">4. Workers</h3>
+        <h3 style="margin-bottom:var(--space-sm);">4. Workers & Scheduled Tasks</h3>
         <p style="color:var(--text-secondary); line-height:1.8; margin-bottom:var(--space-lg);">
-          Manage background processes using the built-in Supervisor integration. Add persistent background workers like Laravel Queue workers, Horizon, or any custom long-running scripts (e.g., <code>php artisan queue:work</code>). Set them to auto-restart if they crash.
+          Manage background processes using the built-in Supervisor integration. Add persistent background workers like Laravel Queue workers, Horizon, or any custom long-running scripts (e.g., <code>php artisan queue:work</code>). In Production Mode, queue workers automatically scale to multiple processes with retries, memory caps, and crash protection. DevBox Pro also integrates natively with <strong>Windows Task Scheduler</strong> to run Laravel cron schedules silently in the background every minute.
         </p>
 
         <!-- Environment Tab -->

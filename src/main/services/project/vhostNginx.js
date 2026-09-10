@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs-extra');
 const { isPortAvailable } = require('../../utils/PortUtils');
+const { isProductionMode, PRODUCTION_NGINX_HEADERS } = require('../../../shared/deploymentMode');
 
 module.exports = {
   async createNginxVhost(project, overridePhpFpmPort = null, targetNginxVersion = null) {
@@ -87,6 +88,13 @@ module.exports = {
     }
     const serverName = allNginxDomains.join(' ');
 
+    // Resolve deployment mode for this project
+    const globalSettings = (this.configStore && typeof this.configStore.get === 'function')
+      ? this.configStore.get('settings', {})
+      : {};
+    const isProd = isProductionMode(project, globalSettings);
+    const productionHeaders = isProd ? PRODUCTION_NGINX_HEADERS.map(h => `    ${h}`).join('\n') : '';
+
     let config = `
 # DevBox Pro - ${project.name}
 # Domain: ${project.domain}
@@ -96,6 +104,7 @@ module.exports = {
 # Ports: HTTP=${finalHttpPort}, HTTPS=${httpsPort}${networkAccess ? '\n# Network Access: ENABLED - accessible from local network' : ''}${canUsePort80 ? '\n# Port 80 (first-come-first-served)' : ''}
 
 # HTTP Server
+${isProd ? '# Mode: PRODUCTION — hardened configuration\n' : '# Mode: LOCAL — development configuration\n'}
 server {
     listen ${listenDirective};
     server_name ${serverName};
@@ -104,11 +113,18 @@ server {
 
     charset utf-8;
     client_max_body_size 128M;
-
+${isProd ? '    autoindex off;\n' : ''}
     # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-
+    ${isProd ? productionHeaders : 'add_header X-Frame-Options "SAMEORIGIN" always;\n    add_header X-Content-Type-Options "nosniff" always;'}
+${isProd ? `
+    # Production gzip compression
+    gzip on;
+    gzip_comp_level 6;
+    gzip_min_length 256;
+    gzip_proxied any;
+    gzip_vary on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+` : ''}
     location / {
         try_files $uri $uri/ /index.php?$query_string;
     }
@@ -142,13 +158,19 @@ server {
         fastcgi_param HTTP_X_FORWARDED_PROTO $devbox_forwarded_proto;
         fastcgi_param HTTP_X_FORWARDED_PORT $devbox_server_port;
         fastcgi_hide_header X-Powered-By;
-        fastcgi_read_timeout 300;
+        fastcgi_read_timeout ${isProd ? '60' : '300'};
     }
 
     location ~ /\\.(?!well-known).* {
         deny all;
     }
-
+${isProd ? `
+    # Production: deny access to sensitive files
+    location ~* \\.(env|log|bak|old|sql|git|svn)$ {
+        deny all;
+        return 404;
+    }
+` : ''}
     access_log "${dataPath.replace(/\\/g, '/')}/nginx/logs/${project.id}-access.log";
     error_log "${dataPath.replace(/\\/g, '/')}/nginx/logs/${project.id}-error.log";
 }

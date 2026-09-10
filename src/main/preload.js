@@ -131,6 +131,15 @@ contextBridge.exposeInMainWorld('devbox', {
     },
   },
 
+  // Windows Task Scheduler / Cron operations
+  scheduler: {
+    getStatus: (projectId) => ipcRenderer.invoke('scheduler:getStatus', projectId),
+    register: (projectId) => ipcRenderer.invoke('scheduler:register', projectId),
+    unregister: (projectId) => ipcRenderer.invoke('scheduler:unregister', projectId),
+    runNow: (projectId) => ipcRenderer.invoke('scheduler:runNow', projectId),
+    clearLogs: (projectId) => ipcRenderer.invoke('scheduler:clearLogs', projectId),
+  },
+
   // Log operations
   logs: {
     getProjectLogs: (projectId, lines) => ipcRenderer.invoke('logs:getProjectLogs', projectId, lines),

@@ -142,8 +142,15 @@
           </button>
           <div class="accordion-body">
             <div class="accordion-body-inner">
-              <p>No. DevBox Pro is designed for local development, testing, demos, and temporary preview environments.</p>
-              <p>Even with internet sharing through Cloudflare Tunnel or zrok, it is <strong>not meant for production use</strong> or long-term public hosting.</p>
+              <p><strong>Yes!</strong> Starting in v1.0.8, DevBox Pro fully supports <strong>Production Mode</strong> for hosting applications on Windows client servers.</p>
+              <p>When you enable Production Mode (either globally in Settings or per-project), DevBox Pro automatically configures production-ready runtime parameters:</p>
+              <ul>
+                <li><strong>PHP &amp; FastCGI:</strong> Enables OPcache and JIT compilation, turns off <code>display_errors</code>, and provisions up to 8 FastCGI workers.</li>
+                <li><strong>Web Servers:</strong> Injects hardened HTTP security headers (HSTS, <code>X-Frame-Options: SAMEORIGIN</code>, <code>X-Content-Type-Options: nosniff</code>), disables directory indexing, and hides version tokens.</li>
+                <li><strong>Databases &amp; Cache:</strong> Sets MySQL buffer pool to 512MB with <code>skip-name-resolve</code>, and enables Redis password authentication with LRU memory limits.</li>
+                <li><strong>Background Workers:</strong> Scales supervisor queue workers with retry limits, execution timeouts, max jobs recycling, and crash-loop backoff.</li>
+                <li><strong>Windows Task Scheduler:</strong> Registers scheduled tasks directly with Windows <code>schtasks.exe</code> to run Laravel cron schedules silently every minute without interrupting the user.</li>
+              </ul>
             </div>
           </div>
         </div>
