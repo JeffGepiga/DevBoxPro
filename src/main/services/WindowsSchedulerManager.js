@@ -13,9 +13,12 @@ class WindowsSchedulerManager {
     return process.platform === 'win32';
   }
 
+  sanitizeId(id) {
+    return String(id || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  }
+
   getTaskName(projectId) {
-    const sanitized = String(projectId).replace(/[^a-zA-Z0-9_-]/g, '_');
-    return `DevBoxPro_Schedule_${sanitized}`;
+    return `DevBoxPro_Schedule_${this.sanitizeId(projectId)}`;
   }
 
   async getSchedulerDir() {
@@ -34,12 +37,12 @@ class WindowsSchedulerManager {
 
   async getRunnerScriptPath(projectId) {
     const dir = await this.getSchedulerDir();
-    return path.join(dir, `${projectId}-cron.vbs`);
+    return path.join(dir, `${this.sanitizeId(projectId)}-cron.vbs`);
   }
 
   async getLogFilePath(projectId) {
     const dir = await this.getSchedulerDir();
-    return path.join(dir, `${projectId}-cron.log`);
+    return path.join(dir, `${this.sanitizeId(projectId)}-cron.log`);
   }
 
   /**
@@ -52,12 +55,18 @@ class WindowsSchedulerManager {
     const phpPath = this.getPhpPath(project);
     const projectPath = project.path;
 
-    // In VBScript strings, double quotes inside strings are doubled: ""
+    // Sanitize quotes for VBScript strings (in VBScript, double quote inside literal is escaped as "")
+    const cleanProject = String(projectPath).replace(/"/g, '""');
+    const cleanPhp = String(phpPath).replace(/"/g, '""');
+    const cleanLog = String(logPath).replace(/"/g, '""');
+
+    // In VBScript, concatenate double quote character """ & path & """
+    // to produce: cmd.exe /c "C:\path\php.exe" artisan schedule:run >> "C:\path\cron.log" 2>&1
     const vbsContent = [
       'On Error Resume Next',
       'Set WshShell = CreateObject("WScript.Shell")',
-      `WshShell.CurrentDirectory = "${projectPath.replace(/\\/g, '\\\\')}"`,
-      `cmd = "cmd.exe /c """"${phpPath}"""" artisan schedule:run >> """"${logPath}"""" 2>&1"`,
+      `WshShell.CurrentDirectory = "${cleanProject}"`,
+      `cmd = "cmd.exe /c """ & "${cleanPhp}" & """ artisan schedule:run >> """ & "${cleanLog}" & """ 2>&1"`,
       'WshShell.Run cmd, 0, False',
       'Set WshShell = Nothing',
     ].join('\r\n');

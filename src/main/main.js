@@ -4,7 +4,7 @@ const util = require('util');
 if (!util.isObject) util.isObject = (arg) => arg !== null && typeof arg === 'object';
 if (!util.isFunction) util.isFunction = (arg) => typeof arg === 'function';
 
-const { app, BrowserWindow, ipcMain, Menu, Tray, nativeTheme, dialog, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, Tray, nativeTheme, dialog, nativeImage, shell } = require('electron');
 const path = require('path');
 
 // Disable hardware acceleration to save 40-80MB of RAM since we don't need intense GPU rendering
@@ -184,6 +184,31 @@ async function createWindow() {
   // Log renderer errors
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     managers.log?.systemError(`Failed to load: ${errorDescription} (${errorCode})`);
+  });
+
+  // Secure external link handling: prevent unmanaged child windows, route external URLs to system browser
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsed = new URL(url);
+      if (['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
+        shell.openExternal(url);
+      }
+    } catch {}
+    return { action: 'deny' };
+  });
+
+  // Restrict navigation away from the local app origin
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const isLocal = url.startsWith('http://localhost:3000') || url.startsWith('file://');
+    if (!isLocal) {
+      event.preventDefault();
+      try {
+        const parsed = new URL(url);
+        if (['http:', 'https:'].includes(parsed.protocol)) {
+          shell.openExternal(url);
+        }
+      } catch {}
+    }
   });
 
   // Disable browser shortcuts that don't make sense for a desktop app

@@ -660,9 +660,18 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
   });
 
   ipcMain.handle('system:openExternal', async (event, url) => {
-    if (!url) return false;
-    await shell.openExternal(url);
-    return true;
+    if (!url || typeof url !== 'string') return false;
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
+        log.systemWarn('system:openExternal blocked unsupported protocol', { url });
+        return false;
+      }
+      await shell.openExternal(url);
+      return true;
+    } catch {
+      return false;
+    }
   });
 
   ipcMain.handle('system:openPath', async (event, folderPath) => {

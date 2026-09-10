@@ -75,6 +75,21 @@ describe('WindowsSchedulerManager', () => {
       expect(content).toContain('schedule:run');
       expect(content).toContain('0, False'); // Hidden execution
     });
+
+    it('safely handles paths with spaces and quotes', async () => {
+      const project = {
+        id: 'proj-with spaces',
+        name: 'Laravel App',
+        path: 'C:\\Projects\\My App "Special"',
+        phpVersion: '8.3',
+      };
+
+      const runnerPath = await mgr.generateRunnerScript(project);
+      expect(runnerPath).toContain('proj-with_spaces-cron.vbs');
+      const content = await fs.readFile(runnerPath, 'utf8');
+      expect(content).toContain('C:\\Projects\\My App ""Special""');
+      expect(content).toContain('artisan schedule:run');
+    });
   });
 
   describe('registerScheduleTask', () => {
