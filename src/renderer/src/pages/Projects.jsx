@@ -279,6 +279,9 @@ function Projects() {
   });
 
   const handleDeleteClick = (project) => {
+    const isProduction = project?.deploymentMode === 'production' ||
+      (project?.deploymentMode !== 'local' && settings?.deploymentMode === 'production');
+    if (isProduction) return;
     setDeleteModal({ open: true, project });
     setDeleteConfirmText('');
     setDeleteFiles(false);
@@ -871,7 +874,9 @@ function DiscoveredProjectCard({ project, onImport }) {
 }
 
 function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor, isDraggable, isDragged, isDragOver, onDragStart, onDragEnter, onDragOver, onDrop, onDragEnd }) {
-  const { projectLoadingStates, setProjectLoading } = useApp();
+  const { projectLoadingStates, setProjectLoading, settings } = useApp();
+  const isProduction = project?.deploymentMode === 'production' ||
+    (project?.deploymentMode !== 'local' && settings?.deploymentMode === 'production');
   const loadingState = projectLoadingStates[project.id];
   const isStarting = loadingState === 'starting';
   const isStopping = loadingState === 'stopping';
@@ -1033,19 +1038,23 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
                     <Code className="w-4 h-4" />
                     Open in Editor
                   </button>
-                  <hr className="my-1 border-gray-200 dark:border-gray-700" />
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      onDelete();
-                      setShowMenu(false);
-                    }}
-                    className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Delete
-                  </button>
+                  {!isProduction && (
+                    <>
+                      <hr className="my-1 border-gray-200 dark:border-gray-700" />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          onDelete();
+                          setShowMenu(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -1146,7 +1155,9 @@ function ProjectCard({ project, onStart, onStop, onDelete, onMove, defaultEditor
 }
 
 function ProjectTableRow({ project, onStart, onStop, onDelete, onMove, defaultEditor, isDraggable, isDragged, isDragOver, onDragStart, onDragEnter, onDragOver, onDrop, onDragEnd }) {
-  const { projectLoadingStates, setProjectLoading } = useApp();
+  const { projectLoadingStates, setProjectLoading, settings } = useApp();
+  const isProduction = project?.deploymentMode === 'production' ||
+    (project?.deploymentMode !== 'local' && settings?.deploymentMode === 'production');
   const loadingState = projectLoadingStates[project.id];
   const isStarting = loadingState === 'starting';
   const isStopping = loadingState === 'stopping';
@@ -1340,13 +1351,17 @@ function ProjectTableRow({ project, onStart, onStop, onDelete, onMove, defaultEd
                 >
                   <Code className="w-4 h-4" /> Open in Editor
                 </button>
-                <hr className="my-1 border-gray-200 dark:border-gray-700" />
-                <button
-                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); onDelete(); setShowMenu(false); }}
-                  className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
-                >
-                  <Trash2 className="w-4 h-4" /> Delete
-                </button>
+                {!isProduction && (
+                  <>
+                    <hr className="my-1 border-gray-200 dark:border-gray-700" />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); e.preventDefault(); onDelete(); setShowMenu(false); }}
+                      className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" /> Delete
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>

@@ -12,6 +12,7 @@ const projectServiceDeps = require('./project/serviceDeps');
 const projectVhostApache = require('./project/vhostApache');
 const projectVhostNginx = require('./project/vhostNginx');
 const projectVhostOrchestration = require('./project/vhostOrchestration');
+const { isProductionMode } = require('../../shared/deploymentMode');
 
 class ProjectManager {
   constructor(configStore, managers) {
@@ -177,6 +178,11 @@ class ProjectManager {
     const project = this.getProject(id);
     if (!project) {
       throw new Error('Project not found');
+    }
+
+    const settings = this.configStore?.get ? this.configStore.get('settings', {}) : {};
+    if (isProductionMode(project, settings)) {
+      throw new Error('Cannot delete project while Production Mode is active. Switch to Local Mode first.');
     }
 
     if (this.runningProjects.has(id)) {

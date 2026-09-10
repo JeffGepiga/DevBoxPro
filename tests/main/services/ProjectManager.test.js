@@ -388,6 +388,14 @@ describe('ProjectManager', () => {
 
             expect(configStore.set).toHaveBeenCalled();
         });
+
+        it('blocks deleting a project when production mode is active', async () => {
+            const project = { id: 'prod123', name: 'ProdApp', type: 'static', path: '/foo/prod', domain: 'prod.test', deploymentMode: 'production' };
+            configStore.set('projects', [project]);
+            mgr.getProjectStatus = vi.fn().mockReturnValue('stopped');
+
+            await expect(mgr.deleteProject('prod123', false)).rejects.toThrow(/Cannot delete project while Production Mode is active/);
+        });
     });
 
     // ═══════════════════════════════════════════════════════════════════

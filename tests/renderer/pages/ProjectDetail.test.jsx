@@ -440,5 +440,24 @@ describe('ProjectDetail', () => {
 
             expect(await screen.findByText('https://second-project.trycloudflare.com')).toBeInTheDocument();
         });
+
+        it('hides Delete Project when project is in Production Mode', async () => {
+            const prodProject = {
+                ...MOCK_PROJECT,
+                id: 'proj-prod',
+                deploymentMode: 'production',
+            };
+            mockProjects = [prodProject];
+            mockDevbox.projects.getAll.mockResolvedValue([prodProject]);
+
+            renderProjectDetail('proj-prod');
+
+            await waitFor(() => {
+                expect(screen.getByText('My Laravel App')).toBeInTheDocument();
+            });
+
+            expect(screen.queryByText('Delete Project')).not.toBeInTheDocument();
+            expect(screen.getByText(/Project deletion is hidden and protected while Production Mode is active/i)).toBeInTheDocument();
+        });
     });
 });

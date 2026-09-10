@@ -68,6 +68,10 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
   const [editedName, setEditedName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
 
+  // Production mode protection
+  const isProduction = project?.deploymentMode === 'production' ||
+    (project?.deploymentMode !== 'local' && settings?.deploymentMode === 'production');
+
   // Update tab from URL params
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -151,6 +155,7 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
   };
 
   const handleDeleteClick = () => {
+    if (isProduction) return;
     setShowDeleteModal(true);
     setDeleteConfirmText('');
     setDeleteFiles(false);
@@ -433,23 +438,32 @@ function ProjectDetail({ projectId: propProjectId, onCloseTerminal }) {
       )}
       {activeTab === 'environment' && <EnvironmentTab project={project} onRefresh={refreshProjects} />}
 
-      {/* Danger Zone */}
-      <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-        <div className="card border-red-200 dark:border-red-900/50 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-red-600">Danger Zone</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Remove the project from DevBox Pro. You can optionally delete the project files.
-              </p>
+      {/* Danger Zone - Hidden when in Production Mode */}
+      {!isProduction ? (
+        <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="card border-red-200 dark:border-red-900/50 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-red-600">Danger Zone</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Remove the project from DevBox Pro. You can optionally delete the project files.
+                </p>
+              </div>
+              <button onClick={handleDeleteClick} className="btn-danger btn-sm">
+                <Trash2 className="w-4 h-4" />
+                Delete Project
+              </button>
             </div>
-            <button onClick={handleDeleteClick} className="btn-danger btn-sm">
-              <Trash2 className="w-4 h-4" />
-              Delete Project
-            </button>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-200 dark:border-amber-800/40">
+            <Shield className="w-4 h-4 shrink-0" />
+            <span>Project deletion is hidden and protected while Production Mode is active.</span>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (

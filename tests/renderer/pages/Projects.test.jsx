@@ -206,5 +206,18 @@ describe('Projects', () => {
             const row = screen.getByText('Laravel Blog').closest('tr');
             expect(row).not.toHaveAttribute('draggable', 'true');
         });
+
+        it('hides delete action from menu when project is in Production Mode', async () => {
+            mockProjects[0].deploymentMode = 'production';
+            renderProjects();
+            await waitFor(() => screen.getByText('Laravel Blog'));
+
+            const moreButtons = screen.getAllByRole('button').filter(b => b.className.includes('btn-ghost'));
+            if (moreButtons.length > 0) {
+                fireEvent.click(moreButtons[0]);
+                expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+            }
+            mockProjects[0].deploymentMode = undefined;
+        });
     });
 });
