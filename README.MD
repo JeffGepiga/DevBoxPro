@@ -121,6 +121,12 @@ DevBox Pro is an Electron desktop app with a React renderer and a Node.js main p
 - **Resilient Queue Workers** - Multi-process worker management with `--tries=3`, `--timeout=90`, `--memory=128`, `--max-jobs=1000`, clean-exit restarts, and exponential backoff crash protection
 - **Native Windows Task Scheduler** - Integrates with Windows `schtasks.exe` to trigger `php artisan schedule:run` every minute using a silent runner without flashing CMD windows
 
+> **⚠️ Production Mode Precautions & Intended Use:**
+> - **Deployment Scope:** Production Mode is designed for internal office/LAN servers, dedicated client Windows PCs, kiosk workstations, or staging environments. It is **not** a direct replacement for hardened, dedicated Linux cloud infrastructure (e.g., AWS, DigitalOcean) for mission-critical, public-facing web applications.
+> - **Code Caching:** To maximize performance, `opcache.validate_timestamps` is set to `0`. Modified script files will **not** take effect immediately; you must restart the project or reload the web server to flush cached bytecode.
+> - **Suppressed Error Output:** `display_errors` is turned `Off` to prevent sensitive credentials from leaking to visitors. Check the project **Logs** tab in DevBox Pro to diagnose runtime issues.
+> - **Operating System Considerations:** For continuous unattended hosting on Windows, disable system sleep/hibernation, configure Windows Update active hours, and ensure adequate machine airflow and power supply backup (UPS).
+
 ### ⚙️ Project Configuration
 - **Service version selection** per project
 - **Compatibility validation** - Warns about incompatible combinations
