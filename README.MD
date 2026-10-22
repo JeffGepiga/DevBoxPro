@@ -13,9 +13,46 @@ Maintaining an old PHP 7.4 project while building a new Laravel 11 app on PHP 8.
 
 DevBox Pro is an Electron desktop app with a React renderer and a Node.js main process. It manages PHP, Node.js, MySQL, MariaDB, Redis, Nginx, Apache, PostgreSQL, MongoDB, MinIO, Memcached, Mailpit, phpMyAdmin, Composer, Git, and more from one local interface.
 
-> **Version 1.0.8:** Introduces first-class **Production Mode** support with OPcache optimization, hardened web server security headers, resilient queue workers, and native **Windows Task Scheduler** integration for reliable production server deployment on Windows clients.
+> **Version 1.0.8:** Introduces first-class **Production Mode** support with OPcache optimization, hardened web server security headers, resilient queue workers, safe in-place binary upgrades, and native **Windows Task Scheduler** integration for reliable production server deployment on Windows clients.
 >
 > DevBox Pro provides two operation profiles: **Local Mode** for active debugging, hot reload, and development agility; and **Production Mode** for high performance, hardened security, and unattended background service and scheduler reliability.
+
+---
+
+## 🆕 What's New in v1.0.8
+
+### 🚀 Production Mode Support
+- **Dual Environment Profiles**: Switch between **Local Mode** (interactive debugging, detailed errors, single queue worker) and **Production Mode** (optimized performance, hardened security, multi-worker) globally or per project.
+- **Hierarchical Precedence**: Easily set a global deployment mode in Settings while allowing per-project overrides or inheriting global defaults.
+- **Production Environment Variables**: Injects `APP_ENV=production` and `NODE_ENV=production` across projects, web servers, and background supervisor workers.
+
+### ⚡ Performance & Caching Optimizations
+- **PHP OPcache & JIT**: Automatically enables OPcache (`opcache.enable=1`, `opcache.jit=1255`) and suppresses sensitive error output (`display_errors=Off`) in production.
+- **High-Performance FastCGI**: Automatically provisions up to 8 `PHP_FCGI_CHILDREN` in production for concurrent request handling.
+- **Optimized Database Settings**: MySQL production configuration applies `skip-name-resolve` and expands `innodb_buffer_pool_size` to 512MB.
+- **Secured Redis**: Configures mandatory password protection, a 256MB LRU memory cap (`allkeys-lru`), and disables high-risk admin commands like `FLUSHALL`.
+
+### 🛡️ Hardened Web Server Security
+- **Strict Transport Security (HSTS)**: Automatically attaches `Strict-Transport-Security` headers in HTTPS production mode.
+- **Defensive Headers**: Injects `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection`.
+- **Information Leak Prevention**: Sets `server_tokens off` on Nginx and `ServerTokens Prod` / `ServerSignature Off` on Apache, and disables directory indexing (`Options -Indexes`).
+
+### 👷 Resilient Supervisor Queue Workers
+- **Production Queue Flags**: Pre-configures production workers with `--tries=3`, `--timeout=90`, `--memory=128`, and `--max-jobs=1000`.
+- **Code 0 Clean Exit Restarts**: Handles Laravel's clean job/time retirement (exit code 0) smoothly without treating it as a process death.
+- **Crash-Loop & Exponential Backoff**: Prevents CPU spikes and thrashing when misconfigured jobs fail repeatedly.
+- **Independent Multi-Instance Supervision**: Full lifecycle isolation for workers configured with `numprocs > 1`.
+
+### ⏰ Native Windows Task Scheduler Integration
+- **Windows Task Scheduler Service**: Integrates directly with Windows `schtasks.exe` to trigger `php artisan schedule:run` every minute on Windows client servers.
+- **Silent Background Execution**: Runs via an optimized VBScript launcher through `wscript.exe`, eliminating disruptive black CMD popups every 60 seconds.
+- **Management & Status Controls**: Dedicated scheduler dashboard card in Project Details to view status, inspect execution logs, clear logs, and manually trigger "Run Now".
+
+### 🔄 Safe In-Place Binary Updates
+- **One-Click In-Place Upgrades**: Safely upgrade installed packages (PHP, Node.js, Python, MySQL, MariaDB) in-place without manual file deletion or path reconfiguration.
+- **Automated Configuration Preservation**: Preserves customized `php.ini` directives (e.g., `memory_limit`, `upload_max_filesize`), custom PHP extensions in `ext/`, CA certificates (`cacert.pem`), and global Node.js npm packages.
+- **Zero File-Lock / EPERM Failures**: Automatically detects and stops running background services (including phpMyAdmin and database daemons) and active project workers that hold file locks on Windows DLLs (like `libcrypto-3-x64.dll`).
+- **Resilient Retry & Auto-Restart**: Features a 5-attempt retry loop with exponential backoff and Windows CIM process termination, then automatically brings all temporarily stopped services and projects back online immediately after binary replacement.
 
 ---
 
@@ -87,10 +124,11 @@ DevBox Pro is an Electron desktop app with a React renderer and a Node.js main p
 - **Custom PHP** - Works with any PHP application
 - **Node.js** - Express, Next.js, Nuxt, Fastify, or any Node.js app
 
-### 🔧 Binary Manager
+### 🔧 Binary Manager & Safe In-Place Updates
 - **Download individual components** - Only install what you need
-- **Multi-version management** - Keep multiple versions installed
-- **One-click updates** - Easy version upgrades
+- **Multi-version management** - Keep multiple versions installed side by side
+- **Safe in-place upgrades** - Update packages (PHP, Node.js, Python, MySQL, MariaDB) while preserving custom `php.ini` configs, custom extensions, and npm packages
+- **Zero-lock process management** - Automatically stops conflicting project workers and background services (like phpMyAdmin), terminating lingering file locks to prevent `EPERM` errors on Windows, and auto-restarting them post-update
 - **Import custom binaries** - Use your own compiled versions
 - **Remote definitions** - Binary metadata and compatibility rules can be updated without shipping a new app build
 

@@ -33,6 +33,12 @@
 - **Silent Background Execution**: Runs via an optimized VBScript launcher through `wscript.exe`, eliminating disruptive black CMD popups every 60 seconds.
 - **Management & Status Controls**: Dedicated scheduler dashboard card in Project Details to view status, inspect execution logs, clear logs, and manually trigger "Run Now".
 
+### 🔄 Safe In-Place Binary Updates
+- **One-Click In-Place Upgrades**: Safely upgrade installed packages (PHP, Node.js, Python, MySQL, MariaDB) in-place when remote binary definitions are updated, without manual file deletion or broken paths.
+- **Automated Configuration Preservation**: Preserves customized `php.ini` directives (e.g., `memory_limit`, `upload_max_filesize`), custom extensions in `ext/`, CA certificates (`cacert.pem`), and global Node.js npm packages.
+- **Zero File-Lock / EPERM Failures**: Automatically detects and stops running background services (including phpMyAdmin and database daemons) and active project workers that hold file locks on Windows DLLs (like `libcrypto-3-x64.dll`).
+- **Resilient Retry & Auto-Restart**: Features a 5-attempt retry loop with exponential backoff and Windows CIM process termination, then automatically brings all temporarily stopped services and projects back online immediately after binary replacement.
+
 ---
 
 ## 🆕 Previous Release Highlights (v1.0.7)

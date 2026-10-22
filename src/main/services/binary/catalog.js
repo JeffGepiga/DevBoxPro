@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs-extra');
+const { killProcessesInDirectory } = require('../../utils/SpawnUtils');
 
 module.exports = {
   createBinaryFilesInUseError(type, version = null, originalError = null) {
@@ -35,6 +36,21 @@ module.exports = {
             id: project.id,
             name: project.name,
             reason: project.isRunning ? `Running project uses ${runtimeLabel}` : `Project is configured to use ${runtimeLabel}`,
+          });
+        }
+      }
+    }
+
+    if (type === 'php' && serviceManager) {
+      const pmaStatus = serviceManager.serviceStatus?.get('phpmyadmin');
+      if (pmaStatus?.status === 'running') {
+        const defaultPhp = this.managers?.php?.getDefaultVersion?.();
+        if (!defaultPhp || defaultPhp === version) {
+          items.push({
+            kind: 'service',
+            serviceName: 'phpmyadmin',
+            name: 'phpMyAdmin',
+            reason: `phpMyAdmin service is currently running with PHP ${version}`,
           });
         }
       }
@@ -92,7 +108,8 @@ module.exports = {
           if (item.kind === 'project') {
             await this.managers?.project?.stopProject(item.id);
           } else if (item.kind === 'service') {
-            await this.managers?.service?.stopService(type, item.version ?? version ?? null);
+            const svc = item.serviceName || type;
+            await this.managers?.service?.stopService(svc, item.version ?? version ?? null);
           } else if (item.kind === 'tunnel') {
             await this.managers?.tunnel?.stopTunnel(item.id);
           }
@@ -123,6 +140,10 @@ module.exports = {
       targetPath = path.join(this.resourcesPath, 'mailpit', platform);
     } else {
       targetPath = path.join(this.resourcesPath, type, platform);
+    }
+
+    if (force) {
+      await killProcessesInDirectory(targetPath);
     }
 
     await this.assertBinaryFolderDeletable(targetPath, type, version);

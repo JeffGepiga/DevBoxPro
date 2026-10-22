@@ -2,6 +2,68 @@ const path = require('path');
 const fs = require('fs-extra');
 const https = require('https');
 const { createWriteStream } = require('fs');
+const { execFile } = require('child_process');
+const { killProcessesInDirectory, killProcessesByPath } = require('../../utils/SpawnUtils');
+
+const STANDARD_PHP_EXTENSIONS = new Set([
+  'php_bz2.dll',
+  'php_curl.dll',
+  'php_dba.dll',
+  'php_enchant.dll',
+  'php_exif.dll',
+  'php_ffi.dll',
+  'php_fileinfo.dll',
+  'php_ftp.dll',
+  'php_gd.dll',
+  'php_gettext.dll',
+  'php_gmp.dll',
+  'php_imap.dll',
+  'php_intl.dll',
+  'php_ldap.dll',
+  'php_mbstring.dll',
+  'php_mysqli.dll',
+  'php_oci8_12c.dll',
+  'php_oci8_19.dll',
+  'php_odbc.dll',
+  'php_opcache.dll',
+  'php_openssl.dll',
+  'php_pdo_firebird.dll',
+  'php_pdo_mysql.dll',
+  'php_pdo_oci.dll',
+  'php_pdo_odbc.dll',
+  'php_pdo_pgsql.dll',
+  'php_pdo_sqlite.dll',
+  'php_pgsql.dll',
+  'php_shmop.dll',
+  'php_snmp.dll',
+  'php_soap.dll',
+  'php_sockets.dll',
+  'php_sodium.dll',
+  'php_sqlite3.dll',
+  'php_tidy.dll',
+  'php_xsl.dll',
+  'php_zip.dll',
+]);
+
+function parseSemVer(versionStr) {
+  if (!versionStr || typeof versionStr !== 'string') return null;
+  const match = versionStr.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
+  if (!match) return null;
+  return {
+    major: parseInt(match[1], 10),
+    minor: parseInt(match[2], 10),
+    patch: parseInt(match[3] || '0', 10),
+  };
+}
+
+function compareSemVer(v1, v2) {
+  const p1 = parseSemVer(v1);
+  const p2 = parseSemVer(v2);
+  if (!p1 || !p2) return 0;
+  if (p1.major !== p2.major) return p1.major - p2.major;
+  if (p1.minor !== p2.minor) return p1.minor - p2.minor;
+  return p1.patch - p2.patch;
+}
 
 async function needsWindowsRuntimeSync(sourcePath, destPath) {
   if (!await fs.pathExists(destPath)) {
@@ -155,6 +217,16 @@ module.exports = {
       }
 
       await fs.remove(downloadPath);
+
+      const configuredVersion = this.getConfiguredPhpVersion(version);
+      await fs.writeJson(path.join(extractPath, '.version-info.json'), {
+        version: configuredVersion,
+        baseVersion: version,
+        filename: downloadInfo.filename,
+        url: downloadInfo.url,
+        installedAt: new Date().toISOString(),
+      }, { spaces: 2 }).catch(() => {});
+
       this.emitProgress(id, { status: 'completed', progress: 100 });
       return { success: true };
     } catch (error) {
@@ -415,4 +487,473 @@ ${extensionLines.join('\n')}
       }
     }
   },
-};
+
+  getConfiguredPhpVersion(version) {
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads?.php?.[version]?.[platform] || this.downloads?.php?.[version]?.all;
+    if (!downloadInfo) return version;
+
+    const source = downloadInfo.filename || downloadInfo.url || '';
+    const match = source.match(/php-?(\d+\.\d+\.\d+)/i);
+    if (match) {
+      return match[1];
+    }
+    return version;
+  },
+
+  async getInstalledPhpVersion(version) {
+    const platform = this.getPlatform();
+    const phpPath = path.join(this.resourcesPath, 'php', version, platform);
+    const phpExe = platform === 'win' ? 'php.exe' : 'php';
+    const phpExePath = path.join(phpPath, phpExe);
+
+    if (!await fs.pathExists(phpExePath)) {
+      return null;
+    }
+
+    const infoPath = path.join(phpPath, '.version-info.json');
+    if (await fs.pathExists(infoPath)) {
+      try {
+        const info = await fs.readJson(infoPath);
+        if (info && info.version) {
+          return info.version;
+        }
+      } catch {
+        // Fall back to probe
+      }
+    }
+
+    try {
+      const output = await new Promise((resolve, reject) => {
+        execFile(phpExePath, ['-n', '-r', 'echo PHP_VERSION;'], { timeout: 3000 }, (error, stdout) => {
+          if (error) reject(error);
+          else resolve(stdout ? stdout.trim() : '');
+        });
+      });
+
+      if (output && /^\d+\.\d+\.\d+/.test(output)) {
+        await fs.writeJson(infoPath, {
+          version: output,
+          baseVersion: version,
+          detectedAt: new Date().toISOString(),
+        }, { spaces: 2 }).catch(() => {});
+        return output;
+      }
+    } catch {
+      // Fall back if execFile fails
+    }
+
+    return version;
+  },
+
+  async getPhpVersionDetails(version) {
+    const installedVersion = await this.getInstalledPhpVersion(version);
+    const configuredVersion = this.getConfiguredPhpVersion(version);
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads?.php?.[version]?.[platform] || this.downloads?.php?.[version]?.all;
+
+    let hasUpdate = false;
+    if (installedVersion && configuredVersion) {
+      hasUpdate = compareSemVer(configuredVersion, installedVersion) > 0;
+    }
+
+    return {
+      version,
+      installed: Boolean(installedVersion),
+      installedVersion: installedVersion || null,
+      configuredVersion,
+      hasUpdate,
+      downloadInfo: downloadInfo || null,
+    };
+  },
+
+  async getAllPhpVersionDetails() {
+    const details = {};
+    const platform = this.getPlatform();
+    const phpBaseDir = path.join(this.resourcesPath, 'php');
+
+    const versions = new Set(this.versionMeta?.php || []);
+    if (await fs.pathExists(phpBaseDir)) {
+      try {
+        const dirs = await fs.readdir(phpBaseDir);
+        for (const dir of dirs) {
+          if (!['win', 'mac', 'linux', 'downloads'].includes(dir)) {
+            versions.add(dir);
+          }
+        }
+      } catch {}
+    }
+
+    for (const v of versions) {
+      details[v] = await this.getPhpVersionDetails(v);
+    }
+
+    return details;
+  },
+
+  async checkPhpModifications(version) {
+    const platform = this.getPlatform();
+    const phpPath = path.join(this.resourcesPath, 'php', version, platform);
+
+    const result = {
+      hasModifications: false,
+      modifiedFiles: [],
+      hasCustomIni: false,
+      customExtensions: [],
+      customFiles: [],
+    };
+
+    if (!await fs.pathExists(phpPath)) {
+      return result;
+    }
+
+    // Check php.ini
+    const iniPath = path.join(phpPath, 'php.ini');
+    if (await fs.pathExists(iniPath)) {
+      result.hasCustomIni = true;
+      result.modifiedFiles.push('php.ini');
+    }
+
+    // Check ext/ for custom extensions
+    const extDir = path.join(phpPath, 'ext');
+    if (await fs.pathExists(extDir)) {
+      try {
+        const files = await fs.readdir(extDir);
+        for (const file of files) {
+          if (!STANDARD_PHP_EXTENSIONS.has(file.toLowerCase()) && (file.endsWith('.dll') || file.endsWith('.so'))) {
+            result.customExtensions.push(file);
+            result.modifiedFiles.push(`ext/${file}`);
+          }
+        }
+      } catch {}
+    }
+
+    // Check root directory for custom files
+    try {
+      const rootEntries = await fs.readdir(phpPath);
+      const standardEntries = new Set([
+        'php.exe', 'php-cgi.exe', 'php-win.exe', 'phpdbg.exe', 'php.ini', 'php.ini-development',
+        'php.ini-production', 'ext', 'cacert.pem', '.version-info.json', 'license.txt', 'news.txt',
+        'snapshot.txt', 'glibc-bin', 'dev', 'etc', 'lib', 'usr', 'sbin', 'var', 'php.ini.backup-pre-update'
+      ]);
+
+      for (const entry of rootEntries) {
+        const lower = entry.toLowerCase();
+        if (!standardEntries.has(lower) && !lower.endsWith('.dll')) {
+          const entryPath = path.join(phpPath, entry);
+          const stat = await fs.stat(entryPath);
+          if (stat.isFile()) {
+            result.customFiles.push(entry);
+            result.modifiedFiles.push(entry);
+          }
+        }
+      }
+    } catch {}
+
+    result.hasModifications = result.modifiedFiles.length > 0;
+    return result;
+  },
+
+  async updatePhp(version, options = {}) {
+    const id = `php-${version}`;
+    const platform = this.getPlatform();
+    const downloadInfo = this.downloads?.php?.[version]?.[platform] || this.downloads?.php?.[version]?.all;
+
+    this.ensureAutomatedDownloadAvailable(downloadInfo, `PHP ${version}`, platform);
+
+    const preserveModifications = options.preserveModifications !== false;
+    const force = Boolean(options.force);
+
+    // Check running conflicts
+    const conflicts = typeof this.getRunningConflicts === 'function'
+      ? await this.getRunningConflicts('php', version)
+      : { hasConflicts: false, items: [] };
+
+    if (conflicts.hasConflicts && !force) {
+      const error = new Error(`PHP ${version} is currently in use. Stop the project or service using it, then try updating again.`);
+      error.code = 'BINARY_IN_USE';
+      error.conflicts = conflicts.items;
+      throw error;
+    }
+
+    const stoppedProjects = [];
+    let stoppedPhpMyAdmin = false;
+
+    if (force && conflicts.hasConflicts) {
+      for (const item of conflicts.items) {
+        try {
+          if (item.kind === 'project') {
+            await this.managers?.project?.stopProject(item.id);
+            if (!stoppedProjects.includes(item.id)) {
+              stoppedProjects.push(item.id);
+            }
+          } else if (item.kind === 'service') {
+            const svcName = item.serviceName || item.id;
+            await this.managers?.service?.stopService(svcName, item.version ?? null);
+            if (svcName === 'phpmyadmin') {
+              stoppedPhpMyAdmin = true;
+            }
+          }
+        } catch (error) {
+          this.managers?.log?.systemWarn(`Could not stop ${item.name} before PHP update`, { error: error.message });
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    }
+
+    // Proactively stop phpMyAdmin if running with this PHP version
+    if (this.managers?.service?.serviceStatus) {
+      const pmaStatus = this.managers.service.serviceStatus.get('phpmyadmin');
+      if (pmaStatus?.status === 'running') {
+        const defaultPhp = this.managers?.php?.getDefaultVersion?.();
+        if (!defaultPhp || defaultPhp === version) {
+          try {
+            await this.managers.service.stopService('phpmyadmin');
+            stoppedPhpMyAdmin = true;
+          } catch (e) {
+            this.managers?.log?.systemWarn('Could not stop phpMyAdmin before PHP update', { error: e.message });
+          }
+        }
+      }
+    }
+
+    // Proactively stop running projects using this PHP version
+    if (this.managers?.project) {
+      const allProjects = typeof this.managers.project.getAllProjects === 'function'
+        ? this.managers.project.getAllProjects()
+        : (Array.isArray(this.managers.project.projects)
+            ? this.managers.project.projects
+            : Object.values(this.managers.project.projects || {}));
+      for (const project of allProjects) {
+        if (project?.isRunning && (project.phpVersion === version || project.runtimeVersion === version)) {
+          try {
+            await this.managers.project.stopProject(project.id);
+            if (!stoppedProjects.includes(project.id)) {
+              stoppedProjects.push(project.id);
+            }
+          } catch (e) {
+            this.managers?.log?.systemWarn(`Could not stop project ${project.name} before PHP update`, { error: e.message });
+          }
+        }
+      }
+    }
+
+    const extractPath = path.join(this.resourcesPath, 'php', version, platform);
+
+    // Preemptively terminate any lingering processes inside the target binary directory
+    await killProcessesInDirectory(extractPath);
+    if (platform === 'win') {
+      await killProcessesByPath('php.exe', extractPath).catch(() => {});
+      await killProcessesByPath('php-cgi.exe', extractPath).catch(() => {});
+      await killProcessesByPath('php-win.exe', extractPath).catch(() => {});
+    }
+
+    const modifications = await this.checkPhpModifications(version);
+
+    let savedIniContent = null;
+    const savedCustomExtensions = [];
+    const savedCustomFiles = [];
+
+    if (preserveModifications && await fs.pathExists(extractPath)) {
+      const iniPath = path.join(extractPath, 'php.ini');
+      if (await fs.pathExists(iniPath)) {
+        try {
+          savedIniContent = await fs.readFile(iniPath, 'utf8');
+        } catch {}
+      }
+
+      const extDir = path.join(extractPath, 'ext');
+      if (await fs.pathExists(extDir)) {
+        try {
+          const files = await fs.readdir(extDir);
+          for (const file of files) {
+            if (!STANDARD_PHP_EXTENSIONS.has(file.toLowerCase()) && (file.endsWith('.dll') || file.endsWith('.so'))) {
+              const srcFile = path.join(extDir, file);
+              const stat = await fs.stat(srcFile);
+              if (stat.isFile()) {
+                const buf = await fs.readFile(srcFile);
+                savedCustomExtensions.push({ filename: file, data: buf });
+              }
+            }
+          }
+        } catch {}
+      }
+
+      try {
+        const rootEntries = await fs.readdir(extractPath);
+        const standardEntries = new Set([
+          'php.exe', 'php-cgi.exe', 'php-win.exe', 'phpdbg.exe', 'php.ini', 'php.ini-development',
+          'php.ini-production', 'ext', 'cacert.pem', '.version-info.json', 'license.txt', 'news.txt',
+          'snapshot.txt', 'glibc-bin', 'dev', 'etc', 'lib', 'usr', 'sbin', 'var', 'php.ini.backup-pre-update'
+        ]);
+        for (const entry of rootEntries) {
+          const lower = entry.toLowerCase();
+          if (!standardEntries.has(lower) && !lower.endsWith('.dll')) {
+            const entryPath = path.join(extractPath, entry);
+            const stat = await fs.stat(entryPath);
+            if (stat.isFile()) {
+              const buf = await fs.readFile(entryPath);
+              savedCustomFiles.push({ filename: entry, data: buf });
+            }
+          }
+        }
+      } catch {}
+    }
+
+    const stagingPath = path.join(this.resourcesPath, 'php', version, `${platform}_update_staging`);
+
+    try {
+      this.emitProgress(id, { status: 'starting', progress: 0 });
+
+      await fs.remove(stagingPath);
+      await fs.ensureDir(stagingPath);
+
+      const { downloadPath } = await this.downloadWithVersionProbe('php', version, id, downloadInfo);
+      await this.checkCancelled(id, downloadPath);
+
+      await this.extractArchive(downloadPath, stagingPath, id);
+
+      if (preserveModifications && savedIniContent) {
+        const stagingIni = path.join(stagingPath, 'php.ini');
+        let iniContent = savedIniContent;
+
+        const finalExtDir = path.join(extractPath, 'ext').replace(/\\/g, '/');
+        if (!iniContent.includes('extension_dir')) {
+          iniContent = iniContent.replace('[PHP]', `[PHP]\nextension_dir = "${finalExtDir}"`);
+        } else {
+          iniContent = iniContent.replace(/extension_dir\s*=\s*"[^"]*"/g, `extension_dir = "${finalExtDir}"`);
+        }
+
+        if (platform === 'win') {
+          const cacertPath = await this.ensureCaCertBundle(stagingPath);
+          if (cacertPath) {
+            const finalCaCertPath = path.join(extractPath, 'cacert.pem').replace(/\\/g, '/');
+            if (!iniContent.includes('curl.cainfo')) {
+              iniContent += `\n[curl]\ncurl.cainfo = "${finalCaCertPath}"\n`;
+            }
+            if (!iniContent.includes('openssl.cafile')) {
+              iniContent += `\n[openssl]\nopenssl.cafile = "${finalCaCertPath}"\n`;
+            }
+          }
+        }
+
+        await fs.writeFile(stagingIni, iniContent, 'utf8');
+
+        const stagingExtDir = path.join(stagingPath, 'ext');
+        await fs.ensureDir(stagingExtDir);
+        for (const ext of savedCustomExtensions) {
+          await fs.writeFile(path.join(stagingExtDir, ext.filename), ext.data);
+        }
+
+        for (const file of savedCustomFiles) {
+          await fs.writeFile(path.join(stagingPath, file.filename), file.data);
+        }
+      } else {
+        await this.createPhpIni(stagingPath, version);
+      }
+
+      if (platform === 'win') {
+        await this.ensureVCRedist(stagingPath);
+      }
+
+      // Preemptively terminate any lingering processes before replacing binary directory
+      await killProcessesInDirectory(extractPath);
+      if (platform === 'win') {
+        await killProcessesByPath('php.exe', extractPath).catch(() => {});
+        await killProcessesByPath('php-cgi.exe', extractPath).catch(() => {});
+        await killProcessesByPath('php-win.exe', extractPath).catch(() => {});
+      }
+
+      // Retry removal on Windows in case of lingering locks
+      let removed = false;
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+          await fs.remove(extractPath);
+          removed = true;
+          break;
+        } catch (removeErr) {
+          if (attempt === 5) throw removeErr;
+          await killProcessesInDirectory(extractPath);
+          if (platform === 'win') {
+            await killProcessesByPath('php.exe', extractPath).catch(() => {});
+            await killProcessesByPath('php-cgi.exe', extractPath).catch(() => {});
+          }
+          await new Promise((r) => setTimeout(r, 600 * attempt));
+        }
+      }
+
+      await fs.move(stagingPath, extractPath, { overwrite: true });
+
+      if (preserveModifications && savedIniContent) {
+        await fs.writeFile(path.join(extractPath, 'php.ini.backup-pre-update'), savedIniContent, 'utf8').catch(() => {});
+      }
+
+      await fs.remove(downloadPath);
+
+      const configuredVersion = this.getConfiguredPhpVersion(version);
+      await fs.writeJson(path.join(extractPath, '.version-info.json'), {
+        version: configuredVersion,
+        baseVersion: version,
+        filename: downloadInfo.filename,
+        url: downloadInfo.url,
+        updatedAt: new Date().toISOString(),
+        preservedModifications: preserveModifications,
+        preservedFiles: preserveModifications ? modifications.modifiedFiles : [],
+      }, { spaces: 2 });
+
+      // Restart phpMyAdmin if we stopped it
+      if (stoppedPhpMyAdmin) {
+        this.emitProgress(id, { status: 'restarting_service', progress: 95, message: 'Restarting phpMyAdmin...' });
+        try {
+          await this.managers?.service?.startService?.('phpmyadmin');
+        } catch (restartErr) {
+          this.managers?.log?.systemWarn('Could not restart phpMyAdmin after PHP update', { error: restartErr.message });
+        }
+      }
+
+      // Restart stopped projects
+      for (const projId of stoppedProjects) {
+        try {
+          await this.managers?.project?.startProject?.(projId);
+        } catch (projErr) {
+          this.managers?.log?.systemWarn(`Could not restart project ${projId} after PHP update`, { error: projErr.message });
+        }
+      }
+
+      this.emitProgress(id, { status: 'completed', progress: 100 });
+
+      if (this.managers?.php?.initialize) {
+        await this.managers.php.initialize().catch(() => {});
+      }
+
+      return {
+        success: true,
+        version,
+        newVersion: configuredVersion,
+        preservedModifications: preserveModifications,
+        preservedFiles: preserveModifications ? modifications.modifiedFiles : [],
+      };
+    } catch (error) {
+      await fs.remove(stagingPath).catch(() => {});
+
+      if (stoppedPhpMyAdmin && (await fs.pathExists(extractPath))) {
+        try {
+          await this.managers?.service?.startService?.('phpmyadmin');
+        } catch {}
+      }
+      for (const projId of stoppedProjects) {
+        try {
+          await this.managers?.project?.startProject?.(projId);
+        } catch {}
+      }
+
+      if (error.cancelled) {
+        return { success: false, cancelled: true };
+      }
+
+      this.managers?.log?.systemError(`Failed to update PHP ${version}`, { error: error.message });
+      this.emitProgress(id, { status: 'error', error: error.message });
+      throw error;
+    }
+  },
+};

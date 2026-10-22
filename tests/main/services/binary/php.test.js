@@ -186,4 +186,126 @@ describe('binary/php', () => {
       { overwrite: true }
     );
   });
+
+  it('detects update availability when configured PHP version is newer than installed', async () => {
+    const ctx = makeContext({
+      getInstalledPhpVersion: vi.fn().mockResolvedValue('8.3.29'),
+      downloads: {
+        php: {
+          '8.3': {
+            win: {
+              url: 'https://example.com/php-8.3.36-nts.zip',
+              filename: 'php-8.3.36-nts-Win32-vs16-x64.zip',
+            },
+          },
+        },
+      },
+    });
+
+    const details = await ctx.getPhpVersionDetails('8.3');
+
+    expect(details.installed).toBe(true);
+    expect(details.installedVersion).toBe('8.3.29');
+    expect(details.configuredVersion).toBe('8.3.36');
+    expect(details.hasUpdate).toBe(true);
+  });
+
+  it('detects custom modifications in php.ini and custom extensions in ext/', async () => {
+    const ctx = makeContext();
+    vi.spyOn(fs, 'pathExists').mockImplementation(async (checkPath) => {
+      const normalized = normalizeTestPath(checkPath);
+      if (normalized === '/resources/php/8.3/win') return true;
+      if (normalized === '/resources/php/8.3/win/php.ini') return true;
+      if (normalized === '/resources/php/8.3/win/ext') return true;
+      return false;
+    });
+    vi.spyOn(fs, 'readdir').mockImplementation(async (targetPath) => {
+      const normalized = normalizeTestPath(targetPath);
+      if (normalized === '/resources/php/8.3/win/ext') {
+        return ['php_curl.dll', 'php_xdebug.dll'];
+      }
+      if (normalized === '/resources/php/8.3/win') {
+        return ['php.exe', 'php-cgi.exe', 'php.ini', 'custom-helper.php'];
+      }
+      return [];
+    });
+    vi.spyOn(fs, 'stat').mockResolvedValue({ isFile: () => true });
+
+    const result = await ctx.checkPhpModifications('8.3');
+
+    expect(result.hasModifications).toBe(true);
+    expect(result.hasCustomIni).toBe(true);
+    expect(result.customExtensions).toContain('php_xdebug.dll');
+    expect(result.customFiles).toContain('custom-helper.php');
+    expect(result.modifiedFiles).toContain('php.ini');
+    expect(result.modifiedFiles).toContain('ext/php_xdebug.dll');
+    expect(result.modifiedFiles).toContain('custom-helper.php');
+  });
+
+  it('safely updates PHP while preserving custom php.ini and custom extensions', async () => {
+    const ctx = makeContext({
+      downloadWithVersionProbe: vi.fn().mockResolvedValue({ downloadPath: '/resources/downloads/php-8.3.36.zip' }),
+      extractArchive: vi.fn().mockResolvedValue(undefined),
+      checkCancelled: vi.fn().mockResolvedValue(undefined),
+      ensureVCRedist: vi.fn().mockResolvedValue(undefined),
+      getRunningConflicts: vi.fn().mockResolvedValue({ hasConflicts: false, items: [] }),
+      downloads: {
+        php: {
+          '8.3': {
+            win: {
+              url: 'https://example.com/php-8.3.36-nts.zip',
+              filename: 'php-8.3.36-nts-Win32-vs16-x64.zip',
+            },
+          },
+        },
+      },
+    });
+
+    vi.spyOn(fs, 'pathExists').mockImplementation(async (target) => {
+      const norm = normalizeTestPath(target);
+      return norm.includes('/resources/php/8.3/win');
+    });
+    vi.spyOn(fs, 'readFile').mockImplementation(async (file) => {
+      const norm = normalizeTestPath(file);
+      if (norm.endsWith('php.ini')) {
+        return '[PHP]\nmemory_limit = 1024M\n';
+      }
+      return Buffer.from('binary-data');
+    });
+    vi.spyOn(fs, 'readdir').mockImplementation(async (target) => {
+      const norm = normalizeTestPath(target);
+      if (norm.endsWith('/ext')) {
+        return ['php_xdebug.dll'];
+      }
+      return ['php.exe', 'php.ini'];
+    });
+    vi.spyOn(fs, 'stat').mockResolvedValue({ isFile: () => true });
+    vi.spyOn(fs, 'remove').mockResolvedValue(undefined);
+    vi.spyOn(fs, 'ensureDir').mockResolvedValue(undefined);
+    vi.spyOn(fs, 'move').mockResolvedValue(undefined);
+    const writeFileSpy = vi.spyOn(fs, 'writeFile').mockResolvedValue(undefined);
+    const writeJsonSpy = vi.spyOn(fs, 'writeJson').mockResolvedValue(undefined);
+
+    const updateResult = await ctx.updatePhp('8.3', { preserveModifications: true });
+
+    expect(updateResult.success).toBe(true);
+    expect(updateResult.newVersion).toBe('8.3.36');
+    expect(updateResult.preservedModifications).toBe(true);
+
+    // Staging ini should contain preserved custom memory_limit
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      expect.stringContaining('php.ini'),
+      expect.stringContaining('memory_limit = 1024M'),
+      'utf8'
+    );
+    // Version info should be updated
+    expect(writeJsonSpy).toHaveBeenCalledWith(
+      expect.stringContaining('.version-info.json'),
+      expect.objectContaining({
+        version: '8.3.36',
+        preservedModifications: true,
+      }),
+      expect.any(Object)
+    );
+  });
 });

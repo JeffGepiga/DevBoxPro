@@ -2,6 +2,7 @@
  * Spawn utilities to replace exec/execSync for Electron production builds
  * Avoids CMD window flash and buffer size limits
  */
+const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
 /**
@@ -324,7 +325,33 @@ async function waitForProcessesByPathExit(processName, pathFilter, timeoutMs = 8
         await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
-    return getProcessPidsByPath(processName, pathFilter).length === 0;
+    return false;
+}
+
+async function killProcessesInDirectory(dirPath) {
+    if (process.platform !== 'win32' || !dirPath) return;
+
+    const cleanPath = path.resolve(dirPath).replace(/[\/\\]+/g, '\\');
+    const escaped = cleanPath.replace(/'/g, "''");
+
+    const psScript = `
+$ErrorActionPreference = 'SilentlyContinue'
+$target = '${escaped}'
+Get-CimInstance Win32_Process | Where-Object {
+    $_.ProcessId -ne $PID -and $_.ProcessId -ne ${process.pid} -and (
+        ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($target, [System.StringComparison]::OrdinalIgnoreCase)) -or
+        ($_.CommandLine -and $_.CommandLine -like ('*' + $target + '*'))
+    )
+} | ForEach-Object {
+    Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+}
+`.trim();
+
+    const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
+    await spawnAsync('powershell.exe', ['-NoProfile', '-EncodedCommand', encoded], {
+        timeout: 8000,
+        stdio: 'ignore',
+    });
 }
 
 module.exports = {
@@ -339,4 +366,5 @@ module.exports = {
     getProcessDetailsByPid,
     killProcessesByPath,
     waitForProcessesByPathExit,
+    killProcessesInDirectory,
 };

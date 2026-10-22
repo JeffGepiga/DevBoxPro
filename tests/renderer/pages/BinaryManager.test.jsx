@@ -39,6 +39,10 @@ const mockDevbox = {
         downloadCloudflared: vi.fn().mockResolvedValue({ success: true }),
         downloadZrok: vi.fn().mockResolvedValue({ success: true }),
         downloadGit: vi.fn().mockResolvedValue({ success: true }),
+        getAllPhpVersionDetails: vi.fn().mockResolvedValue({}),
+        checkPhpModifications: vi.fn().mockResolvedValue({ hasModifications: false, modifiedFiles: [] }),
+        getRunningConflicts: vi.fn().mockResolvedValue({ hasConflicts: false, items: [] }),
+        updatePhp: vi.fn().mockResolvedValue({ success: true }),
         onProgress: vi.fn().mockImplementation(() => vi.fn()),
     },
     system: {
@@ -327,4 +331,175 @@ describe('BinaryManager', () => {
         expect(screen.getByText(/System PATH/i)).toBeInTheDocument();
         expect(screen.queryByTitle('Remove')).not.toBeInTheDocument();
     });
+
+    it('shows update badge and opens safe update modal with modification inspection for PHP', async () => {
+        mockDevbox.binaries.getInstalled.mockResolvedValueOnce({
+            php: { '8.2': true },
+        });
+        mockDevbox.binaries.getServiceConfig.mockResolvedValueOnce({
+            versions: { php: ['8.2'] },
+        });
+        mockDevbox.binaries.getAllPhpVersionDetails.mockResolvedValueOnce({
+            '8.2': {
+                version: '8.2',
+                installed: true,
+                installedVersion: '8.2.14',
+                configuredVersion: '8.2.35',
+                hasUpdate: true,
+            },
+        });
+        mockDevbox.binaries.checkPhpModifications.mockResolvedValueOnce({
+            hasModifications: true,
+            modifiedFiles: ['php.ini', 'ext/php_xdebug.dll'],
+            hasCustomIni: true,
+            customExtensions: ['php_xdebug.dll'],
+            customFiles: [],
+        });
+
+        render(
+            <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <BinaryManager />
+            </MemoryRouter>
+        );
+
+        // Language tab is default, expand PHP section
+        const phpCard = await screen.findByText(/PHP scripting language/i);
+        fireEvent.click(phpCard);
+
+        // Update available badge and Update button should be visible
+        expect(await screen.findByText(/Update available \(8.2.35\)/i)).toBeInTheDocument();
+        const updateBtn = screen.getByTitle(/Safely update to PHP 8.2.35/i);
+        expect(updateBtn).toBeInTheDocument();
+
+        // Click Update to open modal
+        fireEvent.click(updateBtn);
+
+        // Modal should open
+        expect(await screen.findByText('Safe PHP Version Update')).toBeInTheDocument();
+        expect(screen.getByText('v8.2.14')).toBeInTheDocument();
+        expect(screen.getByText('v8.2.35')).toBeInTheDocument();
+
+        // Inspector should show custom modifications
+        expect(await screen.findByText(/Custom modifications detected in this PHP installation/i)).toBeInTheDocument();
+        expect(screen.getAllByText(/php\.ini/i).length).toBeGreaterThan(0);
+        expect(screen.getByText(/ext\/php_xdebug\.dll/i)).toBeInTheDocument();
+
+        // Checkbox to preserve modifications should be checked by default
+        const preserveCheckbox = screen.getByRole('checkbox');
+        expect(preserveCheckbox).toBeChecked();
+
+        // Click Update to execute
+        const confirmBtn = screen.getByRole('button', { name: /Update to v8.2.35/i });
+        fireEvent.click(confirmBtn);
+
+        await waitFor(() => {
+            expect(mockDevbox.binaries.updatePhp).toHaveBeenCalledWith('8.2', {
+                preserveModifications: true,
+                force: true,
+            });
+        });
+    });
+
+    it('displays update badge and modal for Node.js with package preservation option', async () => {
+        mockDevbox.binaries.getInstalled.mockResolvedValueOnce({
+            nodejs: { '20': true },
+        });
+        mockDevbox.binaries.getServiceConfig.mockResolvedValueOnce({
+            versions: { nodejs: ['20'] },
+        });
+        mockDevbox.binaries.getAllPackageVersionDetails = vi.fn().mockResolvedValue({
+            nodejs: {
+                '20': {
+                    service: 'nodejs',
+                    version: '20',
+                    installed: true,
+                    installedVersion: '20.20.1',
+                    configuredVersion: '20.20.8',
+                    hasUpdate: true,
+                },
+            },
+        });
+        mockDevbox.binaries.checkPackageModifications = vi.fn().mockResolvedValue({
+            hasModifications: true,
+            reasons: ['2 global npm package(s) installed (e.g. pnpm, yarn)'],
+            customPackages: ['pnpm', 'yarn'],
+            customFiles: ['.npmrc'],
+            modifiedFiles: ['node_modules', '.npmrc'],
+        });
+        mockDevbox.binaries.updatePackage = vi.fn().mockResolvedValue({
+            success: true,
+            service: 'nodejs',
+            version: '20',
+            newVersion: '20.20.8',
+        });
+
+        render(<BinaryManager />);
+
+        // Switch to language tab and expand Node.js section
+        const nodeCardHeader = await screen.findByText('Node.js');
+        fireEvent.click(nodeCardHeader);
+
+        // Should display update badge for Node.js 20
+        expect(await screen.findByText(/Update available \(20\.20\.8\)/i)).toBeInTheDocument();
+
+        // Click the update button for Node.js
+        const updateBtn = screen.getByRole('button', { name: /^Update$/i });
+        fireEvent.click(updateBtn);
+
+        // Safe Node.js Update Modal should open
+        expect(await screen.findByText(/Safe Node\.js Version Update/i)).toBeInTheDocument();
+        expect(screen.getByText('v20.20.1')).toBeInTheDocument();
+        expect(screen.getByText('v20.20.8')).toBeInTheDocument();
+        expect(await screen.findByText(/pnpm, yarn/i)).toBeInTheDocument();
+
+        // Confirm update
+        const confirmBtn = screen.getByRole('button', { name: /Update to v20.20.8/i });
+        fireEvent.click(confirmBtn);
+
+        await waitFor(() => {
+            expect(mockDevbox.binaries.updatePackage).toHaveBeenCalledWith('nodejs', '20', {
+                preserveModifications: true,
+                force: true,
+            });
+        });
+    });
+
+    it('displays update badges on category tabs, service card headers, and version pills when updates are available', async () => {
+        mockDevbox.binaries.getInstalled.mockResolvedValue({
+            mysql: { '8.4': true, '8.0': true },
+        });
+        mockDevbox.binaries.getAllPackageVersionDetails.mockResolvedValue({
+            mysql: {
+                '8.4': {
+                    hasUpdate: true,
+                    installedVersion: '8.4.1',
+                    configuredVersion: '8.4.4',
+                },
+                '8.0': {
+                    hasUpdate: false,
+                    installedVersion: '8.0.40',
+                    configuredVersion: '8.0.40',
+                },
+            },
+        });
+
+        render(<BinaryManager />);
+
+        // Databases tab should display count '1'
+        const dbTabBadge = await screen.findByText('1');
+        expect(dbTabBadge).toBeInTheDocument();
+
+        // Switch to Databases tab
+        const dbTab = screen.getByRole('button', { name: /Databases/i });
+        fireEvent.click(dbTab);
+
+        // Header of MySQL card should show "Update Available"
+        expect(await screen.findByText(/Update Available/i)).toBeInTheDocument();
+
+        // Pill for 8.4 should show "Update" badge while collapsed
+        expect(screen.getByText(/^Update$/i)).toBeInTheDocument();
+        expect(screen.getByText('View Update')).toBeInTheDocument();
+    });
 });
+
+

@@ -14,6 +14,7 @@ const binaryPlatformServices = require('./binary/platformServices');
 const binaryProgress = require('./binary/progress');
 const binaryRuntimeTools = require('./binary/runtimeTools');
 const binaryServiceDownloads = require('./binary/serviceDownloads');
+const binaryPackageUpdates = require('./binary/packageUpdates');
 const { SERVICE_VERSIONS, VERSION_PORT_OFFSETS, DEFAULT_PORTS } = require('../../shared/serviceConfig');
 
 function getBundledBinaryConfigPath() {
@@ -210,7 +211,8 @@ Object.assign(
   binaryPlatformServices,
   binaryProgress,
   binaryRuntimeTools,
-  binaryServiceDownloads
+  binaryServiceDownloads,
+  binaryPackageUpdates
 );
 
 module.exports = BinaryDownloadManager;

@@ -1186,6 +1186,46 @@ function setupIpcHandlers(ipcMain, managers, mainWindow) {
     return managers.binaryDownload.downloadPhp(version);
   });
 
+  ipcMain.handle('binaries:getPhpVersionDetails', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.getPhpVersionDetails(version);
+  });
+
+  ipcMain.handle('binaries:getAllPhpVersionDetails', async () => {
+    if (!managers.binaryDownload) return {};
+    return managers.binaryDownload.getAllPhpVersionDetails();
+  });
+
+  ipcMain.handle('binaries:checkPhpModifications', async (event, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.checkPhpModifications(version);
+  });
+
+  ipcMain.handle('binaries:updatePhp', async (event, version, options) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.updatePhp(version, options);
+  });
+
+  ipcMain.handle('binaries:getPackageVersionDetails', async (event, service, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.getPackageVersionDetails(service, version);
+  });
+
+  ipcMain.handle('binaries:getAllPackageVersionDetails', async (event, service) => {
+    if (!managers.binaryDownload) return {};
+    return managers.binaryDownload.getAllPackageVersionDetails(service);
+  });
+
+  ipcMain.handle('binaries:checkPackageModifications', async (event, service, version) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.checkPackageModifications(service, version);
+  });
+
+  ipcMain.handle('binaries:updatePackage', async (event, service, version, options) => {
+    if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
+    return managers.binaryDownload.updatePackage(service, version, options);
+  });
+
   ipcMain.handle('binaries:downloadMysql', async (event, version) => {
     if (!managers.binaryDownload) throw new Error('Binary manager not initialized');
     return managers.binaryDownload.downloadMysql(version);

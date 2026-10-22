@@ -23,6 +23,7 @@ import {
   ChevronUp,
   CloudCog,
   GitBranch,
+  AlertTriangle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import PhpIniEditor from '../components/PhpIniEditor';
@@ -33,6 +34,16 @@ import { useModal } from '../context/ModalContext';
 const VERSIONED_BINARY_SERVICES = ['php', 'mysql', 'mariadb', 'redis', 'nginx', 'apache', 'nodejs', 'postgresql', 'python', 'mongodb', 'memcached'];
 const SERVICE_UPDATE_KEYS = ['composer', 'phpmyadmin', 'cloudflared', 'zrok'];
 const SERVICE_LABELS = {
+  php: 'PHP',
+  mysql: 'MySQL',
+  mariadb: 'MariaDB',
+  postgresql: 'PostgreSQL',
+  python: 'Python',
+  nginx: 'Nginx',
+  apache: 'Apache',
+  redis: 'Redis',
+  mongodb: 'MongoDB',
+  sqlite: 'SQLite',
   phpmyadmin: 'phpMyAdmin',
   nodejs: 'Node.js',
   minio: 'MinIO',
@@ -40,6 +51,7 @@ const SERVICE_LABELS = {
   cloudflared: 'Cloudflare Tunnel',
   zrok: 'zrok',
   composer: 'Composer',
+  git: 'Git',
 };
 
 const formatServiceVersionLabel = (service, version) => {
@@ -76,66 +88,122 @@ const comparePhpVersionKeys = (leftVersion, rightVersion) => {
 
 // ── Module-level sub-components (must NOT be defined inside BinaryManager) ──
 
-const VersionRow = ({ id, name, version, isInstalled, isDownloading, size, isLatest, isCustom, requiresManual, onDownload, onRemove, onManualOpen, onImport, isPhp, getProgressDisplay, setPhpIniEditor }) => (
-  <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/40 border-b last:border-b-0 border-gray-100 dark:border-gray-700/50">
-    <div className="flex items-center gap-2.5 min-w-0">
-      <span className={clsx(
-        'shrink-0 px-2 py-0.5 rounded font-mono text-xs font-semibold',
-        isInstalled
-          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-          : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-      )}>
-        {isPhp ? formatPhpRuntimeVersion(version) : version}
-      </span>
-      <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{isPhp ? formatPhpRuntimeLabel(version) : `${name} ${version}`}</span>
-      {isCustom && <span className="shrink-0 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-1.5 py-0.5 rounded">Custom</span>}
-      {!isCustom && isLatest && <span className="shrink-0 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded">Latest</span>}
-      {size && <span className="shrink-0 text-xs text-gray-400">{size}</span>}
-    </div>
-    <div className="flex items-center gap-1.5 ml-3 shrink-0">
-      {isDownloading ? (
-        getProgressDisplay(id)
-      ) : isInstalled ? (
-        <>
-          <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium">
-            <Check className="w-3 h-3" /> Installed
-          </span>
-          {isPhp && (
-            <button onClick={() => setPhpIniEditor({ open: true, version })} className="btn-icon text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20" title="Edit php.ini">
-              <Settings className="w-3.5 h-3.5" />
-            </button>
-          )}
-          <button onClick={onRemove} className="btn-icon text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" title="Remove">
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </>
-      ) : requiresManual ? (
-        <>
-          <button onClick={onManualOpen} className="btn-secondary text-xs px-2 py-1 flex items-center gap-1" title="Open download page">
-            <ExternalLink className="w-3 h-3" /> Get
-          </button>
-          <button onClick={onImport} className="btn-primary text-xs px-2 py-1 flex items-center gap-1" title="Import ZIP">
-            <Upload className="w-3 h-3" /> Import
-          </button>
-        </>
-      ) : (
-        <div className="flex items-center gap-1">
-          <button onClick={onDownload} className="btn-primary text-xs px-2.5 py-1 flex items-center gap-1">
-            <Download className="w-3 h-3" /> Download
-          </button>
-        </div>
-      )}
-    </div>
-  </div>
-);
+const VersionRow = ({
+  id,
+  name,
+  version,
+  isInstalled,
+  isDownloading,
+  size,
+  isLatest,
+  isCustom,
+  requiresManual,
+  onDownload,
+  onRemove,
+  onManualOpen,
+  onImport,
+  isPhp,
+  getProgressDisplay,
+  setPhpIniEditor,
+  phpDetail,
+  onUpdatePhp,
+  versionDetail,
+  onUpdatePackage,
+}) => {
+  const detail = versionDetail || phpDetail;
+  const hasUpdate = Boolean(detail?.hasUpdate);
+  const targetVersion = detail?.configuredVersion;
+  const handleUpdateClick = () => {
+    if (onUpdatePackage) {
+      onUpdatePackage();
+    } else if (onUpdatePhp) {
+      onUpdatePhp();
+    }
+  };
 
-const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, isPhp, isNodejs, installed, downloading, progress, expandedSections, toggleSection, downloadSources, resolveDownloadSourceUrl, getProgressDisplay, setPhpIniEditor, handleImportApache, getInstalledVersionsCount }) => {
+  return (
+    <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/40 border-b last:border-b-0 border-gray-100 dark:border-gray-700/50">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <span className={clsx(
+          'shrink-0 px-2 py-0.5 rounded font-mono text-xs font-semibold',
+          isInstalled
+            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+            : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+        )}>
+          {isPhp ? formatPhpRuntimeVersion(version) : version}
+        </span>
+        <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{isPhp ? formatPhpRuntimeLabel(version) : `${name} ${version}`}</span>
+        {isCustom && <span className="shrink-0 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-1.5 py-0.5 rounded">Custom</span>}
+        {!isCustom && isLatest && <span className="shrink-0 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded">Latest</span>}
+        {isInstalled && hasUpdate && (
+          <span className="shrink-0 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700/60 flex items-center gap-1">
+            <RefreshCw className="w-2.5 h-2.5 animate-spin-slow" />
+            Update available ({targetVersion})
+          </span>
+        )}
+        {size && <span className="shrink-0 text-xs text-gray-400">{size}</span>}
+      </div>
+      <div className="flex items-center gap-1.5 ml-3 shrink-0">
+        {isDownloading ? (
+          getProgressDisplay(id)
+        ) : isInstalled ? (
+          <>
+            <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium">
+              <Check className="w-3 h-3" /> Installed
+            </span>
+            {hasUpdate && (
+              <button
+                onClick={handleUpdateClick}
+                className="btn-primary text-xs px-2.5 py-1 flex items-center gap-1 bg-amber-600 hover:bg-amber-700 text-white font-medium shadow-sm transition-all"
+                title={`Safely update to ${name} ${targetVersion}`}
+              >
+                <RefreshCw className="w-3 h-3" /> Update
+              </button>
+            )}
+            {isPhp && (
+              <button onClick={() => setPhpIniEditor({ open: true, version })} className="btn-icon text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20" title="Edit php.ini">
+                <Settings className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button onClick={onRemove} className="btn-icon text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" title="Remove">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </>
+        ) : requiresManual ? (
+          <>
+            <button onClick={onManualOpen} className="btn-secondary text-xs px-2 py-1 flex items-center gap-1" title="Open download page">
+              <ExternalLink className="w-3 h-3" /> Get
+            </button>
+            <button onClick={onImport} className="btn-primary text-xs px-2 py-1 flex items-center gap-1" title="Import ZIP">
+              <Upload className="w-3 h-3" /> Import
+            </button>
+          </>
+        ) : (
+          <div className="flex items-center gap-1">
+            <button onClick={onDownload} className="btn-primary text-xs px-2.5 py-1 flex items-center gap-1">
+              <Download className="w-3 h-3" /> Download
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, isPhp, isNodejs, installed, downloading, progress, expandedSections, toggleSection, downloadSources, resolveDownloadSourceUrl, getProgressDisplay, setPhpIniEditor, handleImportApache, getInstalledVersionsCount, phpDetails, onUpdatePhp, packageVersionDetails, onUpdatePackage }) => {
   const installedCount = getInstalledVersionsCount(service.id);
   const hasInstalled = installedCount > 0;
   const isExpanded = expandedSections[service.id];
   const sourceUrl = resolveDownloadSourceUrl(service.id, service.defaultVersion || service.versions?.[0] || null);
   const hasSource = !!sourceUrl;
   const hasImport = !service.noImport && (service.id === 'apache' ? !!handleImportApache : !!onImport);
+
+  const updateVersions = (service.versions || []).filter(v => {
+    if (!installed[service.id]?.[v]) return false;
+    const detail = packageVersionDetails?.[service.id]?.[v] || (isPhp && phpDetails ? phpDetails[v] : null);
+    return Boolean(detail?.hasUpdate);
+  });
+  const hasUpdate = updateVersions.length > 0;
 
   const handleHeaderImport = () => {
     if (service.id === 'apache') {
@@ -155,19 +223,33 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
       >
         <div className="flex items-center gap-3 min-w-0">
           <div className={clsx(
-            'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold',
-            hasInstalled
-              ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+            'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold relative',
+            hasUpdate
+              ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 ring-2 ring-amber-400/50'
+              : hasInstalled
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
           )}>
             {service.emoji ? service.emoji : <service.icon className="w-4 h-4" />}
+            {hasUpdate && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white dark:border-gray-800 animate-ping" />
+            )}
+            {hasUpdate && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white dark:border-gray-800" />
+            )}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium text-sm text-gray-900 dark:text-white">{service.name}</span>
               {hasInstalled && (
-                <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded-full">
+                <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded-full font-medium">
                   {installedCount} installed
+                </span>
+              )}
+              {hasUpdate && (
+                <span className="text-xs font-semibold bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-700/70 flex items-center gap-1 shadow-xs animate-pulse">
+                  <RefreshCw className="w-3 h-3 text-amber-600 dark:text-amber-400 animate-spin-slow" />
+                  {updateVersions.length > 1 ? `${updateVersions.length} Updates Available` : 'Update Available'}
                 </span>
               )}
               {/* Show version pills inline when collapsed */}
@@ -175,9 +257,30 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
                 <div className="flex gap-1 flex-wrap">
                   {service.versions.slice(0, 6).map(v => {
                     const inst = installed[service.id]?.[v];
-                    return inst ? (
-                      <span key={v} className="text-xs bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded border border-green-200 dark:border-green-800">{formatServiceVersionLabel(service.id, v)}</span>
-                    ) : null;
+                    if (!inst) return null;
+                    const detail = packageVersionDetails?.[service.id]?.[v] || (isPhp && phpDetails ? phpDetails[v] : null);
+                    const vHasUpdate = Boolean(detail?.hasUpdate);
+                    const label = formatServiceVersionLabel(service.id, v);
+
+                    return vHasUpdate ? (
+                      <span
+                        key={v}
+                        className="text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded border border-amber-300 dark:border-amber-600 font-semibold flex items-center gap-1 shadow-xs"
+                        title={`${service.name} ${label} has an update available to v${detail.configuredVersion}`}
+                      >
+                        {label}
+                        <span className="text-[9px] bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 px-1 rounded font-bold uppercase tracking-wider">
+                          Update
+                        </span>
+                      </span>
+                    ) : (
+                      <span
+                        key={v}
+                        className="text-xs bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded border border-green-200 dark:border-green-800"
+                      >
+                        {label}
+                      </span>
+                    );
                   })}
                 </div>
               )}
@@ -196,6 +299,11 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
               <Upload className="w-3 h-3" /> Import ZIP
             </button>
           )}
+          {hasUpdate && !isExpanded && (
+            <span className="text-xs text-amber-700 dark:text-amber-300 font-medium hidden sm:inline-flex items-center gap-1 mr-1">
+              View Update
+            </span>
+          )}
           {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400 ml-1" /> : <ChevronDown className="w-4 h-4 text-gray-400 ml-1" />}
         </div>
       </div>
@@ -208,6 +316,7 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
             const isInstalled = installed[service.id]?.[version];
             const isDownloading = downloading[id] || ['completed', 'error'].includes(progress?.[id]?.status);
             const isCustom = service.predefinedVersions && !service.predefinedVersions.includes(version);
+            const versionDetail = packageVersionDetails?.[service.id]?.[version] || (isPhp && phpDetails ? phpDetails[version] : null);
 
             return (
               <VersionRow
@@ -228,6 +337,10 @@ const ServiceCard = ({ service, onDownload, onRemove, onImport, onManualOpen, is
                 isPhp={isPhp}
                 getProgressDisplay={getProgressDisplay}
                 setPhpIniEditor={setPhpIniEditor}
+                phpDetail={isPhp && phpDetails ? phpDetails[version] : null}
+                onUpdatePhp={() => onUpdatePhp?.(version)}
+                versionDetail={versionDetail}
+                onUpdatePackage={() => (onUpdatePackage ? onUpdatePackage(service.id, version) : onUpdatePhp?.(version))}
               />
             );
           })}
@@ -245,17 +358,26 @@ const SimpleRow = ({ id, name, description, icon: Icon, emoji, isInstalled: inst
     <div className="flex items-center justify-between px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800/50">
       <div className="flex items-center gap-3 min-w-0">
         <div className={clsx(
-          'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold',
-          inst
-            ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-            : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+          'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold relative',
+          inst && hasUpdate
+            ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 ring-2 ring-amber-400/50'
+            : inst
+              ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
         )}>
           {emoji ? emoji : <Icon className="w-4 h-4" />}
+          {inst && hasUpdate && (
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white dark:border-gray-800 animate-ping" />
+          )}
+          {inst && hasUpdate && (
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white dark:border-gray-800" />
+          )}
         </div>
         <div className="min-w-0 flex items-center gap-2 flex-wrap">
           <p className="text-sm font-medium text-gray-900 dark:text-white">{name}</p>
           {inst && hasUpdate && (
-            <span className="shrink-0 text-[10px] leading-tight font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
+            <span className="shrink-0 text-xs font-semibold bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-700/70 flex items-center gap-1 shadow-xs animate-pulse">
+              <RefreshCw className="w-3 h-3 text-amber-600 dark:text-amber-400 animate-spin-slow" />
               Update Available
             </span>
           )}
@@ -406,6 +528,32 @@ function BinaryManager() {
   const [zrokStatus, setZrokStatus] = useState({ enabled: false, configuredAt: null });
   const [enablingZrok, setEnablingZrok] = useState(false);
 
+  // Binary package version details and safe update state
+  const [phpDetails, setPhpDetails] = useState({});
+  const [packageVersionDetails, setPackageVersionDetails] = useState({
+    php: {},
+    nodejs: {},
+    python: {},
+    mysql: {},
+    mariadb: {},
+  });
+  const [updatePackageModal, setUpdatePackageModal] = useState({
+    open: false,
+    service: 'php',
+    serviceName: 'PHP',
+    version: null,
+    installedVersion: '',
+    configuredVersion: '',
+    checkingModifications: false,
+    modifications: null,
+    preserveModifications: true,
+    conflicts: [],
+    updating: false,
+    error: null,
+  });
+  const updatePhpModal = updatePackageModal;
+  const setUpdatePhpModal = setUpdatePackageModal;
+
   // Import modal state
   const [importModal, setImportModal] = useState({
     open: false,
@@ -418,16 +566,38 @@ function BinaryManager() {
     alreadyInstalled: false,
   });
 
+  const loadVersionDetails = useCallback(async () => {
+    try {
+      const details = await window.devbox?.binaries?.getAllPackageVersionDetails?.();
+      if (details) {
+        setPackageVersionDetails(details);
+        if (details.php) {
+          setPhpDetails(details.php);
+        }
+      } else {
+        const phpDet = await window.devbox?.binaries?.getAllPhpVersionDetails?.();
+        if (phpDet) {
+          setPhpDetails(phpDet);
+          setPackageVersionDetails(prev => ({ ...prev, php: phpDet }));
+        }
+      }
+    } catch (error) {
+      // Error loading version details
+    }
+  }, []);
+  const loadPhpDetails = loadVersionDetails;
+
   const loadInstalled = useCallback(async () => {
     try {
       const result = await window.devbox?.binaries.getInstalled();
       if (result) {
         setInstalled(result);
       }
+      loadVersionDetails();
     } catch (error) {
       // Error loading installed binaries
     }
-  }, []);
+  }, [loadVersionDetails]);
 
   const loadDownloadUrls = useCallback(async () => {
     try {
@@ -484,12 +654,13 @@ function BinaryManager() {
       if (result) {
         setInstalled(result);
       }
+      loadPhpDetails();
       return result;
     } catch (error) {
       // Error refreshing installed binaries
       return null;
     }
-  }, []);
+  }, [loadPhpDetails]);
 
   const parseBinaryDownloadId = useCallback((id) => {
     for (const serviceName of VERSIONED_BINARY_SERVICES) {
@@ -638,6 +809,86 @@ function BinaryManager() {
       // Alert is handled by the onProgress listener to prevent duplicates
     });
   };
+
+  const handleOpenUpdatePackageModal = async (service, version) => {
+    const detail = packageVersionDetails[service]?.[version] || (service === 'php' ? phpDetails[version] : null) || {};
+    const serviceName = SERVICE_LABELS[service] || (service.charAt(0).toUpperCase() + service.slice(1));
+
+    setUpdatePackageModal({
+      open: true,
+      service,
+      serviceName,
+      version,
+      installedVersion: detail.installedVersion || version,
+      configuredVersion: detail.configuredVersion || version,
+      checkingModifications: true,
+      modifications: null,
+      preserveModifications: true,
+      conflicts: [],
+      updating: false,
+      error: null,
+    });
+
+    try {
+      const [mods, conflicts] = await Promise.all([
+        window.devbox?.binaries?.checkPackageModifications?.(service, version)
+          || (service === 'php' ? window.devbox?.binaries?.checkPhpModifications?.(version) : null)
+          || { hasModifications: false, modifiedFiles: [] },
+        window.devbox?.binaries?.getRunningConflicts?.(service, version) || { hasConflicts: false, items: [] },
+      ]);
+
+      setUpdatePackageModal(prev => ({
+        ...prev,
+        checkingModifications: false,
+        modifications: mods,
+        conflicts: conflicts?.items || [],
+      }));
+    } catch (err) {
+      setUpdatePackageModal(prev => ({
+        ...prev,
+        checkingModifications: false,
+        modifications: { hasModifications: false, modifiedFiles: [] },
+      }));
+    }
+  };
+  const handleOpenUpdatePhpModal = (version) => handleOpenUpdatePackageModal('php', version);
+
+  const handleConfirmUpdatePackage = async () => {
+    const { service, version, preserveModifications, configuredVersion, serviceName } = updatePackageModal;
+    setUpdatePackageModal(prev => ({ ...prev, updating: true, error: null }));
+    const id = `${service}-${version}`;
+    setDownloadingGlobal(id, true);
+    setProgressGlobal(id, { status: 'starting', progress: 0 });
+
+    try {
+      if (service === 'php' && window.devbox?.binaries?.updatePhp) {
+        await window.devbox.binaries.updatePhp(version, {
+          preserveModifications,
+          force: true,
+        });
+      } else {
+        await window.devbox?.binaries?.updatePackage?.(service, version, {
+          preserveModifications,
+          force: true,
+        });
+      }
+
+      showAlert({
+        title: `${serviceName} Updated Successfully`,
+        message: `${serviceName} ${version} has been safely updated to v${configuredVersion}.${preserveModifications ? ' Your custom configuration and files were preserved.' : ''}`,
+        type: 'success',
+      });
+
+      setUpdatePackageModal(prev => ({ ...prev, open: false, updating: false }));
+      await forceRefreshInstalled();
+      await loadVersionDetails();
+    } catch (err) {
+      setUpdatePackageModal(prev => ({ ...prev, updating: false, error: err.message }));
+      setProgressGlobal(id, { status: 'error', error: err.message });
+      setDownloadingGlobal(id, false);
+    }
+  };
+  const handleConfirmUpdatePhp = handleConfirmUpdatePackage;
 
   const handleDownloadService = async (service, version = null) => {
     const id = version ? `${service}-${version}` : service;
@@ -1330,7 +1581,7 @@ function BinaryManager() {
       icon: Database,
       versions: getMergedVersions('mysql'),
       predefinedVersions: serviceVersions.mysql,
-      defaultVersion: serviceVersions.mysql[0] || '8.4',
+      defaultVersion: serviceVersions.mysql?.[0] || '8.4',
       sizes: { '8.4': '~290 MB', '8.0': '~280 MB', '5.7': '~250 MB' },
       category: 'database',
     },
@@ -1341,7 +1592,7 @@ function BinaryManager() {
       icon: Database,
       versions: getMergedVersions('mariadb'),
       predefinedVersions: serviceVersions.mariadb,
-      defaultVersion: serviceVersions.mariadb[0] || '11.4',
+      defaultVersion: serviceVersions.mariadb?.[0] || '11.4',
       sizes: { '11.4': '~90 MB', '10.11': '~85 MB', '10.6': '~80 MB' },
       category: 'database',
     },
@@ -1352,7 +1603,7 @@ function BinaryManager() {
       icon: Server,
       versions: getMergedVersions('redis'),
       predefinedVersions: serviceVersions.redis,
-      defaultVersion: serviceVersions.redis[0] || '7.4',
+      defaultVersion: serviceVersions.redis?.[0] || '7.4',
       sizes: { '7.4': '~5 MB', '7.2': '~5 MB', '6.2': '~4 MB' },
       category: 'cache',
     },
@@ -1363,7 +1614,7 @@ function BinaryManager() {
       icon: Database,
       versions: getMergedVersions('postgresql'),
       predefinedVersions: serviceVersions.postgresql,
-      defaultVersion: serviceVersions.postgresql[0] || '17',
+      defaultVersion: serviceVersions.postgresql?.[0] || '17',
       sizes: { '17': '~250 MB', '16': '~240 MB', '15': '~230 MB', '14': '~225 MB' },
       category: 'database',
     },
@@ -1374,7 +1625,7 @@ function BinaryManager() {
       icon: Database,
       versions: getMergedVersions('mongodb'),
       predefinedVersions: serviceVersions.mongodb,
-      defaultVersion: serviceVersions.mongodb[0] || '8.0',
+      defaultVersion: serviceVersions.mongodb?.[0] || '8.0',
       sizes: { '8.0': '~130 MB', '7.0': '~120 MB', '6.0': '~110 MB' },
       category: 'database',
     },
@@ -1385,7 +1636,7 @@ function BinaryManager() {
       icon: Server,
       versions: getMergedVersions('python'),
       predefinedVersions: serviceVersions.python,
-      defaultVersion: serviceVersions.python[0] || '3.13',
+      defaultVersion: serviceVersions.python?.[0] || '3.13',
       sizes: { '3.13': '~15 MB', '3.12': '~14 MB', '3.11': '~14 MB', '3.10': '~13 MB' },
       category: 'runtime',
     },
@@ -1396,7 +1647,7 @@ function BinaryManager() {
       icon: Server,
       versions: getMergedVersions('memcached'),
       predefinedVersions: serviceVersions.memcached,
-      defaultVersion: serviceVersions.memcached[0] || '1.6',
+      defaultVersion: serviceVersions.memcached?.[0] || '1.6',
       sizes: { '1.6': '~2 MB', '1.5': '~2 MB' },
       category: 'cache',
     },
@@ -1460,7 +1711,7 @@ function BinaryManager() {
       icon: Zap,
       versions: getMergedVersions('nginx'),
       predefinedVersions: serviceVersions.nginx,
-      defaultVersion: serviceVersions.nginx[0] || '1.28',
+      defaultVersion: serviceVersions.nginx?.[0] || '1.28',
       sizes: { '1.28': '~2 MB', '1.26': '~2 MB', '1.24': '~2 MB' },
     },
     {
@@ -1470,7 +1721,7 @@ function BinaryManager() {
       icon: Globe,
       versions: getMergedVersions('apache'),
       predefinedVersions: serviceVersions.apache,
-      defaultVersion: serviceVersions.apache[0] || '2.4',
+      defaultVersion: serviceVersions.apache?.[0] || '2.4',
       sizes: { '2.4': '~60 MB' },
       requiresManualDownload: true,
     },
@@ -1485,9 +1736,40 @@ function BinaryManager() {
     { id: 'tools', label: 'Tools', icon: '🔧' },
   ];
 
-  // Count active downloads
-  const activeDownloads = Object.entries(downloading).filter(([_, isDownloading]) => isDownloading);
-  const activeDownloadCount = activeDownloads.length;
+  const getTabUpdateCount = (tabId) => {
+    let count = 0;
+    const checkServiceCardUpdates = (serviceId, isPhp = false) => {
+      const versions = getMergedVersions(serviceId) || [];
+      return versions.reduce((sum, v) => {
+        if (!installed[serviceId]?.[v]) return sum;
+        const detail = packageVersionDetails?.[serviceId]?.[v] || (isPhp && phpDetails ? phpDetails[v] : null);
+        return sum + (detail?.hasUpdate ? 1 : 0);
+      }, 0);
+    };
+
+    if (tabId === 'language') {
+      count += checkServiceCardUpdates('php', true);
+      count += checkServiceCardUpdates('nodejs');
+      count += checkServiceCardUpdates('python');
+      if (installed.composer && serviceUpdates.composer) count += 1;
+    } else if (tabId === 'webserver') {
+      count += checkServiceCardUpdates('nginx');
+      count += checkServiceCardUpdates('apache');
+    } else if (tabId === 'database') {
+      count += checkServiceCardUpdates('mysql');
+      count += checkServiceCardUpdates('mariadb');
+      count += checkServiceCardUpdates('postgresql');
+      count += checkServiceCardUpdates('mongodb');
+      if (installed.phpmyadmin && serviceUpdates.phpmyadmin) count += 1;
+    } else if (tabId === 'cache') {
+      count += checkServiceCardUpdates('redis');
+      count += checkServiceCardUpdates('memcached');
+    } else if (tabId === 'tools') {
+      if (installed.cloudflared && serviceUpdates.cloudflared) count += 1;
+      if (installed.zrok && serviceUpdates.zrok) count += 1;
+    }
+    return count;
+  };
 
   // Shared props for module-level sub-components
   const sharedCardProps = {
@@ -1502,6 +1784,10 @@ function BinaryManager() {
     setPhpIniEditor,
     handleImportApache,
     getInstalledVersionsCount,
+    phpDetails,
+    onUpdatePhp: handleOpenUpdatePhpModal,
+    packageVersionDetails,
+    onUpdatePackage: handleOpenUpdatePackageModal,
   };
   const sharedSimpleProps = { downloading, progress, downloadSources, getProgressDisplay };
 
@@ -1513,6 +1799,221 @@ function BinaryManager() {
         isOpen={phpIniEditor.open}
         onClose={() => setPhpIniEditor({ open: false, version: null })}
       />
+
+      {/* Safe Package Version Update Modal */}
+      {updatePackageModal.open && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full mx-4 overflow-hidden border border-gray-200 dark:border-gray-700">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                  <RefreshCw className="w-5 h-5 text-amber-500" />
+                  Safe {updatePackageModal.serviceName || 'Package'} Version Update
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Update {updatePackageModal.serviceName || 'Package'} {updatePackageModal.service === 'php' ? formatPhpRuntimeVersion(updatePackageModal.version) : updatePackageModal.version} to the latest release
+                </p>
+              </div>
+              <button
+                onClick={() => setUpdatePackageModal(prev => ({ ...prev, open: false }))}
+                disabled={updatePackageModal.updating}
+                className="btn-icon text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              {/* Version Comparison */}
+              <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 dark:bg-gray-700/40 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 block mb-0.5">Installed Version</span>
+                  <span className="text-sm font-semibold font-mono text-gray-900 dark:text-white">
+                    v{updatePackageModal.installedVersion}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-xs text-blue-600 dark:text-blue-400 block mb-0.5">Available in binaries.json</span>
+                  <span className="text-sm font-semibold font-mono text-blue-700 dark:text-blue-300">
+                    v{updatePackageModal.configuredVersion}
+                  </span>
+                </div>
+              </div>
+
+              {/* Database Data Safe Notice for MySQL / MariaDB */}
+              {updatePackageModal.modifications?.dataSafeNotice && (
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-xs text-blue-800 dark:text-blue-200 flex items-start gap-2">
+                  <Database className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold block mb-0.5">Database Data Is Safe</span>
+                    <span>{updatePackageModal.modifications.dataSafeNotice}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Modification Checker Section */}
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
+                <div className="flex items-center gap-2 mb-2 font-medium text-sm text-gray-900 dark:text-white">
+                  <FileText className="w-4 h-4 text-blue-500" />
+                  File & Configuration Inspector
+                </div>
+
+                {updatePackageModal.checkingModifications ? (
+                  <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 py-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                    Scanning {updatePackageModal.serviceName || 'package'} directory for custom configurations and files...
+                  </div>
+                ) : updatePackageModal.modifications?.hasModifications ? (
+                  <div className="space-y-3">
+                    <div className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 p-2.5 rounded border border-amber-200 dark:border-amber-800">
+                      <p className="font-semibold mb-1">Custom modifications detected in this {updatePackageModal.serviceName || 'package'} installation:</p>
+                      <ul className="list-disc pl-4 space-y-0.5">
+                        {updatePackageModal.modifications.hasCustomIni && (
+                          <li><span className="font-mono">php.ini</span> (custom settings, memory limit, extensions)</li>
+                        )}
+                        {updatePackageModal.modifications.reasons?.map((r, i) => (
+                          <li key={i}>{r}</li>
+                        ))}
+                        {updatePackageModal.modifications.customPackages?.map(pkg => (
+                          <li key={pkg}>Installed package: <span className="font-mono">{pkg}</span></li>
+                        ))}
+                        {updatePackageModal.modifications.customExtensions?.map(ext => (
+                          <li key={ext}>Custom extension: <span className="font-mono">ext/{ext}</span></li>
+                        ))}
+                        {updatePackageModal.modifications.customFiles?.map(f => (
+                          <li key={f}>Custom file/config: <span className="font-mono">{f}</span></li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={updatePackageModal.preserveModifications}
+                        onChange={(e) => setUpdatePackageModal(prev => ({ ...prev, preserveModifications: e.target.checked }))}
+                        className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div className="text-xs">
+                        <span className="font-medium text-gray-900 dark:text-white block">
+                          Skip overwriting modified files and preserve custom packages/configuration (Recommended)
+                        </span>
+                        <span className="text-gray-500 dark:text-gray-400 block mt-0.5">
+                          {updatePackageModal.service === 'nodejs'
+                            ? 'Preserves globally installed npm packages in node_modules, custom shims, and .npmrc configuration.'
+                            : updatePackageModal.service === 'python'
+                            ? 'Preserves user-installed pip packages in site-packages, custom scripts, and python._pth configuration.'
+                            : (updatePackageModal.service === 'mysql' || updatePackageModal.service === 'mariadb')
+                            ? 'Preserves custom my.ini configuration and custom plugins in lib/plugin/.'
+                            : 'Keeps your custom php.ini and custom extension DLLs in ext/ intact. A pre-update backup will also be saved.'}
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-600 dark:text-gray-300 bg-green-50 dark:bg-green-900/20 p-2.5 rounded border border-green-200 dark:border-green-800 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+                    Standard {updatePackageModal.serviceName || 'package'} installation. No custom files or manual overrides detected.
+                  </div>
+                )}
+              </div>
+
+              {/* Running Conflicts Warning */}
+              {updatePackageModal.conflicts?.length > 0 && (
+                <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-xs text-yellow-800 dark:text-yellow-200">
+                  <p className="font-semibold flex items-center gap-1.5 mb-1">
+                    <AlertCircle className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+                    Running processes using {updatePackageModal.serviceName || 'package'} {updatePackageModal.version}:
+                  </p>
+                  <p className="mb-1">
+                    The following will be temporarily stopped to unlock executable files during update:
+                  </p>
+                  <ul className="list-disc pl-4 font-mono">
+                    {updatePackageModal.conflicts.map((c, idx) => (
+                      <li key={idx}>{c.name || c.id}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Error Message */}
+              {updatePackageModal.error && (
+                <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-700 dark:text-red-300 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                  <span>{updatePackageModal.error}</span>
+                </div>
+              )}
+
+              {/* In-Progress Warning Notice */}
+              {updatePackageModal.updating && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/25 border border-amber-300 dark:border-amber-700/60 rounded-lg text-xs text-amber-900 dark:text-amber-200 flex flex-col gap-2">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5 animate-pulse" />
+                    <div>
+                      <span className="font-semibold block mb-0.5">
+                        Update in progress — Please do not close DevBox Pro
+                      </span>
+                      <span>
+                        The new {updatePackageModal.serviceName || 'package'} binary archive is downloading, extracting, and safely replacing executable files. Any running services will automatically resume once the update completes.
+                      </span>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const id = `${updatePackageModal.service}-${updatePackageModal.version}`;
+                    const p = progress[id];
+                    if (!p) return null;
+                    return (
+                      <div className="mt-1 pt-2 border-t border-amber-200 dark:border-amber-800/50 space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium text-amber-800 dark:text-amber-300 capitalize">
+                            {p.message || (p.status === 'downloading' ? 'Downloading...' : p.status === 'extracting' ? 'Extracting package...' : p.status)}
+                          </span>
+                          <span className="font-mono text-amber-700 dark:text-amber-400">
+                            {p.progress || 0}% {p.total > 0 && `(${formatBytes(p.downloaded)} / ${formatBytes(p.total)})`}
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-amber-200/70 dark:bg-amber-950/60 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-amber-600 dark:bg-amber-500 transition-all duration-300"
+                            style={{ width: `${p.progress || 0}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-gray-50 dark:bg-gray-700/50 flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setUpdatePackageModal(prev => ({ ...prev, open: false }))}
+                disabled={updatePackageModal.updating}
+                className="btn-secondary text-sm px-4 py-2"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmUpdatePackage}
+                disabled={updatePackageModal.updating || updatePackageModal.checkingModifications}
+                className="btn-primary text-sm px-4 py-2 flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                {updatePackageModal.updating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Updating {updatePackageModal.serviceName || 'Package'}...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    Update to v{updatePackageModal.configuredVersion}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Update Available Modal */}
       {showUpdateModal && updateResult?.success && (
@@ -1807,53 +2308,31 @@ function BinaryManager() {
         </div>
       )}
 
-      {/* ── Active Downloads Banner ────────────────────────── */}
-      {activeDownloadCount > 0 && (
-        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-          <div className="flex items-center gap-2 text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            {activeDownloadCount} download{activeDownloadCount > 1 ? 's' : ''} in progress
-          </div>
-          <div className="flex flex-col gap-1.5">
-            {activeDownloads.map(([id]) => {
-              const p = progress[id];
-              return (
-                <div key={id} className="flex items-center gap-2 text-xs">
-                  <span className="text-gray-600 dark:text-gray-400 w-28 truncate capitalize">{id.replace('-', ' ')}</span>
-                  {p?.status === 'downloading' && (
-                    <>
-                      <div className="flex-1 h-1.5 bg-blue-200 dark:bg-blue-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-600 dark:bg-blue-400 transition-all duration-300" style={{ width: `${p.progress || 0}%` }} />
-                      </div>
-                      <span className="text-gray-500 dark:text-gray-400 w-10 text-right">{Math.round(p.progress || 0)}%</span>
-                    </>
-                  )}
-                  {p?.status === 'extracting' && <span className="text-amber-600 dark:text-amber-400">Extracting…</span>}
-                  {p?.status === 'starting' && <span className="text-gray-500 dark:text-gray-400">Starting…</span>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* ── Category Tabs ──────────────────────────────────── */}
       <div className="flex gap-1 mb-5 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={clsx(
-              'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors',
-              activeTab === tab.id
-                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-            )}
-          >
-            <span className="text-base leading-none">{tab.icon}</span>
-            <span className="hidden sm:inline">{tab.label}</span>
-          </button>
-        ))}
+        {tabs.map(tab => {
+          const tabUpdates = getTabUpdateCount(tab.id);
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={clsx(
+                'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors relative',
+                activeTab === tab.id
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+              )}
+            >
+              <span className="text-base leading-none">{tab.icon}</span>
+              <span className="hidden sm:inline">{tab.label}</span>
+              {tabUpdates > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
+                  {tabUpdates}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Tab Content ────────────────────────────────────── */}
