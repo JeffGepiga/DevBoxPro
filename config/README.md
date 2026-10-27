@@ -26,6 +26,27 @@ Contains version compatibility rules and recommendations:
 
 ## Updating Binaries
 
+Binary definitions are **automatically updated** via GitHub Actions:
+- **Weekly Schedule**: Runs automatically every Monday at 04:00 UTC (`.github/workflows/update-binaries.yml`).
+- **Manual Trigger**: Can be run on demand from the GitHub Actions tab via **"Run workflow"**.
+- **Local CLI**:
+  ```bash
+  # Check for updates without writing changes
+  npm run update:binaries:dry
+
+  # Check, verify URLs, and update config/binaries.json
+  npm run update:binaries
+  ```
+
+When updates are found, the script automatically:
+1. Queries official upstream releases (windows.php.net, nodejs.org, mariadb.org, python.org, GitHub releases).
+2. Verifies that candidate download URLs are reachable (HTTP 200).
+3. Updates URLs and filenames in `binaries.json`.
+4. Bumps the patch version in `binaries.json` and updates `lastUpdated`.
+5. Commits and pushes to `main`.
+
+### Manual Editing (Fallback)
+
 When a new version of a service is released:
 
 1. Update the URL and filename in `binaries.json`

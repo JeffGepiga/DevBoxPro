@@ -1,0 +1,58 @@
+name: Auto-Update Binary Definitions
+
+on:
+  schedule:
+    # Run every Monday at 04:00 UTC
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (check only, do not commit)'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  update-binaries:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check and Update Binary Manifest
+        id: run_updater
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            node scripts/update-binaries.js --dry-run
+          else
+            node scripts/update-binaries.js
+          fi
+
+      - name: Commit and Push Updated Manifest
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git status --porcelain config/binaries.json | grep -q "config/binaries.json"; then
+            NEW_VERSION=$(node -e "console.log(require('./config/binaries.json').version)")
+            git add config/binaries.json
+            git commit -m "chore(binaries): auto-update binary definitions to v$NEW_VERSION [skip ci]"
+            git push
+            echo "Successfully committed and pushed binaries.json version v$NEW_VERSION"
+          else
+            echo "No changes detected in config/binaries.json"
+          fi
+

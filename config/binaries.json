@@ -1,6 +1,6 @@
 {
-  "version": "1.1.4",
-  "lastUpdated": "2026-10-23",
+  "version": "1.1.5",
+  "lastUpdated": "2026-10-27",
   "php": {
     "versions": [
       "8.5",
@@ -14,8 +14,8 @@
     "downloads": {
       "8.5": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.5.12-nts-Win32-vs17-x64.zip",
-          "filename": "php-8.5.12-nts-Win32-vs17-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.5.12-1-nts-Win32-vs17-x64.zip",
+          "filename": "php-8.5.12-1-nts-Win32-vs17-x64.zip"
         },
         "mac": {
           "url": "builtin",
@@ -29,8 +29,8 @@
       },
       "8.4": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.4.27-nts-Win32-vs17-x64.zip",
-          "filename": "php-8.4.27-nts-Win32-vs17-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.4.27-1-nts-Win32-vs17-x64.zip",
+          "filename": "php-8.4.27-1-nts-Win32-vs17-x64.zip"
         },
         "mac": {
           "url": "builtin",
@@ -44,8 +44,8 @@
       },
       "8.3": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.3.36-nts-Win32-vs16-x64.zip",
-          "filename": "php-8.3.36-nts-Win32-vs16-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.3.36-1-nts-Win32-vs16-x64.zip",
+          "filename": "php-8.3.36-1-nts-Win32-vs16-x64.zip"
         },
         "mac": {
           "url": "builtin",
@@ -59,8 +59,8 @@
       },
       "8.2": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.2.35-nts-Win32-vs16-x64.zip",
-          "filename": "php-8.2.35-nts-Win32-vs16-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.2.35-1-nts-Win32-vs16-x64.zip",
+          "filename": "php-8.2.35-1-nts-Win32-vs16-x64.zip"
         },
         "mac": {
           "url": "builtin",
@@ -181,46 +181,46 @@
     "downloads": {
       "11.4": {
         "win": {
-          "url": "https://archive.mariadb.org/mariadb-11.4.10/winx64-packages/mariadb-11.4.10-winx64.zip",
-          "filename": "mariadb-11.4.10-winx64.zip"
+          "url": "https://archive.mariadb.org/mariadb-11.4.13/winx64-packages/mariadb-11.4.13-winx64.zip",
+          "filename": "mariadb-11.4.13-winx64.zip"
         },
         "mac": {
           "url": "builtin",
           "note": "Install MariaDB 11.4 on macOS via Homebrew or another package manager. Archive.mariadb.org does not currently publish a direct macOS arm64 tarball for this version."
         },
         "linux": {
-          "url": "https://archive.mariadb.org/mariadb-11.4.10/bintar-linux-systemd-x86_64/mariadb-11.4.10-linux-systemd-x86_64.tar.gz",
-          "filename": "mariadb-11.4.10-linux-systemd-x86_64.tar.gz"
+          "url": "https://archive.mariadb.org/mariadb-11.4.13/bintar-linux-systemd-x86_64/mariadb-11.4.13-linux-systemd-x86_64.tar.gz",
+          "filename": "mariadb-11.4.13-linux-systemd-x86_64.tar.gz"
         },
         "label": "Latest"
       },
       "10.11": {
         "win": {
-          "url": "https://archive.mariadb.org/mariadb-10.11.16/winx64-packages/mariadb-10.11.16-winx64.zip",
-          "filename": "mariadb-10.11.16-winx64.zip"
+          "url": "https://archive.mariadb.org/mariadb-10.11.19/winx64-packages/mariadb-10.11.19-winx64.zip",
+          "filename": "mariadb-10.11.19-winx64.zip"
         },
         "mac": {
           "url": "builtin",
           "note": "Install MariaDB 10.11 on macOS via Homebrew or another package manager. Archive.mariadb.org does not currently publish a direct macOS arm64 tarball for this version."
         },
         "linux": {
-          "url": "https://archive.mariadb.org/mariadb-10.11.16/bintar-linux-systemd-x86_64/mariadb-10.11.16-linux-systemd-x86_64.tar.gz",
-          "filename": "mariadb-10.11.16-linux-systemd-x86_64.tar.gz"
+          "url": "https://archive.mariadb.org/mariadb-10.11.19/bintar-linux-systemd-x86_64/mariadb-10.11.19-linux-systemd-x86_64.tar.gz",
+          "filename": "mariadb-10.11.19-linux-systemd-x86_64.tar.gz"
         },
         "label": "LTS"
       },
       "10.6": {
         "win": {
-          "url": "https://archive.mariadb.org/mariadb-10.6.25/winx64-packages/mariadb-10.6.25-winx64.zip",
-          "filename": "mariadb-10.6.25-winx64.zip"
+          "url": "https://archive.mariadb.org/mariadb-10.6.28/winx64-packages/mariadb-10.6.28-winx64.zip",
+          "filename": "mariadb-10.6.28-winx64.zip"
         },
         "mac": {
           "url": "builtin",
           "note": "Install MariaDB 10.6 on macOS via Homebrew or another package manager. Archive.mariadb.org does not currently publish a direct macOS arm64 tarball for this version."
         },
         "linux": {
-          "url": "https://archive.mariadb.org/mariadb-10.6.25/bintar-linux-systemd-x86_64/mariadb-10.6.25-linux-systemd-x86_64.tar.gz",
-          "filename": "mariadb-10.6.25-linux-systemd-x86_64.tar.gz"
+          "url": "https://archive.mariadb.org/mariadb-10.6.28/bintar-linux-systemd-x86_64/mariadb-10.6.28-linux-systemd-x86_64.tar.gz",
+          "filename": "mariadb-10.6.28-linux-systemd-x86_64.tar.gz"
         },
         "label": "LTS (EOL Jul 2026)"
       }
@@ -235,8 +235,8 @@
     "downloads": {
       "7.4": {
         "win": {
-          "url": "https://github.com/redis-windows/redis-windows/releases/download/7.4.8/Redis-7.4.8-Windows-x64-msys2.zip",
-          "filename": "Redis-7.4.8-Windows-x64-msys2.zip"
+          "url": "https://github.com/redis-windows/redis-windows/releases/download/7.4.11/Redis-7.4.11-Windows-x64-cygwin-with-Service.zip",
+          "filename": "Redis-7.4.11-Windows-x64-cygwin-with-Service.zip"
         },
         "mac": {
           "url": "https://github.com/redis/redis/archive/refs/tags/7.4.8.tar.gz",
@@ -252,8 +252,8 @@
       },
       "7.2": {
         "win": {
-          "url": "https://github.com/redis-windows/redis-windows/releases/download/7.2.13/Redis-7.2.13-Windows-x64-msys2.zip",
-          "filename": "Redis-7.2.13-Windows-x64-msys2.zip"
+          "url": "https://github.com/redis-windows/redis-windows/releases/download/7.2.16/Redis-7.2.16-Windows-x64-cygwin-with-Service.zip",
+          "filename": "Redis-7.2.16-Windows-x64-cygwin-with-Service.zip"
         },
         "mac": {
           "url": "https://github.com/redis/redis/archive/refs/tags/7.2.13.tar.gz",
@@ -269,8 +269,8 @@
       },
       "6.2": {
         "win": {
-          "url": "https://github.com/redis-windows/redis-windows/releases/download/6.2.21/Redis-6.2.21-Windows-x64-msys2.zip",
-          "filename": "Redis-6.2.21-Windows-x64-msys2.zip"
+          "url": "https://github.com/redis-windows/redis-windows/releases/download/6.2.24/Redis-6.2.24-Windows-x64-cygwin-with-Service.zip",
+          "filename": "Redis-6.2.24-Windows-x64-cygwin-with-Service.zip"
         },
         "mac": {
           "url": "https://github.com/redis/redis/archive/refs/tags/6.2.21.tar.gz",
@@ -295,17 +295,17 @@
     "downloads": {
       "1.28": {
         "win": {
-          "url": "https://nginx.org/download/nginx-1.28.2.zip",
-          "filename": "nginx-1.28.2.zip"
+          "url": "https://nginx.org/download/nginx-1.28.3.zip",
+          "filename": "nginx-1.28.3.zip"
         },
         "mac": {
-          "url": "https://nginx.org/download/nginx-1.28.2.tar.gz",
-          "filename": "nginx-1.28.2.tar.gz",
+          "url": "https://nginx.org/download/nginx-1.28.3.tar.gz",
+          "filename": "nginx-1.28.3.tar.gz",
           "requiresBuild": true
         },
         "linux": {
-          "url": "https://nginx.org/download/nginx-1.28.2.tar.gz",
-          "filename": "nginx-1.28.2.tar.gz",
+          "url": "https://nginx.org/download/nginx-1.28.3.tar.gz",
+          "filename": "nginx-1.28.3.tar.gz",
           "requiresBuild": true
         },
         "label": "Stable"
@@ -409,46 +409,46 @@
       },
       "20": {
         "win": {
-          "url": "https://nodejs.org/dist/v20.20.1/node-v20.20.1-win-x64.zip",
-          "filename": "node-v20.20.1-win-x64.zip"
+          "url": "https://nodejs.org/dist/v20.20.2/node-v20.20.2-win-x64.zip",
+          "filename": "node-v20.20.2-win-x64.zip"
         },
         "mac": {
-          "url": "https://nodejs.org/dist/v20.20.1/node-v20.20.1-darwin-arm64.tar.gz",
-          "filename": "node-v20.20.1-darwin-arm64.tar.gz"
+          "url": "https://nodejs.org/dist/v20.20.2/node-v20.20.2-darwin-arm64.tar.gz",
+          "filename": "node-v20.20.2-darwin-arm64.tar.gz"
         },
         "linux": {
-          "url": "https://nodejs.org/dist/v20.20.1/node-v20.20.1-linux-x64.tar.gz",
-          "filename": "node-v20.20.1-linux-x64.tar.gz"
+          "url": "https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.gz",
+          "filename": "node-v20.20.2-linux-x64.tar.gz"
         },
         "label": "Maintenance LTS (EOL Apr 2026)"
       },
       "22": {
         "win": {
-          "url": "https://nodejs.org/dist/v22.22.1/node-v22.22.1-win-x64.zip",
-          "filename": "node-v22.22.1-win-x64.zip"
+          "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-win-x64.zip",
+          "filename": "node-v22.23.4-win-x64.zip"
         },
         "mac": {
-          "url": "https://nodejs.org/dist/v22.22.1/node-v22.22.1-darwin-arm64.tar.gz",
-          "filename": "node-v22.22.1-darwin-arm64.tar.gz"
+          "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-darwin-arm64.tar.gz",
+          "filename": "node-v22.23.4-darwin-arm64.tar.gz"
         },
         "linux": {
-          "url": "https://nodejs.org/dist/v22.22.1/node-v22.22.1-linux-x64.tar.gz",
-          "filename": "node-v22.22.1-linux-x64.tar.gz"
+          "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.gz",
+          "filename": "node-v22.23.4-linux-x64.tar.gz"
         },
         "label": "Maintenance LTS"
       },
       "24": {
         "win": {
-          "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-win-x64.zip",
-          "filename": "node-v24.14.0-win-x64.zip"
+          "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-win-x64.zip",
+          "filename": "node-v24.22.1-win-x64.zip"
         },
         "mac": {
-          "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-darwin-arm64.tar.gz",
-          "filename": "node-v24.14.0-darwin-arm64.tar.gz"
+          "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-darwin-arm64.tar.gz",
+          "filename": "node-v24.22.1-darwin-arm64.tar.gz"
         },
         "linux": {
-          "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-x64.tar.gz",
-          "filename": "node-v24.14.0-linux-x64.tar.gz"
+          "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.gz",
+          "filename": "node-v24.22.1-linux-x64.tar.gz"
         },
         "label": "LTS"
       }
@@ -461,15 +461,15 @@
     "downloads": {
       "latest": {
         "win": {
-          "url": "https://github.com/axllent/mailpit/releases/latest/download/mailpit-windows-amd64.zip",
+          "url": "https://github.com/axllent/mailpit/releases/download/v1.32.0/mailpit-windows-amd64.zip",
           "filename": "mailpit-windows-amd64.zip"
         },
         "mac": {
-          "url": "https://github.com/axllent/mailpit/releases/latest/download/mailpit-darwin-arm64.tar.gz",
+          "url": "https://github.com/axllent/mailpit/releases/download/v1.32.0/mailpit-darwin-arm64.tar.gz",
           "filename": "mailpit-darwin-arm64.tar.gz"
         },
         "linux": {
-          "url": "https://github.com/axllent/mailpit/releases/latest/download/mailpit-linux-amd64.tar.gz",
+          "url": "https://github.com/axllent/mailpit/releases/download/v1.32.0/mailpit-linux-amd64.tar.gz",
           "filename": "mailpit-linux-amd64.tar.gz"
         }
       }
@@ -482,16 +482,16 @@
     "downloads": {
       "latest": {
         "win": {
-          "url": "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe",
-          "filename": "cloudflared.exe"
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-windows-amd64.exe",
+          "filename": "cloudflared-windows-amd64.exe"
         },
         "mac": {
-          "url": "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz",
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-darwin-arm64.tgz",
           "filename": "cloudflared-darwin-arm64.tgz"
         },
         "linux": {
-          "url": "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
-          "filename": "cloudflared"
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-linux-amd64",
+          "filename": "cloudflared-linux-amd64"
         }
       }
     }
@@ -503,14 +503,14 @@
     "downloads": {
       "latest": {
         "win": {
-          "url": "https://github.com/openziti/zrok/releases/latest",
-          "filename": "zrok-windows-amd64.tar.gz",
+          "url": "https://github.com/openziti/zrok/releases/download/v2.0.8/zrok_2.0.8_windows_amd64.tar.gz",
+          "filename": "zrok_2.0.8_windows_amd64.tar.gz",
           "githubRepo": "openziti/zrok",
           "assetPattern": "windows.*amd64.*\\.(?:zip|tar\\.gz)$"
         },
         "mac": {
-          "url": "https://github.com/openziti/zrok/releases/latest",
-          "filename": "zrok-darwin-arm64.tar.gz",
+          "url": "https://github.com/openziti/zrok/releases/download/v2.0.8/zrok_2.0.8_darwin_arm64.tar.gz",
+          "filename": "zrok_2.0.8_darwin_arm64.tar.gz",
           "githubRepo": "openziti/zrok",
           "assetPattern": "darwin.*arm64.*\\.(?:tar\\.gz|tgz)$",
           "fallbackAssetPatterns": [
@@ -518,8 +518,8 @@
           ]
         },
         "linux": {
-          "url": "https://github.com/openziti/zrok/releases/latest",
-          "filename": "zrok-linux-amd64.tar.gz",
+          "url": "https://github.com/openziti/zrok/releases/download/v2.0.8/zrok_2.0.8_linux_amd64.tar.gz",
+          "filename": "zrok_2.0.8_linux_amd64.tar.gz",
           "githubRepo": "openziti/zrok",
           "assetPattern": "linux.*amd64.*\\.(?:tar\\.gz|tgz)$"
         }
@@ -559,8 +559,8 @@
     "downloads": {
       "portable": {
         "win": {
-          "url": "https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.1/PortableGit-2.53.0-64-bit.7z.exe",
-          "filename": "PortableGit-2.53.0-64-bit.7z.exe"
+          "url": "https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.4/PortableGit-2.56.0.4-64-bit.7z.exe",
+          "filename": "PortableGit-2.56.0.4-64-bit.7z.exe"
         },
         "mac": {
           "url": "builtin",
@@ -583,21 +583,6 @@
       "14"
     ],
     "downloads": {
-      "18": {
-        "win": {
-          "url": "https://get.enterprisedb.com/postgresql/postgresql-18.3-1-windows-x64-binaries.zip",
-          "filename": "postgresql-18.3-1-windows-x64-binaries.zip"
-        },
-        "mac": {
-          "url": "https://get.enterprisedb.com/postgresql/postgresql-18.3-1-osx-binaries.zip",
-          "filename": "postgresql-18.3-1-osx-binaries.zip"
-        },
-        "linux": {
-          "url": "builtin",
-          "note": "Install PostgreSQL 18 on Linux from your distro or postgresql.org package repository. EnterpriseDB no longer publishes supported Linux binary tarballs here."
-        },
-        "label": "Latest"
-      },
       "14": {
         "win": {
           "url": "https://get.enterprisedb.com/postgresql/postgresql-14.17-1-windows-x64-binaries.zip",
@@ -657,6 +642,21 @@
           "note": "Install PostgreSQL 17 on Linux from your distro or postgresql.org package repository. EnterpriseDB no longer publishes supported Linux binary tarballs here."
         },
         "label": "LTS"
+      },
+      "18": {
+        "win": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-18.3-1-windows-x64-binaries.zip",
+          "filename": "postgresql-18.3-1-windows-x64-binaries.zip"
+        },
+        "mac": {
+          "url": "https://get.enterprisedb.com/postgresql/postgresql-18.3-1-osx-binaries.zip",
+          "filename": "postgresql-18.3-1-osx-binaries.zip"
+        },
+        "linux": {
+          "url": "builtin",
+          "note": "Install PostgreSQL 18 on Linux from your distro or postgresql.org package repository. EnterpriseDB no longer publishes supported Linux binary tarballs here."
+        },
+        "label": "Latest"
       }
     }
   },
@@ -670,33 +670,33 @@
     "downloads": {
       "3.13": {
         "win": {
-          "url": "https://www.python.org/ftp/python/3.13.2/python-3.13.2-embed-amd64.zip",
-          "filename": "python-3.13.2-embed-amd64.zip"
+          "url": "https://www.python.org/ftp/python/3.13.17/python-3.13.17-embed-amd64.zip",
+          "filename": "python-3.13.17-embed-amd64.zip"
         },
         "mac": {
-          "url": "https://www.python.org/ftp/python/3.13.2/Python-3.13.2.tgz",
-          "filename": "Python-3.13.2.tgz",
+          "url": "https://www.python.org/ftp/python/3.13.17/Python-3.13.17.tgz",
+          "filename": "Python-3.13.17.tgz",
           "altInstall": "brew install python@3.13"
         },
         "linux": {
-          "url": "https://www.python.org/ftp/python/3.13.2/Python-3.13.2.tgz",
-          "filename": "Python-3.13.2.tgz"
+          "url": "https://www.python.org/ftp/python/3.13.17/Python-3.13.17.tgz",
+          "filename": "Python-3.13.17.tgz"
         },
         "label": "Latest"
       },
       "3.12": {
         "win": {
-          "url": "https://www.python.org/ftp/python/3.12.9/python-3.12.9-embed-amd64.zip",
-          "filename": "python-3.12.9-embed-amd64.zip"
+          "url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip",
+          "filename": "python-3.12.10-embed-amd64.zip"
         },
         "mac": {
-          "url": "https://www.python.org/ftp/python/3.12.9/Python-3.12.9.tgz",
-          "filename": "Python-3.12.9.tgz",
+          "url": "https://www.python.org/ftp/python/3.12.10/Python-3.12.10.tgz",
+          "filename": "Python-3.12.10.tgz",
           "altInstall": "brew install python@3.12"
         },
         "linux": {
-          "url": "https://www.python.org/ftp/python/3.12.9/Python-3.12.9.tgz",
-          "filename": "Python-3.12.9.tgz"
+          "url": "https://www.python.org/ftp/python/3.12.10/Python-3.12.10.tgz",
+          "filename": "Python-3.12.10.tgz"
         },
         "label": "LTS"
       },
@@ -795,16 +795,16 @@
     "downloads": {
       "latest": {
         "win": {
-          "url": "https://downloads.mongodb.com/compass/mongosh-2.3.8-win32-x64.zip",
-          "filename": "mongosh-2.3.8-win32-x64.zip"
+          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.0/mongosh-2.14.0-win32-x64.zip",
+          "filename": "mongosh-2.14.0-win32-x64.zip"
         },
         "mac": {
-          "url": "https://downloads.mongodb.com/compass/mongosh-2.3.8-darwin-arm64.zip",
-          "filename": "mongosh-2.3.8-darwin-arm64.zip"
+          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.0/mongosh-2.14.0-darwin-arm64.zip",
+          "filename": "mongosh-2.14.0-darwin-arm64.zip"
         },
         "linux": {
-          "url": "https://downloads.mongodb.com/compass/mongosh-2.3.8-linux-x64.tgz",
-          "filename": "mongosh-2.3.8-linux-x64.tgz"
+          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.0/mongosh-2.14.0-linux-x64.tgz",
+          "filename": "mongosh-2.14.0-linux-x64.tgz"
         },
         "label": "Latest"
       }

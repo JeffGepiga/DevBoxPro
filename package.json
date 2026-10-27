@@ -19,6 +19,8 @@
     "test:coverage": "vitest run --coverage",
     "test:binary-urls": "node scripts/check-binary-urls.js",
     "test:binary-urls:all": "node scripts/check-binary-urls.js --all",
+    "update:binaries": "node scripts/update-binaries.js",
+    "update:binaries:dry": "node scripts/update-binaries.js --dry-run",
     "test:main": "vitest run --project main",
     "test:renderer": "vitest run --project renderer",
     "test:e2e": "npm run build:renderer && playwright test"
