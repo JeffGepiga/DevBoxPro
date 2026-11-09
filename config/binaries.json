@@ -1,6 +1,6 @@
 {
-  "version": "1.1.6",
-  "lastUpdated": "2026-11-02",
+  "version": "1.1.7",
+  "lastUpdated": "2026-11-09",
   "php": {
     "versions": [
       "8.5",
@@ -461,15 +461,15 @@
     "downloads": {
       "latest": {
         "win": {
-          "url": "https://github.com/axllent/mailpit/releases/download/v1.33.0/mailpit-windows-amd64.zip",
+          "url": "https://github.com/axllent/mailpit/releases/download/v1.33.1/mailpit-windows-amd64.zip",
           "filename": "mailpit-windows-amd64.zip"
         },
         "mac": {
-          "url": "https://github.com/axllent/mailpit/releases/download/v1.33.0/mailpit-darwin-arm64.tar.gz",
+          "url": "https://github.com/axllent/mailpit/releases/download/v1.33.1/mailpit-darwin-arm64.tar.gz",
           "filename": "mailpit-darwin-arm64.tar.gz"
         },
         "linux": {
-          "url": "https://github.com/axllent/mailpit/releases/download/v1.33.0/mailpit-linux-amd64.tar.gz",
+          "url": "https://github.com/axllent/mailpit/releases/download/v1.33.1/mailpit-linux-amd64.tar.gz",
           "filename": "mailpit-linux-amd64.tar.gz"
         }
       }
