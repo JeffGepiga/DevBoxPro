@@ -1,6 +1,6 @@
 {
-  "version": "1.1.7",
-  "lastUpdated": "2026-11-09",
+  "version": "1.1.8",
+  "lastUpdated": "2026-11-16",
   "php": {
     "versions": [
       "8.5",
@@ -424,31 +424,31 @@
       },
       "22": {
         "win": {
-          "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-win-x64.zip",
-          "filename": "node-v22.23.4-win-x64.zip"
+          "url": "https://nodejs.org/dist/v22.23.5/node-v22.23.5-win-x64.zip",
+          "filename": "node-v22.23.5-win-x64.zip"
         },
         "mac": {
-          "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-darwin-arm64.tar.gz",
-          "filename": "node-v22.23.4-darwin-arm64.tar.gz"
+          "url": "https://nodejs.org/dist/v22.23.5/node-v22.23.5-darwin-arm64.tar.gz",
+          "filename": "node-v22.23.5-darwin-arm64.tar.gz"
         },
         "linux": {
-          "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.gz",
-          "filename": "node-v22.23.4-linux-x64.tar.gz"
+          "url": "https://nodejs.org/dist/v22.23.5/node-v22.23.5-linux-x64.tar.gz",
+          "filename": "node-v22.23.5-linux-x64.tar.gz"
         },
         "label": "Maintenance LTS"
       },
       "24": {
         "win": {
-          "url": "https://nodejs.org/dist/v24.22.2/node-v24.22.2-win-x64.zip",
-          "filename": "node-v24.22.2-win-x64.zip"
+          "url": "https://nodejs.org/dist/v24.22.3/node-v24.22.3-win-x64.zip",
+          "filename": "node-v24.22.3-win-x64.zip"
         },
         "mac": {
-          "url": "https://nodejs.org/dist/v24.22.2/node-v24.22.2-darwin-arm64.tar.gz",
-          "filename": "node-v24.22.2-darwin-arm64.tar.gz"
+          "url": "https://nodejs.org/dist/v24.22.3/node-v24.22.3-darwin-arm64.tar.gz",
+          "filename": "node-v24.22.3-darwin-arm64.tar.gz"
         },
         "linux": {
-          "url": "https://nodejs.org/dist/v24.22.2/node-v24.22.2-linux-x64.tar.gz",
-          "filename": "node-v24.22.2-linux-x64.tar.gz"
+          "url": "https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.gz",
+          "filename": "node-v24.22.3-linux-x64.tar.gz"
         },
         "label": "LTS"
       }
@@ -482,15 +482,15 @@
     "downloads": {
       "latest": {
         "win": {
-          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-windows-amd64.exe",
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.11.0/cloudflared-windows-amd64.exe",
           "filename": "cloudflared-windows-amd64.exe"
         },
         "mac": {
-          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-darwin-arm64.tgz",
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.11.0/cloudflared-darwin-arm64.tgz",
           "filename": "cloudflared-darwin-arm64.tgz"
         },
         "linux": {
-          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-linux-amd64",
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.11.0/cloudflared-linux-amd64",
           "filename": "cloudflared-linux-amd64"
         }
       }
@@ -559,8 +559,8 @@
     "downloads": {
       "portable": {
         "win": {
-          "url": "https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.4/PortableGit-2.56.0.4-64-bit.7z.exe",
-          "filename": "PortableGit-2.56.0.4-64-bit.7z.exe"
+          "url": "https://github.com/git-for-windows/git/releases/download/v2.56.1.windows.1/PortableGit-2.56.1-64-bit.7z.exe",
+          "filename": "PortableGit-2.56.1-64-bit.7z.exe"
         },
         "mac": {
           "url": "builtin",
@@ -795,16 +795,16 @@
     "downloads": {
       "latest": {
         "win": {
-          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.1/mongosh-2.14.1-win32-x64.zip",
-          "filename": "mongosh-2.14.1-win32-x64.zip"
+          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.2/mongosh-2.14.2-win32-x64.zip",
+          "filename": "mongosh-2.14.2-win32-x64.zip"
         },
         "mac": {
-          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.1/mongosh-2.14.1-darwin-arm64.zip",
-          "filename": "mongosh-2.14.1-darwin-arm64.zip"
+          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.2/mongosh-2.14.2-darwin-arm64.zip",
+          "filename": "mongosh-2.14.2-darwin-arm64.zip"
         },
         "linux": {
-          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.1/mongosh-2.14.1-linux-x64.tgz",
-          "filename": "mongosh-2.14.1-linux-x64.tgz"
+          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.2/mongosh-2.14.2-linux-x64.tgz",
+          "filename": "mongosh-2.14.2-linux-x64.tgz"
         },
         "label": "Latest"
       }
