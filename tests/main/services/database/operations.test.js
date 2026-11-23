@@ -151,4 +151,37 @@ describe('database/operations', () => {
 
     await expect(operations.getDatabaseSize.call(context, 'analytics')).resolves.toBe(2048);
   });
+
+  it('kills blocking MySQL connections before dropping and recreating the database', async () => {
+    const context = makeContext();
+    context._terminateMysqlConnections = operations._terminateMysqlConnections;
+    context.runDbQuery = vi.fn(async (query) => {
+      if (query.includes('information_schema.PROCESSLIST')) {
+        return [['42'], ['99']];
+      }
+      return [];
+    });
+
+    await operations.dropAllTables.call(context, 'hrms');
+
+    expect(context.runDbQuery).toHaveBeenCalledWith(
+      "SELECT ID FROM information_schema.PROCESSLIST WHERE DB = 'hrms' AND ID <> CONNECTION_ID()"
+    );
+    expect(context.runDbQuery).toHaveBeenCalledWith('KILL 42');
+    expect(context.runDbQuery).toHaveBeenCalledWith('KILL 99');
+    expect(context.runDbQuery).toHaveBeenCalledWith('SET SESSION lock_wait_timeout = 30; DROP DATABASE IF EXISTS `hrms`');
+    expect(context.runDbQuery).toHaveBeenCalledWith('CREATE DATABASE `hrms` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
+  });
+
+  it('surfaces a clear error when DROP DATABASE hits a metadata lock timeout', async () => {
+    const context = makeContext();
+    context._terminateMysqlConnections = vi.fn().mockResolvedValue(undefined);
+    context.runDbQuery = vi.fn().mockRejectedValue(
+      new Error('Query failed: ERROR 1205 (HY000) at line 1: Lock wait timeout exceeded; try restarting transaction')
+    );
+
+    await expect(operations.dropAllTables.call(context, 'hrms')).rejects.toThrow(
+      /locked by another connection or query/i
+    );
+  });
 });

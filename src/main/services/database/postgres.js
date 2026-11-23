@@ -142,7 +142,6 @@ module.exports = {
 
     progressCallback?.({ operationId, status: 'starting', message: 'Starting PostgreSQL import...', dbName: safeName });
 
-    const isGzipped = filePath.toLowerCase().endsWith('.gz');
     const clientPath = this.getDbClientPath();
     const port = this.getActualPort();
     const settings = this.configStore.get('settings', {});
@@ -152,16 +151,15 @@ module.exports = {
       throw new Error(`psql not found at ${clientPath}. Please ensure the PostgreSQL binary is installed.`);
     }
 
+    // Open before cleaning so an archive without a .sql file doesn't wipe the database.
+    const source = await this._openImportSource(filePath);
+
     return new Promise(async (resolve, reject) => {
       try {
         if (mode === 'clean') {
           progressCallback?.({ operationId, status: 'cleaning', message: 'Recreating database (clean import)...', dbName: safeName });
           await this.dropAllTables(safeName);
         }
-
-        const fileStats = await fs.stat(filePath);
-        const totalSize = fileStats.size;
-        let processedBytes = 0;
 
         progressCallback?.({ operationId, status: 'importing', message: 'Importing to database (streaming)...', progress: 0, dbName: safeName });
 
@@ -186,38 +184,36 @@ module.exports = {
           stderr += data.toString();
         });
 
-        const readStream = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 });
-        readStream.on('data', (chunk) => {
-          processedBytes += chunk.length;
-          const progress = Math.round((processedBytes / totalSize) * 100);
-          if (progress % 5 === 0) {
-            const sizeMB = (processedBytes / (1024 * 1024)).toFixed(1);
-            const totalMB = (totalSize / (1024 * 1024)).toFixed(1);
-            progressCallback?.({ operationId, status: 'importing', message: `Importing... ${sizeMB}MB / ${totalMB}MB (${progress}%)`, progress, dbName: safeName });
-          }
-        });
+        proc.stdout.resume();
+        proc.stdin.on('error', () => {});
 
-        if (isGzipped) {
-          progressCallback?.({ operationId, status: 'importing', message: 'Decompressing and importing (streaming)...', progress: 0, dbName: safeName });
-          const gunzip = zlib.createGunzip();
-          gunzip.on('error', (err) => {
-            proc.stdin.end();
-            this.runningOperations.delete(operationId);
-            reject(new Error(`Decompression error: ${err.message}`));
-          });
-          readStream.pipe(gunzip).pipe(proc.stdin);
-        } else {
-          readStream.pipe(proc.stdin);
+        const progressInterval = setInterval(() => {
+          const { processedBytes, totalSize } = source.state;
+          const progress = totalSize > 0 ? Math.min(Math.round((processedBytes / totalSize) * 100), 99) : 0;
+          const sizeMB = (processedBytes / (1024 * 1024)).toFixed(1);
+          const totalMB = (totalSize / (1024 * 1024)).toFixed(1);
+          progressCallback?.({ operationId, status: 'importing', message: `Importing... ${sizeMB}MB / ${totalMB}MB (${progress}%)`, progress, dbName: safeName });
+        }, 2000);
+
+        let readError = source.state.error;
+        source.stream.on('error', (err) => {
+          readError = readError || err;
+          try { proc.kill(); } catch { /* ignore */ }
+        });
+        if (readError) {
+          try { proc.kill(); } catch { /* ignore */ }
         }
-
-        readStream.on('error', (err) => {
-          proc.stdin.end();
-          this.runningOperations.delete(operationId);
-          reject(new Error(`Read error: ${err.message}`));
-        });
+        source.stream.pipe(proc.stdin);
 
         proc.on('close', (code) => {
+          clearInterval(progressInterval);
+          source.destroy();
           this.runningOperations.delete(operationId);
+          if (readError) {
+            progressCallback?.({ operationId, status: 'error', message: `Import failed: ${readError.message}`, dbName: safeName });
+            reject(new Error(`Failed to read import file: ${readError.message}`));
+            return;
+          }
           if (code === 0) {
             progressCallback?.({ operationId, status: 'complete', message: 'Import completed successfully!', dbName: safeName });
             resolve({ success: true, operationId });
@@ -232,11 +228,14 @@ module.exports = {
         });
 
         proc.on('error', (error) => {
+          clearInterval(progressInterval);
+          source.destroy();
           this.runningOperations.delete(operationId);
           progressCallback?.({ operationId, status: 'error', message: `Import error: ${error.message}`, dbName: safeName });
           reject(error);
         });
       } catch (error) {
+        source.destroy();
         this.runningOperations.delete(operationId);
         progressCallback?.({ operationId, status: 'error', message: `Import error: ${error.message}`, dbName: safeName });
         reject(error);

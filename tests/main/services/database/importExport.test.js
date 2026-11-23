@@ -19,7 +19,15 @@ describe('database/importExport', () => {
 
     expect(databaseImportExport.validateFilePath.call(context, 'backup.sql')).toEqual({ valid: true });
     expect(databaseImportExport.validateFilePath.call(context, 'backup.sql.gz')).toEqual({ valid: true });
+    expect(databaseImportExport.validateFilePath.call(context, 'backup.zip')).toEqual({ valid: true });
+    expect(databaseImportExport.validateFilePath.call(context, 'backup.tar.gz')).toEqual({ valid: true });
+    expect(databaseImportExport.validateFilePath.call(context, 'backup.tgz')).toEqual({ valid: true });
+    expect(databaseImportExport.validateFilePath.call(context, 'backup.tar')).toEqual({ valid: true });
     expect(databaseImportExport.validateFilePath.call(context, 'backup.txt')).toEqual({
+      valid: false,
+      error: 'Invalid file type. Supported: .sql, .sql.gz, .zip, .tar, .tar.gz, .tgz',
+    });
+    expect(databaseImportExport.validateFilePath.call(context, 'backup.zip', true, { allowArchives: false })).toEqual({
       valid: false,
       error: 'Invalid file type. Only .sql and .sql.gz files are supported.',
     });

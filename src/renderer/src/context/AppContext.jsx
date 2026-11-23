@@ -217,8 +217,10 @@ export function AppProvider({ children }) {
               isInstalled = installedBinaries?.[type] === true;
             }
 
-            // Only mark as downloading if not already installed
-            if (!isInstalled) {
+            const isActiveStatus = ['starting', 'downloading', 'extracting', 'installing'].includes(progress?.status);
+
+            // Restore active downloads (including updates of already-installed binaries)
+            if (!isInstalled || isActiveStatus) {
               dispatch({ type: 'SET_DOWNLOADING', payload: { id, value: true } });
               dispatch({ type: 'SET_DOWNLOAD_PROGRESS', payload: { id, progress } });
             }

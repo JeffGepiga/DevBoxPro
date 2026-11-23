@@ -163,7 +163,7 @@ module.exports = {
     const safeName = this.sanitizeName(databaseName);
     const operationId = uuidv4();
 
-    const pathValidation = this.validateFilePath(filePath, true);
+    const pathValidation = this.validateFilePath(filePath, true, { allowArchives: false });
     if (!pathValidation.valid) {
       throw new Error(pathValidation.error);
     }

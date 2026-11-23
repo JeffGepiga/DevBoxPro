@@ -569,6 +569,15 @@ module.exports = {
           version,
           port: servicePort,
         });
+        if (version) {
+          this.runningVersions.get(serviceName)?.set(version, trackedVersion || { port: servicePort, startedAt: new Date() });
+        }
+        status.status = 'running';
+        status.port = servicePort;
+        if (version) {
+          status.version = version;
+        }
+        return { success: false, service: serviceName, version, error: `Port ${servicePort} is still in use` };
       }
     }
 

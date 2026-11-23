@@ -292,14 +292,62 @@ module.exports = {
       } else if (dbType === 'mongodb') {
         await this._runMongoQuery('db.dropDatabase()', safeName);
       } else {
-        await this.runDbQuery(`DROP DATABASE IF EXISTS \`${safeName}\``);
+        await this._terminateMysqlConnections(safeName);
+        await this.runDbQuery(`SET SESSION lock_wait_timeout = 30; DROP DATABASE IF EXISTS \`${safeName}\``);
         await this.runDbQuery(`CREATE DATABASE \`${safeName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
       }
 
       this.managers.log?.systemInfo(`Database '${safeName}' recreated successfully`);
     } catch (error) {
+      if (/lock wait timeout/i.test(error.message)) {
+        const lockError = new Error(
+          `Database '${safeName}' is locked by another connection or query. Close any open database clients or restart the database service and try again.`
+        );
+        this.managers.log?.systemError(`Error recreating database ${safeName}`, { error: lockError.message });
+        throw lockError;
+      }
       this.managers.log?.systemError(`Error recreating database ${safeName}`, { error: error.message });
       throw error;
+    }
+  },
+
+  async _terminateMysqlConnections(databaseName) {
+    const escapedName = String(databaseName).replace(/'/g, "''");
+    const pids = new Set();
+
+    try {
+      const rows = await this.runDbQuery(
+        `SELECT ID FROM information_schema.PROCESSLIST WHERE DB = '${escapedName}' AND ID <> CONNECTION_ID()`
+      );
+      for (const row of rows || []) {
+        const pid = Number.parseInt(row?.[0], 10);
+        if (Number.isFinite(pid) && pid > 0) pids.add(pid);
+      }
+    } catch {
+      // Best-effort
+    }
+
+    // Also catch connections holding metadata locks on the schema even when their default DB is NULL.
+    try {
+      const lockRows = await this.runDbQuery(
+        `SELECT DISTINCT t.PROCESSLIST_ID FROM performance_schema.metadata_locks m ` +
+        `JOIN performance_schema.threads t ON m.OWNER_THREAD_ID = t.THREAD_ID ` +
+        `WHERE m.OBJECT_SCHEMA = '${escapedName}' AND t.PROCESSLIST_ID IS NOT NULL AND t.PROCESSLIST_ID <> CONNECTION_ID()`
+      );
+      for (const row of lockRows || []) {
+        const pid = Number.parseInt(row?.[0], 10);
+        if (Number.isFinite(pid) && pid > 0) pids.add(pid);
+      }
+    } catch {
+      // Best-effort (performance_schema may be disabled on older MariaDB)
+    }
+
+    for (const pid of pids) {
+      try {
+        await this.runDbQuery(`KILL ${pid}`);
+      } catch {
+        // Connection may have already closed
+      }
     }
   },
 

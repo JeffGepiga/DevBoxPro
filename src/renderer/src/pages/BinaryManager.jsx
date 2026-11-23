@@ -690,10 +690,14 @@ function BinaryManager() {
   }, [parseBinaryDownloadId]);
 
   const refreshInstalledUntilDetected = useCallback(async (id) => {
+    const { serviceName } = parseBinaryDownloadId(id);
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const result = await forceRefreshInstalled();
       if (isBinaryInstalled(result, id)) {
         clearDownload(id);
+        if (serviceName) {
+          setServiceUpdates((prev) => (serviceName in prev ? { ...prev, [serviceName]: false } : prev));
+        }
         return true;
       }
 
@@ -703,26 +707,28 @@ function BinaryManager() {
     }
 
     return false;
-  }, [clearDownload, forceRefreshInstalled, isBinaryInstalled]);
+  }, [clearDownload, forceRefreshInstalled, isBinaryInstalled, parseBinaryDownloadId]);
 
   // Clean up stale downloads when installed state changes
-  // This handles cases where the 'completed' event was missed
+  // This handles cases where the 'completed' event was missed, without cancelling active updates
   useEffect(() => {
     if (Object.keys(downloading).length === 0) return;
+
+    const activeStatuses = new Set(['starting', 'downloading', 'extracting', 'installing']);
 
     // Check each downloading item against installed binaries
     Object.entries(downloading).forEach(([id, isDownloading]) => {
       if (!isDownloading) return;
+      if (activeStatuses.has(progress?.[id]?.status)) return;
 
       const isInstalled = isBinaryInstalled(installed, id);
 
-      // If binary is installed but still showing as downloading, clear it
+      // If binary is installed and no longer actively downloading/updating, clear it
       if (isInstalled) {
-        // Clearing stale download - already installed
         clearDownload(id);
       }
     });
-  }, [installed, downloading, clearDownload, isBinaryInstalled]);
+  }, [installed, downloading, progress, clearDownload, isBinaryInstalled]);
 
   useEffect(() => {
     const activeDownloadIds = Object.entries(downloading)
@@ -957,7 +963,11 @@ function BinaryManager() {
         break;
     }
 
-    downloadPromise?.catch((error) => {
+    downloadPromise?.then(async () => {
+      await forceRefreshInstalled();
+      clearDownload(id);
+      setServiceUpdates((prev) => (service in prev ? { ...prev, [service]: false } : prev));
+    }).catch((error) => {
       setProgressGlobal(id, { status: 'error', error: error.message });
       setDownloadingGlobal(id, false);
 

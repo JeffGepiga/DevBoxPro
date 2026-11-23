@@ -79,12 +79,14 @@ module.exports = {
 
     if (!await isPortAvailable(port)) {
       const healthyExpectedPort = await this.checkPortOpen(defaultPort);
-      if (status?.status === 'error' && status.version === version && healthyExpectedPort) {
+      const noTrackedMysql = (this.runningVersions.get('mysql')?.size || 0) === 0;
+      if (healthyExpectedPort && ((status?.status === 'error' && status.version === version) || noTrackedMysql)) {
         this.serviceConfigs.mysql.actualPort = defaultPort;
         this.runningVersions.get('mysql').set(version, { port: defaultPort, startedAt: new Date() });
         status.port = defaultPort;
         status.version = version;
         status.status = 'running';
+        status.error = null;
         status.startedAt = Date.now();
         return;
       }

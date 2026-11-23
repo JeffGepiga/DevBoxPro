@@ -89,7 +89,9 @@ function Databases() {
   }, [runningProjectDatabaseVersions]);
 
   const isDatabaseVersionRunning = React.useCallback((type, version) => {
-    return Boolean(servicesStatus[type]?.runningVersions?.[version])
+    const serviceStatus = servicesStatus[type];
+    return Boolean(serviceStatus?.runningVersions?.[version])
+      || (serviceStatus?.status === 'running' && serviceStatus?.version === version)
       || runningProjectDatabaseVersions[type]?.has(version);
   }, [runningProjectDatabaseVersions, servicesStatus]);
 
@@ -138,9 +140,11 @@ function Databases() {
   const loadServicesStatus = async () => {
     try {
       const status = await window.devbox?.services.getStatus();
-      const resolvedStatus = status || {};
-      setServicesStatus(resolvedStatus);
-      return resolvedStatus;
+      if (status && typeof status === 'object') {
+        setServicesStatus(status);
+        return status;
+      }
+      return {};
     } catch (error) {
       // Error loading services status
       return {};
@@ -396,9 +400,15 @@ function Databases() {
 
   const handleImportDatabase = async (name) => {
     try {
-      const filePath = await window.devbox?.system.selectFile([
-        { name: 'SQL Files', extensions: ['sql', 'gz'] },
-      ]);
+      const filePath = await window.devbox?.system.selectFile(
+        selectedDatabase?.type === 'mongodb'
+          ? [{ name: 'Database Dumps', extensions: ['sql', 'gz'] }]
+          : [
+            { name: 'SQL Dumps & Archives', extensions: ['sql', 'gz', 'zip', 'tar', 'tgz'] },
+            { name: 'SQL Files', extensions: ['sql', 'gz'] },
+            { name: 'Archives (.zip, .tar, .tar.gz)', extensions: ['zip', 'tar', 'gz', 'tgz'] },
+          ]
+      );
 
       if (filePath) {
         // Show import options modal

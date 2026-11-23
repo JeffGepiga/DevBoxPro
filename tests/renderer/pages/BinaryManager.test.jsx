@@ -500,6 +500,52 @@ describe('BinaryManager', () => {
         expect(screen.getByText(/^Update$/i)).toBeInTheDocument();
         expect(screen.getByText('View Update')).toBeInTheDocument();
     });
+
+    it('keeps progress visible while updating an already-installed binary like zrok and clears update badge when done', async () => {
+        mockDevbox.binaries.getInstalled.mockResolvedValue({ zrok: true });
+        mockDevbox.binaries.checkForServiceUpdates.mockResolvedValue({
+            composer: { updateAvailable: false },
+            phpmyadmin: { updateAvailable: false },
+            cloudflared: { updateAvailable: false },
+            zrok: { updateAvailable: true },
+        });
+
+        let resolveZrokDownload;
+        mockDevbox.binaries.downloadZrok = vi.fn(() => new Promise((resolve) => {
+            resolveZrokDownload = resolve;
+        }));
+
+        appContextMock.downloading = { zrok: true };
+        appContextMock.downloadProgress = { zrok: { status: 'downloading', progress: 45 } };
+
+        const { rerender } = render(<BinaryManager />);
+
+        const toolsTab = await screen.findByRole('button', { name: /Tools/i });
+        fireEvent.click(toolsTab);
+
+        // Even though zrok is already installed, an active update must NOT be cleared prematurely
+        expect(appContextMock.clearDownload).not.toHaveBeenCalledWith('zrok');
+
+        // Reset to idle, check for updates on zrok, then click Update
+        appContextMock.downloading = {};
+        appContextMock.downloadProgress = {};
+        rerender(<BinaryManager />);
+
+        const zrokRow = (await screen.findByText('zrok')).closest('div.flex.items-center.justify-between');
+        fireEvent.click(within(zrokRow).getByRole('button', { name: /Check Updates/i }));
+
+        const updateBtn = await within(zrokRow).findByRole('button', { name: /^Update$/i });
+        fireEvent.click(updateBtn);
+
+        expect(mockDevbox.binaries.downloadZrok).toHaveBeenCalledTimes(1);
+        expect(appContextMock.setDownloading).toHaveBeenCalledWith('zrok', true);
+
+        resolveZrokDownload({ success: true });
+        await waitFor(() => {
+            expect(appContextMock.clearDownload).toHaveBeenCalledWith('zrok');
+            expect(screen.queryByText(/Update Available/i)).not.toBeInTheDocument();
+        });
+    });
 });
 
 
