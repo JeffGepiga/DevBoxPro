@@ -1,6 +1,6 @@
 {
-  "version": "1.1.8",
-  "lastUpdated": "2026-11-16",
+  "version": "1.1.9",
+  "lastUpdated": "2026-11-23",
   "php": {
     "versions": [
       "8.5",
@@ -14,8 +14,8 @@
     "downloads": {
       "8.5": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.5.12-1-nts-Win32-vs17-x64.zip",
-          "filename": "php-8.5.12-1-nts-Win32-vs17-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.5.13-nts-Win32-vs17-x64.zip",
+          "filename": "php-8.5.13-nts-Win32-vs17-x64.zip"
         },
         "mac": {
           "url": "builtin",
@@ -29,8 +29,8 @@
       },
       "8.4": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.4.27-1-nts-Win32-vs17-x64.zip",
-          "filename": "php-8.4.27-1-nts-Win32-vs17-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.4.28-nts-Win32-vs17-x64.zip",
+          "filename": "php-8.4.28-nts-Win32-vs17-x64.zip"
         },
         "mac": {
           "url": "builtin",
@@ -44,8 +44,8 @@
       },
       "8.3": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.3.36-1-nts-Win32-vs16-x64.zip",
-          "filename": "php-8.3.36-1-nts-Win32-vs16-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.3.37-nts-Win32-vs16-x64.zip",
+          "filename": "php-8.3.37-nts-Win32-vs16-x64.zip"
         },
         "mac": {
           "url": "builtin",
@@ -59,8 +59,8 @@
       },
       "8.2": {
         "win": {
-          "url": "https://windows.php.net/downloads/releases/php-8.2.35-1-nts-Win32-vs16-x64.zip",
-          "filename": "php-8.2.35-1-nts-Win32-vs16-x64.zip"
+          "url": "https://windows.php.net/downloads/releases/php-8.2.36-nts-Win32-vs16-x64.zip",
+          "filename": "php-8.2.36-nts-Win32-vs16-x64.zip"
         },
         "mac": {
           "url": "builtin",
@@ -461,15 +461,15 @@
     "downloads": {
       "latest": {
         "win": {
-          "url": "https://github.com/axllent/mailpit/releases/download/v1.33.1/mailpit-windows-amd64.zip",
+          "url": "https://github.com/axllent/mailpit/releases/download/v1.34.0/mailpit-windows-amd64.zip",
           "filename": "mailpit-windows-amd64.zip"
         },
         "mac": {
-          "url": "https://github.com/axllent/mailpit/releases/download/v1.33.1/mailpit-darwin-arm64.tar.gz",
+          "url": "https://github.com/axllent/mailpit/releases/download/v1.34.0/mailpit-darwin-arm64.tar.gz",
           "filename": "mailpit-darwin-arm64.tar.gz"
         },
         "linux": {
-          "url": "https://github.com/axllent/mailpit/releases/download/v1.33.1/mailpit-linux-amd64.tar.gz",
+          "url": "https://github.com/axllent/mailpit/releases/download/v1.34.0/mailpit-linux-amd64.tar.gz",
           "filename": "mailpit-linux-amd64.tar.gz"
         }
       }
@@ -482,15 +482,15 @@
     "downloads": {
       "latest": {
         "win": {
-          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.11.0/cloudflared-windows-amd64.exe",
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.11.2/cloudflared-windows-amd64.exe",
           "filename": "cloudflared-windows-amd64.exe"
         },
         "mac": {
-          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.11.0/cloudflared-darwin-arm64.tgz",
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.11.2/cloudflared-darwin-arm64.tgz",
           "filename": "cloudflared-darwin-arm64.tgz"
         },
         "linux": {
-          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.11.0/cloudflared-linux-amd64",
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.11.2/cloudflared-linux-amd64",
           "filename": "cloudflared-linux-amd64"
         }
       }
@@ -503,14 +503,14 @@
     "downloads": {
       "latest": {
         "win": {
-          "url": "https://github.com/openziti/zrok/releases/download/v2.0.9/zrok_2.0.9_windows_amd64.tar.gz",
-          "filename": "zrok_2.0.9_windows_amd64.tar.gz",
+          "url": "https://github.com/openziti/zrok/releases/download/v2.0.11/zrok_2.0.11_windows_amd64.tar.gz",
+          "filename": "zrok_2.0.11_windows_amd64.tar.gz",
           "githubRepo": "openziti/zrok",
           "assetPattern": "windows.*amd64.*\\.(?:zip|tar\\.gz)$"
         },
         "mac": {
-          "url": "https://github.com/openziti/zrok/releases/download/v2.0.9/zrok_2.0.9_darwin_arm64.tar.gz",
-          "filename": "zrok_2.0.9_darwin_arm64.tar.gz",
+          "url": "https://github.com/openziti/zrok/releases/download/v2.0.11/zrok_2.0.11_darwin_arm64.tar.gz",
+          "filename": "zrok_2.0.11_darwin_arm64.tar.gz",
           "githubRepo": "openziti/zrok",
           "assetPattern": "darwin.*arm64.*\\.(?:tar\\.gz|tgz)$",
           "fallbackAssetPatterns": [
@@ -518,8 +518,8 @@
           ]
         },
         "linux": {
-          "url": "https://github.com/openziti/zrok/releases/download/v2.0.9/zrok_2.0.9_linux_amd64.tar.gz",
-          "filename": "zrok_2.0.9_linux_amd64.tar.gz",
+          "url": "https://github.com/openziti/zrok/releases/download/v2.0.11/zrok_2.0.11_linux_amd64.tar.gz",
+          "filename": "zrok_2.0.11_linux_amd64.tar.gz",
           "githubRepo": "openziti/zrok",
           "assetPattern": "linux.*amd64.*\\.(?:tar\\.gz|tgz)$"
         }
@@ -795,16 +795,16 @@
     "downloads": {
       "latest": {
         "win": {
-          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.2/mongosh-2.14.2-win32-x64.zip",
-          "filename": "mongosh-2.14.2-win32-x64.zip"
+          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.3/mongosh-2.14.3-win32-x64.zip",
+          "filename": "mongosh-2.14.3-win32-x64.zip"
         },
         "mac": {
-          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.2/mongosh-2.14.2-darwin-arm64.zip",
-          "filename": "mongosh-2.14.2-darwin-arm64.zip"
+          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.3/mongosh-2.14.3-darwin-arm64.zip",
+          "filename": "mongosh-2.14.3-darwin-arm64.zip"
         },
         "linux": {
-          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.2/mongosh-2.14.2-linux-x64.tgz",
-          "filename": "mongosh-2.14.2-linux-x64.tgz"
+          "url": "https://github.com/mongodb-js/mongosh/releases/download/v2.14.3/mongosh-2.14.3-linux-x64.tgz",
+          "filename": "mongosh-2.14.3-linux-x64.tgz"
         },
         "label": "Latest"
       }
