@@ -1,0 +1,60 @@
+name: Release Windows (SignPath)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-sign:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows installer and portable exe
+        run: npm run build:win
+
+      - name: Upload unsigned Windows artifacts
+        uses: actions/upload-artifact@v4
+        id: upload-unsigned
+        with:
+          name: unsigned-windows
+          path: |
+            dist/DevBox-Pro-Setup-*.exe
+            dist/DevBox-Pro-*.exe
+
+      - name: Submit signing request to SignPath
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORG_ID }}
+          project-slug: 'devbox-pro'
+          signing-policy-slug: 'release-signing'
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: './signed-output'
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./signed-output/*
+            dist/latest.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
