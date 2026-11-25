@@ -49,10 +49,44 @@ jobs:
           wait-for-completion: true
           output-artifact-directory: './signed-output'
 
+      - name: Update latest.yml for signed installer
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem ./signed-output/DevBox-Pro-Setup-*.exe | Select-Object -First 1
+          if ($setup -and (Test-Path ./dist/latest.yml)) {
+            $bytes = [System.IO.File]::ReadAllBytes($setup.FullName)
+            $sha512 = [Convert]::ToBase64String([System.Security.Cryptography.SHA512]::Create().ComputeHash($bytes))
+            $size = $setup.Length
+            node -e "
+              const fs = require('fs');
+              let yml = fs.readFileSync('dist/latest.yml', 'utf8');
+              yml = yml.replace(/sha512:\s*.+/g, 'sha512: ' + process.argv[1]);
+              yml = yml.replace(/size:\s*\d+/g, 'size: ' + process.argv[2]);
+              fs.writeFileSync('dist/latest.yml', yml);
+            " "$sha512" "$size"
+          }
+
+      - name: Extract release notes from RELEASE.md
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $content = Get-Content -Path RELEASE.md -Raw -Encoding UTF8
+          $marker = "## 🆕 What's New"
+          $idx = $content.IndexOf($marker)
+          if ($idx -ge 0) {
+            $notes = $content.Substring($idx)
+          } else {
+            $notes = $content
+          }
+          Set-Content -Path ./release-notes.md -Value $notes -Encoding UTF8 -NoNewline
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          name: DevBox Pro ${{ github.ref_name }}
+          body_path: ./release-notes.md
           files: |
             ./signed-output/*
             dist/latest.yml
