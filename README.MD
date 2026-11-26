@@ -475,16 +475,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ---
 
-## 🔐 Code Signing Policy
-
-Free code signing provided by [SignPath.io](https://signpath.io/), using a certificate by the [SignPath Foundation](https://signpath.org/).
-
-- **Committers & Reviewers**: Only maintainers of [JeffGepiga/DevBoxPro](https://github.com/JeffGepiga/DevBoxPro) can trigger and approve release signing requests.
-- **Build Provenance**: All signed Windows installers are built directly from this public repository via GitHub Actions and submitted to SignPath for signing.
-- **Privacy**: This application does not collect or transmit personal user data. For security or signing concerns, please contact `jeffreygepiga27@gmail.com` or open an issue on [GitHub Issues](https://github.com/JeffGepiga/DevBoxPro/issues).
-
----
-
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
